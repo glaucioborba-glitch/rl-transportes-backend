@@ -1,0 +1,250 @@
+// Schema RL Transportes — Fase 2 (Semana 2, PDF 16/04/2026)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  GERENTE
+  OPERADOR_PORTARIA
+  OPERADOR_GATE
+  OPERADOR_PATIO
+  CLIENTE
+}
+
+enum TipoCliente {
+  PJ
+  PF
+}
+
+enum StatusSolicitacao {
+  PENDENTE
+  APROVADO
+  CONCLUIDO
+  REJEITADO
+}
+
+enum TipoUnidade {
+  IMPORT
+  EXPORT
+  GATE_IN
+  GATE_OUT
+}
+
+enum StatusPagamento {
+  PENDENTE
+  PAGO
+  VENCIDO
+  CANCELADO
+}
+
+enum StatusIpm {
+  PENDENTE
+  ENVIADO
+  ACEITO
+  REJEITADO
+}
+
+enum AcaoAuditoria {
+  INSERT
+  UPDATE
+  DELETE
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  role      Role
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  auditorias Auditoria[]
+
+  @@map("users")
+}
+
+model Cliente {
+  id        String       @id @default(uuid())
+  nome      String       @db.VarChar(255)
+  tipo      TipoCliente
+  cpfCnpj   String       @unique @db.VarChar(14)
+  email     String       @unique
+  telefone  String
+  endereco  String
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  deletedAt DateTime?
+
+  solicitacoes Solicitacao[]
+  faturamentos Faturamento[]
+
+  @@index([deletedAt])
+  @@map("clientes")
+}
+
+model Solicitacao {
+  id         String            @id @default(uuid())
+  protocolo  String            @unique
+  clienteId  String
+  status     StatusSolicitacao @default(PENDENTE)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  deletedAt  DateTime?
+
+  cliente             Cliente              @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  unidadesSolicitacao UnidadeSolicitacao[]
+  portaria            Portaria?
+  gate                Gate?
+  patio               Patio?
+  saida               Saida?
+
+  @@map("solicitacoes")
+  @@index([clienteId])
+  @@index([deletedAt])
+}
+
+model UnidadeSolicitacao {
+  id            String      @id @default(uuid())
+  solicitacaoId String
+  numeroIso     String      @unique
+  tipo          TipoUnidade
+  createdAt     DateTime    @default(now())
+
+  solicitacao Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+
+  @@map("unidades_solicitacao")
+  @@index([solicitacaoId])
+}
+
+model Auditoria {
+  id          String          @id @default(uuid())
+  tabela      String          @db.VarChar(50)
+  registroId  String
+  acao        AcaoAuditoria
+  userId      String          @map("usuario")
+  dadosAntes  Json?
+  dadosDepois Json?
+  createdAt   DateTime        @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@map("auditorias")
+  @@index([tabela, registroId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model Portaria {
+  id              String   @id @default(uuid())
+  solicitacaoId   String   @unique
+  placaVeiculo    String?  @db.VarChar(10)
+  fotosCaminhao   Json     @default("[]")
+  fotosContainer  Json     @default("[]")
+  fotosLacre      Json     @default("[]")
+  fotosAvarias    Json     @default("[]")
+  statusOcr     String   @default("pendente")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  solicitacao Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+
+  @@map("portarias")
+  @@index([solicitacaoId])
+}
+
+model Gate {
+  id                 String   @id @default(uuid())
+  solicitacaoId      String   @unique
+  ricAssinado        Boolean  @default(false)
+  assinaturaBinaria  Bytes?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  solicitacao Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+
+  @@map("gates")
+  @@index([solicitacaoId])
+}
+
+model Patio {
+  id            String   @id @default(uuid())
+  solicitacaoId String   @unique
+  quadra        String   @db.VarChar(10)
+  fileira       String   @db.VarChar(10)
+  posicao       String   @db.VarChar(10)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  solicitacao Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+
+  @@unique([quadra, fileira, posicao])
+  @@map("patios")
+  @@index([solicitacaoId])
+}
+
+model Saida {
+  id            String   @id @default(uuid())
+  solicitacaoId String   @unique
+  dataHoraSaida DateTime
+  createdAt     DateTime @default(now())
+
+  solicitacao Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+
+  @@map("saidas")
+  @@index([solicitacaoId])
+}
+
+model Faturamento {
+  id           String   @id @default(uuid())
+  clienteId    String
+  periodo      String
+  valorTotal   Decimal  @db.Decimal(10, 2)
+  statusBoleto String   @default("pendente")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  cliente     Cliente      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  nfsEmitidas NfsEmitida[]
+  boletos     Boleto[]
+
+  @@unique([clienteId, periodo])
+  @@map("faturamentos")
+  @@index([clienteId])
+}
+
+model NfsEmitida {
+  id            String     @id @default(uuid())
+  faturamentoId String
+  numeroNfe     String     @unique
+  xmlNfe        String     @db.Text
+  statusIpm     StatusIpm  @default(PENDENTE)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  faturamento Faturamento @relation(fields: [faturamentoId], references: [id], onDelete: Cascade)
+
+  @@map("nfs_emitidas")
+  @@index([faturamentoId])
+}
+
+model Boleto {
+  id              String          @id @default(uuid())
+  faturamentoId   String
+  numeroBoleto    String          @unique
+  dataVencimento  DateTime        @db.Date
+  valorBoleto     Decimal         @db.Decimal(10, 2)
+  statusPagamento StatusPagamento @default(PENDENTE)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  faturamento Faturamento @relation(fields: [faturamentoId], references: [id], onDelete: Cascade)
+
+  @@map("boletos")
+  @@index([faturamentoId])
+}

@@ -1,0 +1,4501 @@
+﻿# RL Transportes backend — dump 2026-04-16 (src + schema + configs)
+
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\app.module.ts
+================================================================================
+
+
+import { CacheModule } from '@nestjs/cache-manager';
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { AuditoriaModule } from './auditoria/auditoria.module';
+import { AuthModule } from './auth/auth.module';
+import { ClientesModule } from './clientes/clientes.module';
+import secretsConfig from './config/secrets.config';
+import { HealthController } from './health/health.controller';
+import { PrismaModule } from './prisma/prisma.module';
+import { RedisModule } from './redis/redis.module';
+import { SolicitacoesModule } from './solicitacoes/solicitacoes.module';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: ['../../.env', '.env'],
+      load: [secretsConfig],
+    }),
+    CacheModule.register({
+      isGlobal: true,
+      ttl: 300_000,
+    }),
+    PrismaModule,
+    RedisModule,
+    AuditoriaModule,
+    AuthModule,
+    ClientesModule,
+    SolicitacoesModule,
+  ],
+  controllers: [HealthController],
+})
+export class AppModule {}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\auditoria\auditoria.module.ts
+================================================================================
+
+
+import { Module } from '@nestjs/common';
+import { AuditoriaService } from './auditoria.service';
+
+@Module({
+  providers: [AuditoriaService],
+  exports: [AuditoriaService],
+})
+export class AuditoriaModule {}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\auditoria\auditoria.service.spec.ts
+================================================================================
+
+
+import { AcaoAuditoria } from '@prisma/client';
+import { AuditoriaService } from './auditoria.service';
+import { PrismaService } from '../prisma/prisma.service';
+
+describe('AuditoriaService', () => {
+  let service: AuditoriaService;
+  const create = jest.fn().mockResolvedValue({ id: 'a1' });
+  const findMany = jest.fn().mockResolvedValue([]);
+
+  const prisma = {
+    auditoria: { create, findMany },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new AuditoriaService(prisma as unknown as PrismaService);
+  });
+
+  describe('registrar', () => {
+    it('registra aÃ§Ã£o INSERT', async () => {
+      await service.registrar(prisma as unknown as PrismaService, {
+        tabela: 'clientes',
+        registroId: 'r1',
+        acao: AcaoAuditoria.INSERT,
+        userId: 'u1',
+        dadosDepois: { x: 1 },
+      });
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            tabela: 'clientes',
+            registroId: 'r1',
+            acao: AcaoAuditoria.INSERT,
+          }),
+        }),
+      );
+    });
+
+    it('registra aÃ§Ã£o UPDATE com dados antes/depois', async () => {
+      await service.registrar(prisma as unknown as PrismaService, {
+        tabela: 'clientes',
+        registroId: 'r1',
+        acao: AcaoAuditoria.UPDATE,
+        userId: 'u1',
+        dadosAntes: { a: 0 },
+        dadosDepois: { a: 1 },
+      });
+      expect(create).toHaveBeenCalled();
+    });
+
+    it('registra aÃ§Ã£o DELETE', async () => {
+      await service.registrar(prisma as unknown as PrismaService, {
+        tabela: 'clientes',
+        registroId: 'r1',
+        acao: AcaoAuditoria.DELETE,
+        userId: 'u1',
+        dadosAntes: { id: 'r1' },
+      });
+      expect(create).toHaveBeenCalled();
+    });
+  });
+
+  describe('buscarPorRegistro', () => {
+    it('retorna histÃ³rico de um registro', async () => {
+      findMany.mockResolvedValueOnce([{ id: '1' }]);
+      const r = await service.buscarPorRegistro('clientes', 'r1');
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { tabela: 'clientes', registroId: 'r1' },
+          orderBy: { createdAt: 'desc' },
+        }),
+      );
+      expect(r).toEqual([{ id: '1' }]);
+    });
+  });
+
+  describe('buscarPorUsuario', () => {
+    it('retorna aÃ§Ãµes de um usuÃ¡rio', async () => {
+      findMany.mockResolvedValueOnce([{ id: '1' }]);
+      const r = await service.buscarPorUsuario('u1', 50);
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: 'u1' },
+          take: 50,
+        }),
+      );
+      expect(r).toEqual([{ id: '1' }]);
+    });
+  });
+
+  describe('buscarPorPeriodo', () => {
+    it('filtra por intervalo e tabela opcional', async () => {
+      const i = new Date('2026-01-01');
+      const f = new Date('2026-12-31');
+      await service.buscarPorPeriodo(i, f, 'clientes');
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            createdAt: { gte: i, lte: f },
+            tabela: 'clientes',
+          },
+        }),
+      );
+    });
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\auditoria\auditoria.service.ts
+================================================================================
+
+
+import { Injectable } from '@nestjs/common';
+import { AcaoAuditoria, Auditoria, Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+
+type Tx = Prisma.TransactionClient;
+
+const MAX_JSON_BYTES = 10 * 1024 * 1024;
+
+function truncateForAudit(data: unknown): Prisma.InputJsonValue | undefined {
+  if (data === undefined) return undefined;
+  const s = JSON.stringify(data);
+  if (s.length <= MAX_JSON_BYTES) {
+    return data as Prisma.InputJsonValue;
+  }
+  return {
+    _truncado: true,
+    tamanhoBytes: s.length,
+    amostra: s.slice(0, 4096),
+  } as Prisma.InputJsonValue;
+}
+
+@Injectable()
+export class AuditoriaService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Registra auditoria na mesma transaÃ§Ã£o do Prisma (atomicidade com a operaÃ§Ã£o de negÃ³cio).
+   */
+  async registrar(
+    ctx: PrismaService | Tx,
+    input: {
+      tabela: string;
+      registroId: string;
+      acao: AcaoAuditoria;
+      userId: string;
+      dadosAntes?: unknown;
+      dadosDepois?: unknown;
+    },
+  ) {
+    const data: Prisma.AuditoriaCreateInput = {
+      tabela: input.tabela,
+      registroId: input.registroId,
+      acao: input.acao,
+      user: { connect: { id: input.userId } },
+    };
+    if (input.dadosAntes !== undefined) {
+      data.dadosAntes = truncateForAudit(input.dadosAntes);
+    }
+    if (input.dadosDepois !== undefined) {
+      data.dadosDepois = truncateForAudit(input.dadosDepois);
+    }
+    return ctx.auditoria.create({ data });
+  }
+
+  async buscarPorRegistro(tabela: string, registroId: string): Promise<Auditoria[]> {
+    return this.prisma.auditoria.findMany({
+      where: { tabela, registroId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async buscarPorUsuario(usuario: string, limite = 100): Promise<Auditoria[]> {
+    return this.prisma.auditoria.findMany({
+      where: { userId: usuario },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(limite, 500),
+    });
+  }
+
+  async buscarPorPeriodo(
+    dataInicio: Date,
+    dataFim: Date,
+    tabela?: string,
+  ): Promise<Auditoria[]> {
+    return this.prisma.auditoria.findMany({
+      where: {
+        createdAt: { gte: dataInicio, lte: dataFim },
+        ...(tabela ? { tabela } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\auth\auth.controller.ts
+================================================================================
+
+
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
+import { AuthGuard } from '@nestjs/passport';
+import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { PermissionsGuard } from '../common/guards/permissions.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { AuthService } from './auth.service';
+import { CreateUserDto } from './dto/create-user.dto';
+import { LoginDto } from './dto/login.dto';
+import { RefreshDto } from './dto/refresh.dto';
+
+@ApiTags('auth')
+@Controller('auth')
+export class AuthController {
+  constructor(private readonly authService: AuthService) {}
+
+  @Post('login')
+  login(@Body() dto: LoginDto) {
+    return this.authService.login(dto.email, dto.password);
+  }
+
+  @Post('refresh')
+  refresh(@Body() dto: RefreshDto) {
+    return this.authService.refresh(dto.refreshToken);
+  }
+
+  @Get('me')
+  @ApiBearerAuth('access-token')
+  @UseGuards(AuthGuard('jwt'))
+  me(@CurrentUser() user: AuthUser) {
+    return user;
+  }
+
+  @Post('users')
+  @ApiBearerAuth('access-token')
+  @UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
+  @Roles(Role.ADMIN)
+  @Permissions('users:criar')
+  createUser(@Body() dto: CreateUserDto) {
+    return this.authService.createUser(dto);
+  }
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\auth\auth.module.ts
+================================================================================
+
+
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JwtModule, type JwtModuleOptions } from '@nestjs/jwt';
+import type { StringValue } from 'ms';
+import { PassportModule } from '@nestjs/passport';
+import { AuthController } from './auth.controller';
+import { AuthService } from './auth.service';
+import { JwtStrategy } from './strategies/jwt.strategy';
+
+@Module({
+  imports: [
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): JwtModuleOptions => {
+        const secret = config.get<string>('secrets.jwtSecret') ?? config.getOrThrow<string>('JWT_SECRET');
+        return {
+          secret,
+          signOptions: {
+            expiresIn: (config.get<string>('JWT_EXPIRES_IN') ?? '1h') as StringValue,
+          },
+        };
+      },
+    }),
+  ],
+  controllers: [AuthController],
+  providers: [AuthService, JwtStrategy],
+  exports: [AuthService],
+})
+export class AuthModule {}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\auth\auth.service.spec.ts
+================================================================================
+
+
+import { JwtService } from '@nestjs/jwt';
+import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
+import { HttpException, HttpStatus, UnauthorizedException } from '@nestjs/common';
+import { Role } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
+import { AuthService } from './auth.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
+
+describe('AuthService', () => {
+  let service: AuthService;
+  const prisma = {
+    user: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+    },
+  };
+
+  const redis = {
+    incr: jest.fn(),
+    expire: jest.fn(),
+    del: jest.fn(),
+    get: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    redis.incr.mockResolvedValue(1);
+    redis.expire.mockResolvedValue(1);
+    redis.del.mockResolvedValue(1);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AuthService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: RedisService, useValue: redis },
+        {
+          provide: JwtService,
+          useValue: {
+            sign: jest.fn().mockReturnValue('token'),
+            verify: jest.fn(),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((k: string, d?: string) => {
+              if (k === 'JWT_EXPIRES_IN') return '1h';
+              if (k === 'JWT_REFRESH_EXPIRES_IN') return '7d';
+              return d;
+            }),
+            getOrThrow: jest.fn((k: string) => {
+              if (k === 'JWT_REFRESH_SECRET') return 'refresh-secret';
+              return 'x';
+            }),
+          },
+        },
+      ],
+    }).compile();
+
+    service = module.get(AuthService);
+    jest.clearAllMocks();
+    redis.incr.mockResolvedValue(1);
+    redis.expire.mockResolvedValue(1);
+    redis.del.mockResolvedValue(1);
+  });
+
+  it('validateUser retorna null se senha errada', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: '1',
+      email: 'a@a.com',
+      password: await bcrypt.hash('ok', 4),
+      role: Role.ADMIN,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const u = await service.validateUser('a@a.com', 'wrong');
+    expect(u).toBeNull();
+  });
+
+  it('login lanÃ§a Unauthorized se credenciais invÃ¡lidas', async () => {
+    redis.incr.mockResolvedValue(1);
+    prisma.user.findUnique.mockResolvedValue(null);
+    await expect(service.login('x@x.com', 'y')).rejects.toThrow(UnauthorizedException);
+    expect(redis.del).not.toHaveBeenCalled();
+  });
+
+  it('login lanÃ§a 429 apÃ³s mais de 5 tentativas', async () => {
+    redis.incr.mockResolvedValue(6);
+    const err = await service.login('a@a.com', 'x').then(
+      () => {
+        throw new Error('esperava rejeiÃ§Ã£o');
+      },
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(HttpException);
+    expect((err as HttpException).getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\auth\auth.service.ts
+================================================================================
+
+
+import {
+  ConflictException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
+import type { StringValue } from 'ms';
+import type { User } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
+import { permissionsForRole } from '../common/constants/role-permissions';
+import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
+import type { JwtPayload } from './strategies/jwt.strategy';
+import { CreateUserDto } from './dto/create-user.dto';
+
+const BCRYPT_ROUNDS = 12;
+
+@Injectable()
+export class AuthService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+    private readonly redisService: RedisService,
+  ) {}
+
+  async validateUser(email: string, password: string): Promise<User | null> {
+    const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    if (!user) return null;
+    const ok = await bcrypt.compare(password, user.password);
+    return ok ? user : null;
+  }
+
+  async login(email: string, password: string) {
+    const normalized = email.toLowerCase();
+    const key = `login_attempt:${normalized}`;
+
+    const attempts = await this.redisService.incr(key);
+    if (attempts === 1) {
+      await this.redisService.expire(key, 60);
+    }
+    if (attempts > 5) {
+      throw new HttpException(
+        'Muitas tentativas de login. Tente novamente mais tarde.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const user = await this.validateUser(email, password);
+    if (!user) {
+      throw new UnauthorizedException('Credenciais invÃ¡lidas');
+    }
+
+    await this.redisService.del(key);
+    return this.issueTokens(user);
+  }
+
+  async refresh(refreshToken: string) {
+    const secret =
+      this.configService.get<string>('secrets.jwtRefreshSecret') ??
+      this.configService.getOrThrow<string>('JWT_REFRESH_SECRET');
+    let payload: JwtPayload;
+    try {
+      payload = this.jwtService.verify<JwtPayload>(refreshToken, { secret });
+    } catch {
+      throw new UnauthorizedException('Refresh token invÃ¡lido ou expirado');
+    }
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user) {
+      throw new UnauthorizedException('UsuÃ¡rio nÃ£o encontrado');
+    }
+    return this.issueTokens(user);
+  }
+
+  issueTokens(user: User) {
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+    };
+    const accessExpires = this.configService.get<string>('JWT_EXPIRES_IN') ?? '1h';
+    const refreshExpires = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
+    const refreshSecret =
+      this.configService.get<string>('secrets.jwtRefreshSecret') ??
+      this.configService.getOrThrow<string>('JWT_REFRESH_SECRET');
+
+    const accessOpts: JwtSignOptions = { expiresIn: accessExpires as StringValue };
+    const refreshOpts: JwtSignOptions = {
+      secret: refreshSecret,
+      expiresIn: refreshExpires as StringValue,
+    };
+
+    return {
+      accessToken: this.jwtService.sign(payload, accessOpts),
+      refreshToken: this.jwtService.sign(payload, refreshOpts),
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        permissions: permissionsForRole(user.role),
+        createdAt: user.createdAt,
+      },
+    };
+  }
+
+  async createUser(dto: CreateUserDto) {
+    const email = dto.email.toLowerCase();
+    const exists = await this.prisma.user.findUnique({ where: { email } });
+    if (exists) {
+      throw new ConflictException('E-mail jÃ¡ cadastrado');
+    }
+    const password = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+    const user = await this.prisma.user.create({
+      data: {
+        email,
+        password,
+        role: dto.role,
+      },
+    });
+    const { password: _p, ...safe } = user;
+    return safe;
+  }
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\auth\dto\create-user.dto.ts
+================================================================================
+
+
+import { ApiProperty } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
+import { IsEmail, IsEnum, IsString, MinLength } from 'class-validator';
+
+export class CreateUserDto {
+  @ApiProperty()
+  @IsEmail()
+  email!: string;
+
+  @ApiProperty({ minLength: 8 })
+  @IsString()
+  @MinLength(8)
+  password!: string;
+
+  @ApiProperty({ enum: Role })
+  @IsEnum(Role)
+  role!: Role;
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\auth\dto\login.dto.ts
+================================================================================
+
+
+import { ApiProperty } from '@nestjs/swagger';
+import { IsEmail, IsString, MinLength } from 'class-validator';
+
+export class LoginDto {
+  @ApiProperty({ example: 'admin@rltransportes.com' })
+  @IsEmail()
+  email!: string;
+
+  @ApiProperty({ example: 'Admin@123' })
+  @IsString()
+  @MinLength(1)
+  password!: string;
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\auth\dto\refresh.dto.ts
+================================================================================
+
+
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString, MinLength } from 'class-validator';
+
+export class RefreshDto {
+  @ApiProperty()
+  @IsString()
+  @MinLength(10)
+  refreshToken!: string;
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\auth\strategies\jwt.strategy.ts
+================================================================================
+
+
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PassportStrategy } from '@nestjs/passport';
+import type { Role } from '@prisma/client';
+import { ExtractJwt, Strategy } from 'passport-jwt';
+import { permissionsForRole } from '../../common/constants/role-permissions';
+
+export type JwtPayload = {
+  sub: string;
+  email: string;
+  role: Role;
+};
+
+@Injectable()
+export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
+  constructor(configService: ConfigService) {
+    const secret =
+      configService.get<string>('secrets.jwtSecret') ??
+      configService.getOrThrow<string>('JWT_SECRET');
+    super({
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ignoreExpiration: false,
+      secretOrKey: secret,
+    });
+  }
+
+  validate(payload: JwtPayload) {
+    return {
+      id: payload.sub,
+      email: payload.email,
+      role: payload.role,
+      permissions: permissionsForRole(payload.role),
+    };
+  }
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\clientes\clientes.controller.ts
+================================================================================
+
+
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
+import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { ClientePaginationDto } from '../common/dtos/pagination.dto';
+import { CpfCnpjValidationPipe } from '../common/pipes';
+import { PermissionsGuard } from '../common/guards/permissions.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { ClientesService } from './clientes.service';
+import { CreateClienteDto } from './dto/create-cliente.dto';
+import { UpdateClienteDto } from './dto/update-cliente.dto';
+
+@ApiTags('clientes')
+@ApiBearerAuth('access-token')
+@UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
+@Controller('clientes')
+export class ClientesController {
+  constructor(private readonly clientesService: ClientesService) {}
+
+  @Get()
+  @Roles(
+    Role.ADMIN,
+    Role.GERENTE,
+    Role.OPERADOR_PORTARIA,
+    Role.OPERADOR_GATE,
+    Role.OPERADOR_PATIO,
+  )
+  @Permissions('clientes:ler')
+  findAll(@Query() query: ClientePaginationDto) {
+    return this.clientesService.findAllPaginated(query);
+  }
+
+  @Get(':id')
+  @Roles(
+    Role.ADMIN,
+    Role.GERENTE,
+    Role.OPERADOR_PORTARIA,
+    Role.OPERADOR_GATE,
+    Role.OPERADOR_PATIO,
+  )
+  @Permissions('clientes:ler')
+  findOne(@Param('id') id: string) {
+    return this.clientesService.findOne(id);
+  }
+
+  @Post()
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('clientes:criar')
+  create(@Body(CpfCnpjValidationPipe) dto: CreateClienteDto, @CurrentUser() user: AuthUser) {
+    return this.clientesService.create(dto, user.id);
+  }
+
+  @Patch(':id')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('clientes:atualizar')
+  update(@Param('id') id: string, @Body() dto: UpdateClienteDto, @CurrentUser() user: AuthUser) {
+    return this.clientesService.update(id, dto, user.id);
+  }
+
+  @Delete(':id')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('clientes:excluir')
+  remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.clientesService.remove(id, user.id);
+  }
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\clientes\clientes.module.ts
+================================================================================
+
+
+import { Module } from '@nestjs/common';
+import { AuditoriaModule } from '../auditoria/auditoria.module';
+import { ClientesController } from './clientes.controller';
+import { ClientesService } from './clientes.service';
+
+@Module({
+  imports: [AuditoriaModule],
+  controllers: [ClientesController],
+  providers: [ClientesService],
+  exports: [ClientesService],
+})
+export class ClientesModule {}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\clientes\clientes.service.spec.ts
+================================================================================
+
+
+import { ConflictException, NotFoundException } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import { AcaoAuditoria, Prisma, TipoCliente } from '@prisma/client';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { AuditoriaService } from '../auditoria/auditoria.service';
+import { ClientesService } from './clientes.service';
+import { PrismaService } from '../prisma/prisma.service';
+
+describe('ClientesService', () => {
+  let service: ClientesService;
+
+  const auditoria = { registrar: jest.fn().mockResolvedValue({}) };
+  const cache = {
+    get: jest.fn().mockResolvedValue(null),
+    set: jest.fn().mockResolvedValue(undefined),
+    del: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const prisma = {
+    $transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    cliente: {
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
+      update: jest.fn(),
+    },
+  };
+
+  const tx = {
+    cliente: {
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+    auditoria: { create: jest.fn() },
+  };
+
+  beforeEach(async () => {
+    prisma.$transaction.mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx));
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ClientesService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AuditoriaService, useValue: auditoria },
+        { provide: CACHE_MANAGER, useValue: cache },
+      ],
+    }).compile();
+
+    service = module.get(ClientesService);
+    jest.clearAllMocks();
+    prisma.$transaction.mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx));
+  });
+
+  const clienteRow = (over: Partial<Record<string, unknown>> = {}) => ({
+    id: 'c1',
+    nome: 'X',
+    tipo: TipoCliente.PF,
+    cpfCnpj: '11144477735',
+    email: 'x@x.com',
+    telefone: '11999999999',
+    endereco: 'Rua',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deletedAt: null,
+    ...over,
+  });
+
+  describe('create', () => {
+    it('deve criar cliente PF vÃ¡lido', async () => {
+      tx.cliente.findFirst.mockResolvedValue(null);
+      tx.cliente.create.mockResolvedValue(clienteRow());
+
+      await service.create(
+        {
+          nome: 'X',
+          tipo: TipoCliente.PF,
+          cpfCnpj: '11144477735',
+          email: 'x@x.com',
+          telefone: '11999999999',
+          endereco: 'Rua',
+        },
+        'user-1',
+      );
+
+      expect(tx.cliente.create).toHaveBeenCalled();
+      expect(auditoria.registrar).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          tabela: 'clientes',
+          acao: AcaoAuditoria.INSERT,
+          userId: 'user-1',
+        }),
+      );
+    });
+
+    it('deve criar cliente PJ vÃ¡lido', async () => {
+      tx.cliente.findFirst.mockResolvedValue(null);
+      tx.cliente.create.mockResolvedValue(clienteRow({ tipo: TipoCliente.PJ, cpfCnpj: '12345678000195' }));
+
+      await service.create(
+        {
+          nome: 'Empresa',
+          tipo: TipoCliente.PJ,
+          cpfCnpj: '12345678000195',
+          email: 'pj@x.com',
+          telefone: '11999999999',
+          endereco: 'Rua',
+        },
+        'user-1',
+      );
+
+      expect(tx.cliente.create).toHaveBeenCalled();
+    });
+
+    it('deve registrar auditoria em INSERT', async () => {
+      tx.cliente.findFirst.mockResolvedValue(null);
+      tx.cliente.create.mockResolvedValue(clienteRow());
+      await service.create(
+        {
+          nome: 'X',
+          tipo: TipoCliente.PF,
+          cpfCnpj: '11144477735',
+          email: 'x@x.com',
+          telefone: '11999999999',
+          endereco: 'Rua',
+        },
+        'u',
+      );
+      expect(auditoria.registrar).toHaveBeenCalled();
+    });
+
+    it('deve rejeitar cpfCnpj duplicado', async () => {
+      tx.cliente.findFirst.mockResolvedValue(clienteRow());
+      await expect(
+        service.create(
+          {
+            nome: 'Y',
+            tipo: TipoCliente.PF,
+            cpfCnpj: '11144477735',
+            email: 'y@x.com',
+            telefone: '11',
+            endereco: 'Rua',
+          },
+          'u',
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('deve rejeitar email duplicado', async () => {
+      tx.cliente.findFirst.mockResolvedValue(clienteRow({ email: 'dup@x.com' }));
+      await expect(
+        service.create(
+          {
+            nome: 'Y',
+            tipo: TipoCliente.PF,
+            cpfCnpj: '52998224725',
+            email: 'dup@x.com',
+            telefone: '11',
+            endereco: 'Rua',
+          },
+          'u',
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('findAllPaginated', () => {
+    it('deve retornar lista de clientes', async () => {
+      prisma.cliente.findMany.mockResolvedValue([clienteRow()]);
+      prisma.cliente.count.mockResolvedValue(1);
+      const r = await service.findAllPaginated({ page: 1, limit: 10 });
+      expect(r.items.length).toBe(1);
+      expect(r.total).toBe(1);
+    });
+
+    it('deve retornar lista vazia se nÃ£o houver clientes', async () => {
+      prisma.cliente.findMany.mockResolvedValue([]);
+      prisma.cliente.count.mockResolvedValue(0);
+      const r = await service.findAllPaginated({});
+      expect(r.items).toEqual([]);
+      expect(r.total).toBe(0);
+    });
+
+    it('deve aplicar paginaÃ§Ã£o (offset, limit)', async () => {
+      prisma.cliente.findMany.mockResolvedValue([]);
+      prisma.cliente.count.mockResolvedValue(0);
+      await service.findAllPaginated({ page: 2, limit: 5 });
+      expect(prisma.cliente.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 5,
+          take: 5,
+        }),
+      );
+    });
+  });
+
+  describe('findOne', () => {
+    it('deve retornar cliente pelo ID', async () => {
+      const c = clienteRow();
+      prisma.cliente.findFirst.mockResolvedValue(c);
+      const r = await service.findOne('c1');
+      expect(r).toEqual(c);
+    });
+
+    it('deve lanÃ§ar NotFoundException se ID nÃ£o existir', async () => {
+      prisma.cliente.findFirst.mockResolvedValue(null);
+      await expect(service.findOne('bad')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('update', () => {
+    it('deve atualizar cliente', async () => {
+      const cur = clienteRow();
+      const upd = { ...cur, nome: 'Novo' };
+      tx.cliente.findFirst.mockResolvedValue(cur);
+      tx.cliente.update.mockResolvedValue(upd);
+
+      const r = await service.update('c1', { nome: 'Novo' }, 'u1');
+      expect(r.nome).toBe('Novo');
+      expect(cache.del).toHaveBeenCalledWith('cliente:c1');
+    });
+
+    it('deve registrar auditoria em UPDATE', async () => {
+      const cur = clienteRow();
+      tx.cliente.findFirst.mockResolvedValue(cur);
+      tx.cliente.update.mockResolvedValue(cur);
+
+      await service.update('c1', { telefone: '11888888888' }, 'u1');
+      expect(auditoria.registrar).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          tabela: 'clientes',
+          acao: AcaoAuditoria.UPDATE,
+        }),
+      );
+    });
+
+    it('deve lanÃ§ar NotFoundException se ID nÃ£o existir', async () => {
+      tx.cliente.findFirst.mockResolvedValue(null);
+      await expect(service.update('bad', { nome: 'X' }, 'u')).rejects.toThrow(NotFoundException);
+    });
+
+    it('deve rejeitar cpfCnpj duplicado apÃ³s update', async () => {
+      tx.cliente.findFirst.mockResolvedValue(
+        clienteRow({ tipo: TipoCliente.PJ, cpfCnpj: '12345678000195' }),
+      );
+      tx.cliente.update.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('unique', {
+          code: 'P2002',
+          clientVersion: 'test',
+        }),
+      );
+
+      await expect(
+        service.update('c1', { cpfCnpj: '11222333000181' }, 'u'),
+      ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('remove', () => {
+    it('deve aplicar soft delete no cliente', async () => {
+      const cur = clienteRow();
+      tx.cliente.findFirst.mockResolvedValue(cur);
+      tx.cliente.update.mockResolvedValue({ ...cur, deletedAt: new Date() });
+
+      const r = await service.remove('c1', 'u1');
+      expect(r.removed).toBe(true);
+      expect(cache.del).toHaveBeenCalled();
+    });
+
+    it('deve registrar auditoria em DELETE', async () => {
+      const cur = clienteRow();
+      tx.cliente.findFirst.mockResolvedValue(cur);
+      tx.cliente.update.mockResolvedValue({ ...cur, deletedAt: new Date() });
+
+      await service.remove('c1', 'u1');
+      expect(auditoria.registrar).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          tabela: 'clientes',
+          acao: AcaoAuditoria.DELETE,
+        }),
+      );
+    });
+
+    it('deve lanÃ§ar NotFoundException se ID nÃ£o existir', async () => {
+      tx.cliente.findFirst.mockResolvedValue(null);
+      await expect(service.remove('bad', 'u')).rejects.toThrow(NotFoundException);
+    });
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\clientes\clientes.service.ts
+================================================================================
+
+
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { AcaoAuditoria, Prisma, TipoCliente } from '@prisma/client';
+import type { Cache } from 'cache-manager';
+import { AuditoriaService } from '../auditoria/auditoria.service';
+import { ClientePaginationDto } from '../common/dtos/pagination.dto';
+import {
+  onlyDigits,
+  validateCnpjDigits,
+  validateCpfDigits,
+} from '../common/utils/br-documents';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreateClienteDto } from './dto/create-cliente.dto';
+import { UpdateClienteDto } from './dto/update-cliente.dto';
+
+const TX_OPTIONS = {
+  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+  maxWait: 5000,
+  timeout: 15000,
+} as const;
+
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const cacheKey = (id: string) => `cliente:${id}`;
+
+@Injectable()
+export class ClientesService {
+  private readonly logger = new Logger(ClientesService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditoria: AuditoriaService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
+  ) {}
+
+  private validateDocumento(tipo: TipoCliente, digits: string) {
+    if (tipo === TipoCliente.PF) {
+      if (digits.length !== 11 || !validateCpfDigits(digits)) {
+        throw new BadRequestException('CPF invÃ¡lido');
+      }
+    } else {
+      if (digits.length !== 14 || !validateCnpjDigits(digits)) {
+        throw new BadRequestException('CNPJ invÃ¡lido');
+      }
+    }
+  }
+
+  async create(dto: CreateClienteDto, actorUserId: string) {
+    const email = dto.email.toLowerCase();
+    this.logger.log(`Criando cliente documento=${dto.cpfCnpj} email=${email}`);
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const dup = await tx.cliente.findFirst({
+          where: {
+            deletedAt: null,
+            OR: [{ cpfCnpj: dto.cpfCnpj }, { email }],
+          },
+        });
+        if (dup) {
+          throw new ConflictException('E-mail ou documento jÃ¡ cadastrado');
+        }
+        const cliente = await tx.cliente.create({
+          data: {
+            nome: dto.nome.trim(),
+            tipo: dto.tipo,
+            cpfCnpj: dto.cpfCnpj,
+            email,
+            telefone: dto.telefone.trim(),
+            endereco: dto.endereco.trim(),
+          },
+        });
+        await this.auditoria.registrar(tx, {
+          tabela: 'clientes',
+          registroId: cliente.id,
+          acao: AcaoAuditoria.INSERT,
+          userId: actorUserId,
+          dadosDepois: cliente,
+        });
+        return cliente;
+      },
+      TX_OPTIONS,
+    );
+  }
+
+  async findAllPaginated(pagination: ClientePaginationDto) {
+    const page = pagination.page ?? 1;
+    const limit = pagination.limit ?? 10;
+    const orderBy = pagination.orderBy ?? 'createdAt';
+    const order = pagination.order ?? 'desc';
+    const skip = (page - 1) * limit;
+    const search = pagination.search;
+
+    const searchWhere: Prisma.ClienteWhereInput = search
+      ? {
+          OR: [
+            { nome: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } },
+            { cpfCnpj: { contains: onlyDigits(search) } },
+          ],
+        }
+      : {};
+
+    const where: Prisma.ClienteWhereInput = {
+      deletedAt: null,
+      ...(search ? searchWhere : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.cliente.findMany({
+        where,
+        skip,
+        take: Math.min(limit, 100),
+        orderBy: { [orderBy]: order },
+        include: {
+          solicitacoes: {
+            where: { deletedAt: null },
+            select: { id: true, protocolo: true, status: true, createdAt: true },
+            take: 50,
+            orderBy: { createdAt: 'desc' },
+          },
+        },
+      }),
+      this.prisma.cliente.count({ where }),
+    ]);
+
+    this.logger.debug(`findAllPaginated page=${page} total=${total}`);
+    return { items, total, page, limit: Math.min(limit, 100), orderBy, order };
+  }
+
+  async findOne(id: string) {
+    const hit = await this.cache.get<unknown>(cacheKey(id));
+    if (hit) {
+      this.logger.debug(`cache hit cliente ${id}`);
+      return hit;
+    }
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        solicitacoes: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            protocolo: true,
+            status: true,
+            createdAt: true,
+          },
+          take: 100,
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+    if (!cliente) throw new NotFoundException('Cliente nÃ£o encontrado');
+    await this.cache.set(cacheKey(id), cliente, CACHE_TTL_MS);
+    return cliente;
+  }
+
+  async update(id: string, dto: UpdateClienteDto, actorUserId: string) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const current = await tx.cliente.findFirst({ where: { id, deletedAt: null } });
+        if (!current) throw new NotFoundException('Cliente nÃ£o encontrado');
+
+        const tipo = dto.tipo ?? current.tipo;
+        const digits = dto.cpfCnpj ? onlyDigits(dto.cpfCnpj) : current.cpfCnpj;
+        if (dto.cpfCnpj !== undefined || dto.tipo !== undefined) {
+          this.validateDocumento(tipo, digits);
+        }
+
+        const data: Prisma.ClienteUpdateInput = {};
+        if (dto.nome !== undefined) data.nome = dto.nome.trim();
+        if (dto.tipo !== undefined) data.tipo = dto.tipo;
+        if (dto.cpfCnpj !== undefined) data.cpfCnpj = digits;
+        if (dto.email !== undefined) data.email = dto.email.toLowerCase();
+        if (dto.telefone !== undefined) data.telefone = dto.telefone.trim();
+        if (dto.endereco !== undefined) data.endereco = dto.endereco.trim();
+
+        let updated;
+        try {
+          updated = await tx.cliente.update({
+            where: { id },
+            data,
+          });
+        } catch (e) {
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+            throw new ConflictException('E-mail ou documento jÃ¡ cadastrado');
+          }
+          throw e;
+        }
+
+        await this.auditoria.registrar(tx, {
+          tabela: 'clientes',
+          registroId: id,
+          acao: AcaoAuditoria.UPDATE,
+          userId: actorUserId,
+          dadosAntes: current,
+          dadosDepois: updated,
+        });
+        await this.cache.del(cacheKey(id));
+        return updated;
+      },
+      TX_OPTIONS,
+    );
+  }
+
+  async remove(id: string, actorUserId: string) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const current = await tx.cliente.findFirst({ where: { id, deletedAt: null } });
+        if (!current) throw new NotFoundException('Cliente nÃ£o encontrado');
+
+        const deletedAt = new Date();
+        const updated = await tx.cliente.update({
+          where: { id },
+          data: { deletedAt },
+        });
+
+        await this.auditoria.registrar(tx, {
+          tabela: 'clientes',
+          registroId: id,
+          acao: AcaoAuditoria.DELETE,
+          userId: actorUserId,
+          dadosAntes: current,
+          dadosDepois: updated,
+        });
+
+        await this.cache.del(cacheKey(id));
+        return { id, removed: true, deletedAt };
+      },
+      TX_OPTIONS,
+    );
+  }
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\clientes\dto\create-cliente.dto.ts
+================================================================================
+
+
+import { ApiProperty } from '@nestjs/swagger';
+import { TipoCliente } from '@prisma/client';
+import { Transform } from 'class-transformer';
+import { IsEmail, IsEnum, IsString, MaxLength, MinLength } from 'class-validator';
+import { onlyDigits } from '../../common/utils/br-documents';
+import { IsCpfCnpj } from '../../common/validators/is-cpf-cnpj.validator';
+
+export class CreateClienteDto {
+  @ApiProperty({ maxLength: 255 })
+  @IsString()
+  @MaxLength(255)
+  nome!: string;
+
+  @ApiProperty({ enum: TipoCliente })
+  @IsEnum(TipoCliente)
+  tipo!: TipoCliente;
+
+  @ApiProperty({ description: 'CPF (PF) ou CNPJ (PJ), com ou sem formataÃ§Ã£o' })
+  @Transform(({ value }) => (typeof value === 'string' ? onlyDigits(value) : value))
+  @IsString()
+  @IsCpfCnpj()
+  cpfCnpj!: string;
+
+  @ApiProperty()
+  @IsEmail()
+  email!: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(20)
+  telefone!: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  endereco!: string;
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\clientes\dto\update-cliente.dto.ts
+================================================================================
+
+
+import { PartialType } from '@nestjs/mapped-types';
+import { CreateClienteDto } from './create-cliente.dto';
+
+export class UpdateClienteDto extends PartialType(CreateClienteDto) {}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\constants\role-permissions.ts
+================================================================================
+
+
+import { Role } from '@prisma/client';
+
+/** PermissÃµes granulares mapeadas por papel (RBAC estendido). */
+export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
+  [Role.ADMIN]: [
+    'clientes:criar',
+    'clientes:ler',
+    'clientes:atualizar',
+    'clientes:excluir',
+    'solicitacoes:criar',
+    'solicitacoes:ler',
+    'solicitacoes:atualizar',
+    'solicitacoes:excluir',
+    'solicitacoes:portaria',
+    'users:criar',
+  ],
+  [Role.GERENTE]: [
+    'clientes:criar',
+    'clientes:ler',
+    'clientes:atualizar',
+    'clientes:excluir',
+    'solicitacoes:criar',
+    'solicitacoes:ler',
+    'solicitacoes:atualizar',
+    'solicitacoes:excluir',
+    'solicitacoes:portaria',
+  ],
+  [Role.OPERADOR_PORTARIA]: [
+    'clientes:ler',
+    'solicitacoes:criar',
+    'solicitacoes:ler',
+    'solicitacoes:atualizar',
+    'solicitacoes:portaria',
+  ],
+  [Role.OPERADOR_GATE]: [
+    'clientes:ler',
+    'solicitacoes:ler',
+    'solicitacoes:atualizar',
+  ],
+  [Role.OPERADOR_PATIO]: ['clientes:ler', 'solicitacoes:ler'],
+  [Role.CLIENTE]: ['solicitacoes:ler'],
+};
+
+export function permissionsForRole(role: Role): string[] {
+  return [...ROLE_PERMISSIONS[role]];
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\decorators\audit.decorator.ts
+================================================================================
+
+
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+
+export interface AuditContext {
+  /** Identificador do usuÃ¡rio (JWT sub / id). */
+  usuario: string;
+  ip: string;
+  userAgent: string;
+}
+
+export const Audit = createParamDecorator((_data: unknown, ctx: ExecutionContext): AuditContext => {
+  const req = ctx.switchToHttp().getRequest<{
+    user?: { id?: string };
+    ip?: string;
+    socket?: { remoteAddress?: string };
+    headers?: Record<string, string | string[] | undefined>;
+  }>();
+  const id = req.user?.id ? String(req.user.id) : '';
+  const ua = req.headers?.['user-agent'];
+  return {
+    usuario: id,
+    ip: typeof req.ip === 'string' ? req.ip : req.socket?.remoteAddress ?? '',
+    userAgent: Array.isArray(ua) ? ua[0] ?? '' : ua ?? '',
+  };
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\decorators\current-user.decorator.ts
+================================================================================
+
+
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import type { Role } from '@prisma/client';
+
+export type AuthUser = {
+  id: string;
+  email: string;
+  role: Role;
+  /** Derivado do papel (RBAC granular). */
+  permissions: string[];
+};
+
+export const CurrentUser = createParamDecorator(
+  (data: keyof AuthUser | undefined, ctx: ExecutionContext): AuthUser | string | string[] | undefined => {
+    const request = ctx.switchToHttp().getRequest<{ user: AuthUser }>();
+    const user = request.user;
+    if (!user) return undefined;
+    if (data === undefined) return user;
+    return user[data];
+  },
+);
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\decorators\permissions.decorator.ts
+================================================================================
+
+
+import { SetMetadata } from '@nestjs/common';
+
+export const PERMISSIONS_KEY = 'permissions';
+
+export const Permissions = (...permissions: string[]) => SetMetadata(PERMISSIONS_KEY, permissions);
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\decorators\roles.decorator.ts
+================================================================================
+
+
+import { SetMetadata } from '@nestjs/common';
+import type { Role } from '@prisma/client';
+
+export const ROLES_KEY = 'roles';
+
+export const Roles = (...roles: Role[]) => SetMetadata(ROLES_KEY, roles);
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\dtos\pagination.dto.ts
+================================================================================
+
+
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { StatusSolicitacao } from '@prisma/client';
+import { Type } from 'class-transformer';
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+
+export class PaginationDto {
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ default: 10, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number = 10;
+
+  @ApiPropertyOptional({ default: 'createdAt' })
+  @IsOptional()
+  @IsString()
+  orderBy?: string = 'createdAt';
+
+  @ApiPropertyOptional({ enum: ['asc', 'desc'], default: 'desc' })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  order?: 'asc' | 'desc' = 'desc';
+}
+
+/** PaginaÃ§Ã£o para listagem de clientes (whitelist de ordenaÃ§Ã£o). */
+export class ClientePaginationDto extends PaginationDto {
+  @ApiPropertyOptional({ description: 'Filtro texto em nome, e-mail ou documento' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ enum: ['createdAt', 'nome', 'email'], default: 'createdAt' })
+  @IsOptional()
+  @IsIn(['createdAt', 'nome', 'email'])
+  override orderBy?: 'createdAt' | 'nome' | 'email' = 'createdAt';
+}
+
+/** PaginaÃ§Ã£o para solicitaÃ§Ãµes. */
+export class SolicitacaoPaginationDto extends PaginationDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  clienteId?: string;
+
+  @ApiPropertyOptional({ enum: StatusSolicitacao })
+  @IsOptional()
+  @IsEnum(StatusSolicitacao)
+  status?: StatusSolicitacao;
+
+  @ApiPropertyOptional({ enum: ['createdAt', 'protocolo', 'status'], default: 'createdAt' })
+  @IsOptional()
+  @IsIn(['createdAt', 'protocolo', 'status'])
+  override orderBy?: 'createdAt' | 'protocolo' | 'status' = 'createdAt';
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\guards\permissions.guard.spec.ts
+================================================================================
+
+
+import { Reflector } from '@nestjs/core';
+import { Role } from '@prisma/client';
+import { PermissionsGuard } from './permissions.guard';
+import type { AuthUser } from '../decorators/current-user.decorator';
+describe('PermissionsGuard', () => {
+  const reflector = { getAllAndOverride: jest.fn() };
+  const guard = new PermissionsGuard(reflector as unknown as Reflector);
+
+  const ctx = (user: AuthUser | undefined) =>
+    ({
+      switchToHttp: () => ({
+        getRequest: () => ({ user }),
+      }),
+      getHandler: () => jest.fn(),
+      getClass: () => jest.fn(),
+    }) as any;
+
+  it('permite quando nÃ£o hÃ¡ permissÃµes exigidas', () => {
+    (reflector.getAllAndOverride as jest.Mock).mockReturnValue(undefined);
+    expect(guard.canActivate(ctx(undefined))).toBe(true);
+  });
+
+  it('ADMIN passa sempre', () => {
+    (reflector.getAllAndOverride as jest.Mock).mockReturnValue(['clientes:excluir']);
+    const user: AuthUser = {
+      id: '1',
+      email: 'a@a.com',
+      role: Role.ADMIN,
+      permissions: [],
+    };
+    expect(guard.canActivate(ctx(user))).toBe(true);
+  });
+
+  it('nega sem permissÃ£o', () => {
+    (reflector.getAllAndOverride as jest.Mock).mockReturnValue(['clientes:excluir']);
+    const user: AuthUser = {
+      id: '1',
+      email: 'a@a.com',
+      role: Role.OPERADOR_PATIO,
+      permissions: ['clientes:ler'],
+    };
+    expect(() => guard.canActivate(ctx(user))).toThrow();
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\guards\permissions.guard.ts
+================================================================================
+
+
+import {
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { Role } from '@prisma/client';
+import type { AuthUser } from '../decorators/current-user.decorator';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+
+@Injectable()
+export class PermissionsGuard implements CanActivate {
+  constructor(private reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const required = this.reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!required?.length) return true;
+
+    const { user } = context.switchToHttp().getRequest<{ user: AuthUser }>();
+    if (!user) throw new ForbiddenException('UsuÃ¡rio nÃ£o autenticado');
+
+    if (user.role === Role.ADMIN) return true;
+
+    const perms = user.permissions ?? [];
+    const ok = required.every((p) => perms.includes(p));
+    if (!ok) {
+      throw new ForbiddenException('PermissÃ£o insuficiente para esta operaÃ§Ã£o');
+    }
+    return true;
+  }
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\guards\roles.guard.ts
+================================================================================
+
+
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import type { Role } from '@prisma/client';
+import { ROLES_KEY } from '../decorators/roles.decorator';
+import type { AuthUser } from '../decorators/current-user.decorator';
+
+@Injectable()
+export class RolesGuard implements CanActivate {
+  constructor(private reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const required = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!required?.length) return true;
+    const { user } = context.switchToHttp().getRequest<{ user: AuthUser }>();
+    return required.includes(user.role);
+  }
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\logger\winston.config.ts
+================================================================================
+
+
+import { WinstonModule } from 'nest-winston';
+import * as winston from 'winston';
+import { utilities as nestWinstonModuleUtilities } from 'nest-winston';
+
+export function buildWinstonLogger() {
+  return WinstonModule.createLogger({
+    transports: [
+      new winston.transports.Console({
+        format: winston.format.combine(
+          winston.format.timestamp(),
+          winston.format.ms(),
+          nestWinstonModuleUtilities.format.nestLike('RLTransportes', {
+            prettyPrint: true,
+            colors: true,
+          }),
+        ),
+      }),
+      new winston.transports.File({
+        filename: 'logs/error.log',
+        level: 'error',
+        format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
+      }),
+      new winston.transports.File({
+        filename: 'logs/combined.log',
+        format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
+      }),
+    ],
+  });
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\middleware\request-id.middleware.ts
+================================================================================
+
+
+import type { NextFunction, Request, Response } from 'express';
+import { v4 as uuidv4 } from 'uuid';
+
+export function requestIdMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const raw = req.headers['x-request-id'];
+  const headerVal = Array.isArray(raw) ? raw[0] : raw;
+  const requestId = (typeof headerVal === 'string' && headerVal.length > 0 ? headerVal : null) ?? uuidv4();
+  (req as Request & { requestId: string }).requestId = requestId;
+  res.setHeader('X-Request-ID', requestId);
+  next();
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\pipes\cpf-cnpj-validation.pipe.spec.ts
+================================================================================
+
+
+import { BadRequestException } from '@nestjs/common';
+import { CpfCnpjValidationPipe } from './cpf-cnpj-validation.pipe';
+
+describe('CpfCnpjValidationPipe', () => {
+  const pipe = new CpfCnpjValidationPipe();
+
+  describe('CPF vÃ¡lido', () => {
+    it('aceita CPF vÃ¡lido (11 dÃ­gitos)', () => {
+      const b = { cpfCnpj: '11144477735' };
+      expect(pipe.transform(b)).toBe(b);
+      expect(b.cpfCnpj).toBe('11144477735');
+    });
+
+    it('aceita CPF formatado e remove caracteres', () => {
+      const b = { cpfCnpj: '111.444.777-35' };
+      pipe.transform(b);
+      expect(b.cpfCnpj).toBe('11144477735');
+    });
+
+    it('rejeita CPF com dÃ­gito verificador incorreto', () => {
+      expect(() => pipe.transform({ cpfCnpj: '11144477736' })).toThrow(BadRequestException);
+    });
+
+    it('rejeita CPF com sequÃªncia igual (11111111111)', () => {
+      expect(() => pipe.transform({ cpfCnpj: '11111111111' })).toThrow(BadRequestException);
+    });
+  });
+
+  describe('CNPJ vÃ¡lido', () => {
+    it('aceita CNPJ vÃ¡lido (14 dÃ­gitos)', () => {
+      const b = { cpfCnpj: '12345678000195' };
+      pipe.transform(b);
+      expect(b.cpfCnpj).toBe('12345678000195');
+    });
+
+    it('aceita CNPJ formatado e remove caracteres', () => {
+      const b = { cpfCnpj: '12.345.678/0001-95' };
+      pipe.transform(b);
+      expect(b.cpfCnpj).toBe('12345678000195');
+    });
+
+    it('rejeita CNPJ com dÃ­gito verificador incorreto', () => {
+      expect(() => pipe.transform({ cpfCnpj: '12345678000196' })).toThrow(BadRequestException);
+    });
+
+    it('rejeita CNPJ com sequÃªncia igual', () => {
+      expect(() =>
+        pipe.transform({ cpfCnpj: '11111111111111' }),
+      ).toThrow(BadRequestException);
+    });
+  });
+
+  describe('ValidaÃ§Ãµes gerais', () => {
+    it('retorna o objeto com cpfCnpj normalizado', () => {
+      const b = { cpfCnpj: '529.982.247-25', nome: 'x' };
+      const out = pipe.transform(b);
+      expect(out).toBe(b);
+      expect((out as { cpfCnpj: string }).cpfCnpj).toBe('52998224725');
+    });
+
+    it('rejeita documento com menos de 11 dÃ­gitos', () => {
+      expect(() => pipe.transform({ cpfCnpj: '123456789' })).toThrow(BadRequestException);
+    });
+
+    it('rejeita documento com mais de 14 dÃ­gitos', () => {
+      expect(() =>
+        pipe.transform({ cpfCnpj: '123456789012345' }),
+      ).toThrow(BadRequestException);
+    });
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\pipes\cpf-cnpj-validation.pipe.ts
+================================================================================
+
+
+import { BadRequestException, Injectable, PipeTransform } from '@nestjs/common';
+import {
+  onlyDigits,
+  validateCnpjDigits,
+  validateCpfDigits,
+} from '../utils/br-documents';
+
+@Injectable()
+export class CpfCnpjValidationPipe implements PipeTransform {
+  transform(value: unknown) {
+    if (!value || typeof value !== 'object') {
+      throw new BadRequestException(
+        'Documento deve ter 11 (CPF) ou 14 (CNPJ) dÃ­gitos.',
+      );
+    }
+    const o = value as { cpfCnpj?: unknown };
+    if (typeof o.cpfCnpj !== 'string') {
+      throw new BadRequestException(
+        'Documento deve ter 11 (CPF) ou 14 (CNPJ) dÃ­gitos.',
+      );
+    }
+    const digits = onlyDigits(o.cpfCnpj);
+    if (digits.length === 11) {
+      if (!validateCpfDigits(digits)) {
+        throw new BadRequestException('CPF invÃ¡lido (validaÃ§Ã£o modular).');
+      }
+    } else if (digits.length === 14) {
+      if (!validateCnpjDigits(digits)) {
+        throw new BadRequestException('CNPJ invÃ¡lido (validaÃ§Ã£o modular).');
+      }
+    } else {
+      throw new BadRequestException(
+        'Documento deve ter 11 (CPF) ou 14 (CNPJ) dÃ­gitos.',
+      );
+    }
+    o.cpfCnpj = digits;
+    return value;
+  }
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\pipes\index.ts
+================================================================================
+
+
+export * from './cpf-cnpj-validation.pipe';
+export * from './iso6346-validation.pipe';
+export * from './mercosul-plate-validation.pipe';
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\pipes\iso6346-validation.pipe.spec.ts
+================================================================================
+
+
+import { BadRequestException } from '@nestjs/common';
+import { Iso6346ValidationPipe } from './iso6346-validation.pipe';
+
+describe('Iso6346ValidationPipe', () => {
+  const pipe = new Iso6346ValidationPipe();
+
+  describe('ISO 6346 vÃ¡lido', () => {
+    it('aceita ISO vÃ¡lido (TEMU6079348)', () => {
+      const b = { numeroIso: 'TEMU6079348' };
+      expect(pipe.transform(b)).toBe(b);
+      expect(b.numeroIso).toBe('TEMU6079348');
+    });
+
+    it('converte para UPPERCASE', () => {
+      const b = { numeroIso: 'temu6079348' };
+      pipe.transform(b);
+      expect(b.numeroIso).toBe('TEMU6079348');
+    });
+
+    it('rejeita ISO com check digit invÃ¡lido', () => {
+      expect(() => pipe.transform({ numeroIso: 'TEMU6079349' })).toThrow(BadRequestException);
+    });
+  });
+
+  describe('ValidaÃ§Ãµes', () => {
+    it('rejeita comprimento invÃ¡lido', () => {
+      expect(() => pipe.transform({ numeroIso: 'TEMU60793' })).toThrow(BadRequestException);
+    });
+
+    it('rejeita padrÃ£o invÃ¡lido (3 letras)', () => {
+      expect(() => pipe.transform({ numeroIso: 'ABC12345670' })).toThrow(BadRequestException);
+    });
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\pipes\iso6346-validation.pipe.ts
+================================================================================
+
+
+import { BadRequestException, Injectable, PipeTransform } from '@nestjs/common';
+import { isValidIso6346 } from '../utils/iso6346';
+
+@Injectable()
+export class Iso6346ValidationPipe implements PipeTransform {
+  transform(value: unknown) {
+    if (!value || typeof value !== 'object') {
+      throw new BadRequestException(
+        'ISO 6346 invÃ¡lido. Formato esperado: 4 letras + 6 nÃºmeros + 1 check digit.',
+      );
+    }
+    const o = value as { numeroIso?: unknown };
+    if (typeof o.numeroIso !== 'string') {
+      throw new BadRequestException(
+        'ISO 6346 invÃ¡lido. Formato esperado: 4 letras + 6 nÃºmeros + 1 check digit.',
+      );
+    }
+    const code = o.numeroIso.replace(/\s/g, '').toUpperCase();
+    if (!isValidIso6346(code)) {
+      throw new BadRequestException(
+        'ISO 6346 invÃ¡lido. Formato esperado: 4 letras + 6 nÃºmeros + 1 check digit.',
+      );
+    }
+    o.numeroIso = code;
+    return value;
+  }
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\pipes\mercosul-plate-validation.pipe.spec.ts
+================================================================================
+
+
+import { BadRequestException } from '@nestjs/common';
+import { MercosulPlateValidationPipe } from './mercosul-plate-validation.pipe';
+
+describe('MercosulPlateValidationPipe', () => {
+  const pipe = new MercosulPlateValidationPipe();
+
+  describe('Placa Mercosul vÃ¡lida', () => {
+    it('aceita padrÃ£o com hÃ­fen (ABCD-1D34)', () => {
+      const b = { placa: 'ABCD-1D34' };
+      pipe.transform(b);
+      expect(b.placa).toBe('ABCD1D34');
+    });
+
+    it('aceita padrÃ£o sem hÃ­fen (ABCD1D34)', () => {
+      const b = { placa: 'ABCD1D34' };
+      pipe.transform(b);
+      expect(b.placa).toBe('ABCD1D34');
+    });
+
+    it('converte para UPPERCASE', () => {
+      const b = { placa: 'abcd-1d34' };
+      pipe.transform(b);
+      expect(b.placa).toBe('ABCD1D34');
+    });
+
+    it('remove hÃ­fen e normaliza', () => {
+      const b = { placa: ' X Y Z W - 9 A 1 2 ' };
+      pipe.transform(b);
+      expect(b.placa).toBe('XYZW9A12');
+    });
+  });
+
+  describe('ValidaÃ§Ãµes', () => {
+    it('rejeita padrÃ£o invÃ¡lido (< 4 letras iniciais efetivas)', () => {
+      expect(() => pipe.transform({ placa: 'ABC-1D34' })).toThrow(BadRequestException);
+    });
+
+    it('rejeita padrÃ£o invÃ¡lido (letra na 2Âª posiÃ§Ã£o da parte numÃ©rica)', () => {
+      expect(() => pipe.transform({ placa: 'ABCD-D134' })).toThrow(BadRequestException);
+    });
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\pipes\mercosul-plate-validation.pipe.ts
+================================================================================
+
+
+import { BadRequestException, Injectable, PipeTransform } from '@nestjs/common';
+
+/** Mercosul: 4 letras + 1 dÃ­gito + 1 letra + 2 dÃ­gitos (ex.: ABCD1D34 ou ABCD-1D34). */
+const MERCOSUL_NORM = /^[A-Z]{4}\d[A-Z]\d{2}$/;
+
+@Injectable()
+export class MercosulPlateValidationPipe implements PipeTransform {
+  transform(value: unknown) {
+    if (!value || typeof value !== 'object') {
+      throw new BadRequestException(
+        'Placa invÃ¡lida. Formato Mercosul: ABCD-1D34 ou ABCD1D34.',
+      );
+    }
+    const o = value as { placa?: unknown };
+    if (typeof o.placa !== 'string' || !o.placa.trim()) {
+      throw new BadRequestException(
+        'Placa invÃ¡lida. Formato Mercosul: ABCD-1D34 ou ABCD1D34.',
+      );
+    }
+    const normalized = o.placa.replace(/\s/g, '').replace(/-/g, '').toUpperCase();
+    if (!MERCOSUL_NORM.test(normalized)) {
+      throw new BadRequestException(
+        'Placa invÃ¡lida. Formato Mercosul: ABCD-1D34 ou ABCD1D34.',
+      );
+    }
+    o.placa = normalized;
+    return value;
+  }
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\utils\br-documents.spec.ts
+================================================================================
+
+
+import { onlyDigits, validateCnpjDigits, validateCpfDigits } from './br-documents';
+
+describe('br-documents', () => {
+  it('onlyDigits remove mÃ¡scara', () => {
+    expect(onlyDigits('123.456.789-09')).toBe('12345678909');
+  });
+
+  it('valida CPF conhecido', () => {
+    expect(validateCpfDigits('52998224725')).toBe(true);
+  });
+
+  it('rejeita CPF invÃ¡lido', () => {
+    expect(validateCpfDigits('11111111111')).toBe(false);
+  });
+
+  it('valida CNPJ conhecido', () => {
+    expect(validateCnpjDigits('11222333000181')).toBe(true);
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\utils\br-documents.ts
+================================================================================
+
+
+/** Normaliza documento brasileiro para somente dÃ­gitos. */
+export function onlyDigits(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
+function cpfDigit(base: string, weightStart: number): number {
+  let sum = 0;
+  for (let i = 0; i < base.length; i++) {
+    sum += parseInt(base[i], 10) * (weightStart - i);
+  }
+  const rest = sum % 11;
+  return rest < 2 ? 0 : 11 - rest;
+}
+
+/** Valida CPF (11 dÃ­gitos, dÃ­gitos verificadores mÃ³dulo 11). */
+export function validateCpfDigits(digits: string): boolean {
+  if (digits.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(digits)) return false;
+  const d1 = cpfDigit(digits.slice(0, 9), 10);
+  const d2 = cpfDigit(digits.slice(0, 10), 11);
+  return d1 === parseInt(digits[9], 10) && d2 === parseInt(digits[10], 10);
+}
+
+function cnpjCalcDigit(base: string, factors: number[]): number {
+  let sum = 0;
+  for (let i = 0; i < base.length; i++) {
+    sum += parseInt(base[i], 10) * factors[i];
+  }
+  const mod = sum % 11;
+  return mod < 2 ? 0 : 11 - mod;
+}
+
+/** Valida CNPJ (14 dÃ­gitos). */
+export function validateCnpjDigits(digits: string): boolean {
+  if (digits.length !== 14) return false;
+  if (/^(\d)\1{13}$/.test(digits)) return false;
+  const f1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const f2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const d1 = cnpjCalcDigit(digits.slice(0, 12), f1);
+  const d2 = cnpjCalcDigit(digits.slice(0, 13), f2);
+  return d1 === parseInt(digits[12], 10) && d2 === parseInt(digits[13], 10);
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\utils\iso6346.ts
+================================================================================
+
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ContainerValidator = require('container-validator') as new () => {
+  isValid: (code: string) => boolean;
+};
+
+/** Valida nÃºmero de contÃªiner ISO 6346 (inclui dÃ­gito verificador). */
+export function isValidIso6346(raw: string): boolean {
+  const code = raw.replace(/\s/g, '').toUpperCase();
+  if (code.length !== 11) return false;
+  const validator = new ContainerValidator();
+  return validator.isValid(code);
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\utils\mercosul.spec.ts
+================================================================================
+
+
+import { isValidPlacaMercosulOuAntiga } from './mercosul';
+
+describe('mercosul', () => {
+  it('aceita Mercosul sem hÃ­fen', () => {
+    expect(isValidPlacaMercosulOuAntiga('ABC1D23')).toBe(true);
+  });
+
+  it('aceita formato antigo', () => {
+    expect(isValidPlacaMercosulOuAntiga('ABC1234')).toBe(true);
+  });
+
+  it('rejeita vazio', () => {
+    expect(isValidPlacaMercosulOuAntiga('')).toBe(false);
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\utils\mercosul.ts
+================================================================================
+
+
+/**
+ * Valida placa no padrÃ£o Mercosul (LLLNLNN) ou formato antigo brasileiro (LLLNNNN).
+ * Aceita com ou sem hÃ­fen.
+ */
+export function isValidPlacaMercosulOuAntiga(raw: string): boolean {
+  const s = raw.replace(/\s/g, '').toUpperCase();
+  if (!s) return false;
+  const mercosul = /^[A-Z]{3}\d[A-Z0-9]\d{2}$/;
+  const antiga = /^[A-Z]{3}\d{4}$/;
+  const comHifenMercosul = /^[A-Z]{3}-\d[A-Z0-9]\d{2}$/;
+  const comHifenAntiga = /^[A-Z]{3}-\d{4}$/;
+  return (
+    mercosul.test(s) ||
+    antiga.test(s) ||
+    comHifenMercosul.test(s) ||
+    comHifenAntiga.test(s)
+  );
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\validators\is-cpf-cnpj.validator.ts
+================================================================================
+
+
+import { TipoCliente } from '@prisma/client';
+import {
+  registerDecorator,
+  ValidationArguments,
+  ValidationOptions,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
+} from 'class-validator';
+import {
+  onlyDigits,
+  validateCnpjDigits,
+  validateCpfDigits,
+} from '../utils/br-documents';
+
+@ValidatorConstraint({ name: 'IsCpfCnpj', async: false })
+export class IsCpfCnpjConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown, args: ValidationArguments): boolean {
+    if (typeof value !== 'string') return false;
+    const obj = args.object as { tipo?: TipoCliente };
+    const digits = onlyDigits(value);
+    if (!obj.tipo) return false;
+    if (obj.tipo === TipoCliente.PF) {
+      return digits.length === 11 && validateCpfDigits(digits);
+    }
+    return digits.length === 14 && validateCnpjDigits(digits);
+  }
+
+  defaultMessage(): string {
+    return 'CPF ou CNPJ invÃ¡lido para o tipo informado';
+  }
+}
+
+export function IsCpfCnpj(validationOptions?: ValidationOptions) {
+  return (object: object, propertyName: string) => {
+    registerDecorator({
+      target: object.constructor,
+      propertyName,
+      options: validationOptions,
+      constraints: [],
+      validator: IsCpfCnpjConstraint,
+    });
+  };
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\config\secrets.config.ts
+================================================================================
+
+
+import { registerAs } from '@nestjs/config';
+
+/**
+ * Centraliza leitura de segredos a partir de variÃ¡veis de ambiente.
+ * Em produÃ§Ã£o, substituir a origem por AWS Secrets Manager / Azure Key Vault / Vault.
+ */
+export default registerAs('secrets', () => ({
+  jwtSecret: process.env.JWT_SECRET,
+  jwtRefreshSecret: process.env.JWT_REFRESH_SECRET,
+  databaseUrl: process.env.DATABASE_URL,
+}));
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\health\health.controller.ts
+================================================================================
+
+
+import { Controller, Get } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
+
+@ApiTags('health')
+@Controller('health')
+export class HealthController {
+  @Get()
+  check() {
+    return { status: 'ok', timestamp: new Date().toISOString() };
+  }
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\main.ts
+================================================================================
+
+
+import { Logger, ValidationPipe } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { existsSync, mkdirSync } from 'node:fs';
+import rateLimit from 'express-rate-limit';
+import { AppModule } from './app.module';
+import { buildWinstonLogger } from './common/logger/winston.config';
+import { requestIdMiddleware } from './common/middleware/request-id.middleware';
+
+async function bootstrap() {
+  if (!existsSync('logs')) {
+    mkdirSync('logs', { recursive: true });
+  }
+
+  const app = await NestFactory.create(AppModule, {
+    logger: buildWinstonLogger(),
+    bufferLogs: true,
+  });
+
+  app.use(requestIdMiddleware);
+  app.use(
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 300,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { message: 'Muitas requisiÃ§Ãµes deste IP, tente novamente em alguns minutos.' },
+    }),
+  );
+
+  app.enableCors();
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  );
+
+  const config = new DocumentBuilder()
+    .setTitle('RL Transportes API')
+    .setDescription('API Fase 1 â€” autenticaÃ§Ã£o, clientes e solicitaÃ§Ãµes')
+    .setVersion('1.0')
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        in: 'header',
+      },
+      'access-token',
+    )
+    .build();
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('docs', app, document);
+
+  const port = process.env.API_PORT ?? 3000;
+  await app.listen(port);
+
+  const logger = new Logger('Bootstrap');
+  logger.log(`Application is running on: http://127.0.0.1:${port}`);
+}
+
+bootstrap();
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\prisma\prisma.module.ts
+================================================================================
+
+
+import { Global, Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { PrismaService } from './prisma.service';
+
+@Global()
+@Module({
+  imports: [ConfigModule],
+  providers: [PrismaService],
+  exports: [PrismaService],
+})
+export class PrismaModule {}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\prisma\prisma.service.ts
+================================================================================
+
+
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '@prisma/client';
+import { Pool } from 'pg';
+
+@Injectable()
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  private readonly pool: Pool;
+
+  constructor(config: ConfigService) {
+    const url = config.getOrThrow<string>('DATABASE_URL');
+    const pool = new Pool({ connectionString: url });
+    super({ adapter: new PrismaPg(pool) });
+    this.pool = pool;
+  }
+
+  async onModuleInit(): Promise<void> {
+    await this.$connect();
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.$disconnect();
+    await this.pool.end();
+  }
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\redis\redis.module.ts
+================================================================================
+
+
+import { Global, Module } from '@nestjs/common';
+import { RedisService } from './redis.service';
+
+@Global()
+@Module({
+  providers: [RedisService],
+  exports: [RedisService],
+})
+export class RedisModule {}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\redis\redis.service.ts
+================================================================================
+
+
+import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
+
+@Injectable()
+export class RedisService implements OnModuleDestroy {
+  private readonly client: Redis;
+
+  constructor(private readonly configService: ConfigService) {
+    const host = this.configService.get<string>('REDIS_HOST', 'localhost');
+    const port = Number(this.configService.get<string>('REDIS_PORT', '6379'));
+    this.client = new Redis({ host, port, maxRetriesPerRequest: 3 });
+  }
+
+  async incr(key: string): Promise<number> {
+    return this.client.incr(key);
+  }
+
+  async expire(key: string, seconds: number): Promise<number> {
+    return this.client.expire(key, seconds);
+  }
+
+  async get(key: string): Promise<string | null> {
+    return this.client.get(key);
+  }
+
+  async del(key: string): Promise<number> {
+    return this.client.del(key);
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.client.quit();
+  }
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\solicitacoes\dto\add-unidade-solicitacao.dto.ts
+================================================================================
+
+
+import { ApiProperty } from '@nestjs/swagger';
+import { IsUUID } from 'class-validator';
+import { CreateUnidadeDto } from './create-unidade.dto';
+
+/** Adiciona um container ISO a uma solicitaÃ§Ã£o existente (PDF Semana 2). */
+export class AddUnidadeSolicitacaoDto extends CreateUnidadeDto {
+  @ApiProperty()
+  @IsUUID()
+  solicitacaoId!: string;
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\solicitacoes\dto\create-portaria.dto.ts
+================================================================================
+
+
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsUUID, MinLength } from 'class-validator';
+
+export class CreatePortariaDto {
+  @ApiProperty()
+  @IsUUID()
+  solicitacaoId!: string;
+
+  @ApiProperty({ example: 'ABCD-1D34', description: 'Placa Mercosul (com ou sem hÃ­fen)' })
+  @IsString()
+  @MinLength(7)
+  placa!: string;
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\solicitacoes\dto\create-solicitacao.dto.ts
+================================================================================
+
+
+import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsUUID,
+  ValidateNested,
+} from 'class-validator';
+import { CreateUnidadeDto } from './create-unidade.dto';
+
+export class CreateSolicitacaoDto {
+  @ApiProperty()
+  @IsUUID()
+  clienteId!: string;
+
+  @ApiProperty({ type: [CreateUnidadeDto], minItems: 1 })
+  @IsArray()
+  @ArrayMinSize(1, { message: 'Informe ao menos uma unidade (container) na solicitaÃ§Ã£o' })
+  @ValidateNested({ each: true })
+  @Type(() => CreateUnidadeDto)
+  unidades!: CreateUnidadeDto[];
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\solicitacoes\dto\create-unidade.dto.ts
+================================================================================
+
+
+import { ApiProperty } from '@nestjs/swagger';
+import { TipoUnidade } from '@prisma/client';
+import { Transform } from 'class-transformer';
+import { IsEnum, IsString, Matches } from 'class-validator';
+
+export class CreateUnidadeDto {
+  @ApiProperty({ example: 'TEMU1234567' })
+  @Transform(({ value }) => (typeof value === 'string' ? value.replace(/\s/g, '').toUpperCase() : value))
+  @IsString()
+  @Matches(/^[A-Z]{4}[0-9]{6}[0-9]$/, {
+    message: 'NÃºmero ISO 6346 invÃ¡lido (formato esperado: 4 letras + 6 dÃ­gitos + dÃ­gito verificador)',
+  })
+  numeroIso!: string;
+
+  @ApiProperty({ enum: TipoUnidade })
+  @IsEnum(TipoUnidade)
+  tipo!: TipoUnidade;
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\solicitacoes\dto\update-solicitacao.dto.ts
+================================================================================
+
+
+import { ApiProperty } from '@nestjs/swagger';
+import { StatusSolicitacao } from '@prisma/client';
+import { IsEnum, IsOptional } from 'class-validator';
+
+export class UpdateSolicitacaoDto {
+  @ApiProperty({ enum: StatusSolicitacao, required: false })
+  @IsOptional()
+  @IsEnum(StatusSolicitacao)
+  status?: StatusSolicitacao;
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\solicitacoes\solicitacoes.controller.ts
+================================================================================
+
+
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
+import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { SolicitacaoPaginationDto } from '../common/dtos/pagination.dto';
+import { Iso6346ValidationPipe, MercosulPlateValidationPipe } from '../common/pipes';
+import { PermissionsGuard } from '../common/guards/permissions.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { AddUnidadeSolicitacaoDto } from './dto/add-unidade-solicitacao.dto';
+import { CreatePortariaDto } from './dto/create-portaria.dto';
+import { CreateSolicitacaoDto } from './dto/create-solicitacao.dto';
+import { UpdateSolicitacaoDto } from './dto/update-solicitacao.dto';
+import { SolicitacoesService } from './solicitacoes.service';
+
+@ApiTags('solicitacoes')
+@ApiBearerAuth('access-token')
+@UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
+@Controller('solicitacoes')
+export class SolicitacoesController {
+  constructor(private readonly solicitacoesService: SolicitacoesService) {}
+
+  @Get()
+  @Roles(
+    Role.ADMIN,
+    Role.GERENTE,
+    Role.OPERADOR_PORTARIA,
+    Role.OPERADOR_GATE,
+    Role.OPERADOR_PATIO,
+    Role.CLIENTE,
+  )
+  @Permissions('solicitacoes:ler')
+  findAll(@Query() query: SolicitacaoPaginationDto) {
+    return this.solicitacoesService.findAllPaginated(query, {
+      clienteId: query.clienteId,
+      status: query.status,
+    });
+  }
+
+  @Get(':id')
+  @Roles(
+    Role.ADMIN,
+    Role.GERENTE,
+    Role.OPERADOR_PORTARIA,
+    Role.OPERADOR_GATE,
+    Role.OPERADOR_PATIO,
+    Role.CLIENTE,
+  )
+  @Permissions('solicitacoes:ler')
+  findOne(@Param('id') id: string) {
+    return this.solicitacoesService.findOne(id);
+  }
+
+  @Post()
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_PORTARIA)
+  @Permissions('solicitacoes:criar')
+  create(@Body() dto: CreateSolicitacaoDto, @CurrentUser() user: AuthUser) {
+    return this.solicitacoesService.create(dto, user.id);
+  }
+
+  @Post('unidades')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('solicitacoes:criar')
+  addContainer(
+    @Body(Iso6346ValidationPipe) dto: AddUnidadeSolicitacaoDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.solicitacoesService.addContainer(dto, user.id);
+  }
+
+  @Post('portaria')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_PORTARIA)
+  @Permissions('solicitacoes:portaria')
+  registerPortaria(
+    @Body(MercosulPlateValidationPipe) dto: CreatePortariaDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.solicitacoesService.registerPortaria(dto, user.id);
+  }
+
+  @Patch(':id')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_PORTARIA, Role.OPERADOR_GATE)
+  @Permissions('solicitacoes:atualizar')
+  update(@Param('id') id: string, @Body() dto: UpdateSolicitacaoDto, @CurrentUser() user: AuthUser) {
+    return this.solicitacoesService.update(id, dto, user.id);
+  }
+
+  @Delete(':id')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('solicitacoes:excluir')
+  remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.solicitacoesService.remove(id, user.id);
+  }
+}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\solicitacoes\solicitacoes.module.ts
+================================================================================
+
+
+import { Module } from '@nestjs/common';
+import { AuditoriaModule } from '../auditoria/auditoria.module';
+import { SolicitacoesController } from './solicitacoes.controller';
+import { SolicitacoesService } from './solicitacoes.service';
+
+@Module({
+  imports: [AuditoriaModule],
+  controllers: [SolicitacoesController],
+  providers: [SolicitacoesService],
+})
+export class SolicitacoesModule {}
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\solicitacoes\solicitacoes.service.spec.ts
+================================================================================
+
+
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { StatusSolicitacao, TipoUnidade } from '@prisma/client';
+import { SolicitacoesService, VALID_STATUS_TRANSITIONS } from './solicitacoes.service';
+
+describe('VALID_STATUS_TRANSITIONS', () => {
+  it('PENDENTE -> APROVADO Ã© permitido', () => {
+    expect(VALID_STATUS_TRANSITIONS[StatusSolicitacao.PENDENTE]).toContain(
+      StatusSolicitacao.APROVADO,
+    );
+  });
+
+  it('CONCLUIDO -> PENDENTE nÃ£o Ã© permitido', () => {
+    expect(
+      VALID_STATUS_TRANSITIONS[StatusSolicitacao.CONCLUIDO].includes(StatusSolicitacao.PENDENTE),
+    ).toBe(false);
+  });
+});
+
+describe('SolicitacoesService.update transiÃ§Ãµes', () => {
+  it('lanÃ§a BadRequestException com mensagem da especificaÃ§Ã£o quando transiÃ§Ã£o invÃ¡lida', async () => {
+    const prisma: any = {
+      solicitacao: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: '1',
+          status: StatusSolicitacao.CONCLUIDO,
+          cliente: {},
+          unidadesSolicitacao: [],
+        }),
+      },
+    };
+    const auditoria = { registrar: jest.fn() };
+    const service = new SolicitacoesService(prisma, auditoria as any);
+
+    await expect(
+      service.update('1', { status: StatusSolicitacao.PENDENTE }, 'u'),
+    ).rejects.toThrow(BadRequestException);
+
+    try {
+      await service.update('1', { status: StatusSolicitacao.PENDENTE }, 'u');
+    } catch (e: unknown) {
+      expect((e as BadRequestException).message).toContain(
+        'TransiÃ§Ã£o de status invÃ¡lida: de CONCLUIDO para PENDENTE',
+      );
+    }
+  });
+});
+
+describe('SolicitacoesService.addContainer', () => {
+  const auditoria = { registrar: jest.fn().mockResolvedValue({}) };
+  const tx = {
+    unidadeSolicitacao: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+    },
+  };
+  const prisma: {
+    solicitacao: { findFirst: jest.Mock };
+    $transaction: jest.Mock;
+  } = {
+    solicitacao: { findFirst: jest.fn() },
+    $transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+  };
+  const service = new SolicitacoesService(prisma as never, auditoria as never);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.$transaction.mockImplementation((fn: (t: typeof tx) => Promise<unknown>) => fn(tx));
+  });
+
+  it('cria container quando solicitaÃ§Ã£o existe e ISO livre', async () => {
+    prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
+    tx.unidadeSolicitacao.findUnique.mockResolvedValue(null);
+    tx.unidadeSolicitacao.create.mockResolvedValue({
+      id: 'u1',
+      solicitacaoId: 's1',
+      numeroIso: 'TEMU6079348',
+      tipo: TipoUnidade.IMPORT,
+    });
+
+    const r = await service.addContainer(
+      {
+        solicitacaoId: 's1',
+        numeroIso: 'TEMU6079348',
+        tipo: TipoUnidade.IMPORT,
+      },
+      'user-1',
+    );
+    expect(r.numeroIso).toBe('TEMU6079348');
+    expect(auditoria.registrar).toHaveBeenCalled();
+  });
+
+  it('404 quando solicitaÃ§Ã£o nÃ£o existe', async () => {
+    prisma.solicitacao.findFirst.mockResolvedValue(null);
+    await expect(
+      service.addContainer(
+        {
+          solicitacaoId: 'x',
+          numeroIso: 'TEMU6079348',
+          tipo: TipoUnidade.IMPORT,
+        },
+        'u',
+      ),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('conflito quando ISO jÃ¡ existe', async () => {
+    prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
+    tx.unidadeSolicitacao.findUnique.mockResolvedValue({ id: 'other' });
+    await expect(
+      service.addContainer(
+        {
+          solicitacaoId: 's1',
+          numeroIso: 'TEMU6079348',
+          tipo: TipoUnidade.IMPORT,
+        },
+        'u',
+      ),
+    ).rejects.toThrow(ConflictException);
+  });
+});
+
+describe('SolicitacoesService.registerPortaria', () => {
+  const auditoria = { registrar: jest.fn().mockResolvedValue({}) };
+  const tx = {
+    portaria: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+  };
+  const prisma: {
+    solicitacao: { findFirst: jest.Mock };
+    $transaction: jest.Mock;
+  } = {
+    solicitacao: { findFirst: jest.fn() },
+    $transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+  };
+  const service = new SolicitacoesService(prisma as never, auditoria as never);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.$transaction.mockImplementation((fn: (t: typeof tx) => Promise<unknown>) => fn(tx));
+  });
+
+  it('cria portaria quando nÃ£o existe', async () => {
+    prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
+    tx.portaria.findUnique.mockResolvedValue(null);
+    tx.portaria.create.mockResolvedValue({
+      id: 'p1',
+      solicitacaoId: 's1',
+      placaVeiculo: 'ABCD1D34',
+    });
+
+    await service.registerPortaria({ solicitacaoId: 's1', placa: 'ABCD1D34' }, 'u');
+    expect(tx.portaria.create).toHaveBeenCalled();
+    expect(auditoria.registrar).toHaveBeenCalled();
+  });
+
+  it('atualiza portaria quando jÃ¡ existe', async () => {
+    prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
+    tx.portaria.findUnique.mockResolvedValue({
+      id: 'p1',
+      solicitacaoId: 's1',
+      placaVeiculo: 'AAAA1A11',
+    });
+    tx.portaria.update.mockResolvedValue({
+      id: 'p1',
+      solicitacaoId: 's1',
+      placaVeiculo: 'ABCD1D34',
+    });
+
+    await service.registerPortaria({ solicitacaoId: 's1', placa: 'ABCD1D34' }, 'u');
+    expect(tx.portaria.update).toHaveBeenCalled();
+    expect(auditoria.registrar).toHaveBeenCalled();
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\solicitacoes\solicitacoes.service.ts
+================================================================================
+
+
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { AcaoAuditoria, Prisma, StatusSolicitacao } from '@prisma/client';
+import { randomBytes } from 'crypto';
+import { AuditoriaService } from '../auditoria/auditoria.service';
+import { SolicitacaoPaginationDto } from '../common/dtos/pagination.dto';
+import { PrismaService } from '../prisma/prisma.service';
+import { AddUnidadeSolicitacaoDto } from './dto/add-unidade-solicitacao.dto';
+import { CreatePortariaDto } from './dto/create-portaria.dto';
+import { CreateSolicitacaoDto } from './dto/create-solicitacao.dto';
+import { UpdateSolicitacaoDto } from './dto/update-solicitacao.dto';
+
+/** TransiÃ§Ãµes vÃ¡lidas de status (documento Semana 2). */
+export const VALID_STATUS_TRANSITIONS: Record<StatusSolicitacao, StatusSolicitacao[]> = {
+  [StatusSolicitacao.PENDENTE]: [StatusSolicitacao.APROVADO, StatusSolicitacao.REJEITADO],
+  [StatusSolicitacao.APROVADO]: [StatusSolicitacao.CONCLUIDO, StatusSolicitacao.REJEITADO],
+  [StatusSolicitacao.CONCLUIDO]: [],
+  [StatusSolicitacao.REJEITADO]: [],
+};
+
+const TX_OPTIONS = {
+  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+  maxWait: 5000,
+  timeout: 15000,
+} as const;
+
+function gerarProtocolo(): string {
+  const y = new Date().getFullYear();
+  const rand = randomBytes(4).toString('hex').toUpperCase();
+  return `RL-${y}-${rand}`;
+}
+
+@Injectable()
+export class SolicitacoesService {
+  private readonly logger = new Logger(SolicitacoesService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditoria: AuditoriaService,
+  ) {}
+
+  async create(dto: CreateSolicitacaoDto, actorUserId: string) {
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id: dto.clienteId, deletedAt: null },
+    });
+    if (!cliente) {
+      throw new NotFoundException('Cliente nÃ£o encontrado');
+    }
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const protocolo = gerarProtocolo();
+      try {
+        return await this.prisma.$transaction(
+          async (tx) => {
+            const sol = await tx.solicitacao.create({
+              data: {
+                protocolo,
+                clienteId: dto.clienteId,
+                status: StatusSolicitacao.PENDENTE,
+              },
+            });
+            await tx.unidadeSolicitacao.createMany({
+              data: dto.unidades.map((u) => ({
+                solicitacaoId: sol.id,
+                numeroIso: u.numeroIso,
+                tipo: u.tipo,
+              })),
+            });
+            const full = await tx.solicitacao.findUniqueOrThrow({
+              where: { id: sol.id },
+              include: { unidadesSolicitacao: true, cliente: true },
+            });
+            await this.auditoria.registrar(tx, {
+              tabela: 'solicitacoes',
+              registroId: sol.id,
+              acao: AcaoAuditoria.INSERT,
+              userId: actorUserId,
+              dadosDepois: full,
+            });
+            this.logger.log(`SolicitaÃ§Ã£o criada protocolo=${protocolo} id=${sol.id}`);
+            return full;
+          },
+          TX_OPTIONS,
+        );
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new ConflictException('NÃ£o foi possÃ­vel gerar protocolo Ãºnico');
+  }
+
+  async addContainer(dto: AddUnidadeSolicitacaoDto, actorUserId: string) {
+    const solicitacao = await this.prisma.solicitacao.findFirst({
+      where: { id: dto.solicitacaoId, deletedAt: null },
+    });
+    if (!solicitacao) {
+      throw new NotFoundException('SolicitaÃ§Ã£o nÃ£o encontrada');
+    }
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const dup = await tx.unidadeSolicitacao.findUnique({
+          where: { numeroIso: dto.numeroIso },
+        });
+        if (dup) {
+          throw new ConflictException('NÃºmero ISO jÃ¡ cadastrado');
+        }
+        const unit = await tx.unidadeSolicitacao.create({
+          data: {
+            solicitacaoId: dto.solicitacaoId,
+            numeroIso: dto.numeroIso,
+            tipo: dto.tipo,
+          },
+        });
+        await this.auditoria.registrar(tx, {
+          tabela: 'unidades_solicitacao',
+          registroId: unit.id,
+          acao: AcaoAuditoria.INSERT,
+          userId: actorUserId,
+          dadosDepois: unit,
+        });
+        return unit;
+      },
+      TX_OPTIONS,
+    );
+  }
+
+  async registerPortaria(dto: CreatePortariaDto, actorUserId: string) {
+    const solicitacao = await this.prisma.solicitacao.findFirst({
+      where: { id: dto.solicitacaoId, deletedAt: null },
+    });
+    if (!solicitacao) {
+      throw new NotFoundException('SolicitaÃ§Ã£o nÃ£o encontrada');
+    }
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const existing = await tx.portaria.findUnique({
+          where: { solicitacaoId: dto.solicitacaoId },
+        });
+        const row = existing
+          ? await tx.portaria.update({
+              where: { solicitacaoId: dto.solicitacaoId },
+              data: { placaVeiculo: dto.placa },
+            })
+          : await tx.portaria.create({
+              data: {
+                solicitacaoId: dto.solicitacaoId,
+                placaVeiculo: dto.placa,
+              },
+            });
+        await this.auditoria.registrar(tx, {
+          tabela: 'portarias',
+          registroId: row.id,
+          acao: existing ? AcaoAuditoria.UPDATE : AcaoAuditoria.INSERT,
+          userId: actorUserId,
+          dadosAntes: existing !== null ? existing : undefined,
+          dadosDepois: row,
+        });
+        return row;
+      },
+      TX_OPTIONS,
+    );
+  }
+
+  async findAllPaginated(
+    pagination: SolicitacaoPaginationDto,
+    filters: { clienteId?: string; status?: StatusSolicitacao },
+  ) {
+    const page = pagination.page ?? 1;
+    const limit = pagination.limit ?? 10;
+    const orderBy = pagination.orderBy ?? 'createdAt';
+    const order = pagination.order ?? 'desc';
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.SolicitacaoWhereInput = {
+      deletedAt: null,
+      ...(filters.clienteId ? { clienteId: filters.clienteId } : {}),
+      ...(filters.status ? { status: filters.status } : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.solicitacao.findMany({
+        where,
+        skip,
+        take: Math.min(limit, 100),
+        orderBy: { [orderBy]: order },
+        include: { cliente: true, unidadesSolicitacao: true },
+      }),
+      this.prisma.solicitacao.count({ where }),
+    ]);
+
+    return { items, total, page, limit: Math.min(limit, 100), orderBy, order };
+  }
+
+  async findOne(id: string) {
+    const s = await this.prisma.solicitacao.findFirst({
+      where: { id, deletedAt: null },
+      include: { cliente: true, unidadesSolicitacao: true },
+    });
+    if (!s) throw new NotFoundException('SolicitaÃ§Ã£o nÃ£o encontrada');
+    return s;
+  }
+
+  async update(id: string, dto: UpdateSolicitacaoDto, actorUserId: string) {
+    const current = await this.findOne(id);
+    if (dto.status === undefined) {
+      return current;
+    }
+
+    const allowed = VALID_STATUS_TRANSITIONS[current.status];
+    if (!allowed.includes(dto.status)) {
+      throw new BadRequestException(
+        `TransiÃ§Ã£o de status invÃ¡lida: de ${current.status} para ${dto.status}`,
+      );
+    }
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const updated = await tx.solicitacao.update({
+          where: { id },
+          data: { status: dto.status },
+          include: { cliente: true, unidadesSolicitacao: true },
+        });
+        await this.auditoria.registrar(tx, {
+          tabela: 'solicitacoes',
+          registroId: id,
+          acao: AcaoAuditoria.UPDATE,
+          userId: actorUserId,
+          dadosAntes: { status: current.status },
+          dadosDepois: { status: updated.status },
+        });
+        return updated;
+      },
+      TX_OPTIONS,
+    );
+  }
+
+  async remove(id: string, actorUserId: string) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const current = await tx.solicitacao.findFirst({
+          where: { id, deletedAt: null },
+          include: { unidadesSolicitacao: true, cliente: true },
+        });
+        if (!current) throw new NotFoundException('SolicitaÃ§Ã£o nÃ£o encontrada');
+
+        const deletedAt = new Date();
+        const updated = await tx.solicitacao.update({
+          where: { id },
+          data: { deletedAt },
+        });
+
+        await this.auditoria.registrar(tx, {
+          tabela: 'solicitacoes',
+          registroId: id,
+          acao: AcaoAuditoria.DELETE,
+          userId: actorUserId,
+          dadosAntes: current,
+          dadosDepois: updated,
+        });
+
+        return { id, removed: true, deletedAt };
+      },
+      TX_OPTIONS,
+    );
+  }
+}
+
+
+
+================================================================================
+c:\rl-transportes-monorepo\apps\backend\prisma.config.ts
+================================================================================
+
+
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { config as loadEnv } from "dotenv";
+import { defineConfig, env } from "prisma/config";
+
+const configDir = path.dirname(fileURLToPath(import.meta.url));
+loadEnv({ path: path.join(configDir, "../../.env") });
+
+export default defineConfig({
+  schema: "src/prisma/schema.prisma",
+  datasource: {
+    url: env("DATABASE_URL"),
+  },
+  migrations: {
+    path: "prisma/migrations",
+    seed: "npx ts-node prisma/seed.ts",
+  },
+});
+
+
+
+================================================================================
+c:\rl-transportes-monorepo\apps\backend\package.json
+================================================================================
+
+
+{
+  "name": "@rl-transportes/backend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "nest build",
+    "start": "nest start",
+    "start:dev": "nest start --watch",
+    "start:prod": "node dist/main",
+    "start:pm2": "pm2 start dist/main.js --name rl-transportes-backend --time --merge-logs --max-memory-restart 500M",
+    "pm2:monit": "pm2 monit",
+    "pm2:logs": "pm2 logs rl-transportes-backend",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage",
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:validate": "prisma validate",
+    "prisma:seed": "prisma db seed"
+  },
+  "dependencies": {
+    "@nestjs/cache-manager": "^3.1.0",
+    "@nestjs/common": "^11.0.12",
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.0.12",
+    "@nestjs/jwt": "^11.0.0",
+    "@nestjs/mapped-types": "^2.1.0",
+    "@nestjs/passport": "^11.0.5",
+    "@nestjs/platform-express": "^11.0.12",
+    "@nestjs/swagger": "^11.1.0",
+    "@prisma/adapter-pg": "^7.7.0",
+    "@prisma/client": "^7.7.0",
+    "bcrypt": "^5.1.1",
+    "cache-manager": "^7.2.8",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "container-validator": "^1.1.0",
+    "dotenv": "^17.4.2",
+    "express-rate-limit": "^8.3.2",
+    "ioredis": "^5.10.1",
+    "nest-winston": "^1.10.2",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
+    "pg": "^8.20.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "uuid": "^13.0.0",
+    "winston": "^3.19.0"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.5",
+    "@nestjs/schematics": "^11.0.5",
+    "@nestjs/testing": "^11.0.12",
+    "@types/bcrypt": "^5.0.2",
+    "@types/express": "^4.17.21",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.10.0",
+    "@types/passport-jwt": "^4.0.1",
+    "@types/pg": "^8.20.0",
+    "@types/supertest": "^6.0.2",
+    "jest": "^29.7.0",
+    "prisma": "^7.7.0",
+    "source-map-support": "^0.5.21",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.2.5",
+    "ts-loader": "^9.5.1",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.7.0"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "collectCoverageFrom": [
+      "**/*.(t|j)s",
+      "!**/*.module.ts",
+      "!**/main.ts",
+      "!**/*.spec.ts",
+      "!**/dto/**",
+      "!**/*controller.ts",
+      "!**/config/**",
+      "!**/decorators/**",
+      "!**/strategies/**",
+      "!**/middleware/**",
+      "!**/logger/**",
+      "!**/health/**",
+      "!**/validators/**",
+      "!**/redis/**",
+      "!**/prisma/prisma.service.ts",
+      "!**/common/dtos/**",
+      "!**/common/constants/**"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "statements": 70,
+        "branches": 55,
+        "functions": 65,
+        "lines": 70
+      }
+    },
+    "coverageDirectory": "../coverage",
+    "testEnvironment": "node"
+  }
+}
+
+
+
+================================================================================
+migration fase2
+================================================================================
+
+
+-- Fase 2 â€” constraints e alinhamento ao PDF (16/04/2026)
+
+-- UnidadeSolicitacao: ISO Ãºnico global + CASCADE ao excluir solicitaÃ§Ã£o
+DROP INDEX IF EXISTS "unidades_solicitacao_solicitacaoId_idx";
+CREATE INDEX "unidades_solicitacao_solicitacaoId_idx" ON "unidades_solicitacao"("solicitacaoId");
+CREATE UNIQUE INDEX "unidades_solicitacao_numeroIso_key" ON "unidades_solicitacao"("numeroIso");
+ALTER TABLE "unidades_solicitacao" DROP CONSTRAINT IF EXISTS "unidades_solicitacao_solicitacaoId_fkey";
+ALTER TABLE "unidades_solicitacao" ADD CONSTRAINT "unidades_solicitacao_solicitacaoId_fkey" FOREIGN KEY ("solicitacaoId") REFERENCES "solicitacoes"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Portaria: placa, defaults JSON, statusOcr, updatedAt
+ALTER TABLE "portarias" ADD COLUMN IF NOT EXISTS "placaVeiculo" VARCHAR(10);
+UPDATE "portarias" SET "fotosCaminhao" = '[]'::jsonb WHERE "fotosCaminhao" IS NULL;
+UPDATE "portarias" SET "fotosContainer" = '[]'::jsonb WHERE "fotosContainer" IS NULL;
+UPDATE "portarias" SET "fotosLacre" = '[]'::jsonb WHERE "fotosLacre" IS NULL;
+UPDATE "portarias" SET "fotosAvarias" = '[]'::jsonb WHERE "fotosAvarias" IS NULL;
+UPDATE "portarias" SET "statusOcr" = 'pendente' WHERE "statusOcr" IS NULL;
+ALTER TABLE "portarias" ALTER COLUMN "fotosCaminhao" SET DEFAULT '[]'::jsonb;
+ALTER TABLE "portarias" ALTER COLUMN "fotosContainer" SET DEFAULT '[]'::jsonb;
+ALTER TABLE "portarias" ALTER COLUMN "fotosLacre" SET DEFAULT '[]'::jsonb;
+ALTER TABLE "portarias" ALTER COLUMN "fotosAvarias" SET DEFAULT '[]'::jsonb;
+ALTER TABLE "portarias" ALTER COLUMN "statusOcr" SET DEFAULT 'pendente';
+ALTER TABLE "portarias" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "portarias" DROP CONSTRAINT IF EXISTS "portarias_solicitacaoId_fkey";
+ALTER TABLE "portarias" ADD CONSTRAINT "portarias_solicitacaoId_fkey" FOREIGN KEY ("solicitacaoId") REFERENCES "solicitacoes"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Gate: RIC boolean + updatedAt + CASCADE
+ALTER TABLE "gates" ALTER COLUMN "ricAssinado" DROP DEFAULT;
+ALTER TABLE "gates" ALTER COLUMN "ricAssinado" TYPE BOOLEAN USING (
+  CASE
+    WHEN "ricAssinado" IS NULL THEN false
+    WHEN TRIM(LOWER("ricAssinado"::text)) IN ('true', 't', '1', 'sim', 'yes') THEN true
+    ELSE false
+  END
+);
+ALTER TABLE "gates" ALTER COLUMN "ricAssinado" SET DEFAULT false;
+ALTER TABLE "gates" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "gates" DROP CONSTRAINT IF EXISTS "gates_solicitacaoId_fkey";
+ALTER TABLE "gates" ADD CONSTRAINT "gates_solicitacaoId_fkey" FOREIGN KEY ("solicitacaoId") REFERENCES "solicitacoes"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- PÃ¡tio: posiÃ§Ã£o fÃ­sica Ãºnica + updatedAt + CASCADE
+ALTER TABLE "patios" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+CREATE UNIQUE INDEX IF NOT EXISTS "patios_quadra_fileira_posicao_key" ON "patios"("quadra", "fileira", "posicao");
+ALTER TABLE "patios" ALTER COLUMN "quadra" TYPE VARCHAR(10);
+ALTER TABLE "patios" ALTER COLUMN "fileira" TYPE VARCHAR(10);
+ALTER TABLE "patios" ALTER COLUMN "posicao" TYPE VARCHAR(10);
+ALTER TABLE "patios" DROP CONSTRAINT IF EXISTS "patios_solicitacaoId_fkey";
+ALTER TABLE "patios" ADD CONSTRAINT "patios_solicitacaoId_fkey" FOREIGN KEY ("solicitacaoId") REFERENCES "solicitacoes"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- SaÃ­da: CASCADE
+ALTER TABLE "saidas" DROP CONSTRAINT IF EXISTS "saidas_solicitacaoId_fkey";
+ALTER TABLE "saidas" ADD CONSTRAINT "saidas_solicitacaoId_fkey" FOREIGN KEY ("solicitacaoId") REFERENCES "solicitacoes"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Faturamento: perÃ­odo Ãºnico por cliente, status boleto default, updatedAt, CASCADE cliente
+UPDATE "faturamentos" SET "statusBoleto" = 'pendente' WHERE "statusBoleto" IS NULL;
+ALTER TABLE "faturamentos" ALTER COLUMN "statusBoleto" SET DEFAULT 'pendente';
+ALTER TABLE "faturamentos" DROP COLUMN IF EXISTS "statusNfe";
+ALTER TABLE "faturamentos" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+CREATE UNIQUE INDEX IF NOT EXISTS "faturamentos_clienteId_periodo_key" ON "faturamentos"("clienteId", "periodo");
+ALTER TABLE "faturamentos" DROP CONSTRAINT IF EXISTS "faturamentos_clienteId_fkey";
+ALTER TABLE "faturamentos" ADD CONSTRAINT "faturamentos_clienteId_fkey" FOREIGN KEY ("clienteId") REFERENCES "clientes"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- NFS-e: nÃºmero Ãºnico, XML obrigatÃ³rio, updatedAt, CASCADE
+UPDATE "nfs_emitidas" SET "xmlNfe" = '' WHERE "xmlNfe" IS NULL;
+ALTER TABLE "nfs_emitidas" ALTER COLUMN "xmlNfe" SET NOT NULL;
+ALTER TABLE "nfs_emitidas" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+CREATE UNIQUE INDEX IF NOT EXISTS "nfs_emitidas_numeroNfe_key" ON "nfs_emitidas"("numeroNfe");
+ALTER TABLE "nfs_emitidas" DROP CONSTRAINT IF EXISTS "nfs_emitidas_faturamentoId_fkey";
+ALTER TABLE "nfs_emitidas" ADD CONSTRAINT "nfs_emitidas_faturamentoId_fkey" FOREIGN KEY ("faturamentoId") REFERENCES "faturamentos"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Boleto: nÃºmero Ãºnico, data DATE, updatedAt, CASCADE
+ALTER TABLE "boletos" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+CREATE UNIQUE INDEX IF NOT EXISTS "boletos_numeroBoleto_key" ON "boletos"("numeroBoleto");
+ALTER TABLE "boletos" ALTER COLUMN "dataVencimento" SET DATA TYPE DATE USING ("dataVencimento"::date);
+ALTER TABLE "boletos" DROP CONSTRAINT IF EXISTS "boletos_faturamentoId_fkey";
+ALTER TABLE "boletos" ADD CONSTRAINT "boletos_faturamentoId_fkey" FOREIGN KEY ("faturamentoId") REFERENCES "faturamentos"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Auditoria: Ã­ndices usuario e createdAt
+CREATE INDEX IF NOT EXISTS "auditorias_usuario_idx" ON "auditorias"("usuario");
+CREATE INDEX IF NOT EXISTS "auditorias_createdAt_idx" ON "auditorias"("createdAt");
+
+
+
+########################################
+# TESTES (.spec.ts e e2e)
+########################################
+
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\auditoria\auditoria.service.spec.ts
+================================================================================
+
+
+import { AcaoAuditoria } from '@prisma/client';
+import { AuditoriaService } from './auditoria.service';
+import { PrismaService } from '../prisma/prisma.service';
+
+describe('AuditoriaService', () => {
+  let service: AuditoriaService;
+  const create = jest.fn().mockResolvedValue({ id: 'a1' });
+  const findMany = jest.fn().mockResolvedValue([]);
+
+  const prisma = {
+    auditoria: { create, findMany },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new AuditoriaService(prisma as unknown as PrismaService);
+  });
+
+  describe('registrar', () => {
+    it('registra aÃ§Ã£o INSERT', async () => {
+      await service.registrar(prisma as unknown as PrismaService, {
+        tabela: 'clientes',
+        registroId: 'r1',
+        acao: AcaoAuditoria.INSERT,
+        userId: 'u1',
+        dadosDepois: { x: 1 },
+      });
+      expect(create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            tabela: 'clientes',
+            registroId: 'r1',
+            acao: AcaoAuditoria.INSERT,
+          }),
+        }),
+      );
+    });
+
+    it('registra aÃ§Ã£o UPDATE com dados antes/depois', async () => {
+      await service.registrar(prisma as unknown as PrismaService, {
+        tabela: 'clientes',
+        registroId: 'r1',
+        acao: AcaoAuditoria.UPDATE,
+        userId: 'u1',
+        dadosAntes: { a: 0 },
+        dadosDepois: { a: 1 },
+      });
+      expect(create).toHaveBeenCalled();
+    });
+
+    it('registra aÃ§Ã£o DELETE', async () => {
+      await service.registrar(prisma as unknown as PrismaService, {
+        tabela: 'clientes',
+        registroId: 'r1',
+        acao: AcaoAuditoria.DELETE,
+        userId: 'u1',
+        dadosAntes: { id: 'r1' },
+      });
+      expect(create).toHaveBeenCalled();
+    });
+  });
+
+  describe('buscarPorRegistro', () => {
+    it('retorna histÃ³rico de um registro', async () => {
+      findMany.mockResolvedValueOnce([{ id: '1' }]);
+      const r = await service.buscarPorRegistro('clientes', 'r1');
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { tabela: 'clientes', registroId: 'r1' },
+          orderBy: { createdAt: 'desc' },
+        }),
+      );
+      expect(r).toEqual([{ id: '1' }]);
+    });
+  });
+
+  describe('buscarPorUsuario', () => {
+    it('retorna aÃ§Ãµes de um usuÃ¡rio', async () => {
+      findMany.mockResolvedValueOnce([{ id: '1' }]);
+      const r = await service.buscarPorUsuario('u1', 50);
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: 'u1' },
+          take: 50,
+        }),
+      );
+      expect(r).toEqual([{ id: '1' }]);
+    });
+  });
+
+  describe('buscarPorPeriodo', () => {
+    it('filtra por intervalo e tabela opcional', async () => {
+      const i = new Date('2026-01-01');
+      const f = new Date('2026-12-31');
+      await service.buscarPorPeriodo(i, f, 'clientes');
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            createdAt: { gte: i, lte: f },
+            tabela: 'clientes',
+          },
+        }),
+      );
+    });
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\auth\auth.service.spec.ts
+================================================================================
+
+
+import { JwtService } from '@nestjs/jwt';
+import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
+import { HttpException, HttpStatus, UnauthorizedException } from '@nestjs/common';
+import { Role } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
+import { AuthService } from './auth.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
+
+describe('AuthService', () => {
+  let service: AuthService;
+  const prisma = {
+    user: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+    },
+  };
+
+  const redis = {
+    incr: jest.fn(),
+    expire: jest.fn(),
+    del: jest.fn(),
+    get: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    redis.incr.mockResolvedValue(1);
+    redis.expire.mockResolvedValue(1);
+    redis.del.mockResolvedValue(1);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AuthService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: RedisService, useValue: redis },
+        {
+          provide: JwtService,
+          useValue: {
+            sign: jest.fn().mockReturnValue('token'),
+            verify: jest.fn(),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((k: string, d?: string) => {
+              if (k === 'JWT_EXPIRES_IN') return '1h';
+              if (k === 'JWT_REFRESH_EXPIRES_IN') return '7d';
+              return d;
+            }),
+            getOrThrow: jest.fn((k: string) => {
+              if (k === 'JWT_REFRESH_SECRET') return 'refresh-secret';
+              return 'x';
+            }),
+          },
+        },
+      ],
+    }).compile();
+
+    service = module.get(AuthService);
+    jest.clearAllMocks();
+    redis.incr.mockResolvedValue(1);
+    redis.expire.mockResolvedValue(1);
+    redis.del.mockResolvedValue(1);
+  });
+
+  it('validateUser retorna null se senha errada', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: '1',
+      email: 'a@a.com',
+      password: await bcrypt.hash('ok', 4),
+      role: Role.ADMIN,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const u = await service.validateUser('a@a.com', 'wrong');
+    expect(u).toBeNull();
+  });
+
+  it('login lanÃ§a Unauthorized se credenciais invÃ¡lidas', async () => {
+    redis.incr.mockResolvedValue(1);
+    prisma.user.findUnique.mockResolvedValue(null);
+    await expect(service.login('x@x.com', 'y')).rejects.toThrow(UnauthorizedException);
+    expect(redis.del).not.toHaveBeenCalled();
+  });
+
+  it('login lanÃ§a 429 apÃ³s mais de 5 tentativas', async () => {
+    redis.incr.mockResolvedValue(6);
+    const err = await service.login('a@a.com', 'x').then(
+      () => {
+        throw new Error('esperava rejeiÃ§Ã£o');
+      },
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(HttpException);
+    expect((err as HttpException).getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\clientes\clientes.service.spec.ts
+================================================================================
+
+
+import { ConflictException, NotFoundException } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
+import { AcaoAuditoria, Prisma, TipoCliente } from '@prisma/client';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { AuditoriaService } from '../auditoria/auditoria.service';
+import { ClientesService } from './clientes.service';
+import { PrismaService } from '../prisma/prisma.service';
+
+describe('ClientesService', () => {
+  let service: ClientesService;
+
+  const auditoria = { registrar: jest.fn().mockResolvedValue({}) };
+  const cache = {
+    get: jest.fn().mockResolvedValue(null),
+    set: jest.fn().mockResolvedValue(undefined),
+    del: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const prisma = {
+    $transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    cliente: {
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
+      update: jest.fn(),
+    },
+  };
+
+  const tx = {
+    cliente: {
+      findFirst: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+    auditoria: { create: jest.fn() },
+  };
+
+  beforeEach(async () => {
+    prisma.$transaction.mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx));
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ClientesService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: AuditoriaService, useValue: auditoria },
+        { provide: CACHE_MANAGER, useValue: cache },
+      ],
+    }).compile();
+
+    service = module.get(ClientesService);
+    jest.clearAllMocks();
+    prisma.$transaction.mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx));
+  });
+
+  const clienteRow = (over: Partial<Record<string, unknown>> = {}) => ({
+    id: 'c1',
+    nome: 'X',
+    tipo: TipoCliente.PF,
+    cpfCnpj: '11144477735',
+    email: 'x@x.com',
+    telefone: '11999999999',
+    endereco: 'Rua',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    deletedAt: null,
+    ...over,
+  });
+
+  describe('create', () => {
+    it('deve criar cliente PF vÃ¡lido', async () => {
+      tx.cliente.findFirst.mockResolvedValue(null);
+      tx.cliente.create.mockResolvedValue(clienteRow());
+
+      await service.create(
+        {
+          nome: 'X',
+          tipo: TipoCliente.PF,
+          cpfCnpj: '11144477735',
+          email: 'x@x.com',
+          telefone: '11999999999',
+          endereco: 'Rua',
+        },
+        'user-1',
+      );
+
+      expect(tx.cliente.create).toHaveBeenCalled();
+      expect(auditoria.registrar).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          tabela: 'clientes',
+          acao: AcaoAuditoria.INSERT,
+          userId: 'user-1',
+        }),
+      );
+    });
+
+    it('deve criar cliente PJ vÃ¡lido', async () => {
+      tx.cliente.findFirst.mockResolvedValue(null);
+      tx.cliente.create.mockResolvedValue(clienteRow({ tipo: TipoCliente.PJ, cpfCnpj: '12345678000195' }));
+
+      await service.create(
+        {
+          nome: 'Empresa',
+          tipo: TipoCliente.PJ,
+          cpfCnpj: '12345678000195',
+          email: 'pj@x.com',
+          telefone: '11999999999',
+          endereco: 'Rua',
+        },
+        'user-1',
+      );
+
+      expect(tx.cliente.create).toHaveBeenCalled();
+    });
+
+    it('deve registrar auditoria em INSERT', async () => {
+      tx.cliente.findFirst.mockResolvedValue(null);
+      tx.cliente.create.mockResolvedValue(clienteRow());
+      await service.create(
+        {
+          nome: 'X',
+          tipo: TipoCliente.PF,
+          cpfCnpj: '11144477735',
+          email: 'x@x.com',
+          telefone: '11999999999',
+          endereco: 'Rua',
+        },
+        'u',
+      );
+      expect(auditoria.registrar).toHaveBeenCalled();
+    });
+
+    it('deve rejeitar cpfCnpj duplicado', async () => {
+      tx.cliente.findFirst.mockResolvedValue(clienteRow());
+      await expect(
+        service.create(
+          {
+            nome: 'Y',
+            tipo: TipoCliente.PF,
+            cpfCnpj: '11144477735',
+            email: 'y@x.com',
+            telefone: '11',
+            endereco: 'Rua',
+          },
+          'u',
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('deve rejeitar email duplicado', async () => {
+      tx.cliente.findFirst.mockResolvedValue(clienteRow({ email: 'dup@x.com' }));
+      await expect(
+        service.create(
+          {
+            nome: 'Y',
+            tipo: TipoCliente.PF,
+            cpfCnpj: '52998224725',
+            email: 'dup@x.com',
+            telefone: '11',
+            endereco: 'Rua',
+          },
+          'u',
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('findAllPaginated', () => {
+    it('deve retornar lista de clientes', async () => {
+      prisma.cliente.findMany.mockResolvedValue([clienteRow()]);
+      prisma.cliente.count.mockResolvedValue(1);
+      const r = await service.findAllPaginated({ page: 1, limit: 10 });
+      expect(r.items.length).toBe(1);
+      expect(r.total).toBe(1);
+    });
+
+    it('deve retornar lista vazia se nÃ£o houver clientes', async () => {
+      prisma.cliente.findMany.mockResolvedValue([]);
+      prisma.cliente.count.mockResolvedValue(0);
+      const r = await service.findAllPaginated({});
+      expect(r.items).toEqual([]);
+      expect(r.total).toBe(0);
+    });
+
+    it('deve aplicar paginaÃ§Ã£o (offset, limit)', async () => {
+      prisma.cliente.findMany.mockResolvedValue([]);
+      prisma.cliente.count.mockResolvedValue(0);
+      await service.findAllPaginated({ page: 2, limit: 5 });
+      expect(prisma.cliente.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 5,
+          take: 5,
+        }),
+      );
+    });
+  });
+
+  describe('findOne', () => {
+    it('deve retornar cliente pelo ID', async () => {
+      const c = clienteRow();
+      prisma.cliente.findFirst.mockResolvedValue(c);
+      const r = await service.findOne('c1');
+      expect(r).toEqual(c);
+    });
+
+    it('deve lanÃ§ar NotFoundException se ID nÃ£o existir', async () => {
+      prisma.cliente.findFirst.mockResolvedValue(null);
+      await expect(service.findOne('bad')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('update', () => {
+    it('deve atualizar cliente', async () => {
+      const cur = clienteRow();
+      const upd = { ...cur, nome: 'Novo' };
+      tx.cliente.findFirst.mockResolvedValue(cur);
+      tx.cliente.update.mockResolvedValue(upd);
+
+      const r = await service.update('c1', { nome: 'Novo' }, 'u1');
+      expect(r.nome).toBe('Novo');
+      expect(cache.del).toHaveBeenCalledWith('cliente:c1');
+    });
+
+    it('deve registrar auditoria em UPDATE', async () => {
+      const cur = clienteRow();
+      tx.cliente.findFirst.mockResolvedValue(cur);
+      tx.cliente.update.mockResolvedValue(cur);
+
+      await service.update('c1', { telefone: '11888888888' }, 'u1');
+      expect(auditoria.registrar).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          tabela: 'clientes',
+          acao: AcaoAuditoria.UPDATE,
+        }),
+      );
+    });
+
+    it('deve lanÃ§ar NotFoundException se ID nÃ£o existir', async () => {
+      tx.cliente.findFirst.mockResolvedValue(null);
+      await expect(service.update('bad', { nome: 'X' }, 'u')).rejects.toThrow(NotFoundException);
+    });
+
+    it('deve rejeitar cpfCnpj duplicado apÃ³s update', async () => {
+      tx.cliente.findFirst.mockResolvedValue(
+        clienteRow({ tipo: TipoCliente.PJ, cpfCnpj: '12345678000195' }),
+      );
+      tx.cliente.update.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('unique', {
+          code: 'P2002',
+          clientVersion: 'test',
+        }),
+      );
+
+      await expect(
+        service.update('c1', { cpfCnpj: '11222333000181' }, 'u'),
+      ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('remove', () => {
+    it('deve aplicar soft delete no cliente', async () => {
+      const cur = clienteRow();
+      tx.cliente.findFirst.mockResolvedValue(cur);
+      tx.cliente.update.mockResolvedValue({ ...cur, deletedAt: new Date() });
+
+      const r = await service.remove('c1', 'u1');
+      expect(r.removed).toBe(true);
+      expect(cache.del).toHaveBeenCalled();
+    });
+
+    it('deve registrar auditoria em DELETE', async () => {
+      const cur = clienteRow();
+      tx.cliente.findFirst.mockResolvedValue(cur);
+      tx.cliente.update.mockResolvedValue({ ...cur, deletedAt: new Date() });
+
+      await service.remove('c1', 'u1');
+      expect(auditoria.registrar).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({
+          tabela: 'clientes',
+          acao: AcaoAuditoria.DELETE,
+        }),
+      );
+    });
+
+    it('deve lanÃ§ar NotFoundException se ID nÃ£o existir', async () => {
+      tx.cliente.findFirst.mockResolvedValue(null);
+      await expect(service.remove('bad', 'u')).rejects.toThrow(NotFoundException);
+    });
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\guards\permissions.guard.spec.ts
+================================================================================
+
+
+import { Reflector } from '@nestjs/core';
+import { Role } from '@prisma/client';
+import { PermissionsGuard } from './permissions.guard';
+import type { AuthUser } from '../decorators/current-user.decorator';
+describe('PermissionsGuard', () => {
+  const reflector = { getAllAndOverride: jest.fn() };
+  const guard = new PermissionsGuard(reflector as unknown as Reflector);
+
+  const ctx = (user: AuthUser | undefined) =>
+    ({
+      switchToHttp: () => ({
+        getRequest: () => ({ user }),
+      }),
+      getHandler: () => jest.fn(),
+      getClass: () => jest.fn(),
+    }) as any;
+
+  it('permite quando nÃ£o hÃ¡ permissÃµes exigidas', () => {
+    (reflector.getAllAndOverride as jest.Mock).mockReturnValue(undefined);
+    expect(guard.canActivate(ctx(undefined))).toBe(true);
+  });
+
+  it('ADMIN passa sempre', () => {
+    (reflector.getAllAndOverride as jest.Mock).mockReturnValue(['clientes:excluir']);
+    const user: AuthUser = {
+      id: '1',
+      email: 'a@a.com',
+      role: Role.ADMIN,
+      permissions: [],
+    };
+    expect(guard.canActivate(ctx(user))).toBe(true);
+  });
+
+  it('nega sem permissÃ£o', () => {
+    (reflector.getAllAndOverride as jest.Mock).mockReturnValue(['clientes:excluir']);
+    const user: AuthUser = {
+      id: '1',
+      email: 'a@a.com',
+      role: Role.OPERADOR_PATIO,
+      permissions: ['clientes:ler'],
+    };
+    expect(() => guard.canActivate(ctx(user))).toThrow();
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\pipes\cpf-cnpj-validation.pipe.spec.ts
+================================================================================
+
+
+import { BadRequestException } from '@nestjs/common';
+import { CpfCnpjValidationPipe } from './cpf-cnpj-validation.pipe';
+
+describe('CpfCnpjValidationPipe', () => {
+  const pipe = new CpfCnpjValidationPipe();
+
+  describe('CPF vÃ¡lido', () => {
+    it('aceita CPF vÃ¡lido (11 dÃ­gitos)', () => {
+      const b = { cpfCnpj: '11144477735' };
+      expect(pipe.transform(b)).toBe(b);
+      expect(b.cpfCnpj).toBe('11144477735');
+    });
+
+    it('aceita CPF formatado e remove caracteres', () => {
+      const b = { cpfCnpj: '111.444.777-35' };
+      pipe.transform(b);
+      expect(b.cpfCnpj).toBe('11144477735');
+    });
+
+    it('rejeita CPF com dÃ­gito verificador incorreto', () => {
+      expect(() => pipe.transform({ cpfCnpj: '11144477736' })).toThrow(BadRequestException);
+    });
+
+    it('rejeita CPF com sequÃªncia igual (11111111111)', () => {
+      expect(() => pipe.transform({ cpfCnpj: '11111111111' })).toThrow(BadRequestException);
+    });
+  });
+
+  describe('CNPJ vÃ¡lido', () => {
+    it('aceita CNPJ vÃ¡lido (14 dÃ­gitos)', () => {
+      const b = { cpfCnpj: '12345678000195' };
+      pipe.transform(b);
+      expect(b.cpfCnpj).toBe('12345678000195');
+    });
+
+    it('aceita CNPJ formatado e remove caracteres', () => {
+      const b = { cpfCnpj: '12.345.678/0001-95' };
+      pipe.transform(b);
+      expect(b.cpfCnpj).toBe('12345678000195');
+    });
+
+    it('rejeita CNPJ com dÃ­gito verificador incorreto', () => {
+      expect(() => pipe.transform({ cpfCnpj: '12345678000196' })).toThrow(BadRequestException);
+    });
+
+    it('rejeita CNPJ com sequÃªncia igual', () => {
+      expect(() =>
+        pipe.transform({ cpfCnpj: '11111111111111' }),
+      ).toThrow(BadRequestException);
+    });
+  });
+
+  describe('ValidaÃ§Ãµes gerais', () => {
+    it('retorna o objeto com cpfCnpj normalizado', () => {
+      const b = { cpfCnpj: '529.982.247-25', nome: 'x' };
+      const out = pipe.transform(b);
+      expect(out).toBe(b);
+      expect((out as { cpfCnpj: string }).cpfCnpj).toBe('52998224725');
+    });
+
+    it('rejeita documento com menos de 11 dÃ­gitos', () => {
+      expect(() => pipe.transform({ cpfCnpj: '123456789' })).toThrow(BadRequestException);
+    });
+
+    it('rejeita documento com mais de 14 dÃ­gitos', () => {
+      expect(() =>
+        pipe.transform({ cpfCnpj: '123456789012345' }),
+      ).toThrow(BadRequestException);
+    });
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\pipes\iso6346-validation.pipe.spec.ts
+================================================================================
+
+
+import { BadRequestException } from '@nestjs/common';
+import { Iso6346ValidationPipe } from './iso6346-validation.pipe';
+
+describe('Iso6346ValidationPipe', () => {
+  const pipe = new Iso6346ValidationPipe();
+
+  describe('ISO 6346 vÃ¡lido', () => {
+    it('aceita ISO vÃ¡lido (TEMU6079348)', () => {
+      const b = { numeroIso: 'TEMU6079348' };
+      expect(pipe.transform(b)).toBe(b);
+      expect(b.numeroIso).toBe('TEMU6079348');
+    });
+
+    it('converte para UPPERCASE', () => {
+      const b = { numeroIso: 'temu6079348' };
+      pipe.transform(b);
+      expect(b.numeroIso).toBe('TEMU6079348');
+    });
+
+    it('rejeita ISO com check digit invÃ¡lido', () => {
+      expect(() => pipe.transform({ numeroIso: 'TEMU6079349' })).toThrow(BadRequestException);
+    });
+  });
+
+  describe('ValidaÃ§Ãµes', () => {
+    it('rejeita comprimento invÃ¡lido', () => {
+      expect(() => pipe.transform({ numeroIso: 'TEMU60793' })).toThrow(BadRequestException);
+    });
+
+    it('rejeita padrÃ£o invÃ¡lido (3 letras)', () => {
+      expect(() => pipe.transform({ numeroIso: 'ABC12345670' })).toThrow(BadRequestException);
+    });
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\pipes\mercosul-plate-validation.pipe.spec.ts
+================================================================================
+
+
+import { BadRequestException } from '@nestjs/common';
+import { MercosulPlateValidationPipe } from './mercosul-plate-validation.pipe';
+
+describe('MercosulPlateValidationPipe', () => {
+  const pipe = new MercosulPlateValidationPipe();
+
+  describe('Placa Mercosul vÃ¡lida', () => {
+    it('aceita padrÃ£o com hÃ­fen (ABCD-1D34)', () => {
+      const b = { placa: 'ABCD-1D34' };
+      pipe.transform(b);
+      expect(b.placa).toBe('ABCD1D34');
+    });
+
+    it('aceita padrÃ£o sem hÃ­fen (ABCD1D34)', () => {
+      const b = { placa: 'ABCD1D34' };
+      pipe.transform(b);
+      expect(b.placa).toBe('ABCD1D34');
+    });
+
+    it('converte para UPPERCASE', () => {
+      const b = { placa: 'abcd-1d34' };
+      pipe.transform(b);
+      expect(b.placa).toBe('ABCD1D34');
+    });
+
+    it('remove hÃ­fen e normaliza', () => {
+      const b = { placa: ' X Y Z W - 9 A 1 2 ' };
+      pipe.transform(b);
+      expect(b.placa).toBe('XYZW9A12');
+    });
+  });
+
+  describe('ValidaÃ§Ãµes', () => {
+    it('rejeita padrÃ£o invÃ¡lido (< 4 letras iniciais efetivas)', () => {
+      expect(() => pipe.transform({ placa: 'ABC-1D34' })).toThrow(BadRequestException);
+    });
+
+    it('rejeita padrÃ£o invÃ¡lido (letra na 2Âª posiÃ§Ã£o da parte numÃ©rica)', () => {
+      expect(() => pipe.transform({ placa: 'ABCD-D134' })).toThrow(BadRequestException);
+    });
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\utils\br-documents.spec.ts
+================================================================================
+
+
+import { onlyDigits, validateCnpjDigits, validateCpfDigits } from './br-documents';
+
+describe('br-documents', () => {
+  it('onlyDigits remove mÃ¡scara', () => {
+    expect(onlyDigits('123.456.789-09')).toBe('12345678909');
+  });
+
+  it('valida CPF conhecido', () => {
+    expect(validateCpfDigits('52998224725')).toBe(true);
+  });
+
+  it('rejeita CPF invÃ¡lido', () => {
+    expect(validateCpfDigits('11111111111')).toBe(false);
+  });
+
+  it('valida CNPJ conhecido', () => {
+    expect(validateCnpjDigits('11222333000181')).toBe(true);
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\common\utils\mercosul.spec.ts
+================================================================================
+
+
+import { isValidPlacaMercosulOuAntiga } from './mercosul';
+
+describe('mercosul', () => {
+  it('aceita Mercosul sem hÃ­fen', () => {
+    expect(isValidPlacaMercosulOuAntiga('ABC1D23')).toBe(true);
+  });
+
+  it('aceita formato antigo', () => {
+    expect(isValidPlacaMercosulOuAntiga('ABC1234')).toBe(true);
+  });
+
+  it('rejeita vazio', () => {
+    expect(isValidPlacaMercosulOuAntiga('')).toBe(false);
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\src\solicitacoes\solicitacoes.service.spec.ts
+================================================================================
+
+
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { StatusSolicitacao, TipoUnidade } from '@prisma/client';
+import { SolicitacoesService, VALID_STATUS_TRANSITIONS } from './solicitacoes.service';
+
+describe('VALID_STATUS_TRANSITIONS', () => {
+  it('PENDENTE -> APROVADO Ã© permitido', () => {
+    expect(VALID_STATUS_TRANSITIONS[StatusSolicitacao.PENDENTE]).toContain(
+      StatusSolicitacao.APROVADO,
+    );
+  });
+
+  it('CONCLUIDO -> PENDENTE nÃ£o Ã© permitido', () => {
+    expect(
+      VALID_STATUS_TRANSITIONS[StatusSolicitacao.CONCLUIDO].includes(StatusSolicitacao.PENDENTE),
+    ).toBe(false);
+  });
+});
+
+describe('SolicitacoesService.update transiÃ§Ãµes', () => {
+  it('lanÃ§a BadRequestException com mensagem da especificaÃ§Ã£o quando transiÃ§Ã£o invÃ¡lida', async () => {
+    const prisma: any = {
+      solicitacao: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: '1',
+          status: StatusSolicitacao.CONCLUIDO,
+          cliente: {},
+          unidadesSolicitacao: [],
+        }),
+      },
+    };
+    const auditoria = { registrar: jest.fn() };
+    const service = new SolicitacoesService(prisma, auditoria as any);
+
+    await expect(
+      service.update('1', { status: StatusSolicitacao.PENDENTE }, 'u'),
+    ).rejects.toThrow(BadRequestException);
+
+    try {
+      await service.update('1', { status: StatusSolicitacao.PENDENTE }, 'u');
+    } catch (e: unknown) {
+      expect((e as BadRequestException).message).toContain(
+        'TransiÃ§Ã£o de status invÃ¡lida: de CONCLUIDO para PENDENTE',
+      );
+    }
+  });
+});
+
+describe('SolicitacoesService.addContainer', () => {
+  const auditoria = { registrar: jest.fn().mockResolvedValue({}) };
+  const tx = {
+    unidadeSolicitacao: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+    },
+  };
+  const prisma: {
+    solicitacao: { findFirst: jest.Mock };
+    $transaction: jest.Mock;
+  } = {
+    solicitacao: { findFirst: jest.fn() },
+    $transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+  };
+  const service = new SolicitacoesService(prisma as never, auditoria as never);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.$transaction.mockImplementation((fn: (t: typeof tx) => Promise<unknown>) => fn(tx));
+  });
+
+  it('cria container quando solicitaÃ§Ã£o existe e ISO livre', async () => {
+    prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
+    tx.unidadeSolicitacao.findUnique.mockResolvedValue(null);
+    tx.unidadeSolicitacao.create.mockResolvedValue({
+      id: 'u1',
+      solicitacaoId: 's1',
+      numeroIso: 'TEMU6079348',
+      tipo: TipoUnidade.IMPORT,
+    });
+
+    const r = await service.addContainer(
+      {
+        solicitacaoId: 's1',
+        numeroIso: 'TEMU6079348',
+        tipo: TipoUnidade.IMPORT,
+      },
+      'user-1',
+    );
+    expect(r.numeroIso).toBe('TEMU6079348');
+    expect(auditoria.registrar).toHaveBeenCalled();
+  });
+
+  it('404 quando solicitaÃ§Ã£o nÃ£o existe', async () => {
+    prisma.solicitacao.findFirst.mockResolvedValue(null);
+    await expect(
+      service.addContainer(
+        {
+          solicitacaoId: 'x',
+          numeroIso: 'TEMU6079348',
+          tipo: TipoUnidade.IMPORT,
+        },
+        'u',
+      ),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('conflito quando ISO jÃ¡ existe', async () => {
+    prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
+    tx.unidadeSolicitacao.findUnique.mockResolvedValue({ id: 'other' });
+    await expect(
+      service.addContainer(
+        {
+          solicitacaoId: 's1',
+          numeroIso: 'TEMU6079348',
+          tipo: TipoUnidade.IMPORT,
+        },
+        'u',
+      ),
+    ).rejects.toThrow(ConflictException);
+  });
+});
+
+describe('SolicitacoesService.registerPortaria', () => {
+  const auditoria = { registrar: jest.fn().mockResolvedValue({}) };
+  const tx = {
+    portaria: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+  };
+  const prisma: {
+    solicitacao: { findFirst: jest.Mock };
+    $transaction: jest.Mock;
+  } = {
+    solicitacao: { findFirst: jest.fn() },
+    $transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+  };
+  const service = new SolicitacoesService(prisma as never, auditoria as never);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.$transaction.mockImplementation((fn: (t: typeof tx) => Promise<unknown>) => fn(tx));
+  });
+
+  it('cria portaria quando nÃ£o existe', async () => {
+    prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
+    tx.portaria.findUnique.mockResolvedValue(null);
+    tx.portaria.create.mockResolvedValue({
+      id: 'p1',
+      solicitacaoId: 's1',
+      placaVeiculo: 'ABCD1D34',
+    });
+
+    await service.registerPortaria({ solicitacaoId: 's1', placa: 'ABCD1D34' }, 'u');
+    expect(tx.portaria.create).toHaveBeenCalled();
+    expect(auditoria.registrar).toHaveBeenCalled();
+  });
+
+  it('atualiza portaria quando jÃ¡ existe', async () => {
+    prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
+    tx.portaria.findUnique.mockResolvedValue({
+      id: 'p1',
+      solicitacaoId: 's1',
+      placaVeiculo: 'AAAA1A11',
+    });
+    tx.portaria.update.mockResolvedValue({
+      id: 'p1',
+      solicitacaoId: 's1',
+      placaVeiculo: 'ABCD1D34',
+    });
+
+    await service.registerPortaria({ solicitacaoId: 's1', placa: 'ABCD1D34' }, 'u');
+    expect(tx.portaria.update).toHaveBeenCalled();
+    expect(auditoria.registrar).toHaveBeenCalled();
+  });
+});
+
+
+
+================================================================================
+C:\rl-transportes-monorepo\apps\backend\test\app.e2e-spec.ts
+================================================================================
+
+
+import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import * as request from 'supertest';
+import { AppModule } from '../src/app.module';
+
+describe('App (e2e)', () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+    );
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('/health (GET)', () => {
+    return request(app.getHttpServer()).get('/health').expect(200).expect((res) => {
+      expect(res.body.status).toBe('ok');
+    });
+  });
+});
+

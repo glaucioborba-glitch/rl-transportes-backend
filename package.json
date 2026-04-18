@@ -1,0 +1,14 @@
+{
+    "name": "rl-transportes-monorepo",
+    "version": "1.0.0",
+    "description": "Sistema de Gerenciamento RL Transportes",
+    "private": true,
+    "scripts": {
+      "install:all": "npm install && cd apps/backend && npm install",
+      "dev:backend": "cd apps/backend && npm run start:dev",
+      "build:all": "cd apps/backend && npm run build",
+      "test:all": "cd apps/backend && npm run test && npm run test:e2e",
+      "prisma:validate": "cd apps/backend && npx prisma validate",
+      "prisma:generate": "cd apps/backend && npx prisma generate"
+    }
+  }
