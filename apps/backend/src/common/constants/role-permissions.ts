@@ -13,6 +13,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'solicitacoes:excluir',
     'solicitacoes:portaria',
     'users:criar',
+    'auditoria:ler',
   ],
   [Role.GERENTE]: [
     'clientes:criar',
@@ -24,6 +25,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'solicitacoes:atualizar',
     'solicitacoes:excluir',
     'solicitacoes:portaria',
+    'auditoria:ler',
   ],
   [Role.OPERADOR_PORTARIA]: [
     'clientes:ler',

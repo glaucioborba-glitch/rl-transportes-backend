@@ -72,8 +72,10 @@ async function bootstrap() {
       'access-token',
     )
     .addTag('auth', 'Autenticação')
+    .addTag('health', 'Disponibilidade')
     .addTag('clientes', 'Gerenciamento de Clientes')
     .addTag('solicitacoes', 'Gerenciamento de Solicitações')
+    .addTag('auditoria', 'Auditoria e rastreabilidade')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

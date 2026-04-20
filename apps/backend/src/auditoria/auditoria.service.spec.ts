@@ -7,8 +7,10 @@ describe('AuditoriaService', () => {
   const create = jest.fn().mockResolvedValue({ id: 'a1' });
   const findMany = jest.fn().mockResolvedValue([]);
 
+  const count = jest.fn().mockResolvedValue(0);
+
   const prisma = {
-    auditoria: { create, findMany },
+    auditoria: { create, findMany, count },
   };
 
   beforeEach(() => {
@@ -81,11 +83,27 @@ describe('AuditoriaService', () => {
       const r = await service.buscarPorUsuario('u1', 50);
       expect(findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { usuario: { contains: 'u1' } },
+          where: { usuario: 'u1' },
           take: 50,
         }),
       );
       expect(r).toEqual([{ id: '1' }]);
+    });
+  });
+
+  describe('buscarComFiltros', () => {
+    it('pagina e filtra por tabela', async () => {
+      findMany.mockResolvedValueOnce([]);
+      count.mockResolvedValueOnce(0);
+      await service.buscarComFiltros({ page: 2, limit: 10, tabela: 'clientes' });
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { tabela: 'clientes' },
+          skip: 10,
+          take: 10,
+        }),
+      );
+      expect(count).toHaveBeenCalledWith({ where: { tabela: 'clientes' } });
     });
   });
 
