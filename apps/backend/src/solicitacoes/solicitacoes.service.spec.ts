@@ -24,7 +24,7 @@ describe('SolicitacoesService.update transições', () => {
           id: '1',
           status: StatusSolicitacao.CONCLUIDO,
           cliente: {},
-          unidadesSolicitacao: [],
+          unidades: [],
         }),
       },
     };
@@ -48,7 +48,7 @@ describe('SolicitacoesService.update transições', () => {
 describe('SolicitacoesService.addContainer', () => {
   const auditoria = { registrar: jest.fn().mockResolvedValue({}) };
   const tx = {
-    unidadeSolicitacao: {
+    unidade: {
       findUnique: jest.fn(),
       create: jest.fn(),
     },
@@ -69,8 +69,8 @@ describe('SolicitacoesService.addContainer', () => {
 
   it('cria container quando solicitação existe e ISO livre', async () => {
     prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
-    tx.unidadeSolicitacao.findUnique.mockResolvedValue(null);
-    tx.unidadeSolicitacao.create.mockResolvedValue({
+    tx.unidade.findUnique.mockResolvedValue(null);
+    tx.unidade.create.mockResolvedValue({
       id: 'u1',
       solicitacaoId: 's1',
       numeroIso: 'TEMU6079348',
@@ -105,7 +105,7 @@ describe('SolicitacoesService.addContainer', () => {
 
   it('conflito quando ISO já existe', async () => {
     prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
-    tx.unidadeSolicitacao.findUnique.mockResolvedValue({ id: 'other' });
+    tx.unidade.findUnique.mockResolvedValue({ id: 'other' });
     await expect(
       service.addContainer(
         {

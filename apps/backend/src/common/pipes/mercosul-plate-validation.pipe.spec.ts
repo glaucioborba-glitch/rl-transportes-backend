@@ -31,8 +31,8 @@ describe('MercosulPlateValidationPipe', () => {
   });
 
   describe('Validações', () => {
-    it('rejeita padrão inválido (< 4 letras iniciais efetivas)', () => {
-      expect(() => pipe.transform({ placa: 'ABC-1D34' })).toThrow(BadRequestException);
+    it('rejeita padrão inválido (menos de 3 letras iniciais)', () => {
+      expect(() => pipe.transform({ placa: 'AB-1D34' })).toThrow(BadRequestException);
     });
 
     it('rejeita padrão inválido (letra na 2ª posição da parte numérica)', () => {

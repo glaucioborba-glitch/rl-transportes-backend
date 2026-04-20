@@ -1,0 +1,137 @@
+RL Transportes - Estrutura do repositorio (pastas e arquivos)
+Gerado em: 2026-04-20 18:01:27
+Excluidos (volume/ruido): .git, node_modules, dist, build, .next, coverage, .turbo, __pycache__, .pytest_cache, .venv, venv
+
+|-- .github/
+|   -- workflows/
+|-- apps/
+|   |-- backend/
+|   |   |-- logs/
+|   |   |   |-- combined.log
+|   |   |   -- error.log
+|   |   |-- prisma/
+|   |   |   |-- migrations/
+|   |   |   |   |-- 20260415213744_fase1_nest_init/
+|   |   |   |   |   -- migration.sql
+|   |   |   |   |-- 20260415225156_add_soft_delete/
+|   |   |   |   |   -- migration.sql
+|   |   |   |   |-- 20260416140000_fase2_pdf_constraints/
+|   |   |   |   |   -- migration.sql
+|   |   |   |   -- migration_lock.toml
+|   |   |   |-- schema.prisma
+|   |   |   -- seed.ts
+|   |   |-- src/
+|   |   |   |-- auditoria/
+|   |   |   |   |-- auditoria.module.ts
+|   |   |   |   |-- auditoria.service.spec.ts
+|   |   |   |   -- auditoria.service.ts
+|   |   |   |-- auth/
+|   |   |   |   |-- dto/
+|   |   |   |   |   |-- create-user.dto.ts
+|   |   |   |   |   |-- login.dto.ts
+|   |   |   |   |   -- refresh.dto.ts
+|   |   |   |   |-- strategies/
+|   |   |   |   |   -- jwt.strategy.ts
+|   |   |   |   |-- auth.controller.ts
+|   |   |   |   |-- auth.module.ts
+|   |   |   |   |-- auth.service.spec.ts
+|   |   |   |   -- auth.service.ts
+|   |   |   |-- clientes/
+|   |   |   |   |-- dto/
+|   |   |   |   |   |-- create-cliente.dto.ts
+|   |   |   |   |   -- update-cliente.dto.ts
+|   |   |   |   |-- clientes.controller.ts
+|   |   |   |   |-- clientes.module.ts
+|   |   |   |   |-- clientes.service.spec.ts
+|   |   |   |   -- clientes.service.ts
+|   |   |   |-- common/
+|   |   |   |   |-- constants/
+|   |   |   |   |   -- role-permissions.ts
+|   |   |   |   |-- decorators/
+|   |   |   |   |   |-- audit.decorator.ts
+|   |   |   |   |   |-- current-user.decorator.ts
+|   |   |   |   |   |-- permissions.decorator.ts
+|   |   |   |   |   -- roles.decorator.ts
+|   |   |   |   |-- dtos/
+|   |   |   |   |   -- pagination.dto.ts
+|   |   |   |   |-- guards/
+|   |   |   |   |   |-- permissions.guard.spec.ts
+|   |   |   |   |   |-- permissions.guard.ts
+|   |   |   |   |   |-- roles.guard.spec.ts
+|   |   |   |   |   -- roles.guard.ts
+|   |   |   |   |-- logger/
+|   |   |   |   |   -- winston.config.ts
+|   |   |   |   |-- middleware/
+|   |   |   |   |   -- request-id.middleware.ts
+|   |   |   |   |-- pipes/
+|   |   |   |   |   |-- cpf-cnpj-validation.pipe.spec.ts
+|   |   |   |   |   |-- cpf-cnpj-validation.pipe.ts
+|   |   |   |   |   |-- index.ts
+|   |   |   |   |   |-- iso6346-validation.pipe.spec.ts
+|   |   |   |   |   |-- iso6346-validation.pipe.ts
+|   |   |   |   |   |-- mercosul-plate-validation.pipe.spec.ts
+|   |   |   |   |   -- mercosul-plate-validation.pipe.ts
+|   |   |   |   |-- utils/
+|   |   |   |   |   |-- br-documents.spec.ts
+|   |   |   |   |   |-- br-documents.ts
+|   |   |   |   |   |-- iso6346.ts
+|   |   |   |   |   |-- mercosul.spec.ts
+|   |   |   |   |   -- mercosul.ts
+|   |   |   |   -- validators/
+|   |   |   |       -- is-cpf-cnpj.validator.ts
+|   |   |   |-- config/
+|   |   |   |   -- secrets.config.ts
+|   |   |   |-- faturamento/
+|   |   |   |-- gate/
+|   |   |   |-- health/
+|   |   |   |   -- health.controller.ts
+|   |   |   |-- patio/
+|   |   |   |-- portaria/
+|   |   |   |-- prisma/
+|   |   |   |   |-- prisma.module.ts
+|   |   |   |   -- prisma.service.ts
+|   |   |   |-- redis/
+|   |   |   |   |-- redis.module.ts
+|   |   |   |   -- redis.service.ts
+|   |   |   |-- relatorios/
+|   |   |   |-- solicitacoes/
+|   |   |   |   |-- dto/
+|   |   |   |   |   |-- add-unidade-solicitacao.dto.ts
+|   |   |   |   |   |-- create-portaria.dto.ts
+|   |   |   |   |   |-- create-solicitacao.dto.ts
+|   |   |   |   |   |-- create-unidade.dto.ts
+|   |   |   |   |   -- update-solicitacao.dto.ts
+|   |   |   |   |-- solicitacoes.controller.ts
+|   |   |   |   |-- solicitacoes.module.ts
+|   |   |   |   |-- solicitacoes.service.spec.ts
+|   |   |   |   -- solicitacoes.service.ts
+|   |   |   |-- app.module.ts
+|   |   |   -- main.ts
+|   |   |-- test/
+|   |   |   |-- app.e2e-spec.ts
+|   |   |   -- jest-e2e.json
+|   |   |-- nest-cli.json
+|   |   |-- package.json
+|   |   |-- package-lock.json
+|   |   |-- prisma.config.ts
+|   |   |-- tsconfig.build.json
+|   |   -- tsconfig.json
+|   |-- frontend/
+|   -- mobile/
+|-- docs/
+|-- packages/
+|   -- shared/
+|-- scripts/
+|   -- gerar-estrutura-projeto.ps1
+|-- tools/
+|-- .env
+|-- .env.example
+|-- .gitignore
+|-- docker-compose.yml
+|-- package.json
+|-- package-lock.json
+|-- projeto-codigos-alteracoes-desde-ultimo-txt.txt
+|-- projeto-codigos-por-caminho.txt
+|-- projeto-estrutura-completa.txt
+|-- README.md
+-- setup-backend.ps1

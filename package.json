@@ -4,11 +4,17 @@
     "description": "Sistema de Gerenciamento RL Transportes",
     "private": true,
     "scripts": {
-      "install:all": "npm install && cd apps/backend && npm install",
-      "dev:backend": "cd apps/backend && npm run start:dev",
-      "build:all": "cd apps/backend && npm run build",
-      "test:all": "cd apps/backend && npm run test && npm run test:e2e",
-      "prisma:validate": "cd apps/backend && npx prisma validate",
-      "prisma:generate": "cd apps/backend && npx prisma generate"
+        "install:all": "npm install && cd apps/backend && npm install",
+        "docker:up": "docker compose up -d",
+        "docker:down": "docker compose down",
+        "dev:backend": "cd apps/backend && npm run start:dev",
+        "build:all": "cd apps/backend && npm run build",
+        "test:all": "cd apps/backend && npm run test && npm run test:e2e",
+        "prisma:validate": "cd apps/backend && npx prisma validate",
+        "prisma:generate": "cd apps/backend && npx prisma generate",
+        "db:migrate": "cd apps/backend && npx prisma migrate deploy",
+        "db:seed": "cd apps/backend && npx prisma db seed",
+        "db:setup": "npm run prisma:generate && npm run db:migrate && npm run db:seed",
+        "setup:dev": "npm run docker:up && npm run db:setup"
     }
   }

@@ -18,11 +18,11 @@ describe('AuditoriaService', () => {
 
   describe('registrar', () => {
     it('registra ação INSERT', async () => {
-      await service.registrar(prisma as unknown as PrismaService, {
+      await service.registrar({
         tabela: 'clientes',
         registroId: 'r1',
         acao: AcaoAuditoria.INSERT,
-        userId: 'u1',
+        usuario: 'u1',
         dadosDepois: { x: 1 },
       });
       expect(create).toHaveBeenCalledWith(
@@ -31,17 +31,18 @@ describe('AuditoriaService', () => {
             tabela: 'clientes',
             registroId: 'r1',
             acao: AcaoAuditoria.INSERT,
+            usuario: 'u1',
           }),
         }),
       );
     });
 
     it('registra ação UPDATE com dados antes/depois', async () => {
-      await service.registrar(prisma as unknown as PrismaService, {
+      await service.registrar({
         tabela: 'clientes',
         registroId: 'r1',
         acao: AcaoAuditoria.UPDATE,
-        userId: 'u1',
+        usuario: 'u1',
         dadosAntes: { a: 0 },
         dadosDepois: { a: 1 },
       });
@@ -49,11 +50,11 @@ describe('AuditoriaService', () => {
     });
 
     it('registra ação DELETE', async () => {
-      await service.registrar(prisma as unknown as PrismaService, {
+      await service.registrar({
         tabela: 'clientes',
         registroId: 'r1',
         acao: AcaoAuditoria.DELETE,
-        userId: 'u1',
+        usuario: 'u1',
         dadosAntes: { id: 'r1' },
       });
       expect(create).toHaveBeenCalled();
@@ -80,7 +81,7 @@ describe('AuditoriaService', () => {
       const r = await service.buscarPorUsuario('u1', 50);
       expect(findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { userId: 'u1' },
+          where: { usuario: { contains: 'u1' } },
           take: 50,
         }),
       );
@@ -89,15 +90,14 @@ describe('AuditoriaService', () => {
   });
 
   describe('buscarPorPeriodo', () => {
-    it('filtra por intervalo e tabela opcional', async () => {
+    it('filtra por intervalo de datas', async () => {
       const i = new Date('2026-01-01');
       const f = new Date('2026-12-31');
-      await service.buscarPorPeriodo(i, f, 'clientes');
+      await service.buscarPorPeriodo(i, f);
       expect(findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
             createdAt: { gte: i, lte: f },
-            tabela: 'clientes',
           },
         }),
       );

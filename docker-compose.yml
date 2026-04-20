@@ -1,11 +1,10 @@
-version: '3.8'
 services:
   database:
-    image: postgres:13
+    image: postgres:16-alpine
     environment:
       POSTGRES_DB: rl_transportes
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "123456"
     ports:
       - "5432:5432"
     volumes:

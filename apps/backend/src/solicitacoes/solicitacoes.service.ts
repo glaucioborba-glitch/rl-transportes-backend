@@ -64,7 +64,7 @@ export class SolicitacoesService {
                 status: StatusSolicitacao.PENDENTE,
               },
             });
-            await tx.unidadeSolicitacao.createMany({
+            await tx.unidade.createMany({
               data: dto.unidades.map((u) => ({
                 solicitacaoId: sol.id,
                 numeroIso: u.numeroIso,
@@ -73,15 +73,18 @@ export class SolicitacoesService {
             });
             const full = await tx.solicitacao.findUniqueOrThrow({
               where: { id: sol.id },
-              include: { unidadesSolicitacao: true, cliente: true },
+              include: { unidades: true, cliente: true },
             });
-            await this.auditoria.registrar(tx, {
-              tabela: 'solicitacoes',
-              registroId: sol.id,
-              acao: AcaoAuditoria.INSERT,
-              userId: actorUserId,
-              dadosDepois: full,
-            });
+            await this.auditoria.registrar(
+              {
+                tabela: 'solicitacoes',
+                registroId: sol.id,
+                acao: AcaoAuditoria.INSERT,
+                usuario: actorUserId,
+                dadosDepois: full,
+              },
+              tx,
+            );
             this.logger.log(`Solicitação criada protocolo=${protocolo} id=${sol.id}`);
             return full;
           },
@@ -107,26 +110,29 @@ export class SolicitacoesService {
 
     return this.prisma.$transaction(
       async (tx) => {
-        const dup = await tx.unidadeSolicitacao.findUnique({
+        const dup = await tx.unidade.findUnique({
           where: { numeroIso: dto.numeroIso },
         });
         if (dup) {
           throw new ConflictException('Número ISO já cadastrado');
         }
-        const unit = await tx.unidadeSolicitacao.create({
+        const unit = await tx.unidade.create({
           data: {
             solicitacaoId: dto.solicitacaoId,
             numeroIso: dto.numeroIso,
             tipo: dto.tipo,
           },
         });
-        await this.auditoria.registrar(tx, {
-          tabela: 'unidades_solicitacao',
-          registroId: unit.id,
-          acao: AcaoAuditoria.INSERT,
-          userId: actorUserId,
-          dadosDepois: unit,
-        });
+        await this.auditoria.registrar(
+          {
+            tabela: 'unidades_solicitacao',
+            registroId: unit.id,
+            acao: AcaoAuditoria.INSERT,
+            usuario: actorUserId,
+            dadosDepois: unit,
+          },
+          tx,
+        );
         return unit;
       },
       TX_OPTIONS,
@@ -157,14 +163,17 @@ export class SolicitacoesService {
                 placaVeiculo: dto.placa,
               },
             });
-        await this.auditoria.registrar(tx, {
-          tabela: 'portarias',
-          registroId: row.id,
-          acao: existing ? AcaoAuditoria.UPDATE : AcaoAuditoria.INSERT,
-          userId: actorUserId,
-          dadosAntes: existing !== null ? existing : undefined,
-          dadosDepois: row,
-        });
+        await this.auditoria.registrar(
+          {
+            tabela: 'portarias',
+            registroId: row.id,
+            acao: existing ? AcaoAuditoria.UPDATE : AcaoAuditoria.INSERT,
+            usuario: actorUserId,
+            dadosAntes: existing !== null ? existing : undefined,
+            dadosDepois: row,
+          },
+          tx,
+        );
         return row;
       },
       TX_OPTIONS,
@@ -193,7 +202,7 @@ export class SolicitacoesService {
         skip,
         take: Math.min(limit, 100),
         orderBy: { [orderBy]: order },
-        include: { cliente: true, unidadesSolicitacao: true },
+        include: { cliente: true, unidades: true },
       }),
       this.prisma.solicitacao.count({ where }),
     ]);
@@ -204,7 +213,7 @@ export class SolicitacoesService {
   async findOne(id: string) {
     const s = await this.prisma.solicitacao.findFirst({
       where: { id, deletedAt: null },
-      include: { cliente: true, unidadesSolicitacao: true },
+      include: { cliente: true, unidades: true },
     });
     if (!s) throw new NotFoundException('Solicitação não encontrada');
     return s;
@@ -228,16 +237,19 @@ export class SolicitacoesService {
         const updated = await tx.solicitacao.update({
           where: { id },
           data: { status: dto.status },
-          include: { cliente: true, unidadesSolicitacao: true },
+          include: { cliente: true, unidades: true },
         });
-        await this.auditoria.registrar(tx, {
-          tabela: 'solicitacoes',
-          registroId: id,
-          acao: AcaoAuditoria.UPDATE,
-          userId: actorUserId,
-          dadosAntes: { status: current.status },
-          dadosDepois: { status: updated.status },
-        });
+        await this.auditoria.registrar(
+          {
+            tabela: 'solicitacoes',
+            registroId: id,
+            acao: AcaoAuditoria.UPDATE,
+            usuario: actorUserId,
+            dadosAntes: { status: current.status },
+            dadosDepois: { status: updated.status },
+          },
+          tx,
+        );
         return updated;
       },
       TX_OPTIONS,
@@ -249,7 +261,7 @@ export class SolicitacoesService {
       async (tx) => {
         const current = await tx.solicitacao.findFirst({
           where: { id, deletedAt: null },
-          include: { unidadesSolicitacao: true, cliente: true },
+          include: { unidades: true, cliente: true },
         });
         if (!current) throw new NotFoundException('Solicitação não encontrada');
 
@@ -259,14 +271,17 @@ export class SolicitacoesService {
           data: { deletedAt },
         });
 
-        await this.auditoria.registrar(tx, {
-          tabela: 'solicitacoes',
-          registroId: id,
-          acao: AcaoAuditoria.DELETE,
-          userId: actorUserId,
-          dadosAntes: current,
-          dadosDepois: updated,
-        });
+        await this.auditoria.registrar(
+          {
+            tabela: 'solicitacoes',
+            registroId: id,
+            acao: AcaoAuditoria.DELETE,
+            usuario: actorUserId,
+            dadosAntes: current,
+            dadosDepois: updated,
+          },
+          tx,
+        );
 
         return { id, removed: true, deletedAt };
       },

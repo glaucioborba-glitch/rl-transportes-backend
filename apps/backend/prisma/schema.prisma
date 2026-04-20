@@ -1,0 +1,257 @@
+// Prisma Schema - RL Transportes
+// Database: PostgreSQL
+// ORM: Prisma Client
+// Version: 7.7.0
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum Role {
+  ADMIN
+  GERENTE
+  OPERADOR_PORTARIA
+  OPERADOR_GATE
+  OPERADOR_PATIO
+  CLIENTE
+}
+
+enum TipoCliente {
+  PJ
+  PF
+}
+
+enum StatusSolicitacao {
+  PENDENTE
+  APROVADO
+  CONCLUIDO
+  REJEITADO
+}
+
+enum TipoUnidade {
+  IMPORT
+  EXPORT
+  GATE_IN
+  GATE_OUT
+}
+
+enum StatusPagamento {
+  PENDENTE
+  PAGO
+  VENCIDO
+  CANCELADO
+}
+
+enum StatusIpm {
+  PENDENTE
+  ENVIADO
+  ACEITO
+  REJEITADO
+}
+
+enum AcaoAuditoria {
+  INSERT
+  UPDATE
+  DELETE
+}
+
+// ============================================================================
+// MODELS
+// ============================================================================
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  role      Role     @default(CLIENTE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@map("users")
+}
+
+model Cliente {
+  id          String   @id @default(uuid())
+  nome        String   @db.VarChar(255)
+  tipo        TipoCliente
+  cpfCnpj     String   @unique @db.VarChar(14)
+  email       String   @unique
+  telefone    String?
+  endereco    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  solicitacoes  Solicitacao[]
+  faturamentos  Faturamento[]
+
+  @@index([cpfCnpj])
+  @@index([email])
+  @@index([deletedAt])
+  @@map("clientes")
+}
+
+model Solicitacao {
+  id        String   @id @default(uuid())
+  protocolo String   @unique
+  clienteId String
+  cliente   Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  status    StatusSolicitacao @default(PENDENTE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  unidades Unidade[] @relation("SolicitacaoUnidades")
+  portaria Portaria?
+  gate     Gate?
+  patio    Patio?
+  saida    Saida?
+
+  @@index([clienteId])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("solicitacoes")
+}
+
+model Unidade {
+  id            String   @id @default(uuid())
+  solicitacaoId String
+  solicitacao   Solicitacao @relation("SolicitacaoUnidades", fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  numeroIso     String   @unique
+  tipo          TipoUnidade
+  createdAt     DateTime @default(now())
+
+  @@index([solicitacaoId])
+  @@index([numeroIso])
+  @@map("unidades_solicitacao")
+}
+
+model Portaria {
+  id              String   @id @default(uuid())
+  solicitacaoId   String   @unique
+  solicitacao     Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  placaVeiculo    String?  @db.VarChar(10)
+  fotosCaminhao   Json     @default("[]")
+  fotosContainer  Json     @default("[]")
+  fotosLacre      Json     @default("[]")
+  fotosAvarias    Json     @default("[]")
+  statusOcr       String   @default("pendente")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([solicitacaoId])
+  @@map("portarias")
+}
+
+model Gate {
+  id                String   @id @default(uuid())
+  solicitacaoId     String   @unique
+  solicitacao       Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  ricAssinado       Boolean  @default(false)
+  assinaturaBinaria Bytes?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([solicitacaoId])
+  @@map("gates")
+}
+
+model Patio {
+  id            String   @id @default(uuid())
+  solicitacaoId String   @unique
+  solicitacao   Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  quadra        String
+  fileira       String
+  posicao       String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([solicitacaoId])
+  @@unique([quadra, fileira, posicao])
+  @@map("patios")
+}
+
+model Saida {
+  id            String   @id @default(uuid())
+  solicitacaoId String   @unique
+  solicitacao   Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  dataHoraSaida DateTime
+  createdAt     DateTime @default(now())
+
+  @@index([solicitacaoId])
+  @@map("saidas")
+}
+
+model Faturamento {
+  id           String   @id @default(uuid())
+  clienteId    String
+  cliente      Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  periodo      String
+  valorTotal   Decimal  @db.Decimal(10, 2)
+  statusNfe    String   @default("pendente")
+  statusBoleto String   @default("pendente")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  nfsEmitidas NfsEmitida[]
+  boletos     Boleto[]
+
+  @@index([clienteId])
+  @@unique([clienteId, periodo])
+  @@map("faturamentos")
+}
+
+model NfsEmitida {
+  id            String   @id @default(uuid())
+  faturamentoId String
+  faturamento   Faturamento @relation(fields: [faturamentoId], references: [id], onDelete: Cascade)
+  numeroNfe     String   @unique
+  xmlNfe        String   @db.Text
+  statusIpm     String   @default("pendente")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([faturamentoId])
+  @@map("nfs_emitidas")
+}
+
+model Boleto {
+  id              String   @id @default(uuid())
+  faturamentoId   String
+  faturamento     Faturamento @relation(fields: [faturamentoId], references: [id], onDelete: Cascade)
+  numeroBoleto    String   @unique
+  dataVencimento  DateTime
+  valorBoleto     Decimal  @db.Decimal(10, 2)
+  statusPagamento String   @default("pendente")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([faturamentoId])
+  @@index([statusPagamento])
+  @@map("boletos")
+}
+
+model Auditoria {
+  id          String   @id @default(uuid())
+  tabela      String
+  registroId  String
+  acao        AcaoAuditoria
+  usuario     String
+  dadosAntes  Json?
+  dadosDepois Json?
+  createdAt   DateTime @default(now())
+
+  @@index([tabela, registroId])
+  @@index([usuario])
+  @@index([createdAt])
+  @@map("auditorias")
+}

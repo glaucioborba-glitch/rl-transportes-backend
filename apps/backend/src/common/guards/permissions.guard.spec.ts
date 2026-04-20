@@ -23,6 +23,7 @@ describe('PermissionsGuard', () => {
   it('ADMIN passa sempre', () => {
     (reflector.getAllAndOverride as jest.Mock).mockReturnValue(['clientes:excluir']);
     const user: AuthUser = {
+      sub: '1',
       id: '1',
       email: 'a@a.com',
       role: Role.ADMIN,
@@ -34,6 +35,7 @@ describe('PermissionsGuard', () => {
   it('nega sem permissão', () => {
     (reflector.getAllAndOverride as jest.Mock).mockReturnValue(['clientes:excluir']);
     const user: AuthUser = {
+      sub: '1',
       id: '1',
       email: 'a@a.com',
       role: Role.OPERADOR_PATIO,

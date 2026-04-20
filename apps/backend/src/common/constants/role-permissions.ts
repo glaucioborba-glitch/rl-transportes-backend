@@ -38,7 +38,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'solicitacoes:atualizar',
   ],
   [Role.OPERADOR_PATIO]: ['clientes:ler', 'solicitacoes:ler'],
-  [Role.CLIENTE]: ['solicitacoes:ler'],
+  [Role.CLIENTE]: ['clientes:ler', 'solicitacoes:ler'],
 };
 
 export function permissionsForRole(role: Role): string[] {

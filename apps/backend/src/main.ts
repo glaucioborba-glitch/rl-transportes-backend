@@ -1,64 +1,96 @@
-import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { existsSync, mkdirSync } from 'node:fs';
+import { ValidationPipe, Logger } from '@nestjs/common';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
+import * as compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { AppModule } from './app.module';
-import { buildWinstonLogger } from './common/logger/winston.config';
-import { requestIdMiddleware } from './common/middleware/request-id.middleware';
 
 async function bootstrap() {
-  if (!existsSync('logs')) {
-    mkdirSync('logs', { recursive: true });
-  }
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
+  const logger = new Logger('Bootstrap');
 
-  const app = await NestFactory.create(AppModule, {
-    logger: buildWinstonLogger(),
-    bufferLogs: true,
-  });
-
-  app.use(requestIdMiddleware);
   app.use(
     rateLimit({
       windowMs: 15 * 60 * 1000,
-      max: 300,
+      max: 100,
       standardHeaders: true,
       legacyHeaders: false,
-      message: { message: 'Muitas requisições deste IP, tente novamente em alguns minutos.' },
+      message: {
+        message:
+          'Muitas requisições de seu IP, tente novamente após 15 minutos.',
+      },
     }),
   );
 
-  app.enableCors();
+  // CORS configuração segura
+  app.enableCors({
+    origin: (process.env.CORS_ORIGIN || 'http://localhost:3000').split(','),
+    credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'PUT', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
+
+  // Compressão de respostas
+  app.use(compression());
+
+  // Validação global
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
+      stopAtFirstError: true,
     }),
   );
 
+  // Swagger/OpenAPI documentação
   const config = new DocumentBuilder()
-    .setTitle('RL Transportes API')
-    .setDescription('API Fase 1 — autenticação, clientes e solicitações')
-    .setVersion('1.0')
+    .setTitle('RL Transportes - Backend API')
+    .setDescription(
+      'API para Gerenciamento de Terminal de Apoio Logístico - Armazenagem de Containers',
+    )
+    .setVersion('1.0.0')
+    .setContact(
+      'RL Transportes',
+      'https://rl-transportes.com',
+      'contato@rl-transportes.com',
+    )
     .addBearerAuth(
       {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
         in: 'header',
+        name: 'Authorization',
+        description: 'JWT Access Token',
       },
       'access-token',
     )
+    .addTag('auth', 'Autenticação')
+    .addTag('clientes', 'Gerenciamento de Clientes')
+    .addTag('solicitacoes', 'Gerenciamento de Solicitações')
     .build();
+
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, document);
 
-  const port = process.env.API_PORT ?? 3000;
-  await app.listen(port);
+  const port = parseInt(process.env.API_PORT || '3000', 10);
+  const host = process.env.API_HOST || '0.0.0.0';
 
-  const logger = new Logger('Bootstrap');
-  logger.log(`Application is running on: http://127.0.0.1:${port}`);
+  await app.listen(port, host);
+
+  logger.log(`✓ Server iniciado em http://localhost:${port}`);
+  logger.log(`✓ Documentação disponível em http://localhost:${port}/docs`);
+  logger.log(`✓ Ambiente: ${process.env.NODE_ENV || 'development'}`);
+  logger.log(`✓ Banco: ${process.env.DATABASE_URL?.split('@')[1] || 'unknown'}`);
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  console.error('❌ Erro ao iniciar servidor:', err);
+  process.exit(1);
+});
