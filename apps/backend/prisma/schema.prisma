@@ -68,14 +68,20 @@ enum AcaoAuditoria {
 // ============================================================================
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  role      Role     @default(CLIENTE)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(uuid())
+  email        String   @unique
+  password     String
+  role         Role     @default(CLIENTE)
+  /// Incrementado no logout para invalidar JWTs em circulação (access + refresh).
+  tokenVersion Int      @default(0)
+  /// Vínculo opcional ao cadastro de cliente (portal do cliente).
+  clienteId    String?  @unique
+  cliente      Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([email])
+  @@index([clienteId])
   @@map("users")
 }
 
@@ -91,8 +97,9 @@ model Cliente {
   updatedAt   DateTime @updatedAt
   deletedAt   DateTime?
 
-  solicitacoes  Solicitacao[]
-  faturamentos  Faturamento[]
+  solicitacoes     Solicitacao[]
+  faturamentos     Faturamento[]
+  usuarioPortal    User?
 
   @@index([cpfCnpj])
   @@index([email])
@@ -115,6 +122,8 @@ model Solicitacao {
   gate     Gate?
   patio    Patio?
   saida    Saida?
+
+  faturamentosVinculados FaturamentoSolicitacao[]
 
   @@index([clienteId])
   @@index([status])
@@ -202,12 +211,27 @@ model Faturamento {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  nfsEmitidas NfsEmitida[]
-  boletos     Boleto[]
+  nfsEmitidas              NfsEmitida[]
+  boletos                  Boleto[]
+  solicitacoesVinculadas   FaturamentoSolicitacao[]
 
   @@index([clienteId])
   @@unique([clienteId, periodo])
   @@map("faturamentos")
+}
+
+/// Vínculo operacional: solicitações incluídas em um faturamento por período.
+model FaturamentoSolicitacao {
+  id              String      @id @default(uuid())
+  faturamentoId   String
+  faturamento     Faturamento @relation(fields: [faturamentoId], references: [id], onDelete: Cascade)
+  solicitacaoId   String
+  solicitacao     Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  createdAt       DateTime    @default(now())
+
+  @@unique([faturamentoId, solicitacaoId])
+  @@index([solicitacaoId])
+  @@map("faturamento_solicitacoes")
 }
 
 model NfsEmitida {
@@ -217,6 +241,11 @@ model NfsEmitida {
   numeroNfe     String   @unique
   xmlNfe        String   @db.Text
   statusIpm     String   @default("pendente")
+  /// IBGE do município (7 dígitos) — usado ao plugar provedor municipal real.
+  municipioIbge String?  @db.VarChar(7)
+  /// Identificador do conector (ex.: webmania, focus) — definido na integração.
+  provedor      String?  @db.VarChar(64)
+  referenciaExterna String? @db.VarChar(255)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

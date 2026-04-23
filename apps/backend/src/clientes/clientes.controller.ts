@@ -1,21 +1,21 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
+  Controller,
   Delete,
-  Query,
-  ParseIntPipe,
-  DefaultValuePipe,
-  UseGuards,
-  Request,
+  Get,
   HttpCode,
   HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Request,
+  UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
+import { ClientePaginationDto } from '../common/dtos/pagination.dto';
 import { ClientesService } from './clientes.service';
 import { CreateClienteDto } from './dto/create-cliente.dto';
 import { UpdateClienteDto } from './dto/update-cliente.dto';
@@ -24,6 +24,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
+import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
 
 @ApiTags('clientes')
 @ApiBearerAuth('access-token')
@@ -33,7 +34,7 @@ export class ClientesController {
   constructor(private readonly clientesService: ClientesService) {}
 
   @Post()
-  @Roles('ADMIN', 'GERENTE')
+  @Roles(Role.ADMIN, Role.GERENTE)
   @Permissions('clientes:criar')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Criar novo cliente' })
@@ -53,26 +54,26 @@ export class ClientesController {
   }
 
   @Get()
-  @Roles('ADMIN', 'GERENTE', 'CLIENTE')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.CLIENTE)
   @Permissions('clientes:ler')
-  @ApiOperation({ summary: 'Listar clientes com paginação' })
+  @ApiOperation({ summary: 'Listar clientes com paginação e filtro de busca' })
   async findAll(
-    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
-    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+    @Query() query: ClientePaginationDto,
+    @CurrentUser() user: AuthUser,
   ) {
-    return this.clientesService.findAll(page, limit);
+    return this.clientesService.findAllPaginated(query, user);
   }
 
   @Get(':id')
-  @Roles('ADMIN', 'GERENTE', 'CLIENTE')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.CLIENTE)
   @Permissions('clientes:ler')
   @ApiOperation({ summary: 'Obter cliente por ID' })
-  async findOne(@Param('id') id: string) {
-    return this.clientesService.findOne(id);
+  async findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.clientesService.findOne(id, user);
   }
 
   @Patch(':id')
-  @Roles('ADMIN', 'GERENTE')
+  @Roles(Role.ADMIN, Role.GERENTE)
   @Permissions('clientes:atualizar')
   @ApiOperation({ summary: 'Atualizar cliente' })
   async update(
@@ -93,7 +94,7 @@ export class ClientesController {
   }
 
   @Delete(':id')
-  @Roles('ADMIN')
+  @Roles(Role.ADMIN)
   @Permissions('clientes:excluir')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Deletar cliente (soft delete)' })

@@ -1,6 +1,6 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { AcaoAuditoria, Prisma, TipoCliente } from '@prisma/client';
+import { AcaoAuditoria, Prisma, Role, TipoCliente } from '@prisma/client';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { ClientesService } from './clientes.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -136,13 +136,53 @@ describe('ClientesService', () => {
     });
   });
 
-  describe('findAll', () => {
+  describe('findAllPaginated', () => {
     it('deve retornar lista de clientes', async () => {
       prisma.cliente.findMany.mockResolvedValue([clienteRow()]);
       prisma.cliente.count.mockResolvedValue(1);
-      const r = await service.findAll(1, 10);
+      const r = await service.findAllPaginated({ page: 1, limit: 10 });
       expect(r.data.length).toBe(1);
       expect(r.pagination.total).toBe(1);
+    });
+
+    it('CLIENTE só vê o próprio cadastro (filtro por id)', async () => {
+      prisma.cliente.findMany.mockResolvedValue([clienteRow({ id: 'c-own' })]);
+      prisma.cliente.count.mockResolvedValue(1);
+      await service.findAllPaginated(
+        { page: 1, limit: 10 },
+        {
+          sub: 'u',
+          id: 'u',
+          email: 'a@a.com',
+          role: Role.CLIENTE,
+          permissions: [],
+          clienteId: 'c-own',
+        },
+      );
+      expect(prisma.cliente.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: 'c-own',
+            deletedAt: null,
+          }),
+        }),
+      );
+    });
+
+    it('CLIENTE sem clienteId recebe ForbiddenException', async () => {
+      await expect(
+        service.findAllPaginated(
+          { page: 1, limit: 10 },
+          {
+            sub: 'u',
+            id: 'u',
+            email: 'a@a.com',
+            role: Role.CLIENTE,
+            permissions: [],
+            clienteId: null,
+          },
+        ),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -152,6 +192,47 @@ describe('ClientesService', () => {
       prisma.cliente.findFirst.mockResolvedValue(c);
       const r = await service.findOne('c1');
       expect(r).toEqual(c);
+    });
+
+    it('CLIENTE só acessa o próprio id', async () => {
+      const c = { ...clienteRow({ id: 'c-own' }), solicitacoes: [] };
+      prisma.cliente.findFirst.mockResolvedValue(c);
+      const r = await service.findOne('c-own', {
+        sub: 'u',
+        id: 'u',
+        email: 'a@a.com',
+        role: Role.CLIENTE,
+        permissions: [],
+        clienteId: 'c-own',
+      });
+      expect(r).toEqual(c);
+    });
+
+    it('CLIENTE recebe NotFound ao consultar outro id', async () => {
+      await expect(
+        service.findOne('outro', {
+          sub: 'u',
+          id: 'u',
+          email: 'a@a.com',
+          role: Role.CLIENTE,
+          permissions: [],
+          clienteId: 'c-own',
+        }),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.cliente.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('CLIENTE sem clienteId recebe ForbiddenException', async () => {
+      await expect(
+        service.findOne('c1', {
+          sub: 'u',
+          id: 'u',
+          email: 'a@a.com',
+          role: Role.CLIENTE,
+          permissions: [],
+          clienteId: null,
+        }),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('deve lançar NotFoundException se ID não existir', async () => {

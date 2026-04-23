@@ -2,10 +2,13 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
-import { AcaoAuditoria, Prisma } from '@prisma/client';
+import { AcaoAuditoria, Prisma, Role } from '@prisma/client';
+import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { ClientePaginationDto } from '../common/dtos/pagination.dto';
 import { CreateClienteDto } from './dto/create-cliente.dto';
 import { UpdateClienteDto } from './dto/update-cliente.dto';
 
@@ -14,6 +17,9 @@ const TX_OPTIONS = {
   maxWait: 5000,
   timeout: 15000,
 } as const;
+
+/** Whitelist de ordenação (alinha ao ClientePaginationDto e evita chaves arbitrárias). */
+const CLIENTE_ORDER_BY = new Set(['createdAt', 'nome', 'email']);
 
 @Injectable()
 export class ClientesService {
@@ -74,18 +80,45 @@ export class ClientesService {
     }
   }
 
-  async findAll(page: number = 1, limit: number = 10) {
+  async findAllPaginated(query: ClientePaginationDto, actor?: AuthUser) {
+    let page = query.page ?? 1;
+    let limit = query.limit ?? 10;
     if (page < 1) page = 1;
     if (limit < 1 || limit > 100) limit = 10;
 
     const skip = (page - 1) * limit;
+    const rawOrderBy = query.orderBy ?? 'createdAt';
+    const orderBy = CLIENTE_ORDER_BY.has(rawOrderBy) ? rawOrderBy : 'createdAt';
+    const order = query.order ?? 'desc';
+
+    const search = query.search?.trim();
+    const where: Prisma.ClienteWhereInput = { deletedAt: null };
+    if (actor?.role === Role.CLIENTE) {
+      if (!actor.clienteId) {
+        throw new ForbiddenException(
+          'Usuário de portal sem vínculo a cliente; contate o suporte.',
+        );
+      }
+      where.id = actor.clienteId;
+    }
+    if (search) {
+      const digits = search.replace(/\D/g, '');
+      const orClause: Prisma.ClienteWhereInput[] = [
+        { nome: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+      ];
+      if (digits.length >= 3) {
+        orClause.push({ cpfCnpj: { contains: digits } });
+      }
+      where.OR = orClause;
+    }
 
     const [clientes, total] = await Promise.all([
       this.prisma.cliente.findMany({
-        where: { deletedAt: null },
+        where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { [orderBy]: order },
         select: {
           id: true,
           nome: true,
@@ -103,9 +136,7 @@ export class ClientesService {
           },
         },
       }),
-      this.prisma.cliente.count({
-        where: { deletedAt: null },
-      }),
+      this.prisma.cliente.count({ where }),
     ]);
 
     return {
@@ -119,7 +150,18 @@ export class ClientesService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, actor?: AuthUser) {
+    if (actor?.role === Role.CLIENTE) {
+      if (!actor.clienteId) {
+        throw new ForbiddenException(
+          'Usuário de portal sem vínculo a cliente; contate o suporte.',
+        );
+      }
+      if (id !== actor.clienteId) {
+        throw new NotFoundException(`Cliente com ID ${id} não encontrado.`);
+      }
+    }
+
     const cliente = await this.prisma.cliente.findFirst({
       where: { id, deletedAt: null },
       include: {

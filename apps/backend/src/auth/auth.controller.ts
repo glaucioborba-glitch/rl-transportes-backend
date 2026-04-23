@@ -1,5 +1,14 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { AuthGuard } from '@nestjs/passport';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
@@ -34,12 +43,27 @@ export class AuthController {
     return user;
   }
 
+  @Post('logout')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Encerrar sessão',
+    description:
+      'Invalida tokens atuais (incrementa tokenVersion). Access e refresh anteriores deixam de ser aceitos.',
+  })
+  @ApiBearerAuth('access-token')
+  @UseGuards(AuthGuard('jwt'))
+  async logout(@CurrentUser('id') userId: string) {
+    await this.authService.logout(userId);
+  }
+
   @Post('users')
   @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
   @Roles(Role.ADMIN)
   @Permissions('users:criar')
-  createUser(@Body() dto: CreateUserDto) {
-    return this.authService.createUser(dto);
+  createUser(@Body() dto: CreateUserDto, @Request() req: any) {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    const userAgent = req.get('user-agent') || 'unknown';
+    return this.authService.createUser(dto, req.user.sub, ip, userAgent);
   }
 }

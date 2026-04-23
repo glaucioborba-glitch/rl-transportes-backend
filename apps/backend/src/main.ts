@@ -76,6 +76,10 @@ async function bootstrap() {
     .addTag('clientes', 'Gerenciamento de Clientes')
     .addTag('solicitacoes', 'Gerenciamento de Solicitações')
     .addTag('auditoria', 'Auditoria e rastreabilidade')
+    .addTag('faturamento', 'Faturamento, NFS-e e boletos')
+    .addTag('nfse', 'NFS-e IPM / Atende.Net')
+    .addTag('portal-cliente', 'Portal do cliente')
+    .addTag('relatorios', 'Relatórios operacional e financeiro')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

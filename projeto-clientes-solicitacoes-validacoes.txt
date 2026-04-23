@@ -1,0 +1,1573 @@
+# RL Transportes - Codigo completo: Clientes, Solicitacoes, schema Prisma, DTOs relacionados
+# Validacoes CPF/CNPJ (pipe, br-documents, decorator IsCpfCnpj) e ISO 6346 (pipe, util container-validator)
+# Nota: fluxo portaria usa MercosulPlateValidationPipe (placa) — fora do escopo CPF/CNPJ/ISO6346; ver common/pipes/mercosul-plate-validation.pipe.ts no repositorio.
+# Gerado em: 2026-04-21 10:11:10
+
+
+################################################################################
+# arquivo: apps/backend/prisma/schema.prisma
+################################################################################
+
+// Prisma Schema - RL Transportes
+// Database: PostgreSQL
+// ORM: Prisma Client
+// Version: 7.7.0
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum Role {
+  ADMIN
+  GERENTE
+  OPERADOR_PORTARIA
+  OPERADOR_GATE
+  OPERADOR_PATIO
+  CLIENTE
+}
+
+enum TipoCliente {
+  PJ
+  PF
+}
+
+enum StatusSolicitacao {
+  PENDENTE
+  APROVADO
+  CONCLUIDO
+  REJEITADO
+}
+
+enum TipoUnidade {
+  IMPORT
+  EXPORT
+  GATE_IN
+  GATE_OUT
+}
+
+enum StatusPagamento {
+  PENDENTE
+  PAGO
+  VENCIDO
+  CANCELADO
+}
+
+enum StatusIpm {
+  PENDENTE
+  ENVIADO
+  ACEITO
+  REJEITADO
+}
+
+enum AcaoAuditoria {
+  INSERT
+  UPDATE
+  DELETE
+}
+
+// ============================================================================
+// MODELS
+// ============================================================================
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  role      Role     @default(CLIENTE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@map("users")
+}
+
+model Cliente {
+  id          String   @id @default(uuid())
+  nome        String   @db.VarChar(255)
+  tipo        TipoCliente
+  cpfCnpj     String   @unique @db.VarChar(14)
+  email       String   @unique
+  telefone    String?
+  endereco    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  solicitacoes  Solicitacao[]
+  faturamentos  Faturamento[]
+
+  @@index([cpfCnpj])
+  @@index([email])
+  @@index([deletedAt])
+  @@map("clientes")
+}
+
+model Solicitacao {
+  id        String   @id @default(uuid())
+  protocolo String   @unique
+  clienteId String
+  cliente   Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  status    StatusSolicitacao @default(PENDENTE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  unidades Unidade[] @relation("SolicitacaoUnidades")
+  portaria Portaria?
+  gate     Gate?
+  patio    Patio?
+  saida    Saida?
+
+  @@index([clienteId])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("solicitacoes")
+}
+
+model Unidade {
+  id            String   @id @default(uuid())
+  solicitacaoId String
+  solicitacao   Solicitacao @relation("SolicitacaoUnidades", fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  numeroIso     String   @unique
+  tipo          TipoUnidade
+  createdAt     DateTime @default(now())
+
+  @@index([solicitacaoId])
+  @@index([numeroIso])
+  @@map("unidades_solicitacao")
+}
+
+model Portaria {
+  id              String   @id @default(uuid())
+  solicitacaoId   String   @unique
+  solicitacao     Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  placaVeiculo    String?  @db.VarChar(10)
+  fotosCaminhao   Json     @default("[]")
+  fotosContainer  Json     @default("[]")
+  fotosLacre      Json     @default("[]")
+  fotosAvarias    Json     @default("[]")
+  statusOcr       String   @default("pendente")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([solicitacaoId])
+  @@map("portarias")
+}
+
+model Gate {
+  id                String   @id @default(uuid())
+  solicitacaoId     String   @unique
+  solicitacao       Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  ricAssinado       Boolean  @default(false)
+  assinaturaBinaria Bytes?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([solicitacaoId])
+  @@map("gates")
+}
+
+model Patio {
+  id            String   @id @default(uuid())
+  solicitacaoId String   @unique
+  solicitacao   Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  quadra        String
+  fileira       String
+  posicao       String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([solicitacaoId])
+  @@unique([quadra, fileira, posicao])
+  @@map("patios")
+}
+
+model Saida {
+  id            String   @id @default(uuid())
+  solicitacaoId String   @unique
+  solicitacao   Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  dataHoraSaida DateTime
+  createdAt     DateTime @default(now())
+
+  @@index([solicitacaoId])
+  @@map("saidas")
+}
+
+model Faturamento {
+  id           String   @id @default(uuid())
+  clienteId    String
+  cliente      Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  periodo      String
+  valorTotal   Decimal  @db.Decimal(10, 2)
+  statusNfe    String   @default("pendente")
+  statusBoleto String   @default("pendente")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  nfsEmitidas NfsEmitida[]
+  boletos     Boleto[]
+
+  @@index([clienteId])
+  @@unique([clienteId, periodo])
+  @@map("faturamentos")
+}
+
+model NfsEmitida {
+  id            String   @id @default(uuid())
+  faturamentoId String
+  faturamento   Faturamento @relation(fields: [faturamentoId], references: [id], onDelete: Cascade)
+  numeroNfe     String   @unique
+  xmlNfe        String   @db.Text
+  statusIpm     String   @default("pendente")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([faturamentoId])
+  @@map("nfs_emitidas")
+}
+
+model Boleto {
+  id              String   @id @default(uuid())
+  faturamentoId   String
+  faturamento     Faturamento @relation(fields: [faturamentoId], references: [id], onDelete: Cascade)
+  numeroBoleto    String   @unique
+  dataVencimento  DateTime
+  valorBoleto     Decimal  @db.Decimal(10, 2)
+  statusPagamento String   @default("pendente")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([faturamentoId])
+  @@index([statusPagamento])
+  @@map("boletos")
+}
+
+model Auditoria {
+  id          String   @id @default(uuid())
+  tabela      String
+  registroId  String
+  acao        AcaoAuditoria
+  usuario     String
+  dadosAntes  Json?
+  dadosDepois Json?
+  createdAt   DateTime @default(now())
+
+  @@index([tabela, registroId])
+  @@index([usuario])
+  @@index([createdAt])
+  @@map("auditorias")
+}
+
+################################################################################
+# arquivo: apps/backend/src/clientes/clientes.module.ts
+################################################################################
+
+import { Module } from '@nestjs/common';
+import { AuditoriaModule } from '../auditoria/auditoria.module';
+import { ClientesController } from './clientes.controller';
+import { ClientesService } from './clientes.service';
+
+@Module({
+  imports: [AuditoriaModule],
+  controllers: [ClientesController],
+  providers: [ClientesService],
+  exports: [ClientesService],
+})
+export class ClientesModule {}
+
+
+################################################################################
+# arquivo: apps/backend/src/clientes/clientes.controller.ts
+################################################################################
+
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  Query,
+  ParseIntPipe,
+  DefaultValuePipe,
+  UseGuards,
+  Request,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ClientesService } from './clientes.service';
+import { CreateClienteDto } from './dto/create-cliente.dto';
+import { UpdateClienteDto } from './dto/update-cliente.dto';
+import { CpfCnpjValidationPipe } from '../common/pipes/cpf-cnpj-validation.pipe';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { PermissionsGuard } from '../common/guards/permissions.guard';
+import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
+
+@ApiTags('clientes')
+@ApiBearerAuth('access-token')
+@Controller('clientes')
+@UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
+export class ClientesController {
+  constructor(private readonly clientesService: ClientesService) {}
+
+  @Post()
+  @Roles('ADMIN', 'GERENTE')
+  @Permissions('clientes:criar')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Criar novo cliente' })
+  async create(
+    @Body(CpfCnpjValidationPipe) createClienteDto: CreateClienteDto,
+    @Request() req: any,
+  ) {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    const userAgent = req.get('user-agent') || 'unknown';
+
+    return this.clientesService.create(
+      createClienteDto,
+      req.user.sub,
+      ip,
+      userAgent,
+    );
+  }
+
+  @Get()
+  @Roles('ADMIN', 'GERENTE', 'CLIENTE')
+  @Permissions('clientes:ler')
+  @ApiOperation({ summary: 'Listar clientes com paginação' })
+  async findAll(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number,
+  ) {
+    return this.clientesService.findAll(page, limit);
+  }
+
+  @Get(':id')
+  @Roles('ADMIN', 'GERENTE', 'CLIENTE')
+  @Permissions('clientes:ler')
+  @ApiOperation({ summary: 'Obter cliente por ID' })
+  async findOne(@Param('id') id: string) {
+    return this.clientesService.findOne(id);
+  }
+
+  @Patch(':id')
+  @Roles('ADMIN', 'GERENTE')
+  @Permissions('clientes:atualizar')
+  @ApiOperation({ summary: 'Atualizar cliente' })
+  async update(
+    @Param('id') id: string,
+    @Body(CpfCnpjValidationPipe) updateClienteDto: UpdateClienteDto,
+    @Request() req: any,
+  ) {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    const userAgent = req.get('user-agent') || 'unknown';
+
+    return this.clientesService.update(
+      id,
+      updateClienteDto,
+      req.user.sub,
+      ip,
+      userAgent,
+    );
+  }
+
+  @Delete(':id')
+  @Roles('ADMIN')
+  @Permissions('clientes:excluir')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Deletar cliente (soft delete)' })
+  async remove(@Param('id') id: string, @Request() req: any) {
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    const userAgent = req.get('user-agent') || 'unknown';
+
+    return this.clientesService.remove(id, req.user.sub, ip, userAgent);
+  }
+}
+
+################################################################################
+# arquivo: apps/backend/src/clientes/clientes.service.ts
+################################################################################
+
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
+import { AcaoAuditoria, Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { AuditoriaService } from '../auditoria/auditoria.service';
+import { CreateClienteDto } from './dto/create-cliente.dto';
+import { UpdateClienteDto } from './dto/update-cliente.dto';
+
+const TX_OPTIONS = {
+  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+  maxWait: 5000,
+  timeout: 15000,
+} as const;
+
+@Injectable()
+export class ClientesService {
+  constructor(
+    private prisma: PrismaService,
+    private auditoria: AuditoriaService,
+  ) {}
+
+  async create(
+    createClienteDto: CreateClienteDto,
+    usuarioId: string,
+    ip: string,
+    userAgent: string,
+  ) {
+    const cpfCnpjClean = createClienteDto.cpfCnpj.replace(/\D/g, '');
+
+    try {
+      const cliente = await this.prisma.$transaction(async (tx) => {
+        const novoCliente = await tx.cliente.create({
+          data: {
+            nome: createClienteDto.nome,
+            tipo: createClienteDto.tipo,
+            cpfCnpj: cpfCnpjClean,
+            email: createClienteDto.email.toLowerCase(),
+            telefone: createClienteDto.telefone ?? '',
+            endereco: createClienteDto.endereco ?? '',
+          },
+        });
+
+        await this.auditoria.registrar(
+          {
+            tabela: 'clientes',
+            registroId: novoCliente.id,
+            acao: AcaoAuditoria.INSERT,
+            usuario: usuarioId,
+            dadosAntes: null,
+            dadosDepois: novoCliente,
+            ip,
+            userAgent,
+          },
+          tx,
+        );
+
+        return novoCliente;
+      }, TX_OPTIONS);
+
+      return this.sanitizeCliente(cliente);
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'CPF/CNPJ ou E-mail já cadastrado no sistema',
+        );
+      }
+      throw error;
+    }
+  }
+
+  async findAll(page: number = 1, limit: number = 10) {
+    if (page < 1) page = 1;
+    if (limit < 1 || limit > 100) limit = 10;
+
+    const skip = (page - 1) * limit;
+
+    const [clientes, total] = await Promise.all([
+      this.prisma.cliente.findMany({
+        where: { deletedAt: null },
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          nome: true,
+          tipo: true,
+          email: true,
+          telefone: true,
+          createdAt: true,
+          solicitacoes: {
+            where: { deletedAt: null },
+            select: {
+              id: true,
+              protocolo: true,
+              status: true,
+            },
+          },
+        },
+      }),
+      this.prisma.cliente.count({
+        where: { deletedAt: null },
+      }),
+    ]);
+
+    return {
+      data: clientes,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async findOne(id: string) {
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        solicitacoes: {
+          where: { deletedAt: null },
+          include: { unidades: true },
+        },
+      },
+    });
+
+    if (!cliente) {
+      throw new NotFoundException(`Cliente com ID ${id} não encontrado.`);
+    }
+
+    return cliente;
+  }
+
+  async update(
+    id: string,
+    updateClienteDto: UpdateClienteDto,
+    usuarioId: string,
+    ip: string,
+    userAgent: string,
+  ) {
+    const clienteAntes = await this.prisma.cliente.findUnique({
+      where: { id },
+    });
+
+    if (!clienteAntes) {
+      throw new NotFoundException(`Cliente com ID ${id} não encontrado.`);
+    }
+
+    try {
+      const clienteDepois = await this.prisma.$transaction(async (tx) => {
+        const dadosAtualizacao: Prisma.ClienteUpdateInput = {};
+
+        if (updateClienteDto.nome !== undefined) {
+          dadosAtualizacao.nome = updateClienteDto.nome;
+        }
+        if (updateClienteDto.tipo !== undefined) {
+          dadosAtualizacao.tipo = updateClienteDto.tipo;
+        }
+        if (updateClienteDto.cpfCnpj !== undefined) {
+          dadosAtualizacao.cpfCnpj = updateClienteDto.cpfCnpj.replace(/\D/g, '');
+        }
+        if (updateClienteDto.email !== undefined) {
+          dadosAtualizacao.email = updateClienteDto.email.toLowerCase();
+        }
+        if (updateClienteDto.telefone !== undefined) {
+          dadosAtualizacao.telefone = updateClienteDto.telefone;
+        }
+        if (updateClienteDto.endereco !== undefined) {
+          dadosAtualizacao.endereco = updateClienteDto.endereco;
+        }
+
+        const updated = await tx.cliente.update({
+          where: { id },
+          data: dadosAtualizacao,
+        });
+
+        await this.auditoria.registrar(
+          {
+            tabela: 'clientes',
+            registroId: id,
+            acao: AcaoAuditoria.UPDATE,
+            usuario: usuarioId,
+            dadosAntes: clienteAntes,
+            dadosDepois: updated,
+            ip,
+            userAgent,
+          },
+          tx,
+        );
+
+        return updated;
+      }, TX_OPTIONS);
+
+      return this.sanitizeCliente(clienteDepois);
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'CPF/CNPJ ou E-mail já cadastrado no sistema',
+        );
+      }
+      throw error;
+    }
+  }
+
+  async remove(id: string, usuarioId: string, ip: string, userAgent: string) {
+    const cliente = await this.prisma.cliente.findUnique({
+      where: { id },
+    });
+
+    if (!cliente) {
+      throw new NotFoundException(`Cliente com ID ${id} não encontrado.`);
+    }
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.cliente.update({
+          where: { id },
+          data: { deletedAt: new Date() },
+        });
+
+        await this.auditoria.registrar(
+          {
+            tabela: 'clientes',
+            registroId: id,
+            acao: AcaoAuditoria.DELETE,
+            usuario: usuarioId,
+            dadosAntes: cliente,
+            dadosDepois: null,
+            ip,
+            userAgent,
+          },
+          tx,
+        );
+      },
+      TX_OPTIONS,
+    );
+
+    return { id, removed: true, timestamp: new Date() };
+  }
+
+  private sanitizeCliente(cliente: any) {
+    const { ...safe } = cliente;
+    return safe;
+  }
+}
+
+################################################################################
+# arquivo: apps/backend/src/clientes/dto/create-cliente.dto.ts
+################################################################################
+
+import {
+  IsString,
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  MaxLength,
+  MinLength,
+  Matches,
+} from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { TipoCliente } from '@prisma/client';
+
+export class CreateClienteDto {
+  @ApiProperty({
+    example: 'Empresa XYZ Ltda',
+    description: 'Nome completo da empresa ou pessoa',
+  })
+  @IsString()
+  @MaxLength(255)
+  @MinLength(3)
+  nome: string;
+
+  @ApiProperty({
+    enum: TipoCliente,
+    example: 'PJ',
+    description: 'Tipo: PJ (Pessoa Jurídica) ou PF (Pessoa Física)',
+  })
+  @IsEnum(TipoCliente)
+  tipo: TipoCliente;
+
+  @ApiProperty({
+    example: '12345678000195',
+    description: 'CPF (11 dígitos) ou CNPJ (14 dígitos), apenas números',
+  })
+  @IsString()
+  @Matches(/^\d{11}$|^\d{14}$/, {
+    message:
+      'CPF deve ter 11 dígitos ou CNPJ deve ter 14 dígitos (somente números)',
+  })
+  cpfCnpj: string;
+
+  @ApiProperty({
+    example: 'contato@empresa.com',
+    description: 'E-mail válido para contato',
+  })
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({
+    example: '4733334444',
+    description: 'Telefone com DDD (10-11 dígitos)',
+  })
+  @IsString()
+  @IsOptional()
+  @Matches(/^(\+55)?\d{10,11}$/, {
+    message: 'Telefone inválido (formato: 4733334444 ou +5547333334444)',
+  })
+  telefone?: string;
+
+  @ApiProperty({
+    example: 'Rua A, 123 - Bairro - SC',
+    description: 'Endereço completo',
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(500)
+  @MinLength(3)
+  endereco?: string;
+}
+
+################################################################################
+# arquivo: apps/backend/src/clientes/dto/update-cliente.dto.ts
+################################################################################
+
+import { PartialType } from '@nestjs/mapped-types';
+import { CreateClienteDto } from './create-cliente.dto';
+
+export class UpdateClienteDto extends PartialType(CreateClienteDto) {}
+
+################################################################################
+# arquivo: apps/backend/src/solicitacoes/solicitacoes.module.ts
+################################################################################
+
+import { Module } from '@nestjs/common';
+import { AuditoriaModule } from '../auditoria/auditoria.module';
+import { SolicitacoesController } from './solicitacoes.controller';
+import { SolicitacoesService } from './solicitacoes.service';
+
+@Module({
+  imports: [AuditoriaModule],
+  controllers: [SolicitacoesController],
+  providers: [SolicitacoesService],
+})
+export class SolicitacoesModule {}
+
+
+################################################################################
+# arquivo: apps/backend/src/solicitacoes/solicitacoes.controller.ts
+################################################################################
+
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
+import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { SolicitacaoPaginationDto } from '../common/dtos/pagination.dto';
+import { Iso6346ValidationPipe, MercosulPlateValidationPipe } from '../common/pipes';
+import { PermissionsGuard } from '../common/guards/permissions.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { AddUnidadeSolicitacaoDto } from './dto/add-unidade-solicitacao.dto';
+import { CreatePortariaDto } from './dto/create-portaria.dto';
+import { CreateSolicitacaoDto } from './dto/create-solicitacao.dto';
+import { UpdateSolicitacaoDto } from './dto/update-solicitacao.dto';
+import { SolicitacoesService } from './solicitacoes.service';
+
+@ApiTags('solicitacoes')
+@ApiBearerAuth('access-token')
+@UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
+@Controller('solicitacoes')
+export class SolicitacoesController {
+  constructor(private readonly solicitacoesService: SolicitacoesService) {}
+
+  @Get()
+  @Roles(
+    Role.ADMIN,
+    Role.GERENTE,
+    Role.OPERADOR_PORTARIA,
+    Role.OPERADOR_GATE,
+    Role.OPERADOR_PATIO,
+    Role.CLIENTE,
+  )
+  @Permissions('solicitacoes:ler')
+  findAll(@Query() query: SolicitacaoPaginationDto) {
+    return this.solicitacoesService.findAllPaginated(query, {
+      clienteId: query.clienteId,
+      status: query.status,
+    });
+  }
+
+  @Get(':id')
+  @Roles(
+    Role.ADMIN,
+    Role.GERENTE,
+    Role.OPERADOR_PORTARIA,
+    Role.OPERADOR_GATE,
+    Role.OPERADOR_PATIO,
+    Role.CLIENTE,
+  )
+  @Permissions('solicitacoes:ler')
+  findOne(@Param('id') id: string) {
+    return this.solicitacoesService.findOne(id);
+  }
+
+  @Post()
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_PORTARIA)
+  @Permissions('solicitacoes:criar')
+  create(@Body() dto: CreateSolicitacaoDto, @CurrentUser() user: AuthUser) {
+    return this.solicitacoesService.create(dto, user.id);
+  }
+
+  @Post('unidades')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('solicitacoes:criar')
+  addContainer(
+    @Body(Iso6346ValidationPipe) dto: AddUnidadeSolicitacaoDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.solicitacoesService.addContainer(dto, user.id);
+  }
+
+  @Post('portaria')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_PORTARIA)
+  @Permissions('solicitacoes:portaria')
+  registerPortaria(
+    @Body(MercosulPlateValidationPipe) dto: CreatePortariaDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.solicitacoesService.registerPortaria(dto, user.id);
+  }
+
+  @Patch(':id')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_PORTARIA, Role.OPERADOR_GATE)
+  @Permissions('solicitacoes:atualizar')
+  update(@Param('id') id: string, @Body() dto: UpdateSolicitacaoDto, @CurrentUser() user: AuthUser) {
+    return this.solicitacoesService.update(id, dto, user.id);
+  }
+
+  @Delete(':id')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('solicitacoes:excluir')
+  remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.solicitacoesService.remove(id, user.id);
+  }
+}
+
+
+################################################################################
+# arquivo: apps/backend/src/solicitacoes/solicitacoes.service.ts
+################################################################################
+
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { AcaoAuditoria, Prisma, StatusSolicitacao } from '@prisma/client';
+import { randomBytes } from 'crypto';
+import { AuditoriaService } from '../auditoria/auditoria.service';
+import { SolicitacaoPaginationDto } from '../common/dtos/pagination.dto';
+import { PrismaService } from '../prisma/prisma.service';
+import { AddUnidadeSolicitacaoDto } from './dto/add-unidade-solicitacao.dto';
+import { CreatePortariaDto } from './dto/create-portaria.dto';
+import { CreateSolicitacaoDto } from './dto/create-solicitacao.dto';
+import { UpdateSolicitacaoDto } from './dto/update-solicitacao.dto';
+
+/** Transições válidas de status (documento Semana 2). */
+export const VALID_STATUS_TRANSITIONS: Record<StatusSolicitacao, StatusSolicitacao[]> = {
+  [StatusSolicitacao.PENDENTE]: [StatusSolicitacao.APROVADO, StatusSolicitacao.REJEITADO],
+  [StatusSolicitacao.APROVADO]: [StatusSolicitacao.CONCLUIDO, StatusSolicitacao.REJEITADO],
+  [StatusSolicitacao.CONCLUIDO]: [],
+  [StatusSolicitacao.REJEITADO]: [],
+};
+
+const TX_OPTIONS = {
+  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+  maxWait: 5000,
+  timeout: 15000,
+} as const;
+
+function gerarProtocolo(): string {
+  const y = new Date().getFullYear();
+  const rand = randomBytes(4).toString('hex').toUpperCase();
+  return `RL-${y}-${rand}`;
+}
+
+@Injectable()
+export class SolicitacoesService {
+  private readonly logger = new Logger(SolicitacoesService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditoria: AuditoriaService,
+  ) {}
+
+  async create(dto: CreateSolicitacaoDto, actorUserId: string) {
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id: dto.clienteId, deletedAt: null },
+    });
+    if (!cliente) {
+      throw new NotFoundException('Cliente não encontrado');
+    }
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const protocolo = gerarProtocolo();
+      try {
+        return await this.prisma.$transaction(
+          async (tx) => {
+            const sol = await tx.solicitacao.create({
+              data: {
+                protocolo,
+                clienteId: dto.clienteId,
+                status: StatusSolicitacao.PENDENTE,
+              },
+            });
+            await tx.unidade.createMany({
+              data: dto.unidades.map((u) => ({
+                solicitacaoId: sol.id,
+                numeroIso: u.numeroIso,
+                tipo: u.tipo,
+              })),
+            });
+            const full = await tx.solicitacao.findUniqueOrThrow({
+              where: { id: sol.id },
+              include: { unidades: true, cliente: true },
+            });
+            await this.auditoria.registrar(
+              {
+                tabela: 'solicitacoes',
+                registroId: sol.id,
+                acao: AcaoAuditoria.INSERT,
+                usuario: actorUserId,
+                dadosDepois: full,
+              },
+              tx,
+            );
+            this.logger.log(`Solicitação criada protocolo=${protocolo} id=${sol.id}`);
+            return full;
+          },
+          TX_OPTIONS,
+        );
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new ConflictException('Não foi possível gerar protocolo único');
+  }
+
+  async addContainer(dto: AddUnidadeSolicitacaoDto, actorUserId: string) {
+    const solicitacao = await this.prisma.solicitacao.findFirst({
+      where: { id: dto.solicitacaoId, deletedAt: null },
+    });
+    if (!solicitacao) {
+      throw new NotFoundException('Solicitação não encontrada');
+    }
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const dup = await tx.unidade.findUnique({
+          where: { numeroIso: dto.numeroIso },
+        });
+        if (dup) {
+          throw new ConflictException('Número ISO já cadastrado');
+        }
+        const unit = await tx.unidade.create({
+          data: {
+            solicitacaoId: dto.solicitacaoId,
+            numeroIso: dto.numeroIso,
+            tipo: dto.tipo,
+          },
+        });
+        await this.auditoria.registrar(
+          {
+            tabela: 'unidades_solicitacao',
+            registroId: unit.id,
+            acao: AcaoAuditoria.INSERT,
+            usuario: actorUserId,
+            dadosDepois: unit,
+          },
+          tx,
+        );
+        return unit;
+      },
+      TX_OPTIONS,
+    );
+  }
+
+  async registerPortaria(dto: CreatePortariaDto, actorUserId: string) {
+    const solicitacao = await this.prisma.solicitacao.findFirst({
+      where: { id: dto.solicitacaoId, deletedAt: null },
+    });
+    if (!solicitacao) {
+      throw new NotFoundException('Solicitação não encontrada');
+    }
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const existing = await tx.portaria.findUnique({
+          where: { solicitacaoId: dto.solicitacaoId },
+        });
+        const row = existing
+          ? await tx.portaria.update({
+              where: { solicitacaoId: dto.solicitacaoId },
+              data: { placaVeiculo: dto.placa },
+            })
+          : await tx.portaria.create({
+              data: {
+                solicitacaoId: dto.solicitacaoId,
+                placaVeiculo: dto.placa,
+              },
+            });
+        await this.auditoria.registrar(
+          {
+            tabela: 'portarias',
+            registroId: row.id,
+            acao: existing ? AcaoAuditoria.UPDATE : AcaoAuditoria.INSERT,
+            usuario: actorUserId,
+            dadosAntes: existing !== null ? existing : undefined,
+            dadosDepois: row,
+          },
+          tx,
+        );
+        return row;
+      },
+      TX_OPTIONS,
+    );
+  }
+
+  async findAllPaginated(
+    pagination: SolicitacaoPaginationDto,
+    filters: { clienteId?: string; status?: StatusSolicitacao },
+  ) {
+    const page = pagination.page ?? 1;
+    const limit = pagination.limit ?? 10;
+    const orderBy = pagination.orderBy ?? 'createdAt';
+    const order = pagination.order ?? 'desc';
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.SolicitacaoWhereInput = {
+      deletedAt: null,
+      ...(filters.clienteId ? { clienteId: filters.clienteId } : {}),
+      ...(filters.status ? { status: filters.status } : {}),
+    };
+
+    const [items, total] = await Promise.all([
+      this.prisma.solicitacao.findMany({
+        where,
+        skip,
+        take: Math.min(limit, 100),
+        orderBy: { [orderBy]: order },
+        include: { cliente: true, unidades: true },
+      }),
+      this.prisma.solicitacao.count({ where }),
+    ]);
+
+    return { items, total, page, limit: Math.min(limit, 100), orderBy, order };
+  }
+
+  async findOne(id: string) {
+    const s = await this.prisma.solicitacao.findFirst({
+      where: { id, deletedAt: null },
+      include: { cliente: true, unidades: true },
+    });
+    if (!s) throw new NotFoundException('Solicitação não encontrada');
+    return s;
+  }
+
+  async update(id: string, dto: UpdateSolicitacaoDto, actorUserId: string) {
+    const current = await this.findOne(id);
+    if (dto.status === undefined) {
+      return current;
+    }
+
+    const allowed = VALID_STATUS_TRANSITIONS[current.status];
+    if (!allowed.includes(dto.status)) {
+      throw new BadRequestException(
+        `Transição de status inválida: de ${current.status} para ${dto.status}`,
+      );
+    }
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const updated = await tx.solicitacao.update({
+          where: { id },
+          data: { status: dto.status },
+          include: { cliente: true, unidades: true },
+        });
+        await this.auditoria.registrar(
+          {
+            tabela: 'solicitacoes',
+            registroId: id,
+            acao: AcaoAuditoria.UPDATE,
+            usuario: actorUserId,
+            dadosAntes: { status: current.status },
+            dadosDepois: { status: updated.status },
+          },
+          tx,
+        );
+        return updated;
+      },
+      TX_OPTIONS,
+    );
+  }
+
+  async remove(id: string, actorUserId: string) {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const current = await tx.solicitacao.findFirst({
+          where: { id, deletedAt: null },
+          include: { unidades: true, cliente: true },
+        });
+        if (!current) throw new NotFoundException('Solicitação não encontrada');
+
+        const deletedAt = new Date();
+        const updated = await tx.solicitacao.update({
+          where: { id },
+          data: { deletedAt },
+        });
+
+        await this.auditoria.registrar(
+          {
+            tabela: 'solicitacoes',
+            registroId: id,
+            acao: AcaoAuditoria.DELETE,
+            usuario: actorUserId,
+            dadosAntes: current,
+            dadosDepois: updated,
+          },
+          tx,
+        );
+
+        return { id, removed: true, deletedAt };
+      },
+      TX_OPTIONS,
+    );
+  }
+}
+
+
+################################################################################
+# arquivo: apps/backend/src/solicitacoes/dto/create-solicitacao.dto.ts
+################################################################################
+
+import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsUUID,
+  ValidateNested,
+} from 'class-validator';
+import { CreateUnidadeDto } from './create-unidade.dto';
+
+export class CreateSolicitacaoDto {
+  @ApiProperty()
+  @IsUUID()
+  clienteId!: string;
+
+  @ApiProperty({ type: [CreateUnidadeDto], minItems: 1 })
+  @IsArray()
+  @ArrayMinSize(1, { message: 'Informe ao menos uma unidade (container) na solicitação' })
+  @ValidateNested({ each: true })
+  @Type(() => CreateUnidadeDto)
+  unidades!: CreateUnidadeDto[];
+}
+
+
+################################################################################
+# arquivo: apps/backend/src/solicitacoes/dto/create-unidade.dto.ts
+################################################################################
+
+import { ApiProperty } from '@nestjs/swagger';
+import { TipoUnidade } from '@prisma/client';
+import { Transform } from 'class-transformer';
+import { IsEnum, IsString, Matches } from 'class-validator';
+
+export class CreateUnidadeDto {
+  @ApiProperty({ example: 'TEMU1234567' })
+  @Transform(({ value }) => (typeof value === 'string' ? value.replace(/\s/g, '').toUpperCase() : value))
+  @IsString()
+  @Matches(/^[A-Z]{4}[0-9]{6}[0-9]$/, {
+    message: 'Número ISO 6346 inválido (formato esperado: 4 letras + 6 dígitos + dígito verificador)',
+  })
+  numeroIso!: string;
+
+  @ApiProperty({ enum: TipoUnidade })
+  @IsEnum(TipoUnidade)
+  tipo!: TipoUnidade;
+}
+
+
+################################################################################
+# arquivo: apps/backend/src/solicitacoes/dto/add-unidade-solicitacao.dto.ts
+################################################################################
+
+import { ApiProperty } from '@nestjs/swagger';
+import { IsUUID } from 'class-validator';
+import { CreateUnidadeDto } from './create-unidade.dto';
+
+/** Adiciona um container ISO a uma solicitação existente (PDF Semana 2). */
+export class AddUnidadeSolicitacaoDto extends CreateUnidadeDto {
+  @ApiProperty()
+  @IsUUID()
+  solicitacaoId!: string;
+}
+
+
+################################################################################
+# arquivo: apps/backend/src/solicitacoes/dto/update-solicitacao.dto.ts
+################################################################################
+
+import { ApiProperty } from '@nestjs/swagger';
+import { StatusSolicitacao } from '@prisma/client';
+import { IsEnum, IsOptional } from 'class-validator';
+
+export class UpdateSolicitacaoDto {
+  @ApiProperty({ enum: StatusSolicitacao, required: false })
+  @IsOptional()
+  @IsEnum(StatusSolicitacao)
+  status?: StatusSolicitacao;
+}
+
+
+################################################################################
+# arquivo: apps/backend/src/solicitacoes/dto/create-portaria.dto.ts
+################################################################################
+
+import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsUUID, MinLength } from 'class-validator';
+
+export class CreatePortariaDto {
+  @ApiProperty()
+  @IsUUID()
+  solicitacaoId!: string;
+
+  @ApiProperty({ example: 'ABCD-1D34', description: 'Placa Mercosul (com ou sem hífen)' })
+  @IsString()
+  @MinLength(7)
+  placa!: string;
+}
+
+
+################################################################################
+# arquivo: apps/backend/src/common/dtos/pagination.dto.ts
+################################################################################
+
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { StatusSolicitacao } from '@prisma/client';
+import { Type } from 'class-transformer';
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+
+export class PaginationDto {
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ default: 10, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number = 10;
+
+  @ApiPropertyOptional({ default: 'createdAt' })
+  @IsOptional()
+  @IsString()
+  orderBy?: string = 'createdAt';
+
+  @ApiPropertyOptional({ enum: ['asc', 'desc'], default: 'desc' })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  order?: 'asc' | 'desc' = 'desc';
+}
+
+/** Paginação para listagem de clientes (whitelist de ordenação). */
+export class ClientePaginationDto extends PaginationDto {
+  @ApiPropertyOptional({ description: 'Filtro texto em nome, e-mail ou documento' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ enum: ['createdAt', 'nome', 'email'], default: 'createdAt' })
+  @IsOptional()
+  @IsIn(['createdAt', 'nome', 'email'])
+  override orderBy?: 'createdAt' | 'nome' | 'email' = 'createdAt';
+}
+
+/** Paginação para solicitações. */
+export class SolicitacaoPaginationDto extends PaginationDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  clienteId?: string;
+
+  @ApiPropertyOptional({ enum: StatusSolicitacao })
+  @IsOptional()
+  @IsEnum(StatusSolicitacao)
+  status?: StatusSolicitacao;
+
+  @ApiPropertyOptional({ enum: ['createdAt', 'protocolo', 'status'], default: 'createdAt' })
+  @IsOptional()
+  @IsIn(['createdAt', 'protocolo', 'status'])
+  override orderBy?: 'createdAt' | 'protocolo' | 'status' = 'createdAt';
+}
+
+
+################################################################################
+# arquivo: apps/backend/src/common/pipes/index.ts
+################################################################################
+
+export * from './cpf-cnpj-validation.pipe';
+export * from './iso6346-validation.pipe';
+export * from './mercosul-plate-validation.pipe';
+
+
+################################################################################
+# arquivo: apps/backend/src/common/pipes/cpf-cnpj-validation.pipe.ts
+################################################################################
+
+import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
+
+@Injectable()
+export class CpfCnpjValidationPipe implements PipeTransform {
+  transform(value: any) {
+    if (!value?.cpfCnpj) {
+      return value;
+    }
+
+    const clean = value.cpfCnpj.replace(/\D/g, '');
+
+    if (clean.length === 11) {
+      if (!this.isValidCpf(clean)) {
+        throw new BadRequestException(
+          'CPF inválido. Verifique os dígitos verificadores.',
+        );
+      }
+    } else if (clean.length === 14) {
+      if (!this.isValidCnpj(clean)) {
+        throw new BadRequestException(
+          'CNPJ inválido. Verifique os dígitos verificadores.',
+        );
+      }
+    } else {
+      throw new BadRequestException(
+        'Documento deve ter 11 (CPF) ou 14 (CNPJ) dígitos.',
+      );
+    }
+
+    value.cpfCnpj = clean;
+    return value;
+  }
+
+  private isValidCpf(cpf: string): boolean {
+    if (cpf === cpf[0].repeat(11)) return false;
+
+    const digits = cpf.split('').map(Number);
+
+    let sum = 0;
+    for (let i = 0; i < 9; i++) {
+      sum += digits[i] * (10 - i);
+    }
+    const remainder1 = sum % 11;
+    const digit1 = remainder1 < 2 ? 0 : 11 - remainder1;
+
+    if (digits[9] !== digit1) return false;
+
+    sum = 0;
+    for (let i = 0; i < 10; i++) {
+      sum += digits[i] * (11 - i);
+    }
+    const remainder2 = sum % 11;
+    const digit2 = remainder2 < 2 ? 0 : 11 - remainder2;
+
+    return digits[10] === digit2;
+  }
+
+  private isValidCnpj(cnpj: string): boolean {
+    if (cnpj === cnpj[0].repeat(14)) return false;
+
+    const digits = cnpj.split('').map(Number);
+
+    let sum = 0;
+    const multipliers1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    for (let i = 0; i < 12; i++) {
+      sum += digits[i] * multipliers1[i];
+    }
+    const remainder1 = sum % 11;
+    const digit1 = remainder1 < 2 ? 0 : 11 - remainder1;
+
+    if (digits[12] !== digit1) return false;
+
+    sum = 0;
+    const multipliers2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    for (let i = 0; i < 13; i++) {
+      sum += digits[i] * multipliers2[i];
+    }
+    const remainder2 = sum % 11;
+    const digit2 = remainder2 < 2 ? 0 : 11 - remainder2;
+
+    return digits[13] === digit2;
+  }
+}
+
+################################################################################
+# arquivo: apps/backend/src/common/pipes/iso6346-validation.pipe.ts
+################################################################################
+
+import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
+import { isValidIso6346 } from '../utils/iso6346';
+
+@Injectable()
+export class Iso6346ValidationPipe implements PipeTransform {
+  transform(value: any) {
+    if (!value?.numeroIso) {
+      return value;
+    }
+
+    if (!isValidIso6346(String(value.numeroIso))) {
+      throw new BadRequestException(
+        'ISO 6346 inválido. Formato esperado: 4 letras + 6 números + 1 check digit (ex: TEMU6079348)',
+      );
+    }
+
+    value.numeroIso = String(value.numeroIso).replace(/\s/g, '').toUpperCase();
+    return value;
+  }
+}
+
+
+################################################################################
+# arquivo: apps/backend/src/common/utils/iso6346.ts
+################################################################################
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ContainerValidator = require('container-validator') as new () => {
+  isValid: (code: string) => boolean;
+};
+
+/** Valida número de contêiner ISO 6346 (inclui dígito verificador). */
+export function isValidIso6346(raw: string): boolean {
+  const code = raw.replace(/\s/g, '').toUpperCase();
+  if (code.length !== 11) return false;
+  const validator = new ContainerValidator();
+  return validator.isValid(code);
+}
+
+
+################################################################################
+# arquivo: apps/backend/src/common/utils/br-documents.ts
+################################################################################
+
+/** Normaliza documento brasileiro para somente dígitos. */
+export function onlyDigits(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
+function cpfDigit(base: string, weightStart: number): number {
+  let sum = 0;
+  for (let i = 0; i < base.length; i++) {
+    sum += parseInt(base[i], 10) * (weightStart - i);
+  }
+  const rest = sum % 11;
+  return rest < 2 ? 0 : 11 - rest;
+}
+
+/** Valida CPF (11 dígitos, dígitos verificadores módulo 11). */
+export function validateCpfDigits(digits: string): boolean {
+  if (digits.length !== 11) return false;
+  if (/^(\d)\1{10}$/.test(digits)) return false;
+  const d1 = cpfDigit(digits.slice(0, 9), 10);
+  const d2 = cpfDigit(digits.slice(0, 10), 11);
+  return d1 === parseInt(digits[9], 10) && d2 === parseInt(digits[10], 10);
+}
+
+function cnpjCalcDigit(base: string, factors: number[]): number {
+  let sum = 0;
+  for (let i = 0; i < base.length; i++) {
+    sum += parseInt(base[i], 10) * factors[i];
+  }
+  const mod = sum % 11;
+  return mod < 2 ? 0 : 11 - mod;
+}
+
+/** Valida CNPJ (14 dígitos). */
+export function validateCnpjDigits(digits: string): boolean {
+  if (digits.length !== 14) return false;
+  if (/^(\d)\1{13}$/.test(digits)) return false;
+  const f1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const f2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const d1 = cnpjCalcDigit(digits.slice(0, 12), f1);
+  const d2 = cnpjCalcDigit(digits.slice(0, 13), f2);
+  return d1 === parseInt(digits[12], 10) && d2 === parseInt(digits[13], 10);
+}
+
+
+################################################################################
+# arquivo: apps/backend/src/common/validators/is-cpf-cnpj.validator.ts
+################################################################################
+
+import { TipoCliente } from '@prisma/client';
+import {
+  registerDecorator,
+  ValidationArguments,
+  ValidationOptions,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
+} from 'class-validator';
+import {
+  onlyDigits,
+  validateCnpjDigits,
+  validateCpfDigits,
+} from '../utils/br-documents';
+
+@ValidatorConstraint({ name: 'IsCpfCnpj', async: false })
+export class IsCpfCnpjConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown, args: ValidationArguments): boolean {
+    if (typeof value !== 'string') return false;
+    const obj = args.object as { tipo?: TipoCliente };
+    const digits = onlyDigits(value);
+    if (!obj.tipo) return false;
+    if (obj.tipo === TipoCliente.PF) {
+      return digits.length === 11 && validateCpfDigits(digits);
+    }
+    return digits.length === 14 && validateCnpjDigits(digits);
+  }
+
+  defaultMessage(): string {
+    return 'CPF ou CNPJ inválido para o tipo informado';
+  }
+}
+
+export function IsCpfCnpj(validationOptions?: ValidationOptions) {
+  return (object: object, propertyName: string) => {
+    registerDecorator({
+      target: object.constructor,
+      propertyName,
+      options: validationOptions,
+      constraints: [],
+      validator: IsCpfCnpjConstraint,
+    });
+  };
+}
+

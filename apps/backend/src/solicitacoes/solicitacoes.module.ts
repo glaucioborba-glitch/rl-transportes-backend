@@ -7,5 +7,6 @@ import { SolicitacoesService } from './solicitacoes.service';
   imports: [AuditoriaModule],
   controllers: [SolicitacoesController],
   providers: [SolicitacoesService],
+  exports: [SolicitacoesService],
 })
 export class SolicitacoesModule {}

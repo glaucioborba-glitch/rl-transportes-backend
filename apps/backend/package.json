@@ -39,6 +39,7 @@
     "container-validator": "^1.1.0",
     "dotenv": "^17.4.2",
     "express-rate-limit": "^8.3.2",
+    "fast-xml-parser": "^5.7.1",
     "ioredis": "^5.10.1",
     "nest-winston": "^1.10.2",
     "passport": "^0.7.0",

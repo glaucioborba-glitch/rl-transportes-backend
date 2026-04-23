@@ -22,9 +22,16 @@ describe('App (e2e)', () => {
     await app.close();
   });
 
-  it('/health (GET)', () => {
-    return request(app.getHttpServer()).get('/health').expect(200).expect((res) => {
-      expect(res.body.status).toBe('ok');
-    });
+  it('/health (GET) retorna checks de database e redis', () => {
+    return request(app.getHttpServer())
+      .get('/health')
+      .expect(200)
+      .expect((res) => {
+        expect(['ok', 'degraded']).toContain(res.body.status);
+        expect(res.body).toHaveProperty('checks');
+        expect(res.body.checks).toHaveProperty('database');
+        expect(res.body.checks).toHaveProperty('redis');
+        expect(res.body).toHaveProperty('timestamp');
+      });
   });
 });

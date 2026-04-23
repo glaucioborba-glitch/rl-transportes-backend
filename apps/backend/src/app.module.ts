@@ -6,11 +6,15 @@ import { AuditoriaModule } from './auditoria/auditoria.module';
 import { AuthModule } from './auth/auth.module';
 import { ClientesModule } from './clientes/clientes.module';
 import secretsConfig from './config/secrets.config';
+import nfseConfig from './config/nfse.config';
 import { winstonModuleOptions } from './common/logger/winston.config';
 import { requestIdMiddleware } from './common/middleware/request-id.middleware';
 import { HealthController } from './health/health.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
+import { FaturamentoModule } from './faturamento/faturamento.module';
+import { PortalModule } from './portal/portal.module';
+import { RelatoriosModule } from './relatorios/relatorios.module';
 import { SolicitacoesModule } from './solicitacoes/solicitacoes.module';
 
 @Module({
@@ -18,7 +22,7 @@ import { SolicitacoesModule } from './solicitacoes/solicitacoes.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['../../.env', '.env'],
-      load: [secretsConfig],
+      load: [secretsConfig, nfseConfig],
     }),
     WinstonModule.forRoot(winstonModuleOptions),
     CacheModule.register({
@@ -31,6 +35,9 @@ import { SolicitacoesModule } from './solicitacoes/solicitacoes.module';
     AuthModule,
     ClientesModule,
     SolicitacoesModule,
+    FaturamentoModule,
+    PortalModule,
+    RelatoriosModule,
   ],
   controllers: [HealthController],
 })

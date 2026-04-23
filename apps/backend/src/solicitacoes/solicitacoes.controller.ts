@@ -20,7 +20,10 @@ import { Iso6346ValidationPipe, MercosulPlateValidationPipe } from '../common/pi
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { AddUnidadeSolicitacaoDto } from './dto/add-unidade-solicitacao.dto';
+import { CreateGateDto } from './dto/create-gate.dto';
+import { CreatePatioDto } from './dto/create-patio.dto';
 import { CreatePortariaDto } from './dto/create-portaria.dto';
+import { CreateSaidaDto } from './dto/create-saida.dto';
 import { CreateSolicitacaoDto } from './dto/create-solicitacao.dto';
 import { UpdateSolicitacaoDto } from './dto/update-solicitacao.dto';
 import { SolicitacoesService } from './solicitacoes.service';
@@ -42,11 +45,15 @@ export class SolicitacoesController {
     Role.CLIENTE,
   )
   @Permissions('solicitacoes:ler')
-  findAll(@Query() query: SolicitacaoPaginationDto) {
-    return this.solicitacoesService.findAllPaginated(query, {
-      clienteId: query.clienteId,
-      status: query.status,
-    });
+  findAll(@Query() query: SolicitacaoPaginationDto, @CurrentUser() user: AuthUser) {
+    return this.solicitacoesService.findAllPaginated(
+      query,
+      {
+        clienteId: query.clienteId,
+        status: query.status,
+      },
+      user,
+    );
   }
 
   @Get(':id')
@@ -59,8 +66,8 @@ export class SolicitacoesController {
     Role.CLIENTE,
   )
   @Permissions('solicitacoes:ler')
-  findOne(@Param('id') id: string) {
-    return this.solicitacoesService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.solicitacoesService.findOne(id, user);
   }
 
   @Post()
@@ -90,11 +97,32 @@ export class SolicitacoesController {
     return this.solicitacoesService.registerPortaria(dto, user.id);
   }
 
+  @Post('gate')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_GATE)
+  @Permissions('solicitacoes:gate')
+  registerGate(@Body() dto: CreateGateDto, @CurrentUser() user: AuthUser) {
+    return this.solicitacoesService.registerGate(dto, user.id);
+  }
+
+  @Post('patio')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_PATIO)
+  @Permissions('solicitacoes:patio')
+  registerPatio(@Body() dto: CreatePatioDto, @CurrentUser() user: AuthUser) {
+    return this.solicitacoesService.registerPatio(dto, user.id);
+  }
+
+  @Post('saida')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_GATE)
+  @Permissions('solicitacoes:saida')
+  registerSaida(@Body() dto: CreateSaidaDto, @CurrentUser() user: AuthUser) {
+    return this.solicitacoesService.registerSaida(dto, user.id);
+  }
+
   @Patch(':id')
   @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_PORTARIA, Role.OPERADOR_GATE)
   @Permissions('solicitacoes:atualizar')
   update(@Param('id') id: string, @Body() dto: UpdateSolicitacaoDto, @CurrentUser() user: AuthUser) {
-    return this.solicitacoesService.update(id, dto, user.id);
+    return this.solicitacoesService.update(id, dto, user.id, user);
   }
 
   @Delete(':id')

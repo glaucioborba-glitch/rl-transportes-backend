@@ -28,6 +28,11 @@ export class RedisService implements OnModuleDestroy {
     return this.client.del(key);
   }
 
+  /** Ping para healthcheck (retorna PONG se conectado). */
+  async ping(): Promise<string> {
+    return this.client.ping();
+  }
+
   async onModuleDestroy(): Promise<void> {
     await this.client.quit();
   }

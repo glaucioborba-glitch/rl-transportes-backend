@@ -1,17 +1,22 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { AcaoAuditoria, Prisma, StatusSolicitacao } from '@prisma/client';
+import { AcaoAuditoria, Prisma, Role, StatusSolicitacao } from '@prisma/client';
+import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { randomBytes } from 'crypto';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { SolicitacaoPaginationDto } from '../common/dtos/pagination.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AddUnidadeSolicitacaoDto } from './dto/add-unidade-solicitacao.dto';
+import { CreateGateDto } from './dto/create-gate.dto';
+import { CreatePatioDto } from './dto/create-patio.dto';
 import { CreatePortariaDto } from './dto/create-portaria.dto';
+import { CreateSaidaDto } from './dto/create-saida.dto';
 import { CreateSolicitacaoDto } from './dto/create-solicitacao.dto';
 import { UpdateSolicitacaoDto } from './dto/update-solicitacao.dto';
 
@@ -34,6 +39,8 @@ function gerarProtocolo(): string {
   const rand = randomBytes(4).toString('hex').toUpperCase();
   return `RL-${y}-${rand}`;
 }
+
+const SOLICITACAO_ORDER_BY = new Set(['createdAt', 'protocolo', 'status']);
 
 @Injectable()
 export class SolicitacoesService {
@@ -183,16 +190,28 @@ export class SolicitacoesService {
   async findAllPaginated(
     pagination: SolicitacaoPaginationDto,
     filters: { clienteId?: string; status?: StatusSolicitacao },
+    actor?: AuthUser,
   ) {
     const page = pagination.page ?? 1;
     const limit = pagination.limit ?? 10;
-    const orderBy = pagination.orderBy ?? 'createdAt';
+    const rawOb = pagination.orderBy ?? 'createdAt';
+    const orderBy = SOLICITACAO_ORDER_BY.has(rawOb) ? rawOb : 'createdAt';
     const order = pagination.order ?? 'desc';
     const skip = (page - 1) * limit;
 
+    let clienteIdFilter = filters.clienteId;
+    if (actor?.role === Role.CLIENTE) {
+      if (!actor.clienteId) {
+        throw new ForbiddenException(
+          'Conta de cliente sem vínculo ao cadastro. Solicite o vínculo ao administrador.',
+        );
+      }
+      clienteIdFilter = actor.clienteId;
+    }
+
     const where: Prisma.SolicitacaoWhereInput = {
       deletedAt: null,
-      ...(filters.clienteId ? { clienteId: filters.clienteId } : {}),
+      ...(clienteIdFilter ? { clienteId: clienteIdFilter } : {}),
       ...(filters.status ? { status: filters.status } : {}),
     };
 
@@ -210,17 +229,41 @@ export class SolicitacoesService {
     return { items, total, page, limit: Math.min(limit, 100), orderBy, order };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, actor?: AuthUser) {
     const s = await this.prisma.solicitacao.findFirst({
       where: { id, deletedAt: null },
       include: { cliente: true, unidades: true },
     });
     if (!s) throw new NotFoundException('Solicitação não encontrada');
+    if (actor?.role === Role.CLIENTE) {
+      if (!actor.clienteId || s.clienteId !== actor.clienteId) {
+        throw new NotFoundException('Solicitação não encontrada');
+      }
+    }
     return s;
   }
 
-  async update(id: string, dto: UpdateSolicitacaoDto, actorUserId: string) {
-    const current = await this.findOne(id);
+  /** Aprovação pelo cliente: apenas PENDENTE → APROVADO, no próprio cadastro. */
+  async aprovarPeloCliente(solicitacaoId: string, actor: AuthUser) {
+    if (actor.role !== Role.CLIENTE || !actor.clienteId) {
+      throw new ForbiddenException('Operação exclusiva do portal do cliente.');
+    }
+    const current = await this.findOne(solicitacaoId, actor);
+    if (current.status !== StatusSolicitacao.PENDENTE) {
+      throw new BadRequestException(
+        'Apenas solicitações pendentes podem ser aprovadas pelo cliente.',
+      );
+    }
+    return this.update(
+      solicitacaoId,
+      { status: StatusSolicitacao.APROVADO },
+      actor.id,
+      actor,
+    );
+  }
+
+  async update(id: string, dto: UpdateSolicitacaoDto, actorUserId: string, actor?: AuthUser) {
+    const current = await this.findOne(id, actor);
     if (dto.status === undefined) {
       return current;
     }
@@ -284,6 +327,146 @@ export class SolicitacoesService {
         );
 
         return { id, removed: true, deletedAt };
+      },
+      TX_OPTIONS,
+    );
+  }
+
+  async registerGate(dto: CreateGateDto, actorUserId: string) {
+    const solicitacao = await this.prisma.solicitacao.findFirst({
+      where: { id: dto.solicitacaoId, deletedAt: null },
+    });
+    if (!solicitacao) {
+      throw new NotFoundException('Solicitação não encontrada');
+    }
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const existing = await tx.gate.findUnique({
+          where: { solicitacaoId: dto.solicitacaoId },
+        });
+        const ric = dto.ricAssinado ?? false;
+        const row = existing
+          ? await tx.gate.update({
+              where: { solicitacaoId: dto.solicitacaoId },
+              data: { ricAssinado: ric },
+            })
+          : await tx.gate.create({
+              data: {
+                solicitacaoId: dto.solicitacaoId,
+                ricAssinado: ric,
+              },
+            });
+        await this.auditoria.registrar(
+          {
+            tabela: 'gates',
+            registroId: row.id,
+            acao: existing ? AcaoAuditoria.UPDATE : AcaoAuditoria.INSERT,
+            usuario: actorUserId,
+            dadosAntes: existing ?? undefined,
+            dadosDepois: row,
+          },
+          tx,
+        );
+        return row;
+      },
+      TX_OPTIONS,
+    );
+  }
+
+  async registerPatio(dto: CreatePatioDto, actorUserId: string) {
+    const solicitacao = await this.prisma.solicitacao.findFirst({
+      where: { id: dto.solicitacaoId, deletedAt: null },
+    });
+    if (!solicitacao) {
+      throw new NotFoundException('Solicitação não encontrada');
+    }
+
+    try {
+      return await this.prisma.$transaction(
+        async (tx) => {
+          const existing = await tx.patio.findUnique({
+            where: { solicitacaoId: dto.solicitacaoId },
+          });
+          const row = existing
+            ? await tx.patio.update({
+                where: { solicitacaoId: dto.solicitacaoId },
+                data: {
+                  quadra: dto.quadra,
+                  fileira: dto.fileira,
+                  posicao: dto.posicao,
+                },
+              })
+            : await tx.patio.create({
+                data: {
+                  solicitacaoId: dto.solicitacaoId,
+                  quadra: dto.quadra,
+                  fileira: dto.fileira,
+                  posicao: dto.posicao,
+                },
+              });
+          await this.auditoria.registrar(
+            {
+              tabela: 'patios',
+              registroId: row.id,
+              acao: existing ? AcaoAuditoria.UPDATE : AcaoAuditoria.INSERT,
+              usuario: actorUserId,
+              dadosAntes: existing ?? undefined,
+              dadosDepois: row,
+            },
+            tx,
+          );
+          return row;
+        },
+        TX_OPTIONS,
+      );
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException(
+          'Posição de pátio já ocupada por outra solicitação (quadra/fileira/posição únicos).',
+        );
+      }
+      throw error;
+    }
+  }
+
+  async registerSaida(dto: CreateSaidaDto, actorUserId: string) {
+    const solicitacao = await this.prisma.solicitacao.findFirst({
+      where: { id: dto.solicitacaoId, deletedAt: null },
+    });
+    if (!solicitacao) {
+      throw new NotFoundException('Solicitação não encontrada');
+    }
+    const dataHora = new Date(dto.dataHoraSaida);
+
+    return this.prisma.$transaction(
+      async (tx) => {
+        const existing = await tx.saida.findUnique({
+          where: { solicitacaoId: dto.solicitacaoId },
+        });
+        const row = existing
+          ? await tx.saida.update({
+              where: { solicitacaoId: dto.solicitacaoId },
+              data: { dataHoraSaida: dataHora },
+            })
+          : await tx.saida.create({
+              data: {
+                solicitacaoId: dto.solicitacaoId,
+                dataHoraSaida: dataHora,
+              },
+            });
+        await this.auditoria.registrar(
+          {
+            tabela: 'saidas',
+            registroId: row.id,
+            acao: existing ? AcaoAuditoria.UPDATE : AcaoAuditoria.INSERT,
+            usuario: actorUserId,
+            dadosAntes: existing ?? undefined,
+            dadosDepois: row,
+          },
+          tx,
+        );
+        return row;
       },
       TX_OPTIONS,
     );
