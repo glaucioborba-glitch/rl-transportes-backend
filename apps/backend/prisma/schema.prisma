@@ -1,7 +1,4 @@
-// Prisma Schema - RL Transportes
-// Database: PostgreSQL
-// ORM: Prisma Client
-// Version: 7.7.0
+// Schema Prisma — RL Transportes (PostgreSQL).
 
 generator client {
   provider = "prisma-client-js"
@@ -29,6 +26,7 @@ enum TipoCliente {
   PF
 }
 
+/// Estado da solicitação no fluxo operacional.
 enum StatusSolicitacao {
   PENDENTE
   APROVADO
@@ -61,6 +59,8 @@ enum AcaoAuditoria {
   INSERT
   UPDATE
   DELETE
+  READ
+  SEGURANCA
 }
 
 // ============================================================================
@@ -205,12 +205,14 @@ model Faturamento {
   clienteId    String
   cliente      Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
   periodo      String
+  /// Sempre igual à soma dos itens; não informar manualmente no serviço.
   valorTotal   Decimal  @db.Decimal(10, 2)
   statusNfe    String   @default("pendente")
   statusBoleto String   @default("pendente")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  itens                    FaturamentoItem[]
   nfsEmitidas              NfsEmitida[]
   boletos                  Boleto[]
   solicitacoesVinculadas   FaturamentoSolicitacao[]
@@ -218,6 +220,19 @@ model Faturamento {
   @@index([clienteId])
   @@unique([clienteId, periodo])
   @@map("faturamentos")
+}
+
+/// Itens (linhas) do faturamento no período — `valorTotal` do cabeçalho = soma de `valor`.
+model FaturamentoItem {
+  id            String  @id @default(uuid())
+  faturamentoId String
+  faturamento   Faturamento @relation(fields: [faturamentoId], references: [id], onDelete: Cascade)
+  descricao     String  @db.VarChar(500)
+  valor         Decimal @db.Decimal(10, 2)
+  createdAt     DateTime @default(now())
+
+  @@index([faturamentoId])
+  @@map("faturamento_itens")
 }
 
 /// Vínculo operacional: solicitações incluídas em um faturamento por período.

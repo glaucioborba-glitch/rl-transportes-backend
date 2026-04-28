@@ -1,16 +1,17 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
   ArrayUnique,
   IsArray,
-  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   Matches,
   MaxLength,
-  Min,
+  ValidateNested,
 } from 'class-validator';
+import { CreateFaturamentoItemDto } from './create-faturamento-item.dto';
 
 export class CreateFaturamentoDto {
   @ApiProperty()
@@ -24,13 +25,20 @@ export class CreateFaturamentoDto {
   @MaxLength(7)
   periodo!: string;
 
-  @ApiProperty()
-  @Type(() => Number)
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  valorTotal!: number;
+  /**
+   * Linhas do faturamento. O total (`valorTotal` no banco) é a **soma** destes itens;
+   * não é permitido informar o total manualmente.
+   */
+  @ApiProperty({ type: [CreateFaturamentoItemDto] })
+  @IsArray()
+  @ArrayMinSize(1, { message: 'Informe ao menos um item de faturamento' })
+  @ValidateNested({ each: true })
+  @Type(() => CreateFaturamentoItemDto)
+  itens!: CreateFaturamentoItemDto[];
 
-  @ApiProperty({ description: 'Solicitações operacionais vinculadas a esta competência', required: false })
+  @ApiPropertyOptional({
+    description: 'Solicitações operacionais vinculadas a esta competência',
+  })
   @IsOptional()
   @IsArray()
   @ArrayUnique()
