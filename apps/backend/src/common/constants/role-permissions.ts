@@ -29,6 +29,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'dashboard:financeiro',
     'dashboard:financeiro_executivo',
     'dashboard:performance',
+    'comercial:pricing',
     'users:criar',
     'auditoria:ler',
   ],
@@ -59,6 +60,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'dashboard:financeiro',
     'dashboard:financeiro_executivo',
     'dashboard:performance',
+    'comercial:pricing',
     'auditoria:ler',
   ],
   [Role.OPERADOR_PORTARIA]: [

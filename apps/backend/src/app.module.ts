@@ -19,6 +19,7 @@ import { SolicitacoesModule } from './solicitacoes/solicitacoes.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { DashboardFinanceiroModule } from './dashboard-financeiro/dashboard-financeiro.module';
 import { DashboardPerformanceModule } from './dashboard-performance/dashboard-performance.module';
+import { ComercialPricingModule } from './comercial-pricing/comercial-pricing.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { DashboardPerformanceModule } from './dashboard-performance/dashboard-pe
     DashboardModule,
     DashboardFinanceiroModule,
     DashboardPerformanceModule,
+    ComercialPricingModule,
   ],
   controllers: [HealthController],
 })

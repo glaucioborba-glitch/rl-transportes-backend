@@ -11636,6 +11636,7 @@ import { SolicitacoesModule } from './solicitacoes/solicitacoes.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { DashboardFinanceiroModule } from './dashboard-financeiro/dashboard-financeiro.module';
 import { DashboardPerformanceModule } from './dashboard-performance/dashboard-performance.module';
+import { ComercialPricingModule } from './comercial-pricing/comercial-pricing.module';
 
 @Module({
   imports: [
@@ -11661,6 +11662,7 @@ import { DashboardPerformanceModule } from './dashboard-performance/dashboard-pe
     DashboardModule,
     DashboardFinanceiroModule,
     DashboardPerformanceModule,
+    ComercialPricingModule,
   ],
   controllers: [HealthController],
 })
@@ -13612,6 +13614,1293 @@ import { CreateClienteDto } from './create-cliente.dto';
 
 export class UpdateClienteDto extends PartialType(CreateClienteDto) {}
 ================================================================================
+FILE: apps/backend/src/comercial-pricing/comercial-pricing.calculations.spec.ts
+import {
+  curvaAbcPorLucratividade,
+  elasticidadeDemandaPreco,
+  simuladorComercial,
+} from './comercial-pricing.calculations';
+
+describe('comercial-pricing.calculations', () => {
+  describe('curvaAbcPorLucratividade', () => {
+    it('distribui A/B/C pelo cumulativo do lucro positivo', () => {
+      const rows = [
+        { id: '1', lucro: 800 },
+        { id: '2', lucro: 150 },
+        { id: '3', lucro: 50 },
+      ];
+      const out = curvaAbcPorLucratividade(rows);
+      expect(out[0].classe).toBe('A');
+      expect(out[0].id).toBe('1');
+      expect(out[1].classe).toBe('B');
+      expect(out[2].classe).toBe('C');
+    });
+
+    it('retorna C quando não há lucro positivo total', () => {
+      const out = curvaAbcPorLucratividade([
+        { id: 'a', lucro: -10 },
+        { id: 'b', lucro: -5 },
+      ]);
+      expect(out.every((x) => x.classe === 'C')).toBe(true);
+    });
+  });
+
+  describe('elasticidadeDemandaPreco', () => {
+    it('calcula média de razões volume/preço entre meses', () => {
+      const e = elasticidadeDemandaPreco([
+        { mes: '2026-01', volume: 100, precoMedio: 200 },
+        { mes: '2026-02', volume: 90, precoMedio: 220 },
+      ]);
+      expect(e).not.toBeNull();
+      expect(e!).toBeLessThan(0);
+    });
+
+    it('retorna null para série curta ou inválida', () => {
+      expect(elasticidadeDemandaPreco([])).toBeNull();
+      expect(elasticidadeDemandaPreco([{ mes: 'a', volume: 1, precoMedio: 1 }])).toBeNull();
+    });
+  });
+
+  describe('simuladorComercial', () => {
+    it('projeta margem e volume com elasticidade default', () => {
+      const r = simuladorComercial({
+        precoAtual: 100,
+        precoNovo: 110,
+        custo: 60,
+        volumeAtual: 1000,
+      });
+      expect(r.margemAtual).toBeCloseTo(0.4, 5);
+      expect(r.margemNova).toBeCloseTo((110 - 60) / 110, 3);
+      expect(r.impactoVolumeEstimado).toBeLessThan(0);
+    });
+  });
+});
+
+================================================================================
+FILE: apps/backend/src/comercial-pricing/comercial-pricing.calculations.ts
+/** Funções puras de pricing / ABC / elasticidade — testáveis independentemente do Prisma. */
+
+export type AbcInputRow = { id: string; lucro: number };
+
+export type AbcOutputRow = AbcInputRow & {
+  classe: 'A' | 'B' | 'C';
+  contribuicaoLucroAcumPct: number;
+};
+
+/**
+ * Curva ABC pela contribuição ao lucro (ordem decrescente). Classes por cumulativo do lucro positivo:
+ * A até 80%, B até 95%, C restante (15%+5%).
+ */
+export function curvaAbcPorLucratividade(rows: AbcInputRow[]): AbcOutputRow[] {
+  const sorted = [...rows].sort((a, b) => b.lucro - a.lucro);
+  const totalLucroPos = sorted.reduce((s, r) => s + Math.max(0, r.lucro), 0);
+  if (totalLucroPos <= 0) {
+    return sorted.map((r) => ({
+      ...r,
+      classe: 'C' as const,
+      contribuicaoLucroAcumPct: 0,
+    }));
+  }
+  let cum = 0;
+  return sorted.map((r) => {
+    cum += Math.max(0, r.lucro);
+    const pct = cum / totalLucroPos;
+    const classe: 'A' | 'B' | 'C' = pct <= 0.8 ? 'A' : pct <= 0.95 ? 'B' : 'C';
+    return {
+      id: r.id,
+      lucro: r.lucro,
+      classe,
+      contribuicaoLucroAcumPct: Math.round(pct * 10_000) / 100,
+    };
+  });
+}
+
+export type SerieMesVolPreco = { mes: string; volume: number; precoMedio: number };
+
+/** Elasticidade média ponto a ponto: média de (%ΔQ/%ΔP) entre meses consecutivos válidos. */
+export function elasticidadeDemandaPreco(series: SerieMesVolPreco[]): number | null {
+  if (series.length < 2) return null;
+  const ratios: number[] = [];
+  for (let i = 1; i < series.length; i++) {
+    const p0 = series[i - 1].precoMedio;
+    const p1 = series[i].precoMedio;
+    const q0 = series[i - 1].volume;
+    const q1 = series[i].volume;
+    if (p0 <= 0 || p1 <= 0 || q0 <= 0 || q1 <= 0) continue;
+    const dP = (p1 - p0) / p0;
+    const dQ = (q1 - q0) / q0;
+    if (Math.abs(dP) < 1e-9) continue;
+    ratios.push(dQ / dP);
+  }
+  if (ratios.length === 0) return null;
+  return ratios.reduce((a, b) => a + b, 0) / ratios.length;
+}
+
+export type SimuladorInput = {
+  precoAtual: number;
+  precoNovo: number;
+  custo: number;
+  volumeAtual: number;
+  /** Se omitido, usa default conservador (demanda inelástica curta). */
+  elasticidade?: number | null;
+};
+
+export type SimuladorOutput = {
+  margemAtual: number | null;
+  margemNova: number | null;
+  impactoReceitaLinear: number;
+  impactoVolumeEstimado: number;
+  receitaAtual: number;
+  receitaNovaEstimada: number;
+  volumeEstimado: number;
+  elasticidadeAplicada: number;
+};
+
+const ELASTICIDADE_PADRAO = -0.35;
+
+export function simuladorComercial(input: SimuladorInput): SimuladorOutput {
+  const { precoAtual, precoNovo, custo, volumeAtual } = input;
+  const e = input.elasticidade ?? ELASTICIDADE_PADRAO;
+  const margemAtual = precoAtual > 0 ? (precoAtual - custo) / precoAtual : null;
+  const margemNova = precoNovo > 0 ? (precoNovo - custo) / precoNovo : null;
+  const impactoReceitaLinear = (precoNovo - precoAtual) * volumeAtual;
+  const pctPreco = precoAtual > 0 ? (precoNovo - precoAtual) / precoAtual : 0;
+  const volumeEstimado = Math.max(0, volumeAtual * (1 + e * pctPreco));
+  const impactoVolumeEstimado = volumeEstimado - volumeAtual;
+  const receitaAtual = precoAtual * volumeAtual;
+  const receitaNovaEstimada = precoNovo * volumeEstimado;
+  return {
+    margemAtual: margemAtual !== null ? Math.round(margemAtual * 10_000) / 10_000 : null,
+    margemNova: margemNova !== null ? Math.round(margemNova * 10_000) / 10_000 : null,
+    impactoReceitaLinear: Math.round(impactoReceitaLinear * 100) / 100,
+    impactoVolumeEstimado: Math.round(impactoVolumeEstimado * 100) / 100,
+    receitaAtual: Math.round(receitaAtual * 100) / 100,
+    receitaNovaEstimada: Math.round(receitaNovaEstimada * 100) / 100,
+    volumeEstimado: Math.round(volumeEstimado * 100) / 100,
+    elasticidadeAplicada: e,
+  };
+}
+
+================================================================================
+FILE: apps/backend/src/comercial-pricing/comercial-pricing.controller.ts
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
+import { Permissions } from '../common/decorators/permissions.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { PermissionsGuard } from '../common/guards/permissions.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { ComercialPricingService } from './comercial-pricing.service';
+import { ComercialElasticidadeQueryDto } from './dto/comercial-elasticidade-query.dto';
+import { ComercialPeriodQueryDto } from './dto/comercial-period-query.dto';
+import {
+  ComercialCurvaAbcRespostaDto,
+  ComercialElasticidadeRespostaDto,
+  ComercialLucroPorClienteRespostaDto,
+  ComercialLucroPorServicoRespostaDto,
+  ComercialRecomendacoesRespostaDto,
+  ComercialSimuladorRespostaDto,
+} from './dto/comercial-response.dto';
+import { ComercialSimuladorQueryDto } from './dto/comercial-simulador-query.dto';
+
+@ApiTags('comercial-pricing')
+@ApiBearerAuth('access-token')
+@UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
+@Controller('comercial')
+export class ComercialPricingController {
+  constructor(private readonly comercialPricingService: ComercialPricingService) {}
+
+  @Get('curva-abc')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('comercial:pricing')
+  @ApiOperation({
+    summary: 'Curva ABC estendida por lucratividade (80/15/5 sobre lucro positivo)',
+    description:
+      'Custo operacional estimado alocado pelo mix de faturamento (proxy auditoria × ciclo × PERFORMANCE_CUSTO_MINUTO_PROXY). Somente leitura.',
+  })
+  @ApiOkResponse({ type: ComercialCurvaAbcRespostaDto })
+  getCurvaAbc(@Query() query: ComercialPeriodQueryDto): Promise<ComercialCurvaAbcRespostaDto> {
+    return this.comercialPricingService.getCurvaAbc(query);
+  }
+
+  @Get('lucro-por-cliente')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('comercial:pricing')
+  @ApiOperation({
+    summary: 'Lucro e margem por cliente com série mensal (12 meses)',
+  })
+  @ApiOkResponse({ type: ComercialLucroPorClienteRespostaDto })
+  getLucroPorCliente(
+    @Query() query: ComercialPeriodQueryDto,
+  ): Promise<ComercialLucroPorClienteRespostaDto> {
+    return this.comercialPricingService.getLucroPorCliente(query);
+  }
+
+  @Get('lucro-por-servico')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('comercial:pricing')
+  @ApiOperation({
+    summary: 'Lucro por tipo de unidade (IMPORT/EXPORT/GATE_IN/GATE_OUT)',
+    description: 'Receita alocada proporcionalmente ao volume de unidades concluídas no período.',
+  })
+  @ApiOkResponse({ type: ComercialLucroPorServicoRespostaDto })
+  getLucroPorServico(
+    @Query() query: ComercialPeriodQueryDto,
+  ): Promise<ComercialLucroPorServicoRespostaDto> {
+    return this.comercialPricingService.getLucroPorServico(query);
+  }
+
+  @Get('elasticidade')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('comercial:pricing')
+  @ApiOperation({
+    summary: 'Elasticidade média volume × preço médio (histórico mensal)',
+    description:
+      'Volume = unidades com saída no mês; preço médio = faturamento do mês / volume. Opcional clienteId.',
+  })
+  @ApiOkResponse({ type: ComercialElasticidadeRespostaDto })
+  getElasticidade(@Query() query: ComercialElasticidadeQueryDto): Promise<ComercialElasticidadeRespostaDto> {
+    return this.comercialPricingService.getElasticidade(query);
+  }
+
+  @Get('simulador')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('comercial:pricing')
+  @ApiOperation({
+    summary: 'Simulador What-If de preço, margem e volume',
+    description:
+      'Usa elasticidade informada ou default conservador. Impacto receita linear e volume estimado.',
+  })
+  @ApiOkResponse({ type: ComercialSimuladorRespostaDto })
+  getSimulador(@Query() query: ComercialSimuladorQueryDto): ComercialSimuladorRespostaDto {
+    return this.comercialPricingService.getSimulador(query);
+  }
+
+  @Get('recomendacoes')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('comercial:pricing')
+  @ApiOperation({
+    summary: 'Recomendações comerciais automáticas',
+    description:
+      'Combina margem, curva ABC, intensidade operacional e boletos em aberto (somente leitura).',
+  })
+  @ApiOkResponse({ type: ComercialRecomendacoesRespostaDto })
+  getRecomendacoes(@Query() query: ComercialPeriodQueryDto): Promise<ComercialRecomendacoesRespostaDto> {
+    return this.comercialPricingService.getRecomendacoes(query);
+  }
+}
+
+================================================================================
+FILE: apps/backend/src/comercial-pricing/comercial-pricing.module.ts
+import { Module } from '@nestjs/common';
+import { PrismaModule } from '../prisma/prisma.module';
+import { ComercialPricingController } from './comercial-pricing.controller';
+import { ComercialPricingService } from './comercial-pricing.service';
+
+@Module({
+  imports: [PrismaModule],
+  controllers: [ComercialPricingController],
+  providers: [ComercialPricingService],
+  exports: [ComercialPricingService],
+})
+export class ComercialPricingModule {}
+
+================================================================================
+FILE: apps/backend/src/comercial-pricing/comercial-pricing.service.spec.ts
+import { ConfigService } from '@nestjs/config';
+import { ComercialPricingService } from './comercial-pricing.service';
+
+describe('ComercialPricingService', () => {
+  const prisma = {};
+  const config = {
+    get: jest.fn((key: string) => {
+      if (key === 'PERFORMANCE_CUSTO_MINUTO_PROXY') return '0.05';
+      return undefined;
+    }),
+  };
+
+  const service = new ComercialPricingService(prisma as never, config as never);
+
+  it('getSimulador delega ao motor what-if', () => {
+    const r = service.getSimulador({
+      precoAtual: 200,
+      precoNovo: 220,
+      custo: 80,
+      volumeAtual: 50,
+    });
+    expect(r.receitaAtual).toBe(10000);
+    expect(r.elasticidadeAplicada).toBeDefined();
+  });
+});
+
+================================================================================
+FILE: apps/backend/src/comercial-pricing/comercial-pricing.service.ts
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { AcaoAuditoria, Prisma } from '@prisma/client';
+import { parseRelatorioInicioFim } from '../common/utils/relatorio-periodo';
+import { PrismaService } from '../prisma/prisma.service';
+import {
+  curvaAbcPorLucratividade,
+  elasticidadeDemandaPreco,
+  simuladorComercial,
+  type SerieMesVolPreco,
+} from './comercial-pricing.calculations';
+import type { ComercialElasticidadeQueryDto } from './dto/comercial-elasticidade-query.dto';
+import type { ComercialPeriodQueryDto } from './dto/comercial-period-query.dto';
+import type {
+  ComercialClienteLucroDto,
+  ComercialCurvaAbcItemDto,
+  ComercialCurvaAbcRespostaDto,
+  ComercialElasticidadeRespostaDto,
+  ComercialLucroPorClienteRespostaDto,
+  ComercialLucroPorServicoRespostaDto,
+  ComercialParametrosCustoDto,
+  ComercialRecomendacaoDto,
+  ComercialRecomendacoesRespostaDto,
+  ComercialSerieElasticidadeMesDto,
+  ComercialSerieMesValorDto,
+  ComercialServicoLucroDto,
+  ComercialSimuladorRespostaDto,
+} from './dto/comercial-response.dto';
+import type { ComercialSimuladorQueryDto } from './dto/comercial-simulador-query.dto';
+
+const OP_TABLES = ['portarias', 'gates', 'patios', 'saidas'] as const;
+
+function round2(n: number | null | undefined): number | null {
+  if (n === null || n === undefined || Number.isNaN(n)) return null;
+  return Math.round(n * 10000) / 10000;
+}
+
+function roundMoney(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+function num(d: Prisma.Decimal | bigint | null | undefined): number {
+  if (d === null || d === undefined) return 0;
+  if (typeof d === 'bigint') return Number(d);
+  return Number(d.toFixed(2));
+}
+
+function periodoYm(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function addMonthsYm(ym: string, delta: number): string {
+  const [y, m] = ym.split('-').map(Number);
+  const dt = new Date(y, (m ?? 1) - 1 + delta, 1);
+  return periodoYm(dt);
+}
+
+@Injectable()
+export class ComercialPricingService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
+
+  private custoMinutoProxy(): number {
+    const v = parseFloat(this.config.get<string>('PERFORMANCE_CUSTO_MINUTO_PROXY') ?? '0.05');
+    return Number.isFinite(v) && v >= 0 ? v : 0.05;
+  }
+
+  /** Recorte padrão: 12 meses até hoje. */
+  private resolvePeriodo(query: ComercialPeriodQueryDto): { ini: Date; fim: Date } {
+    if (query.dataInicio && query.dataFim) {
+      return parseRelatorioInicioFim(query.dataInicio, query.dataFim);
+    }
+    const fim = new Date();
+    const ini = new Date(fim);
+    ini.setFullYear(ini.getFullYear() - 1);
+    ini.setHours(0, 0, 0, 0);
+    fim.setHours(23, 59, 59, 999);
+    return { ini, fim };
+  }
+
+  private async cicloCompletoHoras(
+    ini: Date,
+    fim: Date,
+    clienteId?: string,
+  ): Promise<number | null> {
+    const cf = clienteId ? Prisma.sql`AND s."clienteId" = ${clienteId}` : Prisma.empty;
+    const rows = await this.prisma.$queryRaw<Array<{ m: number | null }>>`
+      SELECT AVG(EXTRACT(EPOCH FROM (sa."dataHoraSaida" - po."createdAt")) / 3600.0) AS m
+      FROM solicitacoes s
+      JOIN portarias po ON po."solicitacaoId" = s.id
+      JOIN gates g ON g."solicitacaoId" = s.id
+      JOIN patios pt ON pt."solicitacaoId" = s.id
+      JOIN saidas sa ON sa."solicitacaoId" = s.id
+      WHERE s."deletedAt" IS NULL
+        AND po."createdAt" >= ${ini}
+        AND sa."dataHoraSaida" <= ${fim}
+        ${cf}
+    `;
+    const raw = rows[0]?.m;
+    return raw !== null && raw !== undefined ? round2(raw) : null;
+  }
+
+  private async custoGlobalParams(
+    ini: Date,
+    fim: Date,
+    clienteId?: string,
+  ): Promise<{ parametros: ComercialParametrosCustoDto; custoTotal: number }> {
+    const custoMin = this.custoMinutoProxy();
+    const cicloHoras = await this.cicloCompletoHoras(ini, fim, clienteId);
+    const ops = await this.prisma.auditoria.count({
+      where: {
+        createdAt: { gte: ini, lte: fim },
+        tabela: { in: [...OP_TABLES] },
+        acao: AcaoAuditoria.INSERT,
+      },
+    });
+    const custoTotalRaw =
+      cicloHoras !== null ? ops * cicloHoras * 60 * custoMin : ops * 60 * custoMin;
+    const custoTotal = roundMoney(custoTotalRaw);
+    const parametros: ComercialParametrosCustoDto = {
+      custoOperacionalTotalEstimado: custoTotal,
+      operacoesInsertConsideradas: ops,
+      cicloMedioHoras: cicloHoras,
+      custoMinutoProxy: custoMin,
+    };
+    return { parametros, custoTotal };
+  }
+
+  async getCurvaAbc(query: ComercialPeriodQueryDto): Promise<ComercialCurvaAbcRespostaDto> {
+    const { ini, fim } = this.resolvePeriodo(query);
+    const filterCliente = query.clienteId;
+
+    const { parametros, custoTotal } = await this.custoGlobalParams(ini, fim, filterCliente);
+
+    const fatRows = await this.prisma.faturamento.groupBy({
+      by: ['clienteId'],
+      where: {
+        createdAt: { gte: ini, lte: fim },
+        ...(filterCliente ? { clienteId: filterCliente } : {}),
+      },
+      _sum: { valorTotal: true },
+    });
+
+    const totalFat = fatRows.reduce((s, r) => s + num(r._sum.valorTotal), 0);
+
+    const clienteIds = fatRows.map((r) => r.clienteId);
+    const nomes = await this.prisma.cliente.findMany({
+      where: { id: { in: clienteIds }, deletedAt: null },
+      select: { id: true, nome: true },
+    });
+    const nomeMap = new Map(nomes.map((c) => [c.id, c.nome]));
+
+    const abcInput = fatRows.map((r) => {
+      const fat = num(r._sum.valorTotal);
+      const custoEst =
+        totalFat > 0 ? roundMoney((custoTotal * fat) / totalFat) : 0;
+      const lucro = roundMoney(fat - custoEst);
+      return {
+        id: r.clienteId,
+        lucro,
+        _fat: fat,
+        _custo: custoEst,
+      };
+    });
+
+    const abc = curvaAbcPorLucratividade(abcInput.map((x) => ({ id: x.id, lucro: x.lucro })));
+    const abcMap = new Map(abc.map((r) => [r.id, r]));
+
+    const itens: ComercialCurvaAbcItemDto[] = abcInput.map((row) => {
+      const meta = abcMap.get(row.id)!;
+      const fat = row._fat;
+      const margemPct = fat > 0 ? round2(row.lucro / fat) : null;
+      return {
+        clienteId: row.id,
+        clienteNome: nomeMap.get(row.id) ?? '',
+        faturamento: roundMoney(fat),
+        custoEstimado: row._custo,
+        lucro: row.lucro,
+        margemPct,
+        classe: meta.classe,
+        contribuicaoLucroAcumPct: meta.contribuicaoLucroAcumPct,
+      };
+    });
+
+    const concentracao = {
+      classeA: itens.filter((i) => i.classe === 'A').length,
+      classeB: itens.filter((i) => i.classe === 'B').length,
+      classeC: itens.filter((i) => i.classe === 'C').length,
+    };
+
+    return {
+      periodo: {
+        dataInicio: ini.toISOString().slice(0, 10),
+        dataFim: fim.toISOString().slice(0, 10),
+      },
+      parametros,
+      concentracao: {
+        classeA: concentracao.classeA,
+        classeB: concentracao.classeB,
+        classeC: concentracao.classeC,
+      },
+      itens,
+    };
+  }
+
+  async getLucroPorCliente(query: ComercialPeriodQueryDto): Promise<ComercialLucroPorClienteRespostaDto> {
+    const { ini, fim } = this.resolvePeriodo(query);
+    const filterCliente = query.clienteId;
+    const { parametros, custoTotal } = await this.custoGlobalParams(ini, fim, filterCliente);
+
+    const fatRows = await this.prisma.faturamento.groupBy({
+      by: ['clienteId'],
+      where: {
+        createdAt: { gte: ini, lte: fim },
+        ...(filterCliente ? { clienteId: filterCliente } : {}),
+      },
+      _sum: { valorTotal: true },
+    });
+
+    const totalFat = fatRows.reduce((s, r) => s + num(r._sum.valorTotal), 0);
+
+    const iniSerie = new Date(fim);
+    iniSerie.setMonth(iniSerie.getMonth() - 11);
+    const minYm = periodoYm(iniSerie);
+    const maxYm = periodoYm(fim);
+
+    const serieRows = await this.prisma.$queryRaw<
+      Array<{ clienteId: string; mes: string; rec: unknown }>
+    >`
+      SELECT f."clienteId", f.periodo AS mes, SUM(f."valorTotal")::numeric AS rec
+      FROM faturamentos f
+      WHERE f.periodo >= ${minYm}
+        AND f.periodo <= ${maxYm}
+        ${filterCliente ? Prisma.sql`AND f."clienteId" = ${filterCliente}` : Prisma.empty}
+      GROUP BY f."clienteId", f.periodo
+    `;
+
+    const totFatPorMes = new Map<string, number>();
+    for (const row of serieRows) {
+      const mes = row.mes;
+      const v = num(row.rec as Prisma.Decimal);
+      totFatPorMes.set(mes, (totFatPorMes.get(mes) ?? 0) + v);
+    }
+
+    const opsMesRows = await this.prisma.$queryRaw<Array<{ mes: string; c: bigint }>>`
+      SELECT to_char(date_trunc('month', a."createdAt"), 'YYYY-MM') AS mes, COUNT(*)::bigint AS c
+      FROM auditorias a
+      WHERE a."createdAt" >= ${iniSerie}
+        AND a."createdAt" <= ${fim}
+        AND a.tabela IN ('portarias','gates','patios','saidas')
+        AND a.acao = 'INSERT'
+      GROUP BY date_trunc('month', a."createdAt")
+      ORDER BY mes ASC
+    `;
+    const opsPorMes = new Map(opsMesRows.map((r) => [r.mes, Number(r.c)]));
+    const cicloHoras = parametros.cicloMedioHoras ?? 1;
+    const custoMin = parametros.custoMinutoProxy;
+    const custoMesFactor = cicloHoras * 60 * custoMin;
+
+    const custoGlobalPorMes = new Map<string, number>();
+    for (const [mes, ops] of opsPorMes) {
+      custoGlobalPorMes.set(mes, roundMoney(ops * custoMesFactor));
+    }
+
+    const seriePorCliente = new Map<string, Map<string, number>>();
+    for (const row of serieRows) {
+      const cid = row.clienteId;
+      if (!seriePorCliente.has(cid)) seriePorCliente.set(cid, new Map());
+      seriePorCliente.get(cid)!.set(row.mes, num(row.rec as Prisma.Decimal));
+    }
+
+    const nomes = await this.prisma.cliente.findMany({
+      where: {
+        id: { in: fatRows.map((r) => r.clienteId) },
+        deletedAt: null,
+      },
+      select: { id: true, nome: true },
+    });
+    const nomeMap = new Map(nomes.map((c) => [c.id, c.nome]));
+
+    const clientes: ComercialClienteLucroDto[] = fatRows.map((fr) => {
+      const fat = num(fr._sum.valorTotal);
+      const custoEst =
+        totalFat > 0 ? roundMoney((custoTotal * fat) / totalFat) : 0;
+      const lucro = roundMoney(fat - custoEst);
+      const margemPct = fat > 0 ? round2(lucro / fat) : null;
+
+      const mesMap = seriePorCliente.get(fr.clienteId);
+      const serie12Meses: ComercialSerieMesValorDto[] = [];
+      let cursorYm = minYm;
+      while (cursorYm <= maxYm) {
+        const recMes = mesMap?.get(cursorYm) ?? 0;
+        const totMes = totFatPorMes.get(cursorYm) ?? 0;
+        const cgMes = custoGlobalPorMes.get(cursorYm) ?? 0;
+        const custoClienteMes =
+          totMes > 0 ? roundMoney((cgMes * recMes) / totMes) : 0;
+        const mp = recMes > 0 ? round2((recMes - custoClienteMes) / recMes) : null;
+        serie12Meses.push({
+          mes: cursorYm,
+          faturamento: roundMoney(recMes),
+          custoEstimado: custoClienteMes,
+          margemPct: mp,
+        });
+        cursorYm = addMonthsYm(cursorYm, 1);
+      }
+
+      return {
+        clienteId: fr.clienteId,
+        clienteNome: nomeMap.get(fr.clienteId) ?? '',
+        faturamento: roundMoney(fat),
+        custoEstimado: custoEst,
+        lucro,
+        margemPct,
+        serie12Meses,
+      };
+    });
+
+    return {
+      periodo: {
+        dataInicio: ini.toISOString().slice(0, 10),
+        dataFim: fim.toISOString().slice(0, 10),
+      },
+      parametros,
+      clientes,
+    };
+  }
+
+  async getLucroPorServico(query: ComercialPeriodQueryDto): Promise<ComercialLucroPorServicoRespostaDto> {
+    const { ini, fim } = this.resolvePeriodo(query);
+    const filterCliente = query.clienteId;
+    const { parametros, custoTotal } = await this.custoGlobalParams(ini, fim, filterCliente);
+
+    const unitsByTipo = await this.prisma.unidade.groupBy({
+      by: ['tipo'],
+      where: {
+        solicitacao: {
+          deletedAt: null,
+          ...(filterCliente ? { clienteId: filterCliente } : {}),
+          saida: {
+            dataHoraSaida: { gte: ini, lte: fim },
+          },
+        },
+      },
+      _count: { id: true },
+    });
+
+    const totalUn = unitsByTipo.reduce((s, r) => s + r._count.id, 0);
+
+    const fatTotal = await this.prisma.faturamento.aggregate({
+      where: {
+        createdAt: { gte: ini, lte: fim },
+        ...(filterCliente ? { clienteId: filterCliente } : {}),
+      },
+      _sum: { valorTotal: true },
+    });
+    const receitaTotal = num(fatTotal._sum.valorTotal);
+
+    const servicos: ComercialServicoLucroDto[] = unitsByTipo.map((u) => {
+      const n = u._count.id;
+      const fatTipo =
+        totalUn > 0 && receitaTotal > 0 ? roundMoney((receitaTotal * n) / totalUn) : 0;
+      const custoTipo =
+        receitaTotal > 0 ? roundMoney((custoTotal * fatTipo) / receitaTotal) : 0;
+      const lucro = roundMoney(fatTipo - custoTipo);
+      const margemPct = fatTipo > 0 ? round2(lucro / fatTipo) : null;
+      return {
+        tipo: u.tipo as unknown as string,
+        unidades: n,
+        faturamentoAlocado: fatTipo,
+        custoEstimado: custoTipo,
+        lucro,
+        margemPct,
+      };
+    });
+
+    return {
+      periodo: {
+        dataInicio: ini.toISOString().slice(0, 10),
+        dataFim: fim.toISOString().slice(0, 10),
+      },
+      parametros,
+      servicos,
+    };
+  }
+
+  async getElasticidade(query: ComercialElasticidadeQueryDto): Promise<ComercialElasticidadeRespostaDto> {
+    const meses = query.meses ?? 12;
+    let ini: Date;
+    let fimAdj: Date;
+    if (query.dataInicio && query.dataFim) {
+      const r = parseRelatorioInicioFim(query.dataInicio, query.dataFim);
+      ini = r.ini;
+      fimAdj = r.fim;
+    } else {
+      fimAdj = new Date();
+      fimAdj.setHours(23, 59, 59, 999);
+      ini = new Date(fimAdj);
+      ini.setMonth(ini.getMonth() - meses);
+      ini.setHours(0, 0, 0, 0);
+    }
+
+    const filterCliente = query.clienteId;
+    const cf = filterCliente ? Prisma.sql`AND s."clienteId" = ${filterCliente}` : Prisma.empty;
+
+    const volRows = await this.prisma.$queryRaw<Array<{ mes: string; vol: bigint }>>`
+      SELECT to_char(date_trunc('month', sa."dataHoraSaida"), 'YYYY-MM') AS mes,
+             COUNT(u.id)::bigint AS vol
+      FROM unidades_solicitacao u
+      INNER JOIN solicitacoes s ON s.id = u."solicitacaoId"
+      INNER JOIN saidas sa ON sa."solicitacaoId" = s.id
+      WHERE s."deletedAt" IS NULL
+        AND sa."dataHoraSaida" >= ${ini}
+        AND sa."dataHoraSaida" <= ${fimAdj}
+        ${cf}
+      GROUP BY date_trunc('month', sa."dataHoraSaida")
+      ORDER BY mes ASC
+    `;
+
+    const minYm = periodoYm(ini);
+    const maxYm = periodoYm(fimAdj);
+
+    const recRows = await this.prisma.$queryRaw<Array<{ mes: string; rec: unknown }>>`
+      SELECT f.periodo AS mes, SUM(f."valorTotal")::numeric AS rec
+      FROM faturamentos f
+      WHERE f.periodo >= ${minYm}
+        AND f.periodo <= ${maxYm}
+        ${filterCliente ? Prisma.sql`AND f."clienteId" = ${filterCliente}` : Prisma.empty}
+      GROUP BY f.periodo
+      ORDER BY mes ASC
+    `;
+
+    const volMap = new Map(volRows.map((r) => [r.mes, Number(r.vol)]));
+    const recMap = new Map(recRows.map((r) => [r.mes, num(r.rec as Prisma.Decimal)]));
+
+    const serie: ComercialSerieElasticidadeMesDto[] = [];
+    const elasticSeries: SerieMesVolPreco[] = [];
+
+    let ym = minYm;
+    while (ym <= maxYm) {
+      const vol = volMap.get(ym) ?? 0;
+      const rec = recMap.get(ym) ?? 0;
+      const precoMedio = vol > 0 ? roundMoney(rec / vol) : 0;
+      serie.push({ mes: ym, volumeUnidades: vol, precoMedio });
+      elasticSeries.push({ mes: ym, volume: vol, precoMedio });
+      ym = addMonthsYm(ym, 1);
+    }
+
+    const elasticidadeMedia = elasticidadeDemandaPreco(elasticSeries);
+
+    const mesesInformados =
+      query.dataInicio && query.dataFim
+        ? Math.max(
+            1,
+            (fimAdj.getFullYear() - ini.getFullYear()) * 12 +
+              (fimAdj.getMonth() - ini.getMonth()) +
+              1,
+          )
+        : meses;
+
+    return {
+      mesesConsiderados: mesesInformados,
+      elasticidadeMedia: elasticidadeMedia !== null ? round2(elasticidadeMedia) : null,
+      serie,
+      clienteId: filterCliente ?? null,
+    };
+  }
+
+  getSimulador(query: ComercialSimuladorQueryDto): ComercialSimuladorRespostaDto {
+    const out = simuladorComercial({
+      precoAtual: query.precoAtual,
+      precoNovo: query.precoNovo,
+      custo: query.custo,
+      volumeAtual: query.volumeAtual,
+      elasticidade: query.elasticidade,
+    });
+    return {
+      periodoRotulo: query.periodo ?? null,
+      margemAtual: out.margemAtual,
+      margemNova: out.margemNova,
+      impactoReceitaLinear: out.impactoReceitaLinear,
+      impactoVolumeEstimado: out.impactoVolumeEstimado,
+      receitaAtual: out.receitaAtual,
+      receitaNovaEstimada: out.receitaNovaEstimada,
+      volumeEstimado: out.volumeEstimado,
+      elasticidadeAplicada: out.elasticidadeAplicada,
+    };
+  }
+
+  async getRecomendacoes(query: ComercialPeriodQueryDto): Promise<ComercialRecomendacoesRespostaDto> {
+    const { ini, fim } = this.resolvePeriodo(query);
+    const filterCliente = query.clienteId;
+
+    const { custoTotal } = await this.custoGlobalParams(ini, fim, filterCliente);
+
+    const fatRows = await this.prisma.faturamento.groupBy({
+      by: ['clienteId'],
+      where: {
+        createdAt: { gte: ini, lte: fim },
+        ...(filterCliente ? { clienteId: filterCliente } : {}),
+      },
+      _sum: { valorTotal: true },
+    });
+
+    const totalFat = fatRows.reduce((s, r) => s + num(r._sum.valorTotal), 0);
+
+    const nomes = await this.prisma.cliente.findMany({
+      where: { id: { in: fatRows.map((x) => x.clienteId) }, deletedAt: null },
+      select: { id: true, nome: true },
+    });
+    const nomeMap = new Map(nomes.map((c) => [c.id, c.nome]));
+
+    const unidadesPorCliente = await this.prisma.$queryRaw<
+      Array<{ clienteId: string; u: bigint }>
+    >`
+      SELECT s."clienteId", COUNT(u.id)::bigint AS u
+      FROM unidades_solicitacao u
+      INNER JOIN solicitacoes s ON s.id = u."solicitacaoId"
+      INNER JOIN saidas sa ON sa."solicitacaoId" = s.id
+      WHERE s."deletedAt" IS NULL
+        AND sa."dataHoraSaida" >= ${ini}
+        AND sa."dataHoraSaida" <= ${fim}
+        ${filterCliente ? Prisma.sql`AND s."clienteId" = ${filterCliente}` : Prisma.empty}
+      GROUP BY s."clienteId"
+    `;
+    const uniMap = new Map(unidadesPorCliente.map((r) => [r.clienteId, Number(r.u)]));
+
+    const rowsLucro = fatRows.map((r) => {
+      const fat = num(r._sum.valorTotal);
+      const custoEst =
+        totalFat > 0 ? roundMoney((custoTotal * fat) / totalFat) : 0;
+      const lucro = roundMoney(fat - custoEst);
+      const margemPct = fat > 0 ? lucro / fat : null;
+      const unidades = uniMap.get(r.clienteId) ?? 0;
+      const intensidade = fat > 0 ? unidades / fat : 0;
+      return {
+        clienteId: r.clienteId,
+        nome: nomeMap.get(r.clienteId) ?? '',
+        fat,
+        margemPct,
+        lucro,
+        intensidade,
+      };
+    });
+
+    const abc = curvaAbcPorLucratividade(rowsLucro.map((x) => ({ id: x.clienteId, lucro: x.lucro })));
+    const classePorCliente = new Map(abc.map((a) => [a.id, a.classe]));
+
+    const intensidades = rowsLucro.map((r) => r.intensidade).sort((a, b) => a - b);
+    const medianaInt =
+      intensidades.length > 0
+        ? intensidades[Math.floor(intensidades.length / 2)] ?? 0
+        : 0;
+
+    const inadRaw = await this.prisma.$queryRaw<
+      Array<{ clienteId: string; pend: bigint; tot: bigint }>
+    >`
+      SELECT f."clienteId",
+             SUM(CASE WHEN b."statusPagamento" <> ${'PAGO'} THEN 1 ELSE 0 END)::bigint AS pend,
+             COUNT(b.id)::bigint AS tot
+      FROM boletos b
+      INNER JOIN faturamentos f ON f.id = b."faturamentoId"
+      WHERE f."createdAt" >= ${ini}
+        AND f."createdAt" <= ${fim}
+        ${filterCliente ? Prisma.sql`AND f."clienteId" = ${filterCliente}` : Prisma.empty}
+      GROUP BY f."clienteId"
+    `;
+
+    const inadMap = new Map(
+      inadRaw.map((r) => [
+        r.clienteId,
+        { pend: Number(r.pend), tot: Number(r.tot) },
+      ]),
+    );
+
+    const recomendacoes: ComercialRecomendacaoDto[] = [];
+
+    for (const r of rowsLucro) {
+      const classe = classePorCliente.get(r.clienteId)!;
+
+      if (r.margemPct !== null && r.margemPct < 0.12) {
+        recomendacoes.push({
+          tipo: 'reajuste',
+          clienteId: r.clienteId,
+          clienteNome: r.nome,
+          titulo: 'Margem comprimida — revisar tabela ou SLA',
+          descricao:
+            `Margem estimada ${(r.margemPct * 100).toFixed(1)}% no período. Avaliar reajuste de preços, descontos ou revisão de tempo operacional contratual.`,
+          prioridade: 'alta',
+        });
+      }
+
+      if (r.margemPct !== null && r.margemPct > 0.38 && r.fat > 0) {
+        recomendacoes.push({
+          tipo: 'contrato',
+          clienteId: r.clienteId,
+          clienteNome: r.nome,
+          titulo: 'Cliente altamente rentável — fortalecer vínculo',
+          descricao:
+            'Margem elevada no período; considerar contrato de médio prazo, desconto por volume ou programa de fidelidade.',
+          prioridade: 'media',
+        });
+      }
+
+      if (classe === 'C' && r.lucro <= 0) {
+        recomendacoes.push({
+          tipo: 'pacote',
+          clienteId: r.clienteId,
+          clienteNome: r.nome,
+          titulo: 'Curva C com lucro líquido não positivo',
+          descricao:
+            'Cliente na cauda da curva ABC com resultado frágil; avaliar pacote mínimo, fee fixo ou encerramento gradual.',
+          prioridade: 'media',
+        });
+      }
+
+      if (r.intensidade > medianaInt * 1.35 && medianaInt > 0) {
+        recomendacoes.push({
+          tipo: 'ocupacao',
+          clienteId: r.clienteId,
+          clienteNome: r.nome,
+          titulo: 'Alta intensidade operacional vs faturamento',
+          descricao:
+            'Volume de unidades elevado em relação ao faturamento — avaliar componente de preço por ocupação de pátio ou dwell time.',
+          prioridade: 'baixa',
+        });
+      }
+
+      const ind = inadMap.get(r.clienteId);
+      if (ind && ind.tot > 0 && ind.pend / ind.tot >= 0.4) {
+        recomendacoes.push({
+          tipo: 'alerta',
+          clienteId: r.clienteId,
+          clienteNome: r.nome,
+          titulo: 'Boletos em aberto acima do esperado',
+          descricao: `Em ${ind.pend} de ${ind.tot} boletos no período não constam como pagos; revisar condições comerciais ou cobrança.`,
+          prioridade: 'alta',
+        });
+      }
+    }
+
+    return {
+      periodo: {
+        dataInicio: ini.toISOString().slice(0, 10),
+        dataFim: fim.toISOString().slice(0, 10),
+      },
+      recomendacoes,
+    };
+  }
+}
+
+================================================================================
+FILE: apps/backend/src/comercial-pricing/dto/comercial-elasticidade-query.dto.ts
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { ComercialPeriodQueryDto } from './comercial-period-query.dto';
+
+export class ComercialElasticidadeQueryDto extends ComercialPeriodQueryDto {
+  @ApiPropertyOptional({ description: 'Meses da série (6–24)', default: 12 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(6)
+  @Max(24)
+  meses?: number;
+}
+
+================================================================================
+FILE: apps/backend/src/comercial-pricing/dto/comercial-period-query.dto.ts
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsUUID } from 'class-validator';
+
+/** Intervalo YYYY-MM-DD (fuso servidor). */
+export class ComercialPeriodQueryDto {
+  @ApiPropertyOptional({ example: '2025-05-01' })
+  @IsOptional()
+  dataInicio?: string;
+
+  @ApiPropertyOptional({ example: '2026-04-30' })
+  @IsOptional()
+  dataFim?: string;
+
+  @ApiPropertyOptional({ description: 'Filtra métricas já globais por cliente' })
+  @IsOptional()
+  @IsUUID()
+  clienteId?: string;
+}
+
+================================================================================
+FILE: apps/backend/src/comercial-pricing/dto/comercial-response.dto.ts
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export class ComercialParametrosCustoDto {
+  @ApiProperty()
+  custoOperacionalTotalEstimado!: number;
+
+  @ApiProperty()
+  operacoesInsertConsideradas!: number;
+
+  @ApiPropertyOptional({ description: 'Média horas ciclo completo (proxy performance)' })
+  cicloMedioHoras!: number | null;
+
+  @ApiProperty()
+  custoMinutoProxy!: number;
+}
+
+export class ComercialCurvaAbcItemDto {
+  @ApiProperty()
+  clienteId!: string;
+
+  @ApiProperty()
+  clienteNome!: string;
+
+  @ApiProperty({ description: 'Soma faturamentos no período' })
+  faturamento!: number;
+
+  @ApiProperty({ description: 'Alocado proporcionalmente ao faturamento' })
+  custoEstimado!: number;
+
+  @ApiProperty()
+  lucro!: number;
+
+  @ApiProperty({ description: 'lucro / faturamento, quando faturamento > 0' })
+  margemPct!: number | null;
+
+  @ApiProperty({ enum: ['A', 'B', 'C'] })
+  classe!: 'A' | 'B' | 'C';
+
+  @ApiProperty({
+    description:
+      'Percentual acumulado do lucro positivo total após este cliente (ordenado por lucro)',
+  })
+  contribuicaoLucroAcumPct!: number;
+}
+
+export class ComercialCurvaAbcRespostaDto {
+  @ApiProperty()
+  periodo!: { dataInicio: string; dataFim: string };
+
+  @ApiProperty({ type: ComercialParametrosCustoDto })
+  parametros!: ComercialParametrosCustoDto;
+
+  @ApiProperty()
+  concentracao!: { classeA: number; classeB: number; classeC: number };
+
+  @ApiProperty({ type: [ComercialCurvaAbcItemDto] })
+  itens!: ComercialCurvaAbcItemDto[];
+}
+
+export class ComercialSerieMesValorDto {
+  @ApiProperty({ example: '2026-03' })
+  mes!: string;
+
+  @ApiProperty()
+  faturamento!: number;
+
+  @ApiProperty()
+  custoEstimado!: number;
+
+  @ApiPropertyOptional()
+  margemPct!: number | null;
+}
+
+export class ComercialClienteLucroDto {
+  @ApiProperty()
+  clienteId!: string;
+
+  @ApiProperty()
+  clienteNome!: string;
+
+  @ApiProperty()
+  faturamento!: number;
+
+  @ApiProperty()
+  custoEstimado!: number;
+
+  @ApiProperty()
+  lucro!: number;
+
+  @ApiPropertyOptional()
+  margemPct!: number | null;
+
+  @ApiProperty({ type: [ComercialSerieMesValorDto] })
+  serie12Meses!: ComercialSerieMesValorDto[];
+}
+
+export class ComercialLucroPorClienteRespostaDto {
+  @ApiProperty()
+  periodo!: { dataInicio: string; dataFim: string };
+
+  @ApiProperty({ type: ComercialParametrosCustoDto })
+  parametros!: ComercialParametrosCustoDto;
+
+  @ApiProperty({ type: [ComercialClienteLucroDto] })
+  clientes!: ComercialClienteLucroDto[];
+}
+
+export class ComercialServicoLucroDto {
+  @ApiProperty({ enum: ['IMPORT', 'EXPORT', 'GATE_IN', 'GATE_OUT'] })
+  tipo!: string;
+
+  @ApiProperty()
+  unidades!: number;
+
+  @ApiProperty({ description: 'Receita alocada proporcionalmente ao mix de unidades' })
+  faturamentoAlocado!: number;
+
+  @ApiProperty()
+  custoEstimado!: number;
+
+  @ApiProperty()
+  lucro!: number;
+
+  @ApiPropertyOptional()
+  margemPct!: number | null;
+}
+
+export class ComercialLucroPorServicoRespostaDto {
+  @ApiProperty()
+  periodo!: { dataInicio: string; dataFim: string };
+
+  @ApiProperty({ type: ComercialParametrosCustoDto })
+  parametros!: ComercialParametrosCustoDto;
+
+  @ApiProperty({ type: [ComercialServicoLucroDto] })
+  servicos!: ComercialServicoLucroDto[];
+}
+
+export class ComercialSerieElasticidadeMesDto {
+  @ApiProperty()
+  mes!: string;
+
+  @ApiProperty()
+  volumeUnidades!: number;
+
+  @ApiProperty({ description: 'Faturamento / volume (proxy preço médio)' })
+  precoMedio!: number;
+}
+
+export class ComercialElasticidadeRespostaDto {
+  @ApiProperty()
+  mesesConsiderados!: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Elasticidade média (%Δvolume / %Δpreço) entre meses consecutivos; negativa = lei da demanda',
+  })
+  elasticidadeMedia!: number | null;
+
+  @ApiProperty({ type: [ComercialSerieElasticidadeMesDto] })
+  serie!: ComercialSerieElasticidadeMesDto[];
+
+  @ApiPropertyOptional()
+  clienteId!: string | null;
+}
+
+export class ComercialSimuladorRespostaDto {
+  @ApiPropertyOptional()
+  periodoRotulo!: string | null;
+
+  @ApiPropertyOptional()
+  margemAtual!: number | null;
+
+  @ApiPropertyOptional()
+  margemNova!: number | null;
+
+  @ApiProperty({
+    description: 'Impacto linear receita = (preço novo − atual) × volume atual',
+  })
+  impactoReceitaLinear!: number;
+
+  @ApiProperty()
+  impactoVolumeEstimado!: number;
+
+  @ApiProperty()
+  receitaAtual!: number;
+
+  @ApiProperty()
+  receitaNovaEstimada!: number;
+
+  @ApiProperty()
+  volumeEstimado!: number;
+
+  @ApiProperty({ description: 'Elasticidade usada na projeção de volume' })
+  elasticidadeAplicada!: number;
+}
+
+export class ComercialRecomendacaoDto {
+  @ApiProperty({ enum: ['reajuste', 'pacote', 'contrato', 'ocupacao', 'alerta'] })
+  tipo!: 'reajuste' | 'pacote' | 'contrato' | 'ocupacao' | 'alerta';
+
+  @ApiPropertyOptional()
+  clienteId!: string | null;
+
+  @ApiPropertyOptional()
+  clienteNome!: string | null;
+
+  @ApiProperty()
+  titulo!: string;
+
+  @ApiProperty()
+  descricao!: string;
+
+  @ApiPropertyOptional()
+  prioridade!: 'alta' | 'media' | 'baixa';
+}
+
+export class ComercialRecomendacoesRespostaDto {
+  @ApiProperty()
+  periodo!: { dataInicio: string; dataFim: string };
+
+  @ApiProperty({ type: [ComercialRecomendacaoDto] })
+  recomendacoes!: ComercialRecomendacaoDto[];
+}
+
+================================================================================
+FILE: apps/backend/src/comercial-pricing/dto/comercial-simulador-query.dto.ts
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { IsNumber, IsOptional, IsString, Matches, Min } from 'class-validator';
+
+export class ComercialSimuladorQueryDto {
+  @ApiProperty({ example: 150.5 })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  precoAtual!: number;
+
+  @ApiProperty({ example: 165 })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  precoNovo!: number;
+
+  @ApiProperty({ description: 'Custo médio por unidade/operação no cenário' })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  custo!: number;
+
+  @ApiProperty({ example: 320 })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  volumeAtual!: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Elasticidade estimada (negativa). Se omitido, usa default interno para what-if conservador.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  elasticidade?: number;
+
+  @ApiPropertyOptional({ description: 'Rótulo opcional ex.: YYYY-MM', example: '2026-04' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{4}-\d{2}$/)
+  periodo?: string;
+}
+
+================================================================================
 FILE: apps/backend/src/common/constants/role-permissions.ts
 import { Role } from '@prisma/client';
 
@@ -13644,6 +14933,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'dashboard:financeiro',
     'dashboard:financeiro_executivo',
     'dashboard:performance',
+    'comercial:pricing',
     'users:criar',
     'auditoria:ler',
   ],
@@ -13674,6 +14964,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'dashboard:financeiro',
     'dashboard:financeiro_executivo',
     'dashboard:performance',
+    'comercial:pricing',
     'auditoria:ler',
   ],
   [Role.OPERADOR_PORTARIA]: [
@@ -18698,6 +19989,10 @@ async function bootstrap() {
       'dashboard-performance',
       'Dashboard de performance operacional (custo × margem × produtividade)',
     )
+    .addTag(
+      'comercial-pricing',
+      'Inteligência comercial e pricing (ABC, elasticidade, simulador, recomendações)',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
@@ -21907,6 +23202,104 @@ describe('App (e2e)', () => {
     await request(app.getHttpServer()).get('/solicitacoes').expect(401);
     await request(app.getHttpServer()).get('/faturamento').expect(401);
     await request(app.getHttpServer()).get('/clientes').expect(401);
+  });
+});
+
+================================================================================
+FILE: apps/backend/test/comercial-pricing.e2e-spec.ts
+import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import * as request from 'supertest';
+import * as bcrypt from 'bcrypt';
+import { Role } from '@prisma/client';
+import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/prisma/prisma.service';
+import { AuthService } from '../src/auth/auth.service';
+
+describe('Comercial pricing (e2e)', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let auth: AuthService;
+  const suffix = `${Date.now()}`;
+  const gerenteEmail = `e2e-com-${suffix}@local.test`;
+  const opEmail = `e2e-com-op-${suffix}@local.test`;
+  const password = 'E2E@ComPricing1!';
+  let tokenGerente: string;
+  let tokenOp: string;
+
+  beforeAll(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+        transformOptions: { enableImplicitConversion: true },
+      }),
+    );
+    await app.init();
+    prisma = app.get(PrismaService);
+    auth = app.get(AuthService);
+    const hash = await bcrypt.hash(password, 10);
+
+    const g = await prisma.user.create({
+      data: { email: gerenteEmail, password: hash, role: Role.GERENTE },
+    });
+    const o = await prisma.user.create({
+      data: { email: opEmail, password: hash, role: Role.OPERADOR_GATE },
+    });
+
+    tokenGerente = auth.issueTokens(g).accessToken;
+    tokenOp = auth.issueTokens(o).accessToken;
+  });
+
+  afterAll(async () => {
+    await prisma.user.deleteMany({
+      where: { email: { in: [gerenteEmail, opEmail] } },
+    });
+    await app.close();
+  });
+
+  it('GET /comercial/curva-abc com GERENTE retorna 200', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/comercial/curva-abc')
+      .set('Authorization', `Bearer ${tokenGerente}`)
+      .expect(200);
+
+    expect(res.body).toHaveProperty('itens');
+    expect(res.body).toHaveProperty('parametros');
+    expect(res.body).toHaveProperty('concentracao');
+  });
+
+  it('GET /comercial/simulador com query completa retorna projeção', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/comercial/simulador')
+      .query({
+        precoAtual: 100,
+        precoNovo: 110,
+        custo: 40,
+        volumeAtual: 100,
+      })
+      .set('Authorization', `Bearer ${tokenGerente}`)
+      .expect(200);
+
+    expect(res.body).toHaveProperty('margemNova');
+    expect(res.body).toHaveProperty('impactoVolumeEstimado');
+  });
+
+  it('GET /comercial/curva-abc como OPERADOR retorna 403', async () => {
+    await request(app.getHttpServer())
+      .get('/comercial/curva-abc')
+      .set('Authorization', `Bearer ${tokenOp}`)
+      .expect(403);
+  });
+
+  it('GET /comercial/curva-abc sem token retorna 401', async () => {
+    await request(app.getHttpServer()).get('/comercial/curva-abc').expect(401);
   });
 });
 

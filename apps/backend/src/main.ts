@@ -102,6 +102,10 @@ async function bootstrap() {
       'dashboard-performance',
       'Dashboard de performance operacional (custo × margem × produtividade)',
     )
+    .addTag(
+      'comercial-pricing',
+      'Inteligência comercial e pricing (ABC, elasticidade, simulador, recomendações)',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
