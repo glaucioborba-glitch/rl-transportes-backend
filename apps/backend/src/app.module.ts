@@ -16,6 +16,9 @@ import { FaturamentoModule } from './faturamento/faturamento.module';
 import { PortalModule } from './portal/portal.module';
 import { RelatoriosModule } from './relatorios/relatorios.module';
 import { SolicitacoesModule } from './solicitacoes/solicitacoes.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { DashboardFinanceiroModule } from './dashboard-financeiro/dashboard-financeiro.module';
+import { DashboardPerformanceModule } from './dashboard-performance/dashboard-performance.module';
 
 @Module({
   imports: [
@@ -38,6 +41,9 @@ import { SolicitacoesModule } from './solicitacoes/solicitacoes.module';
     FaturamentoModule,
     PortalModule,
     RelatoriosModule,
+    DashboardModule,
+    DashboardFinanceiroModule,
+    DashboardPerformanceModule,
   ],
   controllers: [HealthController],
 })
