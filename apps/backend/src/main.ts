@@ -114,6 +114,10 @@ async function bootstrap() {
       'simulador-terminal',
       'Simulador estratégico de capacidade, saturação, expansão e cenários What-If',
     )
+    .addTag(
+      'planejamento-estrategico',
+      'Planejamento de capacidade, OPEX/CAPEX e forecast financeiro executivo',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

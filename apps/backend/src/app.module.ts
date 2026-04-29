@@ -22,6 +22,7 @@ import { DashboardPerformanceModule } from './dashboard-performance/dashboard-pe
 import { ComercialPricingModule } from './comercial-pricing/comercial-pricing.module';
 import { IaOperacionalModule } from './ia-operacional/ia-operacional.module';
 import { SimuladorTerminalModule } from './simulador-terminal/simulador-terminal.module';
+import { PlanejamentoEstrategicoModule } from './planejamento-estrategico/planejamento-estrategico.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { SimuladorTerminalModule } from './simulador-terminal/simulador-terminal
     ComercialPricingModule,
     IaOperacionalModule,
     SimuladorTerminalModule,
+    PlanejamentoEstrategicoModule,
   ],
   controllers: [HealthController],
 })
