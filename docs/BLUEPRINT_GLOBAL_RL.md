@@ -49,6 +49,12 @@ Tecnologias:
 - Infra: Docker + Docker Compose
 - Observabilidade: prometheus + winston logs estruturados
 
+**Integrações (NFS-e, OCR, Mobile):**
+
+- **NFS-e:** conector municipal (IPM) para emissão, cancelamento e consulta (detalhes em §9).
+- **OCR:** captura e leitura assistida de placa, identificador ISO e lacre na portaria/gate (detalhes em §3 e §5).
+- **Mobile:** check-in, senha/QR, fila e chamadas do portal do motorista (detalhes em §6).
+
 Camadas:
 
 - Core (AppModule)
@@ -145,7 +151,7 @@ Segurança:
 
 ### Dashboard Performance
 
-- Estrategia operacional
+- Estratégia operacional
 - Produtividade humana
 - Gargalos
 - Custos proxy
@@ -182,6 +188,7 @@ Segurança:
 - ISO 31000 (risk management)
 - Matriz 5x5
 - Policy Engine
+- AOG (Autonomous Operations Governance — governança de operações autônomas; políticas, disciplina e self-regulation alinhadas ao risco)
 - Auditoria sensível (READ/SEGURANCA)
 
 ---
@@ -322,6 +329,7 @@ Versão 2.0 (1 ano)
 | **IPM** | Provedor/integração municipal de NFS-e (contexto Atende.Net / município) |
 | **SLA** | Service Level Agreement |
 | **ABC** | Curva de classificação por contribuição (ex.: receita, margem, volume) |
+| **AOG** | Autonomous Operations Governance — governança de operações autônomas (políticas, limites e auditoria). |
 
 ### Papéis e permissões (visão negócio)
 
