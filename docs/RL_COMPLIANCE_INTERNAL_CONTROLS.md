@@ -188,8 +188,8 @@ Passos:
 
 Segregação obrigatória:
 
-- Quem recebe não fatursa
-- Quem fatursa não cria unidades
+- Quem recebe não fatura
+- Quem fatura não cria unidades
 - Quem altera cliente não aprova solicitação
 - Quem aprova não executa operação
 
