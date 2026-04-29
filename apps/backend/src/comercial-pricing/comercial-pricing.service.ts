@@ -4,11 +4,13 @@ import { AcaoAuditoria, Prisma } from '@prisma/client';
 import { parseRelatorioInicioFim } from '../common/utils/relatorio-periodo';
 import { PrismaService } from '../prisma/prisma.service';
 import {
+  curvaAbcAcumuladoLucroOrdemFixa,
   curvaAbcPorLucratividade,
   elasticidadeDemandaPreco,
   simuladorComercial,
   type SerieMesVolPreco,
 } from './comercial-pricing.calculations';
+import type { ComercialCurvaAbcQueryDto } from './dto/comercial-curva-abc-query.dto';
 import type { ComercialElasticidadeQueryDto } from './dto/comercial-elasticidade-query.dto';
 import type { ComercialPeriodQueryDto } from './dto/comercial-period-query.dto';
 import type {
@@ -16,6 +18,7 @@ import type {
   ComercialCurvaAbcItemDto,
   ComercialCurvaAbcRespostaDto,
   ComercialElasticidadeRespostaDto,
+  ComercialIndicadoresRespostaDto,
   ComercialLucroPorClienteRespostaDto,
   ComercialLucroPorServicoRespostaDto,
   ComercialParametrosCustoDto,
@@ -23,9 +26,12 @@ import type {
   ComercialRecomendacoesRespostaDto,
   ComercialSerieElasticidadeMesDto,
   ComercialSerieMesValorDto,
+  ComercialSerieTemporalMesDto,
+  ComercialSeriesTemporaisRespostaDto,
   ComercialServicoLucroDto,
   ComercialSimuladorRespostaDto,
 } from './dto/comercial-response.dto';
+import type { ComercialSeriesTemporaisQueryDto } from './dto/comercial-series-temporais-query.dto';
 import type { ComercialSimuladorQueryDto } from './dto/comercial-simulador-query.dto';
 
 const OP_TABLES = ['portarias', 'gates', 'patios', 'saidas'] as const;
@@ -128,9 +134,10 @@ export class ComercialPricingService {
     return { parametros, custoTotal };
   }
 
-  async getCurvaAbc(query: ComercialPeriodQueryDto): Promise<ComercialCurvaAbcRespostaDto> {
+  async getCurvaAbc(query: ComercialCurvaAbcQueryDto): Promise<ComercialCurvaAbcRespostaDto> {
     const { ini, fim } = this.resolvePeriodo(query);
     const filterCliente = query.clienteId;
+    const modo = query.modo ?? 'lucro';
 
     const { parametros, custoTotal } = await this.custoGlobalParams(ini, fim, filterCliente);
 
@@ -157,16 +164,30 @@ export class ComercialPricingService {
       const custoEst =
         totalFat > 0 ? roundMoney((custoTotal * fat) / totalFat) : 0;
       const lucro = roundMoney(fat - custoEst);
+      const margemPct = fat > 0 ? round2(lucro / fat) : null;
       return {
         id: r.clienteId,
         lucro,
+        margemPct,
         _fat: fat,
         _custo: custoEst,
       };
     });
 
-    const abc = curvaAbcPorLucratividade(abcInput.map((x) => ({ id: x.id, lucro: x.lucro })));
-    const abcMap = new Map(abc.map((r) => [r.id, r]));
+    const abcRows =
+      modo === 'margem'
+        ? curvaAbcAcumuladoLucroOrdemFixa(
+            [...abcInput]
+              .sort((a, b) => {
+                const ma = a.margemPct ?? -1;
+                const mb = b.margemPct ?? -1;
+                if (mb !== ma) return mb - ma;
+                return b.lucro - a.lucro;
+              })
+              .map((x) => ({ id: x.id, lucro: x.lucro })),
+          )
+        : curvaAbcPorLucratividade(abcInput.map((x) => ({ id: x.id, lucro: x.lucro })));
+    const abcMap = new Map(abcRows.map((r) => [r.id, r]));
 
     const itens: ComercialCurvaAbcItemDto[] = abcInput.map((row) => {
       const meta = abcMap.get(row.id)!;
@@ -195,6 +216,7 @@ export class ComercialPricingService {
         dataInicio: ini.toISOString().slice(0, 10),
         dataFim: fim.toISOString().slice(0, 10),
       },
+      modoOrdenacaoAbc: modo,
       parametros,
       concentracao: {
         classeA: concentracao.classeA,
@@ -467,6 +489,154 @@ export class ComercialPricingService {
     };
   }
 
+  async getSeriesTemporais(
+    query: ComercialSeriesTemporaisQueryDto,
+  ): Promise<ComercialSeriesTemporaisRespostaDto> {
+    const meses = query.meses;
+    const fim = new Date();
+    fim.setHours(23, 59, 59, 999);
+    const ini = new Date(fim);
+    ini.setMonth(ini.getMonth() - meses);
+    ini.setHours(0, 0, 0, 0);
+    const filterCliente = query.clienteId;
+
+    const { parametros } = await this.custoGlobalParams(ini, fim, filterCliente);
+
+    const minYm = periodoYm(ini);
+    const maxYm = periodoYm(fim);
+
+    const recClienteRows = await this.prisma.$queryRaw<Array<{ mes: string; rec: unknown }>>`
+      SELECT f.periodo AS mes, SUM(f."valorTotal")::numeric AS rec
+      FROM faturamentos f
+      WHERE f.periodo >= ${minYm}
+        AND f.periodo <= ${maxYm}
+        ${filterCliente ? Prisma.sql`AND f."clienteId" = ${filterCliente}` : Prisma.empty}
+      GROUP BY f.periodo
+      ORDER BY mes ASC
+    `;
+
+    const recGlobalRows = filterCliente
+      ? await this.prisma.$queryRaw<Array<{ mes: string; rec: unknown }>>`
+          SELECT f.periodo AS mes, SUM(f."valorTotal")::numeric AS rec
+          FROM faturamentos f
+          WHERE f.periodo >= ${minYm}
+            AND f.periodo <= ${maxYm}
+          GROUP BY f.periodo
+          ORDER BY mes ASC
+        `
+      : recClienteRows;
+
+    const totFatPorMes = new Map<string, number>();
+    for (const row of recGlobalRows) {
+      totFatPorMes.set(row.mes, num(row.rec as Prisma.Decimal));
+    }
+
+    const fatClientePorMes = new Map(
+      recClienteRows.map((r) => [r.mes, num(r.rec as Prisma.Decimal)]),
+    );
+
+    const opsMesRows = await this.prisma.$queryRaw<Array<{ mes: string; c: bigint }>>`
+      SELECT to_char(date_trunc('month', a."createdAt"), 'YYYY-MM') AS mes, COUNT(*)::bigint AS c
+      FROM auditorias a
+      WHERE a."createdAt" >= ${ini}
+        AND a."createdAt" <= ${fim}
+        AND a.tabela IN ('portarias','gates','patios','saidas')
+        AND a.acao = 'INSERT'
+      GROUP BY date_trunc('month', a."createdAt")
+      ORDER BY mes ASC
+    `;
+    const opsPorMes = new Map(opsMesRows.map((r) => [r.mes, Number(r.c)]));
+    const cicloHoras = parametros.cicloMedioHoras ?? 1;
+    const custoMesFactor = cicloHoras * 60 * parametros.custoMinutoProxy;
+
+    const custoGlobalPorMes = new Map<string, number>();
+    for (const [mes, ops] of opsPorMes) {
+      custoGlobalPorMes.set(mes, roundMoney(ops * custoMesFactor));
+    }
+
+    const serie: ComercialSerieTemporalMesDto[] = [];
+    let ym = minYm;
+    while (ym <= maxYm) {
+      const fatMes = filterCliente ? fatClientePorMes.get(ym) ?? 0 : totFatPorMes.get(ym) ?? 0;
+      const totMes = totFatPorMes.get(ym) ?? 0;
+      const cgMes = custoGlobalPorMes.get(ym) ?? 0;
+      let custoLinha: number;
+      if (filterCliente) {
+        custoLinha =
+          totMes > 0 ? roundMoney((cgMes * (fatClientePorMes.get(ym) ?? 0)) / totMes) : 0;
+      } else {
+        custoLinha = cgMes;
+      }
+      const lucroLinha = roundMoney(fatMes - custoLinha);
+      const mp = fatMes > 0 ? round2(lucroLinha / fatMes) : null;
+      serie.push({
+        mes: ym,
+        faturamento: roundMoney(fatMes),
+        custoEstimado: custoLinha,
+        lucro: lucroLinha,
+        margemPct: mp,
+      });
+      ym = addMonthsYm(ym, 1);
+    }
+
+    return {
+      meses,
+      periodo: {
+        dataInicio: ini.toISOString().slice(0, 10),
+        dataFim: fim.toISOString().slice(0, 10),
+      },
+      clienteId: filterCliente ?? null,
+      parametros,
+      serie,
+    };
+  }
+
+  async getIndicadores(query: ComercialPeriodQueryDto): Promise<ComercialIndicadoresRespostaDto> {
+    const { ini, fim } = this.resolvePeriodo(query);
+    const cid = query.clienteId;
+
+    const { parametros, custoTotal } = await this.custoGlobalParams(ini, fim, cid);
+
+    const fatAgg = await this.prisma.faturamento.aggregate({
+      where: {
+        createdAt: { gte: ini, lte: fim },
+        ...(cid ? { clienteId: cid } : {}),
+      },
+      _sum: { valorTotal: true },
+    });
+    const totalFat = num(fatAgg._sum.valorTotal);
+    const lucroEstimado = roundMoney(totalFat - custoTotal);
+    const margemMediaPct = totalFat > 0 ? round2(lucroEstimado / totalFat) : null;
+
+    const grp = await this.prisma.faturamento.groupBy({
+      by: ['clienteId'],
+      where: {
+        createdAt: { gte: ini, lte: fim },
+        ...(cid ? { clienteId: cid } : {}),
+      },
+    });
+    const quantidadeClientesComFaturamento = grp.length;
+
+    const el = await this.getElasticidade({
+      meses: 12,
+      clienteId: cid,
+    });
+
+    return {
+      periodo: {
+        dataInicio: ini.toISOString().slice(0, 10),
+        dataFim: fim.toISOString().slice(0, 10),
+      },
+      clienteId: cid ?? null,
+      faturamentoTotal: roundMoney(totalFat),
+      lucroEstimado,
+      margemMediaPct,
+      quantidadeClientesComFaturamento,
+      elasticidadeDemandaMedia: el.elasticidadeMedia,
+      parametros,
+    };
+  }
+
   getSimulador(query: ComercialSimuladorQueryDto): ComercialSimuladorRespostaDto {
     const out = simuladorComercial({
       precoAtual: query.precoAtual,
@@ -600,6 +770,23 @@ export class ComercialPricingService {
           descricao:
             'Margem elevada no período; considerar contrato de médio prazo, desconto por volume ou programa de fidelidade.',
           prioridade: 'media',
+        });
+      }
+
+      if (
+        classe === 'A' &&
+        r.margemPct !== null &&
+        r.margemPct >= 0.26 &&
+        r.margemPct <= 0.34
+      ) {
+        recomendacoes.push({
+          tipo: 'desconto',
+          clienteId: r.clienteId,
+          clienteNome: r.nome,
+          titulo: 'Curva A com margem compatível com incentivo por volume',
+          descricao:
+            'Avaliar desconto escalonado, rebate por meta ou precificação por pacote de movimentações.',
+          prioridade: 'baixa',
         });
       }
 

@@ -118,6 +118,7 @@ export class AuthService {
       expiresIn: refreshExpires as StringValue,
     };
 
+    const datahubTiEmailCsv = this.configService.get<string>('DATAHUB_TI_EMAILS') ?? '';
     return {
       accessToken: this.jwtService.sign(payload, accessOpts),
       refreshToken: this.jwtService.sign(payload, refreshOpts),
@@ -125,14 +126,17 @@ export class AuthService {
         id: user.id,
         email: user.email,
         role: user.role,
-        permissions: permissionsForRole(user.role),
+        permissions: permissionsForRole(user.role, {
+          email: user.email,
+          datahubTiEmailCsv,
+        }),
         clienteId: user.clienteId ?? null,
         createdAt: user.createdAt,
       },
     };
   }
 
-  async logout(userId: string) {
+  async logout(userId: string, ip?: string, userAgent?: string) {
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: userId },
@@ -145,6 +149,8 @@ export class AuthService {
           acao: AcaoAuditoria.INSERT,
           usuario: userId,
           dadosDepois: { event: 'LOGOUT', at: new Date().toISOString() },
+          ip,
+          userAgent,
         },
         tx,
       );

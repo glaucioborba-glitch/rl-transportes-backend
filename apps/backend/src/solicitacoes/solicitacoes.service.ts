@@ -10,6 +10,7 @@ import { AcaoAuditoria, Prisma, Role, StatusSolicitacao } from '@prisma/client';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { randomBytes } from 'crypto';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { registrarLeituraSensivel, registrarTentativaForaDeEscopo } from '../common/security/scope-audit.util';
 import { SolicitacaoPaginationDto } from '../common/dtos/pagination.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AddUnidadeSolicitacaoDto } from './dto/add-unidade-solicitacao.dto';
@@ -108,20 +109,24 @@ export class SolicitacoesService {
   }
 
   async addContainer(dto: AddUnidadeSolicitacaoDto, actorUserId: string) {
-    const solicitacao = await this.prisma.solicitacao.findFirst({
-      where: { id: dto.solicitacaoId, deletedAt: null },
-    });
-    if (!solicitacao) {
-      throw new NotFoundException('Solicitação não encontrada');
-    }
-
     return this.prisma.$transaction(
       async (tx) => {
+        const solicitacao = await tx.solicitacao.findFirst({
+          where: { id: dto.solicitacaoId, deletedAt: null },
+        });
+        if (!solicitacao) {
+          throw new NotFoundException('Solicitação não encontrada');
+        }
         const dup = await tx.unidade.findUnique({
           where: { numeroIso: dto.numeroIso },
         });
         if (dup) {
-          throw new ConflictException('Número ISO já cadastrado');
+          if (dup.solicitacaoId !== dto.solicitacaoId) {
+            throw new ConflictException(
+              'Número ISO já vinculado a outra solicitação; o contêiner pertence a um único cliente/operação.',
+            );
+          }
+          throw new ConflictException('Número ISO já cadastrado nesta solicitação.');
         }
         const unit = await tx.unidade.create({
           data: {
@@ -206,6 +211,17 @@ export class SolicitacoesService {
           'Conta de cliente sem vínculo ao cadastro. Solicite o vínculo ao administrador.',
         );
       }
+      if (filters.clienteId && filters.clienteId !== actor.clienteId) {
+        this.logger.warn(
+          `Bloqueio: cliente ${actor.id} tentou listar solicitações com clienteId=${filters.clienteId}`,
+        );
+        await registrarTentativaForaDeEscopo(this.auditoria, { usuario: actor.id }, {
+          recurso: 'solicitacoes_lista',
+          tentativaClienteId: filters.clienteId,
+          atorClienteId: actor.clienteId,
+        });
+        throw new ForbiddenException('Não é permitido listar solicitações de outro cadastro.');
+      }
       clienteIdFilter = actor.clienteId;
     }
 
@@ -229,22 +245,56 @@ export class SolicitacoesService {
     return { items, total, page, limit: Math.min(limit, 100), orderBy, order };
   }
 
-  async findOne(id: string, actor?: AuthUser) {
+  async findOne(
+    id: string,
+    actor?: AuthUser,
+    leitura?: { auditPortalRead?: boolean; ip?: string; userAgent?: string },
+  ) {
     const s = await this.prisma.solicitacao.findFirst({
       where: { id, deletedAt: null },
       include: { cliente: true, unidades: true },
     });
     if (!s) throw new NotFoundException('Solicitação não encontrada');
     if (actor?.role === Role.CLIENTE) {
-      if (!actor.clienteId || s.clienteId !== actor.clienteId) {
-        throw new NotFoundException('Solicitação não encontrada');
+      if (!actor.clienteId) {
+        throw new ForbiddenException('Conta de cliente sem vínculo ao cadastro.');
+      }
+      if (s.clienteId !== actor.clienteId) {
+        this.logger.warn(
+          `Acesso negado: usuário ${actor.id} à solicitação ${id} (cliente da OS ${s.clienteId})`,
+        );
+        await registrarTentativaForaDeEscopo(
+          this.auditoria,
+          { usuario: actor.id, ip: leitura?.ip, userAgent: leitura?.userAgent },
+          {
+            recurso: 'solicitacao',
+            tentativaClienteId: s.clienteId,
+            atorClienteId: actor.clienteId,
+            registroId: id,
+          },
+        );
+        throw new ForbiddenException('Acesso negado a esta solicitação.');
+      }
+      if (leitura?.auditPortalRead) {
+        await registrarLeituraSensivel(
+          this.auditoria,
+          { usuario: actor.id, ip: leitura.ip, userAgent: leitura.userAgent },
+          'solicitacoes',
+          id,
+          { rota: 'portal/GET solicitações/:id' },
+        );
       }
     }
     return s;
   }
 
   /** Aprovação pelo cliente: apenas PENDENTE → APROVADO, no próprio cadastro. */
-  async aprovarPeloCliente(solicitacaoId: string, actor: AuthUser) {
+  async aprovarPeloCliente(
+    solicitacaoId: string,
+    actor: AuthUser,
+    ip?: string,
+    userAgent?: string,
+  ) {
     if (actor.role !== Role.CLIENTE || !actor.clienteId) {
       throw new ForbiddenException('Operação exclusiva do portal do cliente.');
     }
@@ -259,10 +309,19 @@ export class SolicitacoesService {
       { status: StatusSolicitacao.APROVADO },
       actor.id,
       actor,
+      ip,
+      userAgent,
     );
   }
 
-  async update(id: string, dto: UpdateSolicitacaoDto, actorUserId: string, actor?: AuthUser) {
+  async update(
+    id: string,
+    dto: UpdateSolicitacaoDto,
+    actorUserId: string,
+    actor?: AuthUser,
+    ip?: string,
+    userAgent?: string,
+  ) {
     const current = await this.findOne(id, actor);
     if (dto.status === undefined) {
       return current;
@@ -290,6 +349,8 @@ export class SolicitacoesService {
             usuario: actorUserId,
             dadosAntes: { status: current.status },
             dadosDepois: { status: updated.status },
+            ip,
+            userAgent,
           },
           tx,
         );
@@ -299,7 +360,7 @@ export class SolicitacoesService {
     );
   }
 
-  async remove(id: string, actorUserId: string) {
+  async remove(id: string, actorUserId: string, ip?: string, userAgent?: string) {
     return this.prisma.$transaction(
       async (tx) => {
         const current = await tx.solicitacao.findFirst({
@@ -322,6 +383,8 @@ export class SolicitacoesService {
             usuario: actorUserId,
             dadosAntes: current,
             dadosDepois: updated,
+            ip,
+            userAgent,
           },
           tx,
         );

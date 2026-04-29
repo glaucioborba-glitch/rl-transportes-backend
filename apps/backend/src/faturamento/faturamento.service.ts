@@ -2,6 +2,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { AcaoAuditoria, Prisma, Role } from '@prisma/client';
@@ -9,6 +10,7 @@ import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NfseService } from '../nfse/nfse.service';
+import { registrarLeituraSensivel, registrarTentativaForaDeEscopo } from '../common/security/scope-audit.util';
 import { CreateBoletoDto } from './dto/create-boleto.dto';
 import { CreateFaturamentoDto } from './dto/create-faturamento.dto';
 import { FaturamentoQueryDto } from './dto/faturamento-query.dto';
@@ -25,6 +27,8 @@ const TX_OPTIONS = {
 
 @Injectable()
 export class FaturamentoService {
+  private readonly logger = new Logger(FaturamentoService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditoria: AuditoriaService,
@@ -35,7 +39,13 @@ export class FaturamentoService {
     return actor.role === Role.ADMIN || actor.role === Role.GERENTE;
   }
 
-  async create(dto: CreateFaturamentoDto, actorUserId: string, actor: AuthUser) {
+  async create(
+    dto: CreateFaturamentoDto,
+    actorUserId: string,
+    actor: AuthUser,
+    ip?: string,
+    userAgent?: string,
+  ) {
     if (!this.isStaff(actor)) {
       throw new ForbiddenException('Apenas administradores podem criar faturamento.');
     }
@@ -47,7 +57,7 @@ export class FaturamentoService {
       throw new NotFoundException('Cliente não encontrado');
     }
 
-    const solicitacaoIds = dto.solicitacaoIds ?? [];
+    const solicitacaoIds = [...new Set(dto.solicitacaoIds ?? [])];
     if (solicitacaoIds.length > 0) {
       const sols = await this.prisma.solicitacao.findMany({
         where: {
@@ -63,6 +73,12 @@ export class FaturamentoService {
       }
     }
 
+    let soma = new Prisma.Decimal(0);
+    for (const it of dto.itens) {
+      soma = soma.add(new Prisma.Decimal(it.valor));
+    }
+    const valorTotal = new Prisma.Decimal(soma.toFixed(2));
+
     try {
       return await this.prisma.$transaction(
         async (tx) => {
@@ -70,7 +86,13 @@ export class FaturamentoService {
             data: {
               clienteId: dto.clienteId,
               periodo: dto.periodo,
-              valorTotal: new Prisma.Decimal(dto.valorTotal),
+              valorTotal,
+              itens: {
+                create: dto.itens.map((i) => ({
+                  descricao: i.descricao.trim(),
+                  valor: new Prisma.Decimal(new Prisma.Decimal(i.valor).toFixed(2)),
+                })),
+              },
             },
           });
           if (solicitacaoIds.length > 0) {
@@ -86,6 +108,7 @@ export class FaturamentoService {
             include: {
               solicitacoesVinculadas: { include: { solicitacao: true } },
               cliente: true,
+              itens: true,
             },
           });
           await this.auditoria.registrar(
@@ -95,6 +118,8 @@ export class FaturamentoService {
               acao: AcaoAuditoria.INSERT,
               usuario: actorUserId,
               dadosDepois: full,
+              ip,
+              userAgent,
             },
             tx,
           );
@@ -120,6 +145,18 @@ export class FaturamentoService {
       if (!actor.clienteId) {
         throw new ForbiddenException('Conta sem vínculo a cadastro de cliente.');
       }
+      if (query.clienteId && query.clienteId !== actor.clienteId) {
+        this.logger.warn(
+          `Bloqueio: cliente ${actor.id} tentou filtrar faturamento de outro clienteId=${query.clienteId}`,
+        );
+        await registrarTentativaForaDeEscopo(this.auditoria, { usuario: actor.id }, {
+          recurso: 'faturamento_lista',
+          tentativaClienteId: query.clienteId,
+          atorClienteId: actor.clienteId,
+        });
+        throw new ForbiddenException('Não é permitido filtrar faturamento de outro cadastro.');
+      }
+      // Sempre o próprio cadastro
       where.clienteId = actor.clienteId;
     } else if (!this.isStaff(actor)) {
       throw new ForbiddenException('Sem permissão para consultar faturamento.');
@@ -138,6 +175,7 @@ export class FaturamentoService {
         orderBy: { createdAt: 'desc' },
         include: {
           cliente: { select: { id: true, nome: true, email: true } },
+          itens: true,
           solicitacoesVinculadas: { include: { solicitacao: { select: { id: true, protocolo: true, status: true } } } },
           _count: { select: { nfsEmitidas: true, boletos: true } },
         },
@@ -148,20 +186,46 @@ export class FaturamentoService {
     return { items, total, page, limit: Math.min(limit, 100) };
   }
 
-  async findOne(id: string, actor: AuthUser) {
+  async findOne(
+    id: string,
+    actor: AuthUser,
+    leitura?: { auditar?: boolean; ip?: string; userAgent?: string },
+  ) {
     const row = await this.prisma.faturamento.findUnique({
       where: { id },
       include: {
         cliente: true,
         nfsEmitidas: true,
         boletos: true,
+        itens: true,
         solicitacoesVinculadas: { include: { solicitacao: true } },
       },
     });
     if (!row) throw new NotFoundException('Faturamento não encontrado');
     if (actor.role === Role.CLIENTE) {
-      if (!actor.clienteId || row.clienteId !== actor.clienteId) {
-        throw new NotFoundException('Faturamento não encontrado');
+      if (!actor.clienteId) {
+        throw new ForbiddenException('Conta sem vínculo a cadastro de cliente.');
+      }
+      if (row.clienteId !== actor.clienteId) {
+        this.logger.warn(
+          `Acesso negado: usuário ${actor.id} ao faturamento ${id} (cliente ${row.clienteId})`,
+        );
+        await registrarTentativaForaDeEscopo(this.auditoria, { usuario: actor.id, ip: leitura?.ip, userAgent: leitura?.userAgent }, {
+          recurso: 'faturamento',
+          tentativaClienteId: row.clienteId,
+          atorClienteId: actor.clienteId,
+          registroId: id,
+        });
+        throw new ForbiddenException('Acesso negado a este faturamento.');
+      }
+      if (leitura?.auditar) {
+        await registrarLeituraSensivel(
+          this.auditoria,
+          { usuario: actor.id, ip: leitura.ip, userAgent: leitura.userAgent },
+          'faturamentos',
+          id,
+          { rota: 'portal/GET faturamento/:id' },
+        );
       }
     } else if (!this.isStaff(actor)) {
       throw new ForbiddenException();
@@ -205,7 +269,14 @@ export class FaturamentoService {
     return this.nfseService.cancelarNfse(faturamentoId, dto, actorUserId, actor, ip, userAgent);
   }
 
-  async createBoleto(faturamentoId: string, dto: CreateBoletoDto, actorUserId: string, actor: AuthUser) {
+  async createBoleto(
+    faturamentoId: string,
+    dto: CreateBoletoDto,
+    actorUserId: string,
+    actor: AuthUser,
+    ip?: string,
+    userAgent?: string,
+  ) {
     if (!this.isStaff(actor)) throw new ForbiddenException();
     await this.findOne(faturamentoId, actor);
 
@@ -228,6 +299,8 @@ export class FaturamentoService {
               acao: AcaoAuditoria.INSERT,
               usuario: actorUserId,
               dadosDepois: b,
+              ip,
+              userAgent,
             },
             tx,
           );
@@ -243,7 +316,14 @@ export class FaturamentoService {
     }
   }
 
-  async updateBoleto(boletoId: string, dto: UpdateBoletoDto, actorUserId: string, actor: AuthUser) {
+  async updateBoleto(
+    boletoId: string,
+    dto: UpdateBoletoDto,
+    actorUserId: string,
+    actor: AuthUser,
+    ip?: string,
+    userAgent?: string,
+  ) {
     if (!this.isStaff(actor)) throw new ForbiddenException();
     const current = await this.prisma.boleto.findUnique({
       where: { id: boletoId },
@@ -265,6 +345,8 @@ export class FaturamentoService {
             usuario: actorUserId,
             dadosAntes: { statusPagamento: current.statusPagamento },
             dadosDepois: { statusPagamento: updated.statusPagamento },
+            ip,
+            userAgent,
           },
           tx,
         );

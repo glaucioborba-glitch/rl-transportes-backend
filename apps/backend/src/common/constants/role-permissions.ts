@@ -1,5 +1,33 @@
 import { Role } from '@prisma/client';
 
+/** Permissões extras para GERENTE cujo e-mail está em `DATAHUB_TI_EMAILS` (papel TI/Dados sem migration). */
+export const DATAHUB_TI_PIPELINE_PERMISSIONS: readonly string[] = [
+  'datahub:lake:list',
+  'datahub:lake:ingest',
+  'datahub:etl:run',
+  'datahub:quality:read',
+  'datahub:quality:verify',
+  'datahub:export:read',
+  'datahub:obs:read',
+];
+
+function parseDatahubTiEmails(raw: string | undefined): string[] {
+  return (raw ?? '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/** Indica se o gerente pode operar Lake/ETL/Quality-POST (além de BI/DW de leitura). */
+export function isGerenteDatahubTi(
+  email: string | undefined,
+  datahubTiEmailCsv: string | undefined,
+): boolean {
+  if (!email) return false;
+  const allow = parseDatahubTiEmails(datahubTiEmailCsv);
+  return allow.length > 0 && allow.includes(email.toLowerCase());
+}
+
 /** Permissões granulares mapeadas por papel (RBAC estendido). */
 export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
   [Role.ADMIN]: [
@@ -32,6 +60,27 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'comercial:pricing',
     'users:criar',
     'auditoria:ler',
+    'datahub:lake:list',
+    'datahub:lake:ingest',
+    'datahub:etl:run',
+    'datahub:dw:read',
+    'datahub:bi:read',
+    'datahub:quality:read',
+    'datahub:quality:verify',
+    'datahub:export:read',
+    'datahub:obs:read',
+    'plataforma:tenant:write',
+    'plataforma:tenant:read',
+    'plataforma:api:write',
+    'plataforma:marketplace:write',
+    'plataforma:consumo:read',
+    'plataforma:estatisticas:read',
+    'plataforma:seguranca:read',
+    'automacao:admin',
+    'automacao:read',
+    'automacao:toggle',
+    'automacao:workflow:test',
+    'automacao:rpa:run',
   ],
   [Role.GERENTE]: [
     'auth:sessao',
@@ -62,6 +111,17 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'dashboard:performance',
     'comercial:pricing',
     'auditoria:ler',
+    /* Datahub Fase 17: gerente de negócio só consome BI + catálogo DW; pipeline via DATAHUB_TI_EMAILS. */
+    'datahub:dw:read',
+    'datahub:bi:read',
+    'plataforma:tenant:read',
+    'plataforma:consumo:read',
+    'plataforma:estatisticas:read',
+    'plataforma:seguranca:read',
+    'automacao:read',
+    'automacao:toggle',
+    'automacao:workflow:test',
+    'automacao:rpa:run',
   ],
   [Role.OPERADOR_PORTARIA]: [
     'auth:sessao',
@@ -72,6 +132,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'solicitacoes:portaria',
     'dashboard:operacional',
     'dashboard:performance',
+    'automacao:read',
   ],
   [Role.OPERADOR_GATE]: [
     'auth:sessao',
@@ -82,6 +143,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'solicitacoes:saida',
     'dashboard:operacional',
     'dashboard:performance',
+    'automacao:read',
   ],
   [Role.OPERADOR_PATIO]: [
     'auth:sessao',
@@ -90,6 +152,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'solicitacoes:patio',
     'dashboard:operacional',
     'dashboard:performance',
+    'automacao:read',
   ],
   [Role.CLIENTE]: [
     'auth:sessao',
@@ -100,6 +163,18 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
   ],
 };
 
-export function permissionsForRole(role: Role): string[] {
-  return [...ROLE_PERMISSIONS[role]];
+export type PermissionsForRoleOptions = {
+  email?: string;
+  datahubTiEmailCsv?: string;
+};
+
+export function permissionsForRole(role: Role, opts?: PermissionsForRoleOptions): string[] {
+  const base = [...ROLE_PERMISSIONS[role]];
+  if (
+    role === Role.GERENTE &&
+    isGerenteDatahubTi(opts?.email, opts?.datahubTiEmailCsv)
+  ) {
+    return [...new Set([...base, ...DATAHUB_TI_PIPELINE_PERMISSIONS])];
+  }
+  return base;
 }

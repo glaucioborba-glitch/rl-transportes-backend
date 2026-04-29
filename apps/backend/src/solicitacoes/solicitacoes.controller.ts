@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Query,
+  Request,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -121,14 +122,27 @@ export class SolicitacoesController {
   @Patch(':id')
   @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_PORTARIA, Role.OPERADOR_GATE)
   @Permissions('solicitacoes:atualizar')
-  update(@Param('id') id: string, @Body() dto: UpdateSolicitacaoDto, @CurrentUser() user: AuthUser) {
-    return this.solicitacoesService.update(id, dto, user.id, user);
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateSolicitacaoDto,
+    @CurrentUser() user: AuthUser,
+    @Request() req: { ip?: string; get: (h: string) => string | undefined },
+  ) {
+    const ip = (req as { ip?: string }).ip || 'unknown';
+    const userAgent = req.get('user-agent') || 'unknown';
+    return this.solicitacoesService.update(id, dto, user.id, user, ip, userAgent);
   }
 
   @Delete(':id')
   @Roles(Role.ADMIN, Role.GERENTE)
   @Permissions('solicitacoes:excluir')
-  remove(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.solicitacoesService.remove(id, user.id);
+  remove(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Request() req: { ip?: string; get: (h: string) => string | undefined },
+  ) {
+    const ip = (req as { ip?: string }).ip || 'unknown';
+    const userAgent = req.get('user-agent') || 'unknown';
+    return this.solicitacoesService.remove(id, user.id, ip, userAgent);
   }
 }

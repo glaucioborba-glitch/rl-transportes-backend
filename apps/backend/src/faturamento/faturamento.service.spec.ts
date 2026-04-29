@@ -17,7 +17,12 @@ describe('FaturamentoService', () => {
   it('create nega perfil cliente', async () => {
     await expect(
       service.create(
-        { clienteId: 'c', periodo: '2026-04', valorTotal: 100, solicitacaoIds: [] },
+        {
+          clienteId: 'c',
+          periodo: '2026-04',
+          itens: [{ descricao: 'Item teste', valor: 100 }],
+          solicitacaoIds: [],
+        },
         'u',
         cliente as never,
       ),

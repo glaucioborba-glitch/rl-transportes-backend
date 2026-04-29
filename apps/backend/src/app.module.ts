@@ -29,6 +29,16 @@ import { FinanceiroConciliacaoModule } from './financeiro-conciliacao/financeiro
 import { TesourariaModule } from './tesouraria/tesouraria.module';
 import { FolhaRhModule } from './folha-rh/folha-rh.module';
 import { RhPerformanceModule } from './rh-performance/rh-performance.module';
+import { GrcComplianceModule } from './grc-compliance/grc-compliance.module';
+import { IntegracaoMobilidadeModule } from './integracao-mobilidade/integracao-mobilidade.module';
+import { ObservabilidadeModule } from './observabilidade/observabilidade.module';
+import { IaPreditivaModule } from './ia-preditiva/ia-preditiva.module';
+import { DatahubModule } from './datahub/datahub.module';
+import { PlataformaIntegracaoModule } from './plataforma-integracao/plataforma-integracao.module';
+import { AutomacaoProcessosModule } from './automacao-processos/automacao-processos.module';
+import { CxPortaisModule } from './cx-portais/cx-portais.module';
+import { MobileHubModule } from './mobile-hub/mobile-hub.module';
+import { CockpitOperacoesModule } from './cockpit-operacoes/cockpit-operacoes.module';
 
 @Module({
   imports: [
@@ -64,6 +74,16 @@ import { RhPerformanceModule } from './rh-performance/rh-performance.module';
     TesourariaModule,
     FolhaRhModule,
     RhPerformanceModule,
+    GrcComplianceModule,
+    IntegracaoMobilidadeModule,
+    ObservabilidadeModule,
+    IaPreditivaModule,
+    DatahubModule,
+    PlataformaIntegracaoModule,
+    AutomacaoProcessosModule,
+    CxPortaisModule,
+    MobileHubModule,
+    CockpitOperacoesModule,
   ],
   controllers: [HealthController],
 })

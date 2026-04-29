@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Patch, Query, Request, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
@@ -38,15 +38,27 @@ export class PortalController {
 
   @Get('solicitacoes/:id')
   @Permissions('solicitacoes:ler')
-  obterSolicitacao(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.solicitacoes.findOne(id, user);
+  obterSolicitacao(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Request() req: { ip?: string; get: (h: string) => string | undefined },
+  ) {
+    const ip = (req as { ip?: string }).ip || 'unknown';
+    const userAgent = req.get('user-agent') || 'unknown';
+    return this.solicitacoes.findOne(id, user, { auditPortalRead: true, ip, userAgent });
   }
 
   @Patch('solicitacoes/:id/aprovar')
   @Permissions('portal:solicitacao:aprovar')
   @ApiOperation({ summary: 'Aprova solicitação pendente (próprio cliente)' })
-  aprovar(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.solicitacoes.aprovarPeloCliente(id, user);
+  aprovar(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Request() req: { ip?: string; get: (h: string) => string | undefined },
+  ) {
+    const ip = (req as { ip?: string }).ip || 'unknown';
+    const userAgent = req.get('user-agent') || 'unknown';
+    return this.solicitacoes.aprovarPeloCliente(id, user, ip, userAgent);
   }
 
   @Get('faturamento')
@@ -57,8 +69,14 @@ export class PortalController {
 
   @Get('faturamento/:id')
   @Permissions('faturamento:ler')
-  obterFaturamento(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    return this.faturamento.findOne(id, user);
+  obterFaturamento(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Request() req: { ip?: string; get: (h: string) => string | undefined },
+  ) {
+    const ip = (req as { ip?: string }).ip || 'unknown';
+    const userAgent = req.get('user-agent') || 'unknown';
+    return this.faturamento.findOne(id, user, { auditar: true, ip, userAgent });
   }
 
   @Get('boletos')

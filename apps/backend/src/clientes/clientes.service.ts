@@ -3,11 +3,13 @@ import {
   NotFoundException,
   ConflictException,
   ForbiddenException,
+  Logger,
 } from '@nestjs/common';
 import { AcaoAuditoria, Prisma, Role } from '@prisma/client';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { registrarTentativaForaDeEscopo } from '../common/security/scope-audit.util';
 import { ClientePaginationDto } from '../common/dtos/pagination.dto';
 import { CreateClienteDto } from './dto/create-cliente.dto';
 import { UpdateClienteDto } from './dto/update-cliente.dto';
@@ -23,6 +25,8 @@ const CLIENTE_ORDER_BY = new Set(['createdAt', 'nome', 'email']);
 
 @Injectable()
 export class ClientesService {
+  private readonly logger = new Logger(ClientesService.name);
+
   constructor(
     private prisma: PrismaService,
     private auditoria: AuditoriaService,
@@ -150,18 +154,11 @@ export class ClientesService {
     };
   }
 
-  async findOne(id: string, actor?: AuthUser) {
-    if (actor?.role === Role.CLIENTE) {
-      if (!actor.clienteId) {
-        throw new ForbiddenException(
-          'Usuário de portal sem vínculo a cliente; contate o suporte.',
-        );
-      }
-      if (id !== actor.clienteId) {
-        throw new NotFoundException(`Cliente com ID ${id} não encontrado.`);
-      }
-    }
-
+  async findOne(
+    id: string,
+    actor?: AuthUser,
+    leitura?: { ip?: string; userAgent?: string },
+  ) {
     const cliente = await this.prisma.cliente.findFirst({
       where: { id, deletedAt: null },
       include: {
@@ -174,6 +171,30 @@ export class ClientesService {
 
     if (!cliente) {
       throw new NotFoundException(`Cliente com ID ${id} não encontrado.`);
+    }
+
+    if (actor?.role === Role.CLIENTE) {
+      if (!actor.clienteId) {
+        throw new ForbiddenException(
+          'Usuário de portal sem vínculo a cliente; contate o suporte.',
+        );
+      }
+      if (id !== actor.clienteId) {
+        this.logger.warn(
+          `Acesso negado: usuário ${actor.id} consultou cadastro de cliente ${id} (vínculo ${actor.clienteId})`,
+        );
+        await registrarTentativaForaDeEscopo(
+          this.auditoria,
+          { usuario: actor.id, ip: leitura?.ip, userAgent: leitura?.userAgent },
+          {
+            recurso: 'cliente',
+            tentativaClienteId: id,
+            atorClienteId: actor.clienteId,
+            registroId: id,
+          },
+        );
+        throw new ForbiddenException('Acesso negado a este cadastro.');
+      }
     }
 
     return cliente;

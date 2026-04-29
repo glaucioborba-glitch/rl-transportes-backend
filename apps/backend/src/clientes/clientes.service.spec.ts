@@ -208,7 +208,15 @@ describe('ClientesService', () => {
       expect(r).toEqual(c);
     });
 
-    it('CLIENTE recebe NotFound ao consultar outro id', async () => {
+    it('CLIENTE recebe Forbidden ao consultar id de outro cadastro (com auditoria)', async () => {
+      prisma.cliente.findFirst.mockResolvedValue({
+        id: 'outro',
+        nome: 'Outro',
+        tipo: TipoCliente.PJ,
+        cpfCnpj: '11222333000181',
+        email: 'o@o.com',
+        solicitacoes: [],
+      });
       await expect(
         service.findOne('outro', {
           sub: 'u',
@@ -218,8 +226,8 @@ describe('ClientesService', () => {
           permissions: [],
           clienteId: 'c-own',
         }),
-      ).rejects.toThrow(NotFoundException);
-      expect(prisma.cliente.findFirst).not.toHaveBeenCalled();
+      ).rejects.toThrow(ForbiddenException);
+      expect(auditoria.registrar).toHaveBeenCalled();
     });
 
     it('CLIENTE sem clienteId recebe ForbiddenException', async () => {

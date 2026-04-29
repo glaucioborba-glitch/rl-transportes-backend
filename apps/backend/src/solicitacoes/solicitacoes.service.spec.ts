@@ -48,16 +48,15 @@ describe('SolicitacoesService.update transições', () => {
 describe('SolicitacoesService.addContainer', () => {
   const auditoria = { registrar: jest.fn().mockResolvedValue({}) };
   const tx = {
+    solicitacao: { findFirst: jest.fn() },
     unidade: {
       findUnique: jest.fn(),
       create: jest.fn(),
     },
   };
   const prisma: {
-    solicitacao: { findFirst: jest.Mock };
     $transaction: jest.Mock;
   } = {
-    solicitacao: { findFirst: jest.fn() },
     $transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
   const service = new SolicitacoesService(prisma as never, auditoria as never);
@@ -68,7 +67,7 @@ describe('SolicitacoesService.addContainer', () => {
   });
 
   it('cria container quando solicitação existe e ISO livre', async () => {
-    prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
+    tx.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
     tx.unidade.findUnique.mockResolvedValue(null);
     tx.unidade.create.mockResolvedValue({
       id: 'u1',
@@ -90,7 +89,7 @@ describe('SolicitacoesService.addContainer', () => {
   });
 
   it('404 quando solicitação não existe', async () => {
-    prisma.solicitacao.findFirst.mockResolvedValue(null);
+    tx.solicitacao.findFirst.mockResolvedValue(null);
     await expect(
       service.addContainer(
         {
@@ -104,7 +103,7 @@ describe('SolicitacoesService.addContainer', () => {
   });
 
   it('conflito quando ISO já existe', async () => {
-    prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
+    tx.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
     tx.unidade.findUnique.mockResolvedValue({ id: 'other' });
     await expect(
       service.addContainer(

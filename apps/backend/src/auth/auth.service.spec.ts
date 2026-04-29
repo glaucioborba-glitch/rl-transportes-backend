@@ -183,13 +183,16 @@ describe('AuthService', () => {
     prisma.$transaction.mockImplementationOnce(async (fn: (tx: any) => Promise<void>) =>
       fn({ user: { update: userUpdate, create: jest.fn() } }),
     );
-    await service.logout('user-uuid');
+    await service.logout('user-uuid', '127.0.0.1', 'test-agent');
     expect(userUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'user-uuid' },
         data: { tokenVersion: { increment: 1 } },
       }),
     );
-    expect(auditoria.registrar).toHaveBeenCalled();
+    expect(auditoria.registrar).toHaveBeenCalledWith(
+      expect.objectContaining({ ip: '127.0.0.1', userAgent: 'test-agent' }),
+      expect.anything(),
+    );
   });
 });

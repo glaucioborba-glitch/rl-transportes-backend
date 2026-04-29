@@ -30,6 +30,10 @@ export class IpmNfseAdapter {
     return this.config.get<string>('nfse.ipm.municipioIbge', { infer: true }) ?? '4211306';
   }
 
+  getTagIndicadorCancelamento(): string {
+    return this.config.get<string>('nfse.ipm.tagIndicadorCancelamento', { infer: true }) ?? 'tipo';
+  }
+
   private getAuthHeader(): string {
     const cnpj = (this.getPrestadorCnpj() ?? '').replace(/\D/g, '');
     const senha = this.config.get<string>('nfse.ipm.senha', { infer: true }) ?? '';
@@ -105,6 +109,7 @@ export class IpmNfseAdapter {
   }> {
     const xml = buildCancelamentoNfseIpmXml({
       ...input,
+      tagIndicadorCancelamento: this.getTagIndicadorCancelamento(),
       prestador: { cnpj: this.getPrestadorCnpj(), cidadeTom: this.getPrestadorTom() },
     });
     const raw = await this.transmitirXml(xml, 'cancelamento');

@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma, Role, StatusSolicitacao } from '@prisma/client';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
+import { parseRelatorioInicioFim } from '../common/utils/relatorio-periodo';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -24,8 +25,7 @@ export class RelatoriosService {
 
   async resumoSolicitacoes(dataInicio: string, dataFim: string, actor: AuthUser) {
     this.assertRelatorios(actor);
-    const ini = new Date(dataInicio);
-    const fim = new Date(dataFim);
+    const { ini, fim } = parseRelatorioInicioFim(dataInicio, dataFim);
     this.assertPeriodoValido(ini, fim);
 
     const rows = await this.prisma.solicitacao.groupBy({
@@ -58,8 +58,7 @@ export class RelatoriosService {
     filtroClienteId?: string,
   ) {
     this.assertRelatorios(actor);
-    const ini = new Date(dataInicio);
-    const fim = new Date(dataFim);
+    const { ini, fim } = parseRelatorioInicioFim(dataInicio, dataFim);
     this.assertPeriodoValido(ini, fim);
 
     const whereFin: Prisma.FaturamentoWhereInput = {
@@ -108,8 +107,7 @@ export class RelatoriosService {
     status?: StatusSolicitacao;
   }, actor: AuthUser) {
     this.assertRelatorios(actor);
-    const ini = new Date(q.dataInicio);
-    const fim = new Date(q.dataFim);
+    const { ini, fim } = parseRelatorioInicioFim(q.dataInicio, q.dataFim);
     this.assertPeriodoValido(ini, fim);
     const page = q.page ?? 1;
     const limit = Math.min(q.limit ?? 50, 200);
@@ -155,8 +153,7 @@ export class RelatoriosService {
     clienteId?: string;
   }, actor: AuthUser) {
     this.assertRelatorios(actor);
-    const ini = new Date(q.dataInicio);
-    const fim = new Date(q.dataFim);
+    const { ini, fim } = parseRelatorioInicioFim(q.dataInicio, q.dataFim);
     this.assertPeriodoValido(ini, fim);
     const page = q.page ?? 1;
     const limit = Math.min(q.limit ?? 50, 200);

@@ -1,0 +1,54 @@
+RL TRANSPORTES — RELATÓRIO DE ANÁLISE, CORREÇÕES E SUGESTÕES
+================================================================
+Data de referência: 2026-04-29
+Escopo: monorepo raiz + apps/backend (NestJS, Prisma, Jest).
+
+────────────────────────────────────────────────────────────────
+1. AÇÕES REALIZADAS NESTA SESSÃO
+────────────────────────────────────────────────────────────────
+• Diagnóstico de testes: a suíte unitária (apps/backend) — 74 arquivos, 241 testes — concluiu com sucesso; aparece aviso de worker Jest não encerrado (“force exited”), típico de handles abertos (Redis/timers/Prisma em alguns módiais).
+• Diagnóstico e2e: falha em test/dashboard-financeiro.e2e-spec.ts — hooks beforeAll estouravam o timeout padrão de 5000 ms ao compilar/inicializar o AppModule completo (comportamento intermitente sob carga quando a suíte e2e completa roda).
+• Correção: em apps/backend/test/jest-e2e.json foi adicionado "testTimeout": 120000 (120 s) para todos os e2e, alinhado a outros projetos Nest + AppModule pesado.
+• Verificação: npx jest --config ./test/jest-e2e.json --testPathPattern=dashboard-financeiro — PASS.
+• Artefato: PROJETO-CODIGO-COMPLETO.txt regenerado na raiz (fontes .ts em apps/backend/src, testes e2e, prisma/schema.prisma, package.json, .env.example, docs/PROMPT-OPERACIONAL.md, etc.; sem node_modules/dist).
+• Cópia funcional: RL-Transportes-Backend-CODIGO-COMPLETO.txt igual ao consolidado para manter o par de ficheiros usado no repositório.
+
+────────────────────────────────────────────────────────────────
+2. VISÃO GERAL DO PROJETO
+────────────────────────────────────────────────────────────────
+• Monorepo enxuto: raiz com npm scripts (docker, prisma, test:all) e aplicação principal em apps/backend.
+• Backend NestJS modular (auth, faturamento, NFSe, dashboards, integração, automação, datahub, mobile-hub, cockpit-operacoes, CX portais, etc.).
+• Prisma + PostgreSQL; Redis para rate limit/sessões; Swagger multi-documento (/docs, /docs/public, /docs/mobile, /docs/cockpit).
+• Forte cobertura de testes unitários e e2e; alguns testes dependem de DB/Redis locais ou toleram schema atrás do Prisma (ex.: agregações cockpit com try/catch).
+
+────────────────────────────────────────────────────────────────
+3. SUGESTÕES DE MELHORIA (PRIORIZADAS)
+────────────────────────────────────────────────────────────────
+Alta prioridade
+  A) CI/CD: pipeline que execute npm run build, npm test e npm run test:e2e com Postgres + Redis (Compose) e variáveis mínimas de .env.example.
+  B) Jest e2e: manter testTimeout elevado OU isolar AppModule em testes mais leves; considerar --maxWorkers=2 em máquinas lentas para reduzir contenção.
+  C) Handles abertos: investigar --detectOpenHandles nos testes unitários que disparam Redis/Prisma; garantir app.close() e $disconnect em e2e.
+  D) Schema DB vs Prisma: ambientes de desenvolvimento sem migrate geram inconsistências (ex.: colunas faltando). Documentar “db:setup” obrigatório antes dos testes de integração.
+
+Média prioridade
+  E) Consolidação PROJETO-CODIGO-COMPLETO.txt: automatizar via script versionado (npm run dump:sources) para não divergir do git; excluir ou truncar package-lock se o ficheiro ficar grande demais.
+  F) Segurança: garantir que apps/backend/dist e .env não entram no repositório; revisar commits acidentais de credenciais.
+  G) Rate limit /health: já existe exclusão parcial; revisar se /cockpit e /mobile devem ou não contar no limit global conforme política de produção.
+
+Baixa prioridade / evolução
+  H) Frontend ou app mobile nativo: monorepo hoje é backend-centric — avaliar apps/frontend ou repositório separado com contratos OpenAPI exportados.
+  I) Observabilidade: correlacionar request-id entre cockpit, mobile e auditoria em logs estruturados.
+  J) COORDENADOR no RBAC: hoje mapeado conceitualmente a GERENTE — se o negócio exigir, exigiria migration Prisma (fora do escopo das fases “sem migration”).
+
+────────────────────────────────────────────────────────────────
+4. COMANDOS ÚTEIS
+────────────────────────────────────────────────────────────────
+cd apps/backend
+npm run build
+npm test
+npx jest --config ./test/jest-e2e.json --forceExit
+cd ../..
+npm run test:all
+
+────────────────────────────────────────────────────────────────
+Fim do relatório.

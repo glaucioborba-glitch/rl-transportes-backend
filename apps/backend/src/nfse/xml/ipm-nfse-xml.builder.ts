@@ -1,6 +1,7 @@
 import type { TomadorNfseDto } from '../dto/emitir-nfse.dto';
 import { escapeIpmNfseXmlValue } from './ipm-nfse-xml.escape';
 import { formatBrReal } from './ipm-nfse-xml.money';
+import { sanitizeIpmNfseCancelTag } from './ipm-nfse-cancel-tag.util';
 
 export type RpsIpmInput = {
   nroReciboProvisorio: string;
@@ -136,13 +137,16 @@ export function buildCancelamentoNfseIpmXml(input: {
   serieNfse: string;
   motivo: string;
   prestador: { cnpj: string; cidadeTom: string };
+  /** Nome do elemento (valor fixo C) — NTE-35; ajuste NFSE_IPM_TAG_CANCEL se o portal rejeitar. */
+  tagIndicadorCancelamento?: string;
 }): string {
+  const tag = sanitizeIpmNfseCancelTag(input.tagIndicadorCancelamento);
   return `<?xml version="1.0" encoding="ISO-8859-1"?>
 <nfse>
   <nf>
     <numero_nfse>${escapeIpmNfseXmlValue(input.numeroNfse)}</numero_nfse>
     <serie_nfse>${escapeIpmNfseXmlValue(input.serieNfse)}</serie_nfse>
-    <tipo>C</tipo>
+    <${tag}>C</${tag}>
     <motivo_cancelamento>${escapeIpmNfseXmlValue(input.motivo)}</motivo_cancelamento>
   </nf>
   <prestador>

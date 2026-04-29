@@ -38,7 +38,8 @@ export class AuthController {
 
   @Get('me')
   @ApiBearerAuth('access-token')
-  @UseGuards(AuthGuard('jwt'))
+  @UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
+  @Permissions('auth:sessao')
   me(@CurrentUser() user: AuthUser) {
     return user;
   }
@@ -51,9 +52,15 @@ export class AuthController {
       'Invalida tokens atuais (incrementa tokenVersion). Access e refresh anteriores deixam de ser aceitos.',
   })
   @ApiBearerAuth('access-token')
-  @UseGuards(AuthGuard('jwt'))
-  async logout(@CurrentUser('id') userId: string) {
-    await this.authService.logout(userId);
+  @UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
+  @Permissions('auth:sessao')
+  async logout(
+    @CurrentUser('id') userId: string,
+    @Request() req: { ip?: string; get: (h: string) => string | undefined },
+  ) {
+    const ip = req.ip || (req as { connection?: { remoteAddress?: string } }).connection?.remoteAddress || 'unknown';
+    const userAgent = req.get('user-agent') || 'unknown';
+    await this.authService.logout(userId, ip, userAgent);
   }
 
   @Post('users')

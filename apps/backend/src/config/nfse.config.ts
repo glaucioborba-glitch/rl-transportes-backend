@@ -14,5 +14,7 @@ export default registerAs('nfse', () => ({
     /** Senha do portal (usuário = CNPJ do prestador). Obrigatória para transmitir. */
     senha: process.env.NFSE_IPM_SENHA || '',
     municipioIbge: process.env.NFSE_IPM_MUNICIPIO_IBGE || '4211306',
+    /** Nome do elemento XML (filho de &lt;nf&gt;) com valor C no cancelamento (NTE-35/2021). Conferir no portal se rejeitado. */
+    tagIndicadorCancelamento: (process.env.NFSE_IPM_TAG_CANCEL || 'tipo').replace(/[^a-zA-Z0-9_]/g, '') || 'tipo',
   },
 }));

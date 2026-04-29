@@ -82,6 +82,38 @@ describe('Comercial pricing (e2e)', () => {
     expect(res.body).toHaveProperty('impactoVolumeEstimado');
   });
 
+  it('GET /comercial/curva-abc?modo=margem retorna modoOrdenacaoAbc', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/comercial/curva-abc')
+      .query({ modo: 'margem' })
+      .set('Authorization', `Bearer ${tokenGerente}`)
+      .expect(200);
+
+    expect(res.body.modoOrdenacaoAbc).toBe('margem');
+  });
+
+  it('GET /comercial/series-temporais?meses=6 retorna série', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/comercial/series-temporais')
+      .query({ meses: 6 })
+      .set('Authorization', `Bearer ${tokenGerente}`)
+      .expect(200);
+
+    expect(res.body.meses).toBe(6);
+    expect(res.body).toHaveProperty('serie');
+    expect(Array.isArray(res.body.serie)).toBe(true);
+  });
+
+  it('GET /comercial/indicadores retorna painel resumido', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/comercial/indicadores')
+      .set('Authorization', `Bearer ${tokenGerente}`)
+      .expect(200);
+
+    expect(res.body).toHaveProperty('faturamentoTotal');
+    expect(res.body).toHaveProperty('elasticidadeDemandaMedia');
+  });
+
   it('GET /comercial/curva-abc como OPERADOR retorna 403', async () => {
     await request(app.getHttpServer())
       .get('/comercial/curva-abc')

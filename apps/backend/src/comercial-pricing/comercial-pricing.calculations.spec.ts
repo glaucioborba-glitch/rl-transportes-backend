@@ -1,10 +1,22 @@
 import {
+  curvaAbcAcumuladoLucroOrdemFixa,
   curvaAbcPorLucratividade,
   elasticidadeDemandaPreco,
   simuladorComercial,
 } from './comercial-pricing.calculations';
 
 describe('comercial-pricing.calculations', () => {
+  describe('curvaAbcAcumuladoLucroOrdemFixa', () => {
+    it('aplica pareto sobre lucro na ordem dos elementos sem resort por valor absoluto', () => {
+      const out = curvaAbcAcumuladoLucroOrdemFixa([
+        { id: 'first', lucro: 100 },
+        { id: 'second', lucro: 900 },
+      ]);
+      expect(out[0].contribuicaoLucroAcumPct).toBeLessThan(out[1].contribuicaoLucroAcumPct);
+      expect(out[1].contribuicaoLucroAcumPct).toBe(100);
+    });
+  });
+
   describe('curvaAbcPorLucratividade', () => {
     it('distribui A/B/C pelo cumulativo do lucro positivo', () => {
       const rows = [

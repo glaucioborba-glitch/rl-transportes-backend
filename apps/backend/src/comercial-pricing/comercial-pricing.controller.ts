@@ -7,16 +7,20 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { ComercialPricingService } from './comercial-pricing.service';
+import { ComercialCurvaAbcQueryDto } from './dto/comercial-curva-abc-query.dto';
 import { ComercialElasticidadeQueryDto } from './dto/comercial-elasticidade-query.dto';
 import { ComercialPeriodQueryDto } from './dto/comercial-period-query.dto';
 import {
   ComercialCurvaAbcRespostaDto,
   ComercialElasticidadeRespostaDto,
+  ComercialIndicadoresRespostaDto,
   ComercialLucroPorClienteRespostaDto,
   ComercialLucroPorServicoRespostaDto,
   ComercialRecomendacoesRespostaDto,
+  ComercialSeriesTemporaisRespostaDto,
   ComercialSimuladorRespostaDto,
 } from './dto/comercial-response.dto';
+import { ComercialSeriesTemporaisQueryDto } from './dto/comercial-series-temporais-query.dto';
 import { ComercialSimuladorQueryDto } from './dto/comercial-simulador-query.dto';
 
 @ApiTags('comercial-pricing')
@@ -30,12 +34,12 @@ export class ComercialPricingController {
   @Roles(Role.ADMIN, Role.GERENTE)
   @Permissions('comercial:pricing')
   @ApiOperation({
-    summary: 'Curva ABC estendida por lucratividade (80/15/5 sobre lucro positivo)',
+    summary: 'Curva ABC — Pareto 80/15/5 sobre contribuição ao lucro',
     description:
-      'Custo operacional estimado alocado pelo mix de faturamento (proxy auditoria × ciclo × PERFORMANCE_CUSTO_MINUTO_PROXY). Somente leitura.',
+      '`modo=lucro` (default): ordena por lucro absoluto. `modo=margem`: ordena por margem % (rentabilidade relativa), depois mesmo critério cumulativo. Custo via proxy operacional (auditoria × ciclo × PERFORMANCE_CUSTO_MINUTO_PROXY), alocado pelo mix de faturamento.',
   })
   @ApiOkResponse({ type: ComercialCurvaAbcRespostaDto })
-  getCurvaAbc(@Query() query: ComercialPeriodQueryDto): Promise<ComercialCurvaAbcRespostaDto> {
+  getCurvaAbc(@Query() query: ComercialCurvaAbcQueryDto): Promise<ComercialCurvaAbcRespostaDto> {
     return this.comercialPricingService.getCurvaAbc(query);
   }
 
@@ -43,7 +47,9 @@ export class ComercialPricingController {
   @Roles(Role.ADMIN, Role.GERENTE)
   @Permissions('comercial:pricing')
   @ApiOperation({
-    summary: 'Lucro e margem por cliente com série mensal (12 meses)',
+    summary: 'Lucratividade por cliente + série mensal (12 competências)',
+    description:
+      'Margem = (faturamento − custo alocado) / faturamento. Série alinha faturamento.periodo com custo mensal proporcional.',
   })
   @ApiOkResponse({ type: ComercialLucroPorClienteRespostaDto })
   getLucroPorCliente(
@@ -56,8 +62,9 @@ export class ComercialPricingController {
   @Roles(Role.ADMIN, Role.GERENTE)
   @Permissions('comercial:pricing')
   @ApiOperation({
-    summary: 'Lucro por tipo de unidade (IMPORT/EXPORT/GATE_IN/GATE_OUT)',
-    description: 'Receita alocada proporcionalmente ao volume de unidades concluídas no período.',
+    summary: 'Lucratividade por tipo de unidade (serviço)',
+    description:
+      'IMPORT / EXPORT / GATE_IN / GATE_OUT: receita alocada pelo peso de unidades com saída no período.',
   })
   @ApiOkResponse({ type: ComercialLucroPorServicoRespostaDto })
   getLucroPorServico(
@@ -70,22 +77,50 @@ export class ComercialPricingController {
   @Roles(Role.ADMIN, Role.GERENTE)
   @Permissions('comercial:pricing')
   @ApiOperation({
-    summary: 'Elasticidade média volume × preço médio (histórico mensal)',
+    summary: 'Elasticidade média da demanda (histórico mensal)',
     description:
-      'Volume = unidades com saída no mês; preço médio = faturamento do mês / volume. Opcional clienteId.',
+      'Calcula média de (%Δvolume / %Δpreço médio) entre meses consecutivos; série do volume (saídas) e preço médio (faturamento/volume).',
   })
   @ApiOkResponse({ type: ComercialElasticidadeRespostaDto })
   getElasticidade(@Query() query: ComercialElasticidadeQueryDto): Promise<ComercialElasticidadeRespostaDto> {
     return this.comercialPricingService.getElasticidade(query);
   }
 
+  @Get('series-temporais')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('comercial:pricing')
+  @ApiOperation({
+    summary: 'Séries financeiras/comerciais (6 ou 12 meses)',
+    description:
+      'Agregação mensal por competência (YYYY-MM): faturamento, custo operacional estimado, lucro e margem. Opcional por cliente.',
+  })
+  @ApiOkResponse({ type: ComercialSeriesTemporaisRespostaDto })
+  getSeriesTemporais(
+    @Query() query: ComercialSeriesTemporaisQueryDto,
+  ): Promise<ComercialSeriesTemporaisRespostaDto> {
+    return this.comercialPricingService.getSeriesTemporais(query);
+  }
+
+  @Get('indicadores')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('comercial:pricing')
+  @ApiOperation({
+    summary: 'Painel resumido — margem média, lucro e elasticidade de referência',
+    description:
+      'Agrega faturamento no período, custo proxy global, contagem de clientes com fatura e elasticidade média (janela móvel 12 meses, mesma metodologia de /elasticidade).',
+  })
+  @ApiOkResponse({ type: ComercialIndicadoresRespostaDto })
+  getIndicadores(@Query() query: ComercialPeriodQueryDto): Promise<ComercialIndicadoresRespostaDto> {
+    return this.comercialPricingService.getIndicadores(query);
+  }
+
   @Get('simulador')
   @Roles(Role.ADMIN, Role.GERENTE)
   @Permissions('comercial:pricing')
   @ApiOperation({
-    summary: 'Simulador What-If de preço, margem e volume',
+    summary: 'Simulador What-If — preço, margem e volume',
     description:
-      'Usa elasticidade informada ou default conservador. Impacto receita linear e volume estimado.',
+      'Projeta margens, receita e volume com elasticidade informada ou default negativo (demanda inelástica curta).',
   })
   @ApiOkResponse({ type: ComercialSimuladorRespostaDto })
   getSimulador(@Query() query: ComercialSimuladorQueryDto): ComercialSimuladorRespostaDto {
@@ -98,7 +133,7 @@ export class ComercialPricingController {
   @ApiOperation({
     summary: 'Recomendações comerciais automáticas',
     description:
-      'Combina margem, curva ABC, intensidade operacional e boletos em aberto (somente leitura).',
+      'Regras sobre margem, curva ABC (lucro absoluto), intensidade operacional, boletos em aberto e incentivos (desconto). Somente leitura.',
   })
   @ApiOkResponse({ type: ComercialRecomendacoesRespostaDto })
   getRecomendacoes(@Query() query: ComercialPeriodQueryDto): Promise<ComercialRecomendacoesRespostaDto> {

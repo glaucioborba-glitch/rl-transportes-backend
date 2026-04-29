@@ -34,4 +34,20 @@ describe('App (e2e)', () => {
         expect(res.body).toHaveProperty('timestamp');
       });
   });
+
+  it('GET /auth/me sem token retorna 401 (RBAC, não só JWT)', () => {
+    return request(app.getHttpServer()).get('/auth/me').expect(401);
+  });
+
+  it('GET /nfse/:id sem token retorna 401', () => {
+    return request(app.getHttpServer())
+      .get('/nfse/0000000000000000000000000000000000000000')
+      .expect(401);
+  });
+
+  it('rotas de solicitações, faturamento e clientes exigem JWT (smoke)', async () => {
+    await request(app.getHttpServer()).get('/solicitacoes').expect(401);
+    await request(app.getHttpServer()).get('/faturamento').expect(401);
+    await request(app.getHttpServer()).get('/clientes').expect(401);
+  });
 });

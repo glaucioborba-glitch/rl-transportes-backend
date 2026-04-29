@@ -13,16 +13,25 @@ export type AbcOutputRow = AbcInputRow & {
  */
 export function curvaAbcPorLucratividade(rows: AbcInputRow[]): AbcOutputRow[] {
   const sorted = [...rows].sort((a, b) => b.lucro - a.lucro);
-  const totalLucroPos = sorted.reduce((s, r) => s + Math.max(0, r.lucro), 0);
+  return curvaAbcAcumuladoLucroOrdemFixa(sorted);
+}
+
+/**
+ * Pareto 80/15/5 sobre o lucro positivo na ordem **já definida** (ex.: ordenação por margem %).
+ * Não reordena por valor absoluto de lucro.
+ */
+export function curvaAbcAcumuladoLucroOrdemFixa(rows: AbcInputRow[]): AbcOutputRow[] {
+  const totalLucroPos = rows.reduce((s, r) => s + Math.max(0, r.lucro), 0);
   if (totalLucroPos <= 0) {
-    return sorted.map((r) => ({
-      ...r,
+    return rows.map((r) => ({
+      id: r.id,
+      lucro: r.lucro,
       classe: 'C' as const,
       contribuicaoLucroAcumPct: 0,
     }));
   }
   let cum = 0;
-  return sorted.map((r) => {
+  return rows.map((r) => {
     cum += Math.max(0, r.lucro);
     const pct = cum / totalLucroPos;
     const classe: 'A' | 'B' | 'C' = pct <= 0.8 ? 'A' : pct <= 0.95 ? 'B' : 'C';

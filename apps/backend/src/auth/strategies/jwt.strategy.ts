@@ -16,10 +16,10 @@ export type JwtPayload = {
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
-  constructor(
-    configService: ConfigService,
-    private readonly prisma: PrismaService,
-  ) {
+  private readonly configService: ConfigService;
+  private readonly prisma: PrismaService;
+
+  constructor(configService: ConfigService, prisma: PrismaService) {
     const secret =
       configService.get<string>('secrets.jwtSecret') ??
       configService.getOrThrow<string>('JWT_SECRET');
@@ -28,6 +28,8 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       ignoreExpiration: false,
       secretOrKey: secret,
     });
+    this.configService = configService;
+    this.prisma = prisma;
   }
 
   async validate(payload: JwtPayload) {
@@ -41,12 +43,16 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     if (user.tokenVersion !== payloadTv) {
       throw new UnauthorizedException('Sessão inválida ou encerrada (logout)');
     }
+    const datahubTiEmailCsv = this.configService.get<string>('DATAHUB_TI_EMAILS') ?? '';
     return {
       sub: payload.sub,
       id: payload.sub,
       email: payload.email,
       role: payload.role,
-      permissions: permissionsForRole(payload.role),
+      permissions: permissionsForRole(payload.role, {
+        email: payload.email,
+        datahubTiEmailCsv,
+      }),
       clienteId: user.clienteId ?? null,
     };
   }

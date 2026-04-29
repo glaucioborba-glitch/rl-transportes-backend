@@ -38,7 +38,7 @@ export class ComercialCurvaAbcItemDto {
 
   @ApiProperty({
     description:
-      'Percentual acumulado do lucro positivo total após este cliente (ordenado por lucro)',
+      'Percentual acumulado do lucro positivo total após este registro (ver `modoOrdenacaoAbc`).',
   })
   contribuicaoLucroAcumPct!: number;
 }
@@ -46,6 +46,12 @@ export class ComercialCurvaAbcItemDto {
 export class ComercialCurvaAbcRespostaDto {
   @ApiProperty()
   periodo!: { dataInicio: string; dataFim: string };
+
+  @ApiPropertyOptional({
+    enum: ['lucro', 'margem'],
+    description: '`lucro`: ordenação por lucro absoluto. `margem`: ordenação por margem % antes do acumulado.',
+  })
+  modoOrdenacaoAbc?: 'lucro' | 'margem';
 
   @ApiProperty({ type: ComercialParametrosCustoDto })
   parametros!: ComercialParametrosCustoDto;
@@ -164,6 +170,68 @@ export class ComercialElasticidadeRespostaDto {
   clienteId!: string | null;
 }
 
+export class ComercialSerieTemporalMesDto {
+  @ApiProperty({ example: '2026-03' })
+  mes!: string;
+
+  @ApiProperty()
+  faturamento!: number;
+
+  @ApiProperty()
+  custoEstimado!: number;
+
+  @ApiProperty()
+  lucro!: number;
+
+  @ApiPropertyOptional()
+  margemPct!: number | null;
+}
+
+export class ComercialSeriesTemporaisRespostaDto {
+  @ApiProperty({ enum: [6, 12] })
+  meses!: 6 | 12;
+
+  @ApiProperty()
+  periodo!: { dataInicio: string; dataFim: string };
+
+  @ApiPropertyOptional()
+  clienteId!: string | null;
+
+  @ApiProperty({ type: ComercialParametrosCustoDto })
+  parametros!: ComercialParametrosCustoDto;
+
+  @ApiProperty({ type: [ComercialSerieTemporalMesDto] })
+  serie!: ComercialSerieTemporalMesDto[];
+}
+
+export class ComercialIndicadoresRespostaDto {
+  @ApiProperty()
+  periodo!: { dataInicio: string; dataFim: string };
+
+  @ApiPropertyOptional()
+  clienteId!: string | null;
+
+  @ApiProperty()
+  faturamentoTotal!: number;
+
+  @ApiProperty()
+  lucroEstimado!: number;
+
+  @ApiPropertyOptional({ description: 'Lucro estimado / faturamento total no recorte' })
+  margemMediaPct!: number | null;
+
+  @ApiProperty({ description: 'Clientes distintos com pelo menos um faturamento no período' })
+  quantidadeClientesComFaturamento!: number;
+
+  @ApiPropertyOptional({
+    description: 'Referência: série móvel 12 meses até hoje (mesma base da rota /elasticidade)',
+  })
+  elasticidadeDemandaMedia!: number | null;
+
+  @ApiProperty({ type: ComercialParametrosCustoDto })
+  parametros!: ComercialParametrosCustoDto;
+}
+
 export class ComercialSimuladorRespostaDto {
   @ApiPropertyOptional()
   periodoRotulo!: string | null;
@@ -196,8 +264,10 @@ export class ComercialSimuladorRespostaDto {
 }
 
 export class ComercialRecomendacaoDto {
-  @ApiProperty({ enum: ['reajuste', 'pacote', 'contrato', 'ocupacao', 'alerta'] })
-  tipo!: 'reajuste' | 'pacote' | 'contrato' | 'ocupacao' | 'alerta';
+  @ApiProperty({
+    enum: ['reajuste', 'pacote', 'contrato', 'ocupacao', 'alerta', 'desconto'],
+  })
+  tipo!: 'reajuste' | 'pacote' | 'contrato' | 'ocupacao' | 'alerta' | 'desconto';
 
   @ApiPropertyOptional()
   clienteId!: string | null;

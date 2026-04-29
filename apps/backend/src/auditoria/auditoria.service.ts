@@ -75,12 +75,73 @@ export class AuditoriaService {
     });
   }
 
+  /** GET /auditoria/registro/... — leitura sensível. */
+  async buscarPorRegistroComAuditoria(
+    tabela: string,
+    registroId: string,
+    usuarioId: string,
+    ip?: string,
+    userAgent?: string,
+  ) {
+    const data = await this.buscarPorRegistro(tabela, registroId);
+    await this.registrar({
+      tabela: 'auditoria_consulta',
+      registroId: `${tabela}:${registroId}`.slice(0, 200),
+      acao: AcaoAuditoria.READ,
+      usuario: usuarioId,
+      dadosDepois: { rota: 'GET /auditoria/registro/:tabela/:registroId', tabela, registroId },
+      ip,
+      userAgent,
+    });
+    return data;
+  }
+
   async buscarPorUsuario(userId: string, limite: number = 100) {
     return this.prisma.auditoria.findMany({
       where: { usuario: userId },
       orderBy: { createdAt: 'desc' },
       take: limite,
     });
+  }
+
+  async buscarPorUsuarioComAuditoria(
+    alvoUserId: string,
+    limite: number,
+    consultorId: string,
+    ip?: string,
+    userAgent?: string,
+  ) {
+    const data = await this.buscarPorUsuario(alvoUserId, limite);
+    await this.registrar({
+      tabela: 'auditoria_consulta',
+      registroId: `usuario:${alvoUserId}`.slice(0, 200),
+      acao: AcaoAuditoria.READ,
+      usuario: consultorId,
+      dadosDepois: { rota: 'GET /auditoria/usuario/:userId', alvoUserId, limite },
+      ip,
+      userAgent,
+    });
+    return data;
+  }
+
+  /** GET /auditoria (lista) — leitura sensível. */
+  async buscarComFiltrosComAuditoria(
+    query: AuditoriaQueryDto,
+    usuarioId: string,
+    ip?: string,
+    userAgent?: string,
+  ) {
+    const r = await this.buscarComFiltros(query);
+    await this.registrar({
+      tabela: 'auditoria_consulta',
+      registroId: 'lista',
+      acao: AcaoAuditoria.READ,
+      usuario: usuarioId,
+      dadosDepois: { rota: 'GET /auditoria', filtro: { ...query } },
+      ip,
+      userAgent,
+    });
+    return r;
   }
 
   async buscarComFiltros(query: AuditoriaQueryDto) {

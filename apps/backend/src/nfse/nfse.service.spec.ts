@@ -89,4 +89,44 @@ describe('NfseService', () => {
       s.emitirNfse('f1', dtoBase as never, 'u1', staff, '0.0.0.0', 'test'),
     ).rejects.toThrow(BadRequestException);
   });
+
+  it('cancelamento com análise pendente no município retorna pendente_analise e grava status', async () => {
+    const prismaCancel = {
+      faturamento: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'f1',
+          nfsEmitidas: [{ id: 'n1', numeroNfe: '42', statusIpm: 'ACEITO' }],
+        }),
+      },
+      $transaction: jest.fn((fn: (tx: object) => Promise<unknown>) =>
+        fn({
+          nfsEmitida: {
+            findUnique: jest.fn().mockResolvedValue({ id: 'n1', statusIpm: 'ACEITO' }),
+            update: jest.fn().mockResolvedValue({ id: 'n1', statusIpm: 'PENDENTE_CANCEL' }),
+          },
+          faturamento: {
+            findUnique: jest.fn().mockResolvedValue({ id: 'f1', statusNfe: 'emitida' }),
+          },
+        }),
+      ),
+    };
+    const ipmCancel = {
+      ...ipm,
+      cancelar: jest.fn().mockResolvedValue({
+        retorno: { sucesso: false, cancelamentoSituacao: 'pendente', erros: [] },
+        xmlResposta: '<nfse/>',
+      }),
+    };
+    const s = new NfseService(prismaCancel as never, auditoria as never, ipmCancel as never);
+    const r = await s.cancelarNfse(
+      'f1',
+      { motivo: 'Teste homologação' } as never,
+      'u1',
+      staff,
+      '127.0.0.1',
+      'jest',
+    );
+    expect(r).toEqual(expect.objectContaining({ situacao: 'pendente_analise' }));
+    expect(auditoria.registrar).toHaveBeenCalled();
+  });
 });
