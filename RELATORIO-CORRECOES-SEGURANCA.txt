@@ -36,6 +36,7 @@ Nota sobre commits no repositório
 
 4) Dependências backend
    - helmet, cookie-parser, @types/cookie-parser.
+   - npm audit (2026-04-29): removido pacote `uuid` — request-id usa `crypto.randomUUID()` (Node 20+); `bcrypt` ^6.0.0 (evita cadeia @mapbox/node-pre-gyp / tar); `overrides` para `@hono/node-server` ^1.19.13 (Prisma CLI); `@types/bcrypt` ^6.0.0; `engines.node` >=20. `npm audit`: 0 vulnerabilidades após ajustes; testes unitários e e2e passando.
 
 Observações operacionais
 - Cookies cross-origin exigem CORS_ORIGIN com a URL exata do front (incluindo porta em dev) e SameSite/Secure conforme deployment. Para API e front em hosts diferentes em produção, pode ser necessário AUTH_COOKIE_SAMESITE=none e AUTH_COOKIE_SECURE=1.
