@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #080a0d;
+  --foreground: #e8eaed;
+  --muted: #1a1f27;
+  --muted-foreground: #94a3b8;
+  --accent: #22d3ee;
+  --accent-hover: #06b6d4;
+  --accent-foreground: #041014;
+  --ring: #22d3ee;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+@keyframes twin-flow-x {
+  0% {
+    left: 2%;
+  }
+  100% {
+    left: calc(98% - 2.5rem);
+  }
+}

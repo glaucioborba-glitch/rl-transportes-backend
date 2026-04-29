@@ -1,0 +1,36 @@
+RL Transportes — relatório de correções de segurança e hardening
+Data: 2026-04-29
+
+Resumo do que foi implementado nesta entrega
+
+1) Backend (NestJS)
+   - Helmet com CSP desativada para não quebrar Swagger/UI de documentação; COEP desligado para compatibilidade.
+   - cookie-parser global para leitura de cookies em refresh/JWT.
+   - Swagger (/docs, /docs/internal, /docs/public, /docs/mobile, /docs/cockpit): desligado em NODE_ENV=production, exceto se SWAGGER_ENABLED=1. Em desenvolvimento permanece ativo salvo SWAGGER_ENABLED=0.
+   - CORS: cabeçalho X-RL-Auth-Cookie permitido (modo cookies HttpOnly).
+   - Auth JWT: estratégia passport-jwt lê Bearer OU cookie rl_at quando AUTH_HTTP_ONLY_COOKIES=1.
+   - POST /auth/login e /auth/refresh: definem cookies HttpOnly rl_at / rl_rt quando AUTH_HTTP_ONLY_COOKIES=1 e o cliente envia X-RL-Auth-Cookie: 1.
+   - POST /auth/logout: limpa cookies quando AUTH_HTTP_ONLY_COOKIES=1.
+   - RefreshDto: refreshToken opcional quando o refresh vem do cookie.
+   - Log de bootstrap: não expõe mais fragmento de DATABASE_URL; apenas indica se está configurado.
+
+2) Frontend (Next.js)
+   - next.config.mjs: headers de segurança (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy).
+   - Cookie rl_staff_session: flag Secure em HTTPS.
+   - Modo opcional NEXT_PUBLIC_AUTH_HTTP_ONLY=1 + backend AUTH_HTTP_ONLY_COOKIES=1: login operador usa credentials include e header X-RL-Auth-Cookie; tokens não são persistidos no localStorage (apenas user no persist do Zustand); staffRequest envia cookies e header em todas as chamadas.
+   - portal-client: authLogin e authRefresh aceitam modo cookie explícito.
+   - twin-truck-flow: removido dangerouslySetInnerHTML; keyframes em globals.css.
+
+3) Repositório
+   - .gitignore raiz: **/.next/
+   - .env.example (raiz e apps/web): variáveis SWAGGER_ENABLED, AUTH_HTTP_ONLY_COOKIES, cookies, NEXT_PUBLIC_AUTH_HTTP_ONLY.
+
+4) Dependências backend
+   - helmet, cookie-parser, @types/cookie-parser.
+
+Observações operacionais
+- Cookies cross-origin exigem CORS_ORIGIN com a URL exata do front (incluindo porta em dev) e SameSite/Secure conforme deployment. Para API e front em hosts diferentes em produção, pode ser necessário AUTH_COOKIE_SAMESITE=none e AUTH_COOKIE_SECURE=1.
+- Modo cookie é opcional (default desligado) para não quebrar ambientes atuais que usam apenas Bearer + localStorage.
+
+Script de dump de código
+- node scripts/dump-sources.mjs > PROJETO-CODIGO-COMPLETO.txt

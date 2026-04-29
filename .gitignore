@@ -4,6 +4,7 @@ coverage/
 logs/
 *.log
 .DS_Store
+**/.next/
 
 # Ambiente local (nunca versionar segredos)
 .env
