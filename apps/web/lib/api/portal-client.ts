@@ -1,3 +1,4 @@
+import { applyCsrfHeaders } from "@/lib/csrf-client";
 import { usePortalAuthStore } from "@/stores/portal-store";
 import type {
   AuthLoginResponse,
@@ -19,6 +20,15 @@ export class ApiError extends Error {
 
 export function getApiBase(): string {
   return process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
+}
+
+export function defaultApiCredentials(): RequestCredentials {
+  if (typeof window === "undefined") return "same-origin";
+  try {
+    return new URL(getApiBase()).origin !== window.location.origin ? "include" : "same-origin";
+  } catch {
+    return "same-origin";
+  }
 }
 
 async function parseJson<T>(res: Response): Promise<T> {
@@ -44,7 +54,7 @@ export async function authLogin(
       ...(cookieMode ? { "X-RL-Auth-Cookie": "1" } : {}),
     },
     body: JSON.stringify({ email, password }),
-    credentials: cookieMode ? "include" : "same-origin",
+    credentials: cookieMode ? "include" : defaultApiCredentials(),
   });
   if (!res.ok) {
     const err = await res.text();
@@ -68,7 +78,7 @@ export async function authRefresh(
       ...(cookieMode ? { "X-RL-Auth-Cookie": "1" } : {}),
     },
     body: JSON.stringify(cookieMode && !refreshToken ? {} : { refreshToken }),
-    credentials: cookieMode ? "include" : "same-origin",
+    credentials: cookieMode ? "include" : defaultApiCredentials(),
   });
   if (!res.ok) {
     throw new ApiError("Sessão expirada", res.status);
@@ -93,7 +103,9 @@ export async function portalRequest(path: string, init?: RequestInit): Promise<R
     const headers = new Headers(init?.headers);
     if (token) headers.set("Authorization", `Bearer ${token}`);
     if (!headers.has("Accept")) headers.set("Accept", "application/json");
-    return fetch(url, { ...init, headers });
+    applyCsrfHeaders(headers, init?.method);
+    const credentials = init?.credentials ?? defaultApiCredentials();
+    return fetch(url, { ...init, headers, credentials });
   };
 
   const state = usePortalAuthStore.getState();

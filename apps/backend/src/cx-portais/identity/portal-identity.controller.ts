@@ -1,7 +1,9 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { IsEmail, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
 import { PortalIdentityService } from './portal-identity.service';
+import { attachFreshCsrfCookie } from '../../auth/csrf-cookie.util';
 
 class PortalLoginDto {
   @ApiProperty()
@@ -48,14 +50,18 @@ export class PortalIdentityController {
     description:
       '**CLIENTE:** usuário Prisma `Role.CLIENTE`. **FORNECEDOR/PARCEIRO:** seed em memória `CX_PORTAL_FORNECEDOR_SEED`. Chaves públicas Fase 18 **não** autenticam aqui.',
   })
-  async login(@Body() body: PortalLoginDto) {
-    return this.identity.login(body.email, body.password, body.papel, body.tenantId);
+  async login(@Body() body: PortalLoginDto, @Res({ passthrough: true }) res: Response) {
+    const out = await this.identity.login(body.email, body.password, body.papel, body.tenantId);
+    attachFreshCsrfCookie(res);
+    return out;
   }
 
   @Post('refresh')
   @ApiOperation({ summary: 'Refresh token portal (par de tokens dedicados)' })
-  async refresh(@Body() body: PortalRefreshDto) {
-    return this.identity.refresh(body.refreshToken);
+  async refresh(@Body() body: PortalRefreshDto, @Res({ passthrough: true }) res: Response) {
+    const out = await this.identity.refresh(body.refreshToken);
+    attachFreshCsrfCookie(res);
+    return out;
   }
 
   @Post('2fa')

@@ -1,6 +1,7 @@
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { isAuthHttpOnlyMode } from "@/lib/auth-mode";
-import { ApiError, authRefresh, getApiBase } from "@/lib/api/portal-client";
+import { ApiError, authRefresh, defaultApiCredentials, getApiBase } from "@/lib/api/portal-client";
+import { applyCsrfHeaders } from "@/lib/csrf-client";
 
 async function parseJson<T>(res: Response): Promise<T> {
   const text = await res.text();
@@ -17,7 +18,7 @@ export { ApiError } from "@/lib/api/portal-client";
 function cookieModeFetchInit(): { credentials: RequestCredentials; headers: Record<string, string> } {
   const cookieMode = isAuthHttpOnlyMode();
   return {
-    credentials: cookieMode ? "include" : "same-origin",
+    credentials: cookieMode ? "include" : defaultApiCredentials(),
     headers: cookieMode ? { "X-RL-Auth-Cookie": "1" } : {},
   };
 }
@@ -35,6 +36,7 @@ export async function staffRequest(path: string, init?: RequestInit): Promise<Re
     for (const [k, v] of Object.entries(cookieHeaders)) {
       if (!headers.has(k)) headers.set(k, v);
     }
+    applyCsrfHeaders(headers, init?.method);
     return fetch(url, { ...init, headers, credentials });
   };
 

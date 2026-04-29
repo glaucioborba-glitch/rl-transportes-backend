@@ -22,6 +22,7 @@ import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { AUTH_REFRESH_COOKIE } from './auth-cookie.constants';
 import { attachAuthCookies, clearAuthCookies } from './auth-cookie.util';
+import { attachFreshCsrfCookie, clearCsrfCookie } from './csrf-cookie.util';
 import { AuthService } from './auth.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginDto } from './dto/login.dto';
@@ -49,6 +50,7 @@ export class AuthController {
     if (wantsCookieAuth(req)) {
       attachAuthCookies(res, out.accessToken, out.refreshToken);
     }
+    attachFreshCsrfCookie(res);
     return out;
   }
 
@@ -71,6 +73,7 @@ export class AuthController {
     if (wantsCookieAuth(req)) {
       attachAuthCookies(res, out.accessToken, out.refreshToken);
     }
+    attachFreshCsrfCookie(res);
     return out;
   }
 
@@ -103,6 +106,7 @@ export class AuthController {
     if (process.env.AUTH_HTTP_ONLY_COOKIES === '1') {
       clearAuthCookies(res);
     }
+    clearCsrfCookie(res);
   }
 
   @Post('users')

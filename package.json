@@ -11,6 +11,8 @@
         "dev:web": "cd apps/web && npm run dev",
         "build:web": "cd apps/web && npm run build",
         "build:all": "cd apps/backend && npm run build",
+        "lint": "cd apps/web && npm run lint",
+        "ci:test": "npm run prisma:validate && cd apps/backend && npm run build && npm test && npm run test:e2e && cd ../.. && npm run build:web",
         "test:all": "cd apps/backend && npm run test && npm run test:e2e",
         "prisma:validate": "cd apps/backend && npx prisma validate",
         "prisma:generate": "cd apps/backend && npx prisma generate",

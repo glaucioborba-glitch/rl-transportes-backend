@@ -2,15 +2,12 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
-import * as compression from 'compression';
-import * as cookieParser from 'cookie-parser';
-import type { Request } from 'express';
-import rateLimit from 'express-rate-limit';
-import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { PlataformaPublicSurfaceModule } from './plataforma-integracao/plataforma-public-surface.module';
 import { MobileHubModule } from './mobile-hub/mobile-hub.module';
 import { CockpitOperacoesModule } from './cockpit-operacoes/cockpit-operacoes.module';
+import { applyBaseHttpStack } from './http/http-stack';
+import { isSwaggerEnabled } from './config/security.config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -22,59 +19,8 @@ async function bootstrap() {
     httpServer.set?.('trust proxy', 1);
   }
 
-  app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
-  app.use(cookieParser());
+  applyBaseHttpStack(app, logger);
 
-  const rateMax = Math.max(1, parseInt(process.env.RATE_LIMIT_MAX || '100', 10) || 100);
-  app.use(
-    rateLimit({
-      windowMs: 15 * 60 * 1000,
-      max: rateMax,
-      standardHeaders: true,
-      legacyHeaders: false,
-      message: {
-        message:
-          'Muitas requisições de seu IP, tente novamente após 15 minutos.',
-      },
-      skip: (req: Request) => {
-        const p = (req as Request & { path?: string }).path || req.url?.split('?')[0] || '';
-        return (
-          p === '/health' ||
-          p.endsWith('/health') ||
-          p.startsWith('/public/') ||
-          p.startsWith('/marketplace/') ||
-          p.startsWith('/gateway/') ||
-          p.startsWith('/mobile/')
-        );
-      },
-    }),
-  );
-
-  // CORS: origens explícitas; cabeçalhos mínimos + rastreio (request id)
-  app.enableCors({
-    origin: (process.env.CORS_ORIGIN || 'http://localhost:3000').split(',').map((o) => o.trim()).filter(Boolean),
-    credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'PUT', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-Request-Id',
-      'X-Request-ID',
-      'X-Api-Key',
-      'X-Public-Api-Key',
-      'X-Public-Api-Secret',
-      'X-Tenant-ID',
-      'X-Integracao-Interno',
-      'X-Integracao-Signature',
-      'X-Mobile-Critical-Pin',
-      'X-RL-Auth-Cookie',
-    ],
-  });
-
-  // Compressão de respostas
-  app.use(compression());
-
-  // Validação global
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -87,11 +33,8 @@ async function bootstrap() {
     }),
   );
 
-  const swaggerEnabled =
-    process.env.SWAGGER_ENABLED === '1' ||
-    (process.env.NODE_ENV !== 'production' && process.env.SWAGGER_ENABLED !== '0');
+  const swaggerEnabled = isSwaggerEnabled();
 
-  // Swagger/OpenAPI documentação (desligado em produção salvo SWAGGER_ENABLED=1)
   const config = new DocumentBuilder()
     .setTitle('RL Transportes - Backend API')
     .setDescription(
@@ -304,117 +247,117 @@ async function bootstrap() {
     .build();
 
   if (swaggerEnabled) {
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('docs/internal', app, document);
-  SwaggerModule.setup('docs', app, document);
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('docs/internal', app, document);
+    SwaggerModule.setup('docs', app, document);
 
-  const publicSwagger = new DocumentBuilder()
-    .setTitle('RL Transportes — API Pública Comercial')
-    .setDescription(
-      'Contratos **v1** para parceiros B2B: tracking, SLAs, pátio, NFSe e faturamento **read-only**. ' +
-        'Rate-limit individual por API Key (`PLATAFORMA_API_CLIENTS`). Erros: 400, 401, 403, 429. ' +
-        'Webhooks: ver `GET /api-contracts/v1/webhooks`.',
-    )
-    .setVersion('1.0.0')
-    .addApiKey(
-      { type: 'apiKey', in: 'header', name: 'X-Public-Api-Key', description: 'Identificador público da aplicação parceira.' },
-      'public-api-key',
-    )
-    .addApiKey(
-      {
-        type: 'apiKey',
-        in: 'header',
-        name: 'X-Public-Api-Secret',
-        description: 'Segredo confidencial (nunca expor em front-end público).',
-      },
-      'public-api-secret',
-    )
-    .addApiKey(
-      { type: 'apiKey', in: 'header', name: 'X-Tenant-ID', description: 'Opcional — tenant lógico; default vem do cadastro da chave.' },
-      'tenant-id',
-    )
-    .addTag('plataforma-public-v1', 'Recursos REST versionados')
-    .addTag('plataforma-marketplace', 'Catálogo de serviços digitais')
-    .build();
+    const publicSwagger = new DocumentBuilder()
+      .setTitle('RL Transportes — API Pública Comercial')
+      .setDescription(
+        'Contratos **v1** para parceiros B2B: tracking, SLAs, pátio, NFSe e faturamento **read-only**. ' +
+          'Rate-limit individual por API Key (`PLATAFORMA_API_CLIENTS`). Erros: 400, 401, 403, 429. ' +
+          'Webhooks: ver `GET /api-contracts/v1/webhooks`.',
+      )
+      .setVersion('1.0.0')
+      .addApiKey(
+        { type: 'apiKey', in: 'header', name: 'X-Public-Api-Key', description: 'Identificador público da aplicação parceira.' },
+        'public-api-key',
+      )
+      .addApiKey(
+        {
+          type: 'apiKey',
+          in: 'header',
+          name: 'X-Public-Api-Secret',
+          description: 'Segredo confidencial (nunca expor em front-end público).',
+        },
+        'public-api-secret',
+      )
+      .addApiKey(
+        { type: 'apiKey', in: 'header', name: 'X-Tenant-ID', description: 'Opcional — tenant lógico; default vem do cadastro da chave.' },
+        'tenant-id',
+      )
+      .addTag('plataforma-public-v1', 'Recursos REST versionados')
+      .addTag('plataforma-marketplace', 'Catálogo de serviços digitais')
+      .build();
 
-  const publicDocument = SwaggerModule.createDocument(app, publicSwagger, {
-    include: [PlataformaPublicSurfaceModule],
-  });
-  SwaggerModule.setup('docs/public', app, publicDocument);
+    const publicDocument = SwaggerModule.createDocument(app, publicSwagger, {
+      include: [PlataformaPublicSurfaceModule],
+    });
+    SwaggerModule.setup('docs/public', app, publicDocument);
 
-  const mobileSwagger = new DocumentBuilder()
-    .setTitle('RL Transportes — Mobile Hub API')
-    .setDescription(
-      '**Fase 21** — Contratos levíssimos para apps nativos (operador, motorista, cliente). ' +
-        'Base path `/mobile/v1`. Versão reservada `/mobile/v2`. Imagens: **gzip+base64** recomendado no cliente. **`deviceId`** obrigatório no login.',
-    )
-    .setVersion('1.0.0')
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        description: 'Token retornado por `POST /mobile/v1/auth/login` ou `refresh`.',
-      },
-      'mobile-bearer',
-    )
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        description: 'JWT corporativo **ADMIN/GERENTE** para `/mobile/v1/admin/*`.',
-      },
-      'access-token',
-    )
-    .addTag('mobile-hub-auth', 'Autenticação mobile')
-    .addTag('mobile-hub-operador', 'Operador')
-    .addTag('mobile-hub-motorista', 'Motorista')
-    .addTag('mobile-hub-cliente', 'Cliente')
-    .addTag('mobile-hub-sync', 'Sincronização offline')
-    .addTag('mobile-hub-telemetria', 'Telemetria')
-    .addTag('mobile-hub-push', 'Push')
-    .addTag('mobile-hub-admin', 'Administração / telemetria staff')
-    .addTag('mobile-hub-v2', 'Versão futura')
-    .build();
+    const mobileSwagger = new DocumentBuilder()
+      .setTitle('RL Transportes — Mobile Hub API')
+      .setDescription(
+        '**Fase 21** — Contratos levíssimos para apps nativos (operador, motorista, cliente). ' +
+          'Base path `/mobile/v1`. Versão reservada `/mobile/v2`. Imagens: **gzip+base64** recomendado no cliente. **`deviceId`** obrigatório no login.',
+      )
+      .setVersion('1.0.0')
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'Token retornado por `POST /mobile/v1/auth/login` ou `refresh`.',
+        },
+        'mobile-bearer',
+      )
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'JWT corporativo **ADMIN/GERENTE** para `/mobile/v1/admin/*`.',
+        },
+        'access-token',
+      )
+      .addTag('mobile-hub-auth', 'Autenticação mobile')
+      .addTag('mobile-hub-operador', 'Operador')
+      .addTag('mobile-hub-motorista', 'Motorista')
+      .addTag('mobile-hub-cliente', 'Cliente')
+      .addTag('mobile-hub-sync', 'Sincronização offline')
+      .addTag('mobile-hub-telemetria', 'Telemetria')
+      .addTag('mobile-hub-push', 'Push')
+      .addTag('mobile-hub-admin', 'Administração / telemetria staff')
+      .addTag('mobile-hub-v2', 'Versão futura')
+      .build();
 
-  const mobileDocument = SwaggerModule.createDocument(app, mobileSwagger, {
-    include: [MobileHubModule],
-  });
-  SwaggerModule.setup('docs/mobile', app, mobileDocument);
+    const mobileDocument = SwaggerModule.createDocument(app, mobileSwagger, {
+      include: [MobileHubModule],
+    });
+    SwaggerModule.setup('docs/mobile', app, mobileDocument);
 
-  const cockpitSwagger = new DocumentBuilder()
-    .setTitle('RL Transportes — Cockpit NOC/TOC')
-    .setDescription(
-      '**Fase 22** — Torre de controle digital: mapa, timeline, alertas, KPIs, multi-terminal, automação, telemetria mobile, financeiro, RH e executivo. **Somente leitura**. ' +
-        'RBAC: `ADMIN`/`GERENTE` total; `COCKPIT_SUPERVISOR_EMAILS` estende operadores ao cockpit completo; sem isso, `OPERADOR_*` só `/cockpit/rh/*` e `/cockpit/indicadores/turno`. `CLIENTE` → 403.',
-    )
-    .setVersion('1.0.0')
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        description: 'JWT corporativo (`/auth/login`).',
-      },
-      'access-token',
-    )
-    .addTag('cockpit-mapa', 'Mapa: pátio, gate, portaria, veículos')
-    .addTag('cockpit-timeline', 'Fluxo e eventos')
-    .addTag('cockpit-alertas', 'Alert center')
-    .addTag('cockpit-indicadores', 'KPIs / turno')
-    .addTag('cockpit-tenant', 'Multi-terminal')
-    .addTag('cockpit-automacao', 'Workflows / jobs')
-    .addTag('cockpit-telemetria', 'Telemetria mobile')
-    .addTag('cockpit-financeiro', 'Fiscal / financeiro')
-    .addTag('cockpit-rh', 'RH operacional')
-    .addTag('cockpit-executivo', 'Executivo 360°')
-    .build();
+    const cockpitSwagger = new DocumentBuilder()
+      .setTitle('RL Transportes — Cockpit NOC/TOC')
+      .setDescription(
+        '**Fase 22** — Torre de controle digital: mapa, timeline, alertas, KPIs, multi-terminal, automação, telemetria mobile, financeiro, RH e executivo. **Somente leitura**. ' +
+          'RBAC: `ADMIN`/`GERENTE` total; `COCKPIT_SUPERVISOR_EMAILS` estende operadores ao cockpit completo; sem isso, `OPERADOR_*` só `/cockpit/rh/*` e `/cockpit/indicadores/turno`. `CLIENTE` → 403.',
+      )
+      .setVersion('1.0.0')
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'JWT corporativo (`/auth/login`).',
+        },
+        'access-token',
+      )
+      .addTag('cockpit-mapa', 'Mapa: pátio, gate, portaria, veículos')
+      .addTag('cockpit-timeline', 'Fluxo e eventos')
+      .addTag('cockpit-alertas', 'Alert center')
+      .addTag('cockpit-indicadores', 'KPIs / turno')
+      .addTag('cockpit-tenant', 'Multi-terminal')
+      .addTag('cockpit-automacao', 'Workflows / jobs')
+      .addTag('cockpit-telemetria', 'Telemetria mobile')
+      .addTag('cockpit-financeiro', 'Fiscal / financeiro')
+      .addTag('cockpit-rh', 'RH operacional')
+      .addTag('cockpit-executivo', 'Executivo 360°')
+      .build();
 
-  const cockpitDocument = SwaggerModule.createDocument(app, cockpitSwagger, {
-    include: [CockpitOperacoesModule],
-  });
-  SwaggerModule.setup('docs/cockpit', app, cockpitDocument);
+    const cockpitDocument = SwaggerModule.createDocument(app, cockpitSwagger, {
+      include: [CockpitOperacoesModule],
+    });
+    SwaggerModule.setup('docs/cockpit', app, cockpitDocument);
   }
 
   const port = parseInt(process.env.API_PORT || '3000', 10);

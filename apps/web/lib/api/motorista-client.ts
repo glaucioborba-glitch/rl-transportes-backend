@@ -1,5 +1,6 @@
 import { useMotoristaAuthStore } from "@/stores/motorista-auth-store";
-import { ApiError, authRefresh, getApiBase } from "@/lib/api/portal-client";
+import { ApiError, authRefresh, defaultApiCredentials, getApiBase } from "@/lib/api/portal-client";
+import { applyCsrfHeaders } from "@/lib/csrf-client";
 
 async function parseJson<T>(res: Response): Promise<T> {
   const text = await res.text();
@@ -21,7 +22,9 @@ export async function motoristaRequest(path: string, init?: RequestInit): Promis
     const headers = new Headers(init?.headers);
     if (token) headers.set("Authorization", `Bearer ${token}`);
     if (!headers.has("Accept")) headers.set("Accept", "application/json");
-    return fetch(url, { ...init, headers });
+    applyCsrfHeaders(headers, init?.method);
+    const credentials = init?.credentials ?? defaultApiCredentials();
+    return fetch(url, { ...init, headers, credentials });
   };
 
   const state = useMotoristaAuthStore.getState();

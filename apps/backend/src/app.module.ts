@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module';
 import { ClientesModule } from './clientes/clientes.module';
 import secretsConfig from './config/secrets.config';
 import nfseConfig from './config/nfse.config';
+import securityConfig from './config/security.config';
 import { winstonModuleOptions } from './common/logger/winston.config';
 import { requestIdMiddleware } from './common/middleware/request-id.middleware';
 import { HealthController } from './health/health.controller';
@@ -45,7 +46,7 @@ import { CockpitOperacoesModule } from './cockpit-operacoes/cockpit-operacoes.mo
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['../../.env', '.env'],
-      load: [secretsConfig, nfseConfig],
+      load: [secretsConfig, nfseConfig, securityConfig],
     }),
     WinstonModule.forRoot(winstonModuleOptions),
     CacheModule.register({
