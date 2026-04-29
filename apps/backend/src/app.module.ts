@@ -20,6 +20,8 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { DashboardFinanceiroModule } from './dashboard-financeiro/dashboard-financeiro.module';
 import { DashboardPerformanceModule } from './dashboard-performance/dashboard-performance.module';
 import { ComercialPricingModule } from './comercial-pricing/comercial-pricing.module';
+import { IaOperacionalModule } from './ia-operacional/ia-operacional.module';
+import { SimuladorTerminalModule } from './simulador-terminal/simulador-terminal.module';
 
 @Module({
   imports: [
@@ -46,6 +48,8 @@ import { ComercialPricingModule } from './comercial-pricing/comercial-pricing.mo
     DashboardFinanceiroModule,
     DashboardPerformanceModule,
     ComercialPricingModule,
+    IaOperacionalModule,
+    SimuladorTerminalModule,
   ],
   controllers: [HealthController],
 })

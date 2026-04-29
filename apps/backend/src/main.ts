@@ -106,6 +106,14 @@ async function bootstrap() {
       'comercial-pricing',
       'Inteligência comercial e pricing (ABC, elasticidade, simulador, recomendações)',
     )
+    .addTag(
+      'ia-operacional',
+      'Inteligência operacional (previsão de gargalos, ciclo, OCR Gate auxiliar, pátio, produtividade)',
+    )
+    .addTag(
+      'simulador-terminal',
+      'Simulador estratégico de capacidade, saturação, expansão e cenários What-If',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
