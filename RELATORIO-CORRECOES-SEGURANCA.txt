@@ -5,7 +5,7 @@ Resumo do que foi implementado nesta entrega
 
 Nota sobre commits no repositório
    - O commit 187b465 adicionou utilitários de cookie (auth-cookie.*), apps/web, script de dump e relatório inicial.
-   - A integração completa no backend (main.ts, dependências helmet/cookie-parser, JwtStrategy, AuthController, RefreshDto), rotas de portal/faturamento associadas e o arquivo PROJETO-CODIGO-COMPLETO.txt atualizado foram consolidados no commit imediatamente posterior no histórico da branch main.
+   - A integração completa no backend (main.ts, dependências helmet/cookie-parser, JwtStrategy, AuthController, RefreshDto), rotas de portal/faturamento associadas e o arquivo PROJETO-CODIGO-COMPLETO.txt atualizado foram consolidados no commit a505b2a na branch main.
 
 1) Backend (NestJS)
    - Helmet com CSP desativada para não quebrar Swagger/UI de documentação; COEP desligado para compatibilidade.
