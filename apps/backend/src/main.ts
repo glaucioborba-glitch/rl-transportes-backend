@@ -134,6 +134,10 @@ async function bootstrap() {
       'tesouraria',
       'Tesouraria e AP (fornecedores, despesas, contratos, agenda, impacto em caixa e painel — persistência em memória até migração Prisma)',
     )
+    .addTag(
+      'folha-rh',
+      'RH Financeiro: folha, benefícios, presenças, centro de custo por turno e projeções — memória até migração; fórmulas documentadas nos endpoints',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

@@ -27,6 +27,7 @@ import { PlanejamentoPessoalModule } from './planejamento-pessoal/planejamento-p
 import { FiscalGovernancaModule } from './fiscal-governanca/fiscal-governanca.module';
 import { FinanceiroConciliacaoModule } from './financeiro-conciliacao/financeiro-conciliacao.module';
 import { TesourariaModule } from './tesouraria/tesouraria.module';
+import { FolhaRhModule } from './folha-rh/folha-rh.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { TesourariaModule } from './tesouraria/tesouraria.module';
     FiscalGovernancaModule,
     FinanceiroConciliacaoModule,
     TesourariaModule,
+    FolhaRhModule,
   ],
   controllers: [HealthController],
 })
