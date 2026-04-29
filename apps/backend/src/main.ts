@@ -130,6 +130,10 @@ async function bootstrap() {
       'financeiro-conciliacao',
       'Conciliação bancária (OFX/CSV), fluxo de caixa, previsibilidade e tesouraria (extratos em memória até migração)',
     )
+    .addTag(
+      'tesouraria',
+      'Tesouraria e AP (fornecedores, despesas, contratos, agenda, impacto em caixa e painel — persistência em memória até migração Prisma)',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

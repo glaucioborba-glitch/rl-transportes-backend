@@ -26,6 +26,7 @@ import { PlanejamentoEstrategicoModule } from './planejamento-estrategico/planej
 import { PlanejamentoPessoalModule } from './planejamento-pessoal/planejamento-pessoal.module';
 import { FiscalGovernancaModule } from './fiscal-governanca/fiscal-governanca.module';
 import { FinanceiroConciliacaoModule } from './financeiro-conciliacao/financeiro-conciliacao.module';
+import { TesourariaModule } from './tesouraria/tesouraria.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { FinanceiroConciliacaoModule } from './financeiro-conciliacao/financeiro
     PlanejamentoPessoalModule,
     FiscalGovernancaModule,
     FinanceiroConciliacaoModule,
+    TesourariaModule,
   ],
   controllers: [HealthController],
 })
