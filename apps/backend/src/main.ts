@@ -138,6 +138,10 @@ async function bootstrap() {
       'folha-rh',
       'RH Financeiro: folha, benefícios, presenças, centro de custo por turno e projeções — memória até migração; fórmulas documentadas nos endpoints',
     )
+    .addTag(
+      'rh-performance',
+      'RH estratégico: avaliações, KPIs, OKR, BSC, trilhas de treinamento e painel. RBAC: ADMIN/GERENTE; supervisor via RH_PERF_SUPERVISOR_EMAILS (exceto POST /okr); OPERADOR/CLIENTE 403. Integrações por proxies RH_PERF_* sem alterar outros módulos.',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

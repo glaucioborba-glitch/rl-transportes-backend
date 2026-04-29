@@ -28,6 +28,7 @@ import { FiscalGovernancaModule } from './fiscal-governanca/fiscal-governanca.mo
 import { FinanceiroConciliacaoModule } from './financeiro-conciliacao/financeiro-conciliacao.module';
 import { TesourariaModule } from './tesouraria/tesouraria.module';
 import { FolhaRhModule } from './folha-rh/folha-rh.module';
+import { RhPerformanceModule } from './rh-performance/rh-performance.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { FolhaRhModule } from './folha-rh/folha-rh.module';
     FinanceiroConciliacaoModule,
     TesourariaModule,
     FolhaRhModule,
+    RhPerformanceModule,
   ],
   controllers: [HealthController],
 })
