@@ -230,6 +230,19 @@ export class SolicitacoesService {
       ...(clienteIdFilter ? { clienteId: clienteIdFilter } : {}),
       ...(filters.status ? { status: filters.status } : {}),
     };
+    if (pagination.createdFrom || pagination.createdTo) {
+      where.createdAt = {};
+      if (pagination.createdFrom) {
+        (where.createdAt as Prisma.DateTimeFilter).gte = new Date(pagination.createdFrom);
+      }
+      if (pagination.createdTo) {
+        (where.createdAt as Prisma.DateTimeFilter).lte = new Date(pagination.createdTo);
+      }
+    }
+    const proto = pagination.protocolo?.trim();
+    if (proto) {
+      where.protocolo = { contains: proto, mode: 'insensitive' };
+    }
 
     const [items, total] = await Promise.all([
       this.prisma.solicitacao.findMany({
@@ -252,7 +265,14 @@ export class SolicitacoesService {
   ) {
     const s = await this.prisma.solicitacao.findFirst({
       where: { id, deletedAt: null },
-      include: { cliente: true, unidades: true },
+      include: {
+        cliente: true,
+        unidades: true,
+        portaria: true,
+        gate: true,
+        patio: true,
+        saida: true,
+      },
     });
     if (!s) throw new NotFoundException('Solicitação não encontrada');
     if (actor?.role === Role.CLIENTE) {

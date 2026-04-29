@@ -158,6 +158,21 @@ describe('Portal do cliente (e2e)', () => {
     expect(ids).not.toContain(solC2PendId);
   });
 
+  it('GET /cliente/portal/solicitacoes retorna envelope paginado e escopo do cliente', async () => {
+    const token = await accessTokenCliente1();
+    const res = await request(app.getHttpServer())
+      .get('/cliente/portal/solicitacoes')
+      .query({ page: 1, limit: 10 })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(Array.isArray(res.body.items)).toBe(true);
+    expect(typeof res.body.total).toBe('number');
+    expect(res.body.total).toBeGreaterThanOrEqual(2);
+    const ids = (res.body.items as { id: string }[]).map((x) => x.id);
+    expect(ids).toContain(solC1PendId);
+    expect(ids).not.toContain(solC2PendId);
+  });
+
   it('GET /portal/solicitacoes/:id de outro cliente retorna 403', async () => {
     const token = await accessTokenCliente1();
     await request(app.getHttpServer())

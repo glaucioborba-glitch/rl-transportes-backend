@@ -25,6 +25,7 @@ import {
 import { CxPortalRateLimitGuard } from './guards/cx-portal-rate-limit.guard';
 import { CxPortalSegmentGuard } from './guards/cx-portal-segment.guard';
 import { PortalCxInterceptor } from './interceptors/portal-cx.interceptor';
+import { PortalClienteSolicitacoesQueryDto } from './dto/portal-cliente-solicitacoes-query.dto';
 import { PortalClienteDataService } from './services/portal-cliente-data.service';
 import { PortalMarketplaceCxStore } from './stores/portal-marketplace-cx.store';
 import { PortalTicketsStore } from './stores/portal-tickets.store';
@@ -86,11 +87,18 @@ export class PortalClienteController {
   }
 
   @Get('solicitacoes')
-  @ApiOperation({ summary: 'Listar solicitações (tracking ciclo operacional)' })
-  async solicitacoes(@Req() req: Request & { cxUser?: CxPortalRequestUser }, @Query('clienteId') clienteId?: string) {
+  @ApiOperation({
+    summary: 'Listar solicitações (paginado, tracking ciclo operacional)',
+    description:
+      'Retorno: `{ items, total, page, limit, orderBy, order }`. Staff deve enviar `clienteId` na query.',
+  })
+  async solicitacoes(
+    @Req() req: Request & { cxUser?: CxPortalRequestUser },
+    @Query() query: PortalClienteSolicitacoesQueryDto,
+  ) {
     const u = this.cx(req);
     await this.audPortal(u, 'GET /cliente/portal/solicitacoes');
-    return this.data.listarSolicitacoes(u, clienteId);
+    return this.data.listarSolicitacoesPaginado(u, query);
   }
 
   @Get('solicitacoes/:id')

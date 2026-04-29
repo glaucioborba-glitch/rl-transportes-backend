@@ -5,6 +5,7 @@ import { Role } from '@prisma/client';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { PaginationDto } from '../common/dtos/pagination.dto';
 import { SolicitacaoPaginationDto } from '../common/dtos/pagination.dto';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -84,5 +85,26 @@ export class PortalController {
   @ApiOperation({ summary: 'Boletos do cliente (paginado, acompanhamento)' })
   listarBoletos(@Query() query: PortalBoletosQueryDto, @CurrentUser() user: AuthUser) {
     return this.faturamento.listBoletosPortal(query, user);
+  }
+
+  @Get('boletos/:id')
+  @Permissions('faturamento:ler')
+  @ApiOperation({ summary: 'Detalhe boleto (próprio cliente)' })
+  obterBoleto(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.faturamento.findBoletoPortalById(id, user);
+  }
+
+  @Get('nfse')
+  @Permissions('faturamento:ler')
+  @ApiOperation({ summary: 'NFS-e do cliente (paginado)' })
+  listarNfse(@Query() query: PaginationDto, @CurrentUser() user: AuthUser) {
+    return this.faturamento.listNfsePortal(query, user);
+  }
+
+  @Get('nfse/:id')
+  @Permissions('faturamento:ler')
+  @ApiOperation({ summary: 'Detalhe NFS-e (próprio cliente)' })
+  obterNfse(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.faturamento.findNfsePortalById(id, user);
   }
 }

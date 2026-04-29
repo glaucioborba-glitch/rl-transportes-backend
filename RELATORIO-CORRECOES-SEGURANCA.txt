@@ -1,7 +1,11 @@
 RL Transportes — relatório de correções de segurança e hardening
-Data: 2026-04-29
+Atualizado: 2026-04-28 / 2026-04-29
 
 Resumo do que foi implementado nesta entrega
+
+Nota sobre commits no repositório
+   - O commit 187b465 adicionou utilitários de cookie (auth-cookie.*), apps/web, script de dump e relatório inicial.
+   - A integração completa no backend (main.ts, dependências helmet/cookie-parser, JwtStrategy, AuthController, RefreshDto), rotas de portal/faturamento associadas e o arquivo PROJETO-CODIGO-COMPLETO.txt atualizado foram consolidados no commit imediatamente posterior no histórico da branch main.
 
 1) Backend (NestJS)
    - Helmet com CSP desativada para não quebrar Swagger/UI de documentação; COEP desligado para compatibilidade.
@@ -13,6 +17,10 @@ Resumo do que foi implementado nesta entrega
    - POST /auth/logout: limpa cookies quando AUTH_HTTP_ONLY_COOKIES=1.
    - RefreshDto: refreshToken opcional quando o refresh vem do cookie.
    - Log de bootstrap: não expõe mais fragmento de DATABASE_URL; apenas indica se está configurado.
+   - Portal CX: CxPortalAuthGuard aceita também JWT corporativo de usuário com papel CLIENTE (mesmo segredo/validação de token), para o portal cliente usar a mesma sessão do login principal quando aplicável.
+   - Faturamento (portal): listagem paginada de NFS-e e consulta de boleto restritas ao cliente do actor (Role.CLIENTE).
+   - PortalModule / Solicitacoes: extensões alinhadas ao escopo do portal cliente (detalhes no diff do commit).
+   - PaginationDto: validação/coerção de page/limit reutilizada nas novas listagens.
 
 2) Frontend (Next.js)
    - next.config.mjs: headers de segurança (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy).
@@ -24,6 +32,7 @@ Resumo do que foi implementado nesta entrega
 3) Repositório
    - .gitignore raiz: **/.next/
    - .env.example (raiz e apps/web): variáveis SWAGGER_ENABLED, AUTH_HTTP_ONLY_COOKIES, cookies, NEXT_PUBLIC_AUTH_HTTP_ONLY.
+   - package.json raiz: scripts dev:web e build:web para o app Next.js.
 
 4) Dependências backend
    - helmet, cookie-parser, @types/cookie-parser.

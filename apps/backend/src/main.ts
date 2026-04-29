@@ -3,8 +3,10 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import * as compression from 'compression';
+import * as cookieParser from 'cookie-parser';
 import type { Request } from 'express';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { PlataformaPublicSurfaceModule } from './plataforma-integracao/plataforma-public-surface.module';
 import { MobileHubModule } from './mobile-hub/mobile-hub.module';
@@ -19,6 +21,9 @@ async function bootstrap() {
     const httpServer = app.getHttpAdapter().getInstance() as { set?: (k: string, v: unknown) => void };
     httpServer.set?.('trust proxy', 1);
   }
+
+  app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
+  app.use(cookieParser());
 
   const rateMax = Math.max(1, parseInt(process.env.RATE_LIMIT_MAX || '100', 10) || 100);
   app.use(
@@ -62,6 +67,7 @@ async function bootstrap() {
       'X-Integracao-Interno',
       'X-Integracao-Signature',
       'X-Mobile-Critical-Pin',
+      'X-RL-Auth-Cookie',
     ],
   });
 
@@ -81,7 +87,11 @@ async function bootstrap() {
     }),
   );
 
-  // Swagger/OpenAPI documentação
+  const swaggerEnabled =
+    process.env.SWAGGER_ENABLED === '1' ||
+    (process.env.NODE_ENV !== 'production' && process.env.SWAGGER_ENABLED !== '0');
+
+  // Swagger/OpenAPI documentação (desligado em produção salvo SWAGGER_ENABLED=1)
   const config = new DocumentBuilder()
     .setTitle('RL Transportes - Backend API')
     .setDescription(
@@ -293,6 +303,7 @@ async function bootstrap() {
     .addTag('cockpit-executivo', 'Dashboard C-Level (`/cockpit/executivo`).')
     .build();
 
+  if (swaggerEnabled) {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs/internal', app, document);
   SwaggerModule.setup('docs', app, document);
@@ -404,6 +415,7 @@ async function bootstrap() {
     include: [CockpitOperacoesModule],
   });
   SwaggerModule.setup('docs/cockpit', app, cockpitDocument);
+  }
 
   const port = parseInt(process.env.API_PORT || '3000', 10);
   const host = process.env.API_HOST || '0.0.0.0';
@@ -411,16 +423,16 @@ async function bootstrap() {
   await app.listen(port, host);
 
   logger.log(`✓ Server iniciado em http://localhost:${port}`);
-  logger.log(`✓ Documentação interna: http://localhost:${port}/docs/internal (e /docs)`);
-  logger.log(`✓ Documentação pública: http://localhost:${port}/docs/public`);
-  logger.log(`✓ Documentação mobile hub: http://localhost:${port}/docs/mobile`);
-  logger.log(`✓ Documentação cockpit NOC/TOC: http://localhost:${port}/docs/cockpit`);
-  logger.log(`✓ Ambiente: ${process.env.NODE_ENV || 'development'}`);
-  if (process.env.NODE_ENV === 'development') {
-    logger.log(`✓ Banco: ${process.env.DATABASE_URL?.split('@')[1] || 'unknown'}`);
+  if (swaggerEnabled) {
+    logger.log(`✓ Documentação interna: http://localhost:${port}/docs/internal (e /docs)`);
+    logger.log(`✓ Documentação pública: http://localhost:${port}/docs/public`);
+    logger.log(`✓ Documentação mobile hub: http://localhost:${port}/docs/mobile`);
+    logger.log(`✓ Documentação cockpit NOC/TOC: http://localhost:${port}/docs/cockpit`);
   } else {
-    logger.log('✓ Banco: configurado (host omitido do log em produção)');
+    logger.log('✓ Documentação Swagger desligada (defina SWAGGER_ENABLED=1 para habilitar em produção)');
   }
+  logger.log(`✓ Ambiente: ${process.env.NODE_ENV || 'development'}`);
+  logger.log(process.env.DATABASE_URL ? '✓ Banco: configurado' : '✗ Banco: DATABASE_URL ausente');
 }
 
 bootstrap().catch((err) => {

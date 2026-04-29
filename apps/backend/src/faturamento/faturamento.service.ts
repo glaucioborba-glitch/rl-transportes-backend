@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { AcaoAuditoria, Prisma, Role } from '@prisma/client';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
+import { PaginationDto } from '../common/dtos/pagination.dto';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NfseService } from '../nfse/nfse.service';
@@ -385,6 +386,69 @@ export class FaturamentoService {
     ]);
     const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
     return { items, meta: { total, page, limit, totalPages } };
+  }
+
+  /** NFS-e do próprio cliente (portal). */
+  async listNfsePortal(query: PaginationDto, actor: AuthUser) {
+    if (actor.role !== Role.CLIENTE || !actor.clienteId) {
+      throw new ForbiddenException(
+        'Disponível apenas para usuários do portal vinculados a um cliente.',
+      );
+    }
+    const page = query.page ?? 1;
+    const limit = Math.min(query.limit ?? 20, 100);
+    const skip = (page - 1) * limit;
+    const where: Prisma.NfsEmitidaWhereInput = {
+      faturamento: { clienteId: actor.clienteId },
+    };
+    const [items, total] = await Promise.all([
+      this.prisma.nfsEmitida.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          faturamento: {
+            select: { id: true, periodo: true, statusBoleto: true, clienteId: true },
+          },
+        },
+      }),
+      this.prisma.nfsEmitida.count({ where }),
+    ]);
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+    return { items, meta: { total, page, limit, totalPages } };
+  }
+
+  async findBoletoPortalById(boletoId: string, actor: AuthUser) {
+    if (actor.role !== Role.CLIENTE || !actor.clienteId) {
+      throw new ForbiddenException(
+        'Disponível apenas para usuários do portal vinculados a um cliente.',
+      );
+    }
+    const b = await this.prisma.boleto.findFirst({
+      where: { id: boletoId, faturamento: { clienteId: actor.clienteId } },
+      include: {
+        faturamento: { include: { cliente: { select: { id: true, nome: true } } } },
+      },
+    });
+    if (!b) throw new NotFoundException('Boleto não encontrado');
+    return b;
+  }
+
+  async findNfsePortalById(nfseId: string, actor: AuthUser) {
+    if (actor.role !== Role.CLIENTE || !actor.clienteId) {
+      throw new ForbiddenException(
+        'Disponível apenas para usuários do portal vinculados a um cliente.',
+      );
+    }
+    const n = await this.prisma.nfsEmitida.findFirst({
+      where: { id: nfseId, faturamento: { clienteId: actor.clienteId } },
+      include: {
+        faturamento: { include: { cliente: true, boletos: true, solicitacoesVinculadas: { include: { solicitacao: true } } } },
+      },
+    });
+    if (!n) throw new NotFoundException('NFS-e não encontrada');
+    return n;
   }
 
 }

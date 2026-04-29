@@ -8,6 +8,8 @@
         "docker:up": "docker compose up -d",
         "docker:down": "docker compose down",
         "dev:backend": "cd apps/backend && npm run start:dev",
+        "dev:web": "cd apps/web && npm run dev",
+        "build:web": "cd apps/web && npm run build",
         "build:all": "cd apps/backend && npm run build",
         "test:all": "cd apps/backend && npm run test && npm run test:e2e",
         "prisma:validate": "cd apps/backend && npx prisma validate",

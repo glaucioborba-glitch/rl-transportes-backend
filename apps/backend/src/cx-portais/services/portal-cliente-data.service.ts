@@ -1,7 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PlataformaTenantStore } from '../../plataforma-integracao/stores/plataforma-tenant.store';
 import type { CxPortalRequestUser } from '../types/cx-portal.types';
+import { PortalClienteSolicitacoesQueryDto } from '../dto/portal-cliente-solicitacoes-query.dto';
 
 @Injectable()
 export class PortalClienteDataService {
@@ -45,20 +47,56 @@ export class PortalClienteDataService {
     };
   }
 
-  async listarSolicitacoes(cx: CxPortalRequestUser, clienteIdParam?: string) {
-    const clienteId = this.clientScope(cx, clienteIdParam);
-    return this.prisma.solicitacao.findMany({
-      where: { clienteId, deletedAt: null },
-      orderBy: { updatedAt: 'desc' },
-      take: 200,
-      include: {
-        portaria: true,
-        gate: true,
-        patio: true,
-        saida: true,
-        unidades: true,
-      },
-    });
+  private readonly orderFields = new Set(['createdAt', 'updatedAt', 'protocolo', 'status']);
+
+  async listarSolicitacoesPaginado(cx: CxPortalRequestUser, q: PortalClienteSolicitacoesQueryDto) {
+    const clienteId = this.clientScope(cx, q.clienteId);
+    const page = q.page ?? 1;
+    const rawLimit = q.limit ?? 10;
+    const limit = Math.min(Math.max(1, rawLimit), 100);
+    const skip = (page - 1) * limit;
+    const rawOb = q.orderBy ?? 'createdAt';
+    const orderBy = this.orderFields.has(rawOb) ? rawOb : 'createdAt';
+    const order = q.order ?? 'desc';
+
+    const where: Prisma.SolicitacaoWhereInput = {
+      deletedAt: null,
+      clienteId,
+      ...(q.status ? { status: q.status } : {}),
+    };
+    if (q.createdFrom || q.createdTo) {
+      where.createdAt = {};
+      if (q.createdFrom) {
+        (where.createdAt as Prisma.DateTimeFilter).gte = new Date(q.createdFrom);
+      }
+      if (q.createdTo) {
+        (where.createdAt as Prisma.DateTimeFilter).lte = new Date(q.createdTo);
+      }
+    }
+    const proto = q.protocolo?.trim();
+    if (proto) {
+      where.protocolo = { contains: proto, mode: 'insensitive' };
+    }
+
+    const [items, total] = await Promise.all([
+      this.prisma.solicitacao.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { [orderBy]: order },
+        include: {
+          cliente: true,
+          portaria: true,
+          gate: true,
+          patio: true,
+          saida: true,
+          unidades: true,
+        },
+      }),
+      this.prisma.solicitacao.count({ where }),
+    ]);
+
+    return { items, total, page, limit, orderBy, order };
   }
 
   async obterSolicitacao(cx: CxPortalRequestUser, id: string) {
@@ -183,11 +221,16 @@ export class PortalClienteDataService {
 
   exportResumo(cx: CxPortalRequestUser, formato: 'json' | 'csv', clienteIdParam?: string) {
     const p = (async () => {
-      const [dash, sols] = await Promise.all([
-        this.dashboard(cx, clienteIdParam),
-        this.listarSolicitacoes(cx, clienteIdParam),
-      ]);
-      return { dashboard: dash, solicitacoesSample: sols.slice(0, 50) };
+      const dashP = this.dashboard(cx, clienteIdParam);
+      const solPageP = this.listarSolicitacoesPaginado(cx, {
+        page: 1,
+        limit: 200,
+        orderBy: 'updatedAt',
+        order: 'desc',
+        ...(clienteIdParam ? { clienteId: clienteIdParam } : {}),
+      });
+      const [dash, solPage] = await Promise.all([dashP, solPageP]);
+      return { dashboard: dash, solicitacoesSample: solPage.items.slice(0, 50) };
     })();
     return p.then((data) => {
       if (formato === 'json') return { formato: 'json', ...data };

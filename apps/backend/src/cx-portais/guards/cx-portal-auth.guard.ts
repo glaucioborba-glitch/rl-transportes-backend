@@ -5,8 +5,11 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import { Role } from '@prisma/client';
 import type { Request } from 'express';
+import type { JwtPayload } from '../../auth/strategies/jwt.strategy';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PortalFornecedorIdentitiesStore } from '../stores/portal-fornecedor-identities.store';
 import { PortalJwtService } from '../identity/portal-jwt.service';
@@ -31,6 +34,8 @@ export class CxPortalAuthGuard implements CanActivate {
     private readonly portalJwt: PortalJwtService,
     private readonly prisma: PrismaService,
     private readonly fornecedores: PortalFornecedorIdentitiesStore,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -75,6 +80,34 @@ export class CxPortalAuthGuard implements CanActivate {
       return true;
     } catch (e) {
       if (e instanceof UnauthorizedException) throw e;
+    }
+
+    try {
+      const secret =
+        this.configService.get<string>('secrets.jwtSecret') ??
+        this.configService.getOrThrow<string>('JWT_SECRET');
+      const corp = this.jwtService.verify<JwtPayload>(token, { secret });
+      if (corp.role === Role.CLIENTE) {
+        const user = await this.prisma.user.findUnique({ where: { id: corp.sub } });
+        if (!user || user.tokenVersion !== (corp.tv ?? 0)) {
+          throw new UnauthorizedException('Sessão inválida');
+        }
+        if (!user.clienteId) {
+          throw new ForbiddenException('Conta sem vínculo a cadastro de cliente.');
+        }
+        req.cxUser = {
+          sub: user.id,
+          email: user.email,
+          portalPapel: 'CLIENTE',
+          tenantId: 'default',
+          clienteId: user.clienteId,
+          tokenVersion: user.tokenVersion,
+          auth: 'portal',
+        };
+        return true;
+      }
+    } catch (e) {
+      if (e instanceof UnauthorizedException || e instanceof ForbiddenException) throw e;
     }
 
     let staffPayload: { sub: string; email: string; role: Role; tv?: number };

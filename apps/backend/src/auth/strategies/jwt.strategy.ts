@@ -2,7 +2,9 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import type { Role } from '@prisma/client';
+import type { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { AUTH_ACCESS_COOKIE } from '../auth-cookie.constants';
 import { permissionsForRole } from '../../common/constants/role-permissions';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -12,6 +14,8 @@ export type JwtPayload = {
   role: Role;
   /** Versão de revogação; deve coincidir com `users.tokenVersion`. */
   tv?: number;
+  /** Opcional: vínculo ao cliente (portal B2B). */
+  clienteId?: string | null;
 };
 
 @Injectable()
@@ -24,7 +28,14 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       configService.get<string>('secrets.jwtSecret') ??
       configService.getOrThrow<string>('JWT_SECRET');
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+        (req: Request) => {
+          if (process.env.AUTH_HTTP_ONLY_COOKIES !== '1') return null;
+          const raw = (req as Request & { cookies?: Record<string, string> }).cookies?.[AUTH_ACCESS_COOKIE];
+          return raw ?? null;
+        },
+      ]),
       ignoreExpiration: false,
       secretOrKey: secret,
     });

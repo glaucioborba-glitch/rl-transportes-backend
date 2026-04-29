@@ -105,6 +105,7 @@ export class AuthService {
       email: user.email,
       role: user.role,
       tv: user.tokenVersion,
+      clienteId: user.clienteId ?? null,
     };
     const accessExpires = this.configService.get<string>('JWT_EXPIRES_IN') ?? '1h';
     const refreshExpires = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';

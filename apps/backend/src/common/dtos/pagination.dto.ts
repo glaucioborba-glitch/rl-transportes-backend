@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { StatusSolicitacao } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import { IsDateString, IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class PaginationDto {
   @ApiPropertyOptional({ default: 1 })
@@ -54,6 +54,21 @@ export class SolicitacaoPaginationDto extends PaginationDto {
   @IsOptional()
   @IsEnum(StatusSolicitacao)
   status?: StatusSolicitacao;
+
+  @ApiPropertyOptional({ description: 'ISO 8601 — createdAt >=' })
+  @IsOptional()
+  @IsDateString()
+  createdFrom?: string;
+
+  @ApiPropertyOptional({ description: 'ISO 8601 — createdAt <=' })
+  @IsOptional()
+  @IsDateString()
+  createdTo?: string;
+
+  @ApiPropertyOptional({ description: 'Filtro parcial no protocolo (contém, sem distinção de maiúsculas)' })
+  @IsOptional()
+  @IsString()
+  protocolo?: string;
 
   @ApiPropertyOptional({ enum: ['createdAt', 'protocolo', 'status'], default: 'createdAt' })
   @IsOptional()
