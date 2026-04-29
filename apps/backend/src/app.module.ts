@@ -23,6 +23,8 @@ import { ComercialPricingModule } from './comercial-pricing/comercial-pricing.mo
 import { IaOperacionalModule } from './ia-operacional/ia-operacional.module';
 import { SimuladorTerminalModule } from './simulador-terminal/simulador-terminal.module';
 import { PlanejamentoEstrategicoModule } from './planejamento-estrategico/planejamento-estrategico.module';
+import { PlanejamentoPessoalModule } from './planejamento-pessoal/planejamento-pessoal.module';
+import { FiscalGovernancaModule } from './fiscal-governanca/fiscal-governanca.module';
 
 @Module({
   imports: [
@@ -52,6 +54,8 @@ import { PlanejamentoEstrategicoModule } from './planejamento-estrategico/planej
     IaOperacionalModule,
     SimuladorTerminalModule,
     PlanejamentoEstrategicoModule,
+    PlanejamentoPessoalModule,
+    FiscalGovernancaModule,
   ],
   controllers: [HealthController],
 })

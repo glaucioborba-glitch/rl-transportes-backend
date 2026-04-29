@@ -118,6 +118,14 @@ async function bootstrap() {
       'planejamento-estrategico',
       'Planejamento de capacidade, OPEX/CAPEX e forecast financeiro executivo',
     )
+    .addTag(
+      'planejamento-pessoal',
+      'Planejamento de pessoal: headcount, OPEX RH, turnos, cenários What-If e contratação',
+    )
+    .addTag(
+      'fiscal-governanca',
+      'Governança fiscal: conciliação NFS-e × faturamento × boletos, auditoria inteligente e painel executivo',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
