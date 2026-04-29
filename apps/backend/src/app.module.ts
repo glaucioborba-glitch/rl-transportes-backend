@@ -25,6 +25,7 @@ import { SimuladorTerminalModule } from './simulador-terminal/simulador-terminal
 import { PlanejamentoEstrategicoModule } from './planejamento-estrategico/planejamento-estrategico.module';
 import { PlanejamentoPessoalModule } from './planejamento-pessoal/planejamento-pessoal.module';
 import { FiscalGovernancaModule } from './fiscal-governanca/fiscal-governanca.module';
+import { FinanceiroConciliacaoModule } from './financeiro-conciliacao/financeiro-conciliacao.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { FiscalGovernancaModule } from './fiscal-governanca/fiscal-governanca.mo
     PlanejamentoEstrategicoModule,
     PlanejamentoPessoalModule,
     FiscalGovernancaModule,
+    FinanceiroConciliacaoModule,
   ],
   controllers: [HealthController],
 })

@@ -126,6 +126,10 @@ async function bootstrap() {
       'fiscal-governanca',
       'Governança fiscal: conciliação NFS-e × faturamento × boletos, auditoria inteligente e painel executivo',
     )
+    .addTag(
+      'financeiro-conciliacao',
+      'Conciliação bancária (OFX/CSV), fluxo de caixa, previsibilidade e tesouraria (extratos em memória até migração)',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
