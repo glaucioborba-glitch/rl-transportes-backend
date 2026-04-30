@@ -15,6 +15,7 @@ import * as bcrypt from 'bcrypt';
 import { permissionsForRole } from '../common/constants/role-permissions';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { PRISMA_SERIALIZABLE_TX } from '../prisma/transaction-options';
 import { RedisService } from '../redis/redis.service';
 import type { JwtPayload } from './strategies/jwt.strategy';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -138,24 +139,27 @@ export class AuthService {
   }
 
   async logout(userId: string, ip?: string, userAgent?: string) {
-    await this.prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: userId },
-        data: { tokenVersion: { increment: 1 } },
-      });
-      await this.auditoria.registrar(
-        {
-          tabela: 'auth',
-          registroId: userId,
-          acao: AcaoAuditoria.INSERT,
-          usuario: userId,
-          dadosDepois: { event: 'LOGOUT', at: new Date().toISOString() },
-          ip,
-          userAgent,
-        },
-        tx,
-      );
-    });
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.user.update({
+          where: { id: userId },
+          data: { tokenVersion: { increment: 1 } },
+        });
+        await this.auditoria.registrar(
+          {
+            tabela: 'auth',
+            registroId: userId,
+            acao: AcaoAuditoria.INSERT,
+            usuario: userId,
+            dadosDepois: { event: 'LOGOUT', at: new Date().toISOString() },
+            ip,
+            userAgent,
+          },
+          tx,
+        );
+      },
+      PRISMA_SERIALIZABLE_TX,
+    );
   }
 
   async createUser(
@@ -170,36 +174,39 @@ export class AuthService {
       throw new ConflictException('E-mail já cadastrado');
     }
     const password = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
-    const user = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.user.create({
-        data: {
-          email,
-          password,
-          role: dto.role,
-        },
-      });
-      await this.auditoria.registrar(
-        {
-          tabela: 'users',
-          registroId: created.id,
-          acao: AcaoAuditoria.INSERT,
-          usuario: usuarioId,
-          dadosAntes: null,
-          dadosDepois: {
-            id: created.id,
-            email: created.email,
-            role: created.role,
-            tokenVersion: created.tokenVersion,
-            clienteId: created.clienteId,
-            createdAt: created.createdAt,
+    const user = await this.prisma.$transaction(
+      async (tx) => {
+        const created = await tx.user.create({
+          data: {
+            email,
+            password,
+            role: dto.role,
           },
-          ip,
-          userAgent,
-        },
-        tx,
-      );
-      return created;
-    });
+        });
+        await this.auditoria.registrar(
+          {
+            tabela: 'users',
+            registroId: created.id,
+            acao: AcaoAuditoria.INSERT,
+            usuario: usuarioId,
+            dadosAntes: null,
+            dadosDepois: {
+              id: created.id,
+              email: created.email,
+              role: created.role,
+              tokenVersion: created.tokenVersion,
+              clienteId: created.clienteId,
+              createdAt: created.createdAt,
+            },
+            ip,
+            userAgent,
+          },
+          tx,
+        );
+        return created;
+      },
+      PRISMA_SERIALIZABLE_TX,
+    );
     const { password: _p, ...safe } = user;
     return safe;
   }

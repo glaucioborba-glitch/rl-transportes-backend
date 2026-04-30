@@ -10,7 +10,12 @@ import { AcaoAuditoria, Prisma, Role, StatusSolicitacao } from '@prisma/client';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { randomBytes } from 'crypto';
 import { AuditoriaService } from '../auditoria/auditoria.service';
-import { registrarLeituraSensivel, registrarTentativaForaDeEscopo } from '../common/security/scope-audit.util';
+import {
+  registrarLeituraSensivel,
+  registrarTentativaForaDeEscopo,
+  registrarViolacaoSequenciaOperacional,
+} from '../common/security/scope-audit.util';
+import { PRISMA_SERIALIZABLE_TX } from '../prisma/transaction-options';
 import { SolicitacaoPaginationDto } from '../common/dtos/pagination.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AddUnidadeSolicitacaoDto } from './dto/add-unidade-solicitacao.dto';
@@ -28,12 +33,6 @@ export const VALID_STATUS_TRANSITIONS: Record<StatusSolicitacao, StatusSolicitac
   [StatusSolicitacao.CONCLUIDO]: [],
   [StatusSolicitacao.REJEITADO]: [],
 };
-
-const TX_OPTIONS = {
-  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-  maxWait: 5000,
-  timeout: 15000,
-} as const;
 
 function gerarProtocolo(): string {
   const y = new Date().getFullYear();
@@ -96,7 +95,7 @@ export class SolicitacoesService {
             this.logger.log(`Solicitação criada protocolo=${protocolo} id=${sol.id}`);
             return full;
           },
-          TX_OPTIONS,
+          PRISMA_SERIALIZABLE_TX,
         );
       } catch (e) {
         if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
@@ -147,8 +146,25 @@ export class SolicitacoesService {
         );
         return unit;
       },
-      TX_OPTIONS,
+      PRISMA_SERIALIZABLE_TX,
     );
+  }
+
+  private async assertSomenteAprovadoParaOperacao(
+    solicitacao: { id: string; status: StatusSolicitacao },
+    etapa: 'PORTARIA' | 'GATE' | 'PATIO' | 'SAIDA',
+    actorUserId: string,
+  ) {
+    if (solicitacao.status !== StatusSolicitacao.APROVADO) {
+      await registrarViolacaoSequenciaOperacional(this.auditoria, { usuario: actorUserId }, {
+        solicitacaoId: solicitacao.id,
+        etapa,
+        motivo: `Status da solicitação é ${solicitacao.status}; apenas APROVADO permite esta etapa.`,
+      });
+      throw new BadRequestException(
+        'Operação permitida somente para solicitações aprovadas pelo cliente.',
+      );
+    }
   }
 
   async registerPortaria(dto: CreatePortariaDto, actorUserId: string) {
@@ -158,6 +174,7 @@ export class SolicitacoesService {
     if (!solicitacao) {
       throw new NotFoundException('Solicitação não encontrada');
     }
+    await this.assertSomenteAprovadoParaOperacao(solicitacao, 'PORTARIA', actorUserId);
 
     return this.prisma.$transaction(
       async (tx) => {
@@ -188,7 +205,7 @@ export class SolicitacoesService {
         );
         return row;
       },
-      TX_OPTIONS,
+      PRISMA_SERIALIZABLE_TX,
     );
   }
 
@@ -376,7 +393,7 @@ export class SolicitacoesService {
         );
         return updated;
       },
-      TX_OPTIONS,
+      PRISMA_SERIALIZABLE_TX,
     );
   }
 
@@ -411,16 +428,28 @@ export class SolicitacoesService {
 
         return { id, removed: true, deletedAt };
       },
-      TX_OPTIONS,
+      PRISMA_SERIALIZABLE_TX,
     );
   }
 
   async registerGate(dto: CreateGateDto, actorUserId: string) {
     const solicitacao = await this.prisma.solicitacao.findFirst({
       where: { id: dto.solicitacaoId, deletedAt: null },
+      include: { portaria: true },
     });
     if (!solicitacao) {
       throw new NotFoundException('Solicitação não encontrada');
+    }
+    await this.assertSomenteAprovadoParaOperacao(solicitacao, 'GATE', actorUserId);
+    if (!solicitacao.portaria) {
+      await registrarViolacaoSequenciaOperacional(this.auditoria, { usuario: actorUserId }, {
+        solicitacaoId: solicitacao.id,
+        etapa: 'GATE',
+        motivo: 'Registro de gate exige portaria concluída anteriormente.',
+      });
+      throw new BadRequestException(
+        'Não é possível registrar o gate sem registro de portaria para esta solicitação.',
+      );
     }
 
     return this.prisma.$transaction(
@@ -453,16 +482,28 @@ export class SolicitacoesService {
         );
         return row;
       },
-      TX_OPTIONS,
+      PRISMA_SERIALIZABLE_TX,
     );
   }
 
   async registerPatio(dto: CreatePatioDto, actorUserId: string) {
     const solicitacao = await this.prisma.solicitacao.findFirst({
       where: { id: dto.solicitacaoId, deletedAt: null },
+      include: { gate: true },
     });
     if (!solicitacao) {
       throw new NotFoundException('Solicitação não encontrada');
+    }
+    await this.assertSomenteAprovadoParaOperacao(solicitacao, 'PATIO', actorUserId);
+    if (!solicitacao.gate) {
+      await registrarViolacaoSequenciaOperacional(this.auditoria, { usuario: actorUserId }, {
+        solicitacaoId: solicitacao.id,
+        etapa: 'PATIO',
+        motivo: 'Posicionamento no pátio exige gate registrado anteriormente.',
+      });
+      throw new BadRequestException(
+        'Não é possível registrar o pátio sem registro de gate para esta solicitação.',
+      );
     }
 
     try {
@@ -501,7 +542,7 @@ export class SolicitacoesService {
           );
           return row;
         },
-        TX_OPTIONS,
+        PRISMA_SERIALIZABLE_TX,
       );
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -516,9 +557,21 @@ export class SolicitacoesService {
   async registerSaida(dto: CreateSaidaDto, actorUserId: string) {
     const solicitacao = await this.prisma.solicitacao.findFirst({
       where: { id: dto.solicitacaoId, deletedAt: null },
+      include: { patio: true },
     });
     if (!solicitacao) {
       throw new NotFoundException('Solicitação não encontrada');
+    }
+    await this.assertSomenteAprovadoParaOperacao(solicitacao, 'SAIDA', actorUserId);
+    if (!solicitacao.patio) {
+      await registrarViolacaoSequenciaOperacional(this.auditoria, { usuario: actorUserId }, {
+        solicitacaoId: solicitacao.id,
+        etapa: 'SAIDA',
+        motivo: 'Saída exige unidade posicionada no pátio (registro de pátio anterior).',
+      });
+      throw new BadRequestException(
+        'Não é possível registrar a saída sem registro de pátio para esta solicitação.',
+      );
     }
     const dataHora = new Date(dto.dataHoraSaida);
 
@@ -551,7 +604,7 @@ export class SolicitacoesService {
         );
         return row;
       },
-      TX_OPTIONS,
+      PRISMA_SERIALIZABLE_TX,
     );
   }
 }

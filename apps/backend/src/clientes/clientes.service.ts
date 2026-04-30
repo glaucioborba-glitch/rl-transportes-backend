@@ -8,17 +8,12 @@ import {
 import { AcaoAuditoria, Prisma, Role } from '@prisma/client';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
+import { PRISMA_SERIALIZABLE_TX } from '../prisma/transaction-options';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { registrarTentativaForaDeEscopo } from '../common/security/scope-audit.util';
 import { ClientePaginationDto } from '../common/dtos/pagination.dto';
 import { CreateClienteDto } from './dto/create-cliente.dto';
 import { UpdateClienteDto } from './dto/update-cliente.dto';
-
-const TX_OPTIONS = {
-  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-  maxWait: 5000,
-  timeout: 15000,
-} as const;
 
 /** Whitelist de ordenação (alinha ao ClientePaginationDto e evita chaves arbitrárias). */
 const CLIENTE_ORDER_BY = new Set(['createdAt', 'nome', 'email']);
@@ -68,7 +63,7 @@ export class ClientesService {
         );
 
         return novoCliente;
-      }, TX_OPTIONS);
+      }, PRISMA_SERIALIZABLE_TX);
 
       return this.sanitizeCliente(cliente);
     } catch (error) {
@@ -258,7 +253,7 @@ export class ClientesService {
         );
 
         return updated;
-      }, TX_OPTIONS);
+      }, PRISMA_SERIALIZABLE_TX);
 
       return this.sanitizeCliente(clienteDepois);
     } catch (error) {
@@ -304,7 +299,7 @@ export class ClientesService {
           tx,
         );
       },
-      TX_OPTIONS,
+      PRISMA_SERIALIZABLE_TX,
     );
 
     return { id, removed: true, timestamp: new Date() };

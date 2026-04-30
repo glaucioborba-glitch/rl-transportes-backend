@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { AcaoAuditoria, Prisma, Role } from '@prisma/client';
+import { AcaoAuditoria, Prisma, Role, StatusSolicitacao } from '@prisma/client';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { PaginationDto } from '../common/dtos/pagination.dto';
 import { AuditoriaService } from '../auditoria/auditoria.service';
@@ -19,12 +19,7 @@ import { PortalBoletosQueryDto } from './dto/portal-boletos-query.dto';
 import { UpdateBoletoDto } from './dto/update-boleto.dto';
 import { EmitirNfseDto } from '../nfse/dto/emitir-nfse.dto';
 import { CancelarNfseDto } from '../nfse/dto/cancelar-nfse.dto';
-
-const TX_OPTIONS = {
-  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-  maxWait: 5000,
-  timeout: 15000,
-} as const;
+import { PRISMA_SERIALIZABLE_TX } from '../prisma/transaction-options';
 
 @Injectable()
 export class FaturamentoService {
@@ -66,11 +61,49 @@ export class FaturamentoService {
           deletedAt: null,
           clienteId: dto.clienteId,
         },
+        include: { saida: true },
       });
       if (sols.length !== solicitacaoIds.length) {
         throw new ConflictException(
           'Uma ou mais solicitações não pertencem ao cliente ou estão inativas.',
         );
+      }
+      for (const s of sols) {
+        if (!s.saida) {
+          await this.auditoria.registrar({
+            tabela: 'faturamentos',
+            registroId: s.id,
+            acao: AcaoAuditoria.SEGURANCA,
+            usuario: actorUserId,
+            dadosDepois: {
+              event: 'FATURAMENTO_SOLICITACAO_SEM_SAIDA',
+              solicitacaoId: s.id,
+            },
+            ip,
+            userAgent,
+          });
+          throw new ConflictException(
+            `Não é possível faturar: a solicitação ${s.protocolo} não possui registro de saída.`,
+          );
+        }
+        if (s.status !== StatusSolicitacao.CONCLUIDO) {
+          await this.auditoria.registrar({
+            tabela: 'faturamentos',
+            registroId: s.id,
+            acao: AcaoAuditoria.SEGURANCA,
+            usuario: actorUserId,
+            dadosDepois: {
+              event: 'FATURAMENTO_SOLICITACAO_NAO_CONCLUIDA',
+              solicitacaoId: s.id,
+              status: s.status,
+            },
+            ip,
+            userAgent,
+          });
+          throw new ConflictException(
+            `Não é possível faturar: a solicitação ${s.protocolo} deve estar com status CONCLUIDO (atual: ${s.status}).`,
+          );
+        }
       }
     }
 
@@ -126,7 +159,7 @@ export class FaturamentoService {
           );
           return full;
         },
-        TX_OPTIONS,
+        PRISMA_SERIALIZABLE_TX,
       );
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
@@ -307,7 +340,7 @@ export class FaturamentoService {
           );
           return b;
         },
-        TX_OPTIONS,
+        PRISMA_SERIALIZABLE_TX,
       );
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
@@ -353,7 +386,7 @@ export class FaturamentoService {
         );
         return updated;
       },
-      TX_OPTIONS,
+      PRISMA_SERIALIZABLE_TX,
     );
   }
 

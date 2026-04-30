@@ -45,7 +45,7 @@ Tecnologias:
   - RBAC (Role-Based Access Control)
   - PBAC (Permission-Based Access Control)
   - Auditoria completa (INSERT/UPDATE/DELETE/READ/SEGURANCA)
-- Frontend: Next.js 15 + React Server Components
+- Frontend: Next.js 14 (App Router) + React Server Components onde aplicável — ver `apps/web/package.json` para versão exata
 - Infra: Docker + Docker Compose
 - Observabilidade: prometheus + winston logs estruturados
 

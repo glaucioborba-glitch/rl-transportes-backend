@@ -10,6 +10,7 @@ import { AcaoAuditoria, Prisma, Role } from '@prisma/client';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
+import { PRISMA_SERIALIZABLE_TX_EXTERNAL } from '../prisma/transaction-options';
 import { CancelarNfseDto } from './dto/cancelar-nfse.dto';
 import { EmitirNfseDto } from './dto/emitir-nfse.dto';
 import { IpmNfseAdapter } from './nfse.adapter';
@@ -17,12 +18,6 @@ import type { EmissaoNfseIpmPayload } from './xml/ipm-nfse-xml.builder';
 import { parseIpmNfseXmlRetorno } from './xml/ipm-nfse-xml.parser';
 
 type IpmResultado = ReturnType<typeof parseIpmNfseXmlRetorno>;
-
-const TX = {
-  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-  maxWait: 5000,
-  timeout: 20000,
-} as const;
 
 @Injectable()
 export class NfseService {
@@ -168,7 +163,7 @@ export class NfseService {
           comprovante: e,
         };
       },
-      TX,
+      PRISMA_SERIALIZABLE_TX_EXTERNAL,
     );
   }
 
@@ -253,7 +248,7 @@ export class NfseService {
           );
           return { situacao: 'pendente_analise' as const, detalhe: r.retorno };
         },
-        TX,
+        PRISMA_SERIALIZABLE_TX_EXTERNAL,
       );
     }
 
@@ -301,7 +296,7 @@ export class NfseService {
         );
         return { situacao: 'cancelada' as const, nfsEmitida: nDepois, xmlResposta: r.xmlResposta };
       },
-      TX,
+      PRISMA_SERIALIZABLE_TX_EXTERNAL,
     );
   }
 
@@ -354,7 +349,7 @@ export class NfseService {
             await tx.nfsEmitida.update({ where: { id: local.id }, data: { statusIpm: 'CANCELADA', xmlNfe: r.xmlResposta } });
             await tx.faturamento.update({ where: { id: local.faturamentoId }, data: { statusNfe: 'cancelada' } });
           },
-          TX,
+          PRISMA_SERIALIZABLE_TX_EXTERNAL,
         );
       }
     }

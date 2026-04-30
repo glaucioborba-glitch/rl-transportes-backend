@@ -39,7 +39,7 @@ Responsabilidades:
 - Aprovar novos módulos (IA, Twin, Automação)  
 - Validar ADRs  
 - Supervisionar segurança e auditoria  
-- Validar pensão técnica  
+- Validar baseline técnica  
 
 ## 2.2. Comitê de Segurança (Security Board)
 

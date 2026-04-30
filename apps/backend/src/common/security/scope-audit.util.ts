@@ -23,6 +23,30 @@ export async function registrarTentativaForaDeEscopo(
   });
 }
 
+/** Sequência operacional violada (ex.: gate sem portaria). */
+export async function registrarViolacaoSequenciaOperacional(
+  auditoria: AuditoriaService,
+  ctx: AuditCtx,
+  detalhe: {
+    solicitacaoId: string;
+    etapa: 'GATE' | 'PATIO' | 'SAIDA' | 'PORTARIA';
+    motivo: string;
+  },
+) {
+  await auditoria.registrar({
+    tabela: 'fluxo_operacional',
+    registroId: detalhe.solicitacaoId,
+    acao: AcaoAuditoria.SEGURANCA,
+    usuario: ctx.usuario,
+    dadosDepois: {
+      event: 'VIOLACAO_SEQUENCIA_OPERACIONAL',
+      ...detalhe,
+    },
+    ip: ctx.ip,
+    userAgent: ctx.userAgent,
+  });
+}
+
 export async function registrarLeituraSensivel(
   auditoria: AuditoriaService,
   ctx: AuditCtx,

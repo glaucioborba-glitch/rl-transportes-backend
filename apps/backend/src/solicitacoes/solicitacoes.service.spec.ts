@@ -142,7 +142,7 @@ describe('SolicitacoesService.registerPortaria', () => {
   });
 
   it('cria portaria quando não existe', async () => {
-    prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
+    prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1', status: StatusSolicitacao.APROVADO });
     tx.portaria.findUnique.mockResolvedValue(null);
     tx.portaria.create.mockResolvedValue({
       id: 'p1',
@@ -156,7 +156,7 @@ describe('SolicitacoesService.registerPortaria', () => {
   });
 
   it('atualiza portaria quando já existe', async () => {
-    prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
+    prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1', status: StatusSolicitacao.APROVADO });
     tx.portaria.findUnique.mockResolvedValue({
       id: 'p1',
       solicitacaoId: 's1',
@@ -171,5 +171,64 @@ describe('SolicitacoesService.registerPortaria', () => {
     await service.registerPortaria({ solicitacaoId: 's1', placa: 'ABCD1D34' }, 'u');
     expect(tx.portaria.update).toHaveBeenCalled();
     expect(auditoria.registrar).toHaveBeenCalled();
+  });
+
+  it('rejeita portaria quando solicitação não está APROVADO', async () => {
+    prisma.solicitacao.findFirst.mockResolvedValue({
+      id: 's1',
+      status: StatusSolicitacao.PENDENTE,
+    });
+    await expect(
+      service.registerPortaria({ solicitacaoId: 's1', placa: 'ABCD1D34' }, 'u'),
+    ).rejects.toThrow('aprovadas');
+    expect(auditoria.registrar).toHaveBeenCalled();
+  });
+});
+
+describe('SolicitacoesService.registerGate — sequência', () => {
+  const auditoria = { registrar: jest.fn().mockResolvedValue({}) };
+  const tx = {
+    gate: {
+      findUnique: jest.fn(),
+      create: jest.fn().mockResolvedValue({ id: 'g1', solicitacaoId: 's1' }),
+      update: jest.fn(),
+    },
+  };
+  const prisma: {
+    solicitacao: { findFirst: jest.Mock };
+    $transaction: jest.Mock;
+  } = {
+    solicitacao: { findFirst: jest.fn() },
+    $transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+  };
+  const service = new SolicitacoesService(prisma as never, auditoria as never);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    prisma.$transaction.mockImplementation((fn: (t: typeof tx) => Promise<unknown>) => fn(tx));
+    tx.gate.findUnique.mockResolvedValue(null);
+  });
+
+  it('rejeita gate sem portaria', async () => {
+    prisma.solicitacao.findFirst.mockResolvedValue({
+      id: 's1',
+      status: StatusSolicitacao.APROVADO,
+      portaria: null,
+    });
+    await expect(
+      service.registerGate({ solicitacaoId: 's1', ricAssinado: true }, 'u'),
+    ).rejects.toThrow('portaria');
+    expect(auditoria.registrar).toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('cria gate quando portaria existe', async () => {
+    prisma.solicitacao.findFirst.mockResolvedValue({
+      id: 's1',
+      status: StatusSolicitacao.APROVADO,
+      portaria: { id: 'p1' },
+    });
+    await service.registerGate({ solicitacaoId: 's1', ricAssinado: true }, 'u');
+    expect(tx.gate.create).toHaveBeenCalled();
   });
 });
