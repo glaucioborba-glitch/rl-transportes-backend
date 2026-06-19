@@ -1,32 +1,51 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-export function middleware(request: NextRequest) {
+const STAFF_PREFIXES = [
+  "/operador",
+  "/cockpit",
+  "/financeiro",
+  "/rh",
+  "/admin",
+  "/bi",
+  "/ssma",
+  "/grc",
+  "/digital-twin",
+  "/ai-console",
+  "/sdt",
+  "/aog",
+  "/agi",
+  "/staff",
+  "/intranet",
+];
+
+function isStaffProtectedPath(pathname: string): boolean {
+  if (
+    pathname.startsWith("/login/staff") ||
+    pathname.startsWith("/auth/login") ||
+    pathname.startsWith("/operador/login")
+  ) {
+    return false;
+  }
+  return STAFF_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (pathname.startsWith("/portal")) {
-    const session = request.cookies.get("rl_portal_session")?.value;
-    if (!session) {
-      const login = new URL("/login", request.url);
+
+  if (isStaffProtectedPath(pathname)) {
+    const verify = new URL("/api/auth/me", request.url);
+    const res = await fetch(verify, {
+      headers: { cookie: request.headers.get("cookie") ?? "" },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const login = new URL("/login/staff", request.url);
       login.searchParams.set("next", pathname);
       return NextResponse.redirect(login);
     }
   }
-  if (pathname.startsWith("/operador") && !pathname.startsWith("/operador/login")) {
-    const session = request.cookies.get("rl_staff_session")?.value;
-    if (!session) {
-      const login = new URL("/operador/login", request.url);
-      login.searchParams.set("next", pathname);
-      return NextResponse.redirect(login);
-    }
-  }
-  if (pathname.startsWith("/cockpit")) {
-    const session = request.cookies.get("rl_staff_session")?.value;
-    if (!session) {
-      const login = new URL("/operador/login", request.url);
-      login.searchParams.set("next", pathname);
-      return NextResponse.redirect(login);
-    }
-  }
+
   if (pathname.startsWith("/motorista") && !pathname.startsWith("/motorista/login")) {
     const session = request.cookies.get("rl_motorista_session")?.value;
     if (!session) {
@@ -35,123 +54,16 @@ export function middleware(request: NextRequest) {
       return NextResponse.redirect(login);
     }
   }
-  if (pathname.startsWith("/financeiro")) {
-    const session = request.cookies.get("rl_staff_session")?.value;
-    if (!session) {
-      const login = new URL("/operador/login", request.url);
-      login.searchParams.set("next", pathname);
-      return NextResponse.redirect(login);
-    }
-  }
-  if (pathname.startsWith("/rh")) {
-    const session = request.cookies.get("rl_staff_session")?.value;
-    if (!session) {
-      const login = new URL("/operador/login", request.url);
-      login.searchParams.set("next", pathname);
-      return NextResponse.redirect(login);
-    }
-  }
-  if (pathname.startsWith("/admin")) {
-    const session = request.cookies.get("rl_staff_session")?.value;
-    if (!session) {
-      const login = new URL("/operador/login", request.url);
-      login.searchParams.set("next", pathname);
-      return NextResponse.redirect(login);
-    }
-  }
-  if (pathname.startsWith("/bi")) {
-    const session = request.cookies.get("rl_staff_session")?.value;
-    if (!session) {
-      const login = new URL("/operador/login", request.url);
-      login.searchParams.set("next", pathname);
-      return NextResponse.redirect(login);
-    }
-  }
-  if (pathname.startsWith("/ssma")) {
-    const session = request.cookies.get("rl_staff_session")?.value;
-    if (!session) {
-      const login = new URL("/operador/login", request.url);
-      login.searchParams.set("next", pathname);
-      return NextResponse.redirect(login);
-    }
-  }
-  if (pathname.startsWith("/grc")) {
-    const session = request.cookies.get("rl_staff_session")?.value;
-    if (!session) {
-      const login = new URL("/operador/login", request.url);
-      login.searchParams.set("next", pathname);
-      return NextResponse.redirect(login);
-    }
-  }
-  if (pathname.startsWith("/digital-twin")) {
-    const session = request.cookies.get("rl_staff_session")?.value;
-    if (!session) {
-      const login = new URL("/operador/login", request.url);
-      login.searchParams.set("next", pathname);
-      return NextResponse.redirect(login);
-    }
-  }
-  if (pathname.startsWith("/ai-console")) {
-    const session = request.cookies.get("rl_staff_session")?.value;
-    if (!session) {
-      const login = new URL("/operador/login", request.url);
-      login.searchParams.set("next", pathname);
-      return NextResponse.redirect(login);
-    }
-  }
-  if (pathname.startsWith("/sdt")) {
-    const session = request.cookies.get("rl_staff_session")?.value;
-    if (!session) {
-      const login = new URL("/operador/login", request.url);
-      login.searchParams.set("next", pathname);
-      return NextResponse.redirect(login);
-    }
-  }
-  if (pathname.startsWith("/aog")) {
-    const session = request.cookies.get("rl_staff_session")?.value;
-    if (!session) {
-      const login = new URL("/operador/login", request.url);
-      login.searchParams.set("next", pathname);
-      return NextResponse.redirect(login);
-    }
-  }
-  if (pathname.startsWith("/agi")) {
-    const session = request.cookies.get("rl_staff_session")?.value;
-    if (!session) {
-      const login = new URL("/operador/login", request.url);
-      login.searchParams.set("next", pathname);
-      return NextResponse.redirect(login);
-    }
-  }
+
   return NextResponse.next();
 }
 
+/**
+ * Nunca executar middleware em assets estáticos / rotas internas do Next.
+ * Evita interferência com `/_next/static/*` (404 de chunks em dev após troca build↔dev).
+ */
 export const config = {
   matcher: [
-    "/portal/:path*",
-    "/operador/:path*",
-    "/cockpit/:path*",
-    "/motorista/:path*",
-    "/financeiro/:path*",
-    "/rh",
-    "/rh/:path*",
-    "/admin",
-    "/admin/:path*",
-    "/bi",
-    "/bi/:path*",
-    "/ssma",
-    "/ssma/:path*",
-    "/grc",
-    "/grc/:path*",
-    "/digital-twin",
-    "/digital-twin/:path*",
-    "/ai-console",
-    "/ai-console/:path*",
-    "/sdt",
-    "/sdt/:path*",
-    "/aog",
-    "/aog/:path*",
-    "/agi",
-    "/agi/:path*",
+    "/((?!api|_next/static|_next/image|_next/webpack-hmr|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)",
   ],
 };

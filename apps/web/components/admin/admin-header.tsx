@@ -10,6 +10,7 @@ import { clearStaffSessionCookie } from "@/lib/auth-staff-cookie";
 
 const NAV = [
   { href: "/admin/executivo", label: "Executivo" },
+  { href: "/admin/clientes", label: "Clientes" },
   { href: "/admin/contratos", label: "Contratos" },
   { href: "/admin/juridico", label: "Jurídico" },
   { href: "/admin/juridico/riscos", label: "Riscos" },
@@ -19,17 +20,33 @@ const NAV = [
   { href: "/admin/slainterno", label: "SLA interno" },
 ];
 
+const STAFF_OPS_NAV = [
+  { href: "/staff/fila-operacional", label: "Fila operacional" },
+  { href: "/staff/triagem", label: "Triagem" },
+  { href: "/staff/gate", label: "Gate v2" },
+  { href: "/staff/patio", label: "Pátio v2" },
+  { href: "/staff/solicitacoes-v2", label: "Solicitações v2" },
+  { href: "/staff/consulta-container", label: "Consulta container" },
+];
+
+const ADMIN_ONLY_NAV = [
+  { href: "/staff/observabilidade", label: "Observabilidade" },
+  { href: "/staff/chaos", label: "Chaos RL" },
+  { href: "/staff/security", label: "Security SOC" },
+];
+
 export function AdminHeader() {
   const router = useRouter();
   const pathname = usePathname();
   const user = useStaffAuthStore((s) => s.user);
   const clear = useStaffAuthStore((s) => s.clear);
   const allowed = user?.role === "ADMIN" || user?.role === "GERENTE";
+  const isAdmin = user?.role === "ADMIN";
 
   function logout() {
     clear();
     clearStaffSessionCookie();
-    router.replace("/operador/login");
+    router.replace("/login/staff");
   }
 
   if (!allowed) {
@@ -73,6 +90,42 @@ export function AdminHeader() {
               </Link>
             );
           })}
+          {STAFF_OPS_NAV.map(({ href, label }) => {
+            const active = pathname === href || pathname.startsWith(href + "/");
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  "whitespace-nowrap rounded-lg px-3 py-2 text-xs font-semibold transition-colors",
+                  active
+                    ? "bg-violet-500/15 text-violet-100 ring-1 ring-violet-500/25"
+                    : "text-zinc-400 hover:bg-white/5 hover:text-white",
+                )}
+              >
+                {label}
+              </Link>
+            );
+          })}
+          {isAdmin
+            ? ADMIN_ONLY_NAV.map(({ href, label }) => {
+                const active = pathname === href || pathname.startsWith(href + "/");
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    className={cn(
+                      "whitespace-nowrap rounded-lg px-3 py-2 text-xs font-semibold transition-colors",
+                      active
+                        ? "bg-cyan-500/15 text-cyan-100 ring-1 ring-cyan-500/25"
+                        : "text-zinc-400 hover:bg-white/5 hover:text-white",
+                    )}
+                  >
+                    {label}
+                  </Link>
+                );
+              })
+            : null}
         </div>
       </nav>
     </header>

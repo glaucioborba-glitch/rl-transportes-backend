@@ -8,10 +8,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { StatusBadge } from "@/components/portal/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ApiError, aprovarSolicitacao, fetchSolicitacao, type SolicitacaoRow } from "@/lib/api/portal-client";
+import {
+  ApiError,
+  aprovarSolicitacao,
+  fetchSolicitacao,
+  portalDownloadSolicitacaoV2Pdf,
+  type SolicitacaoRow,
+} from "@/lib/api/portal-client";
 import { formatDateTime } from "@/lib/portal-tracking";
+import { collectSolicitacaoContainerISOs } from "@/lib/container-display";
+import { OperationPageHeader } from "@/components/shared/operation-identity";
 import { toast } from "@/lib/toast";
+import { formatContainerISO } from "@/utils/containerFormatter";
 import { usePortalAuthStore } from "@/stores/portal-store";
+import { usePessoaPermissoesStore } from "@/stores/pessoaPermissoesStore";
 
 function PhotoStrip({ title, urls }: { title: string; urls: unknown }) {
   const list = Array.isArray(urls) ? urls.filter((u) => typeof u === "string") : [];
@@ -66,9 +76,11 @@ export default function SolicitacaoDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const bumpDashboard = usePortalAuthStore((s) => s.bumpDashboard);
+  const permissoes = usePessoaPermissoesStore((s) => s.permissoes);
   const [row, setRow] = useState<SolicitacaoRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [aproving, setAproving] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -89,6 +101,23 @@ export default function SolicitacaoDetailPage() {
       cancelled = true;
     };
   }, [id, router]);
+
+  async function onBaixarPdfCorporativo() {
+    if (!id) return;
+    setPdfBusy(true);
+    try {
+      const blob = await portalDownloadSolicitacaoV2Pdf(id);
+      const url = URL.createObjectURL(blob);
+      const w = window.open(url, "_blank", "noopener,noreferrer");
+      if (w) setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      else URL.revokeObjectURL(url);
+      if (!w) toast.error("Permita pop-ups para visualizar o PDF");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Falha ao gerar PDF");
+    } finally {
+      setPdfBusy(false);
+    }
+  }
 
   async function onAprovar() {
     if (!id) return;
@@ -114,36 +143,167 @@ export default function SolicitacaoDetailPage() {
     );
   }
 
+  const isCorporativa = Boolean(row.transporteSolicitacao);
   const p = row.portaria;
 
   return (
     <main className="mx-auto max-w-7xl space-y-6 px-4 py-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">{row.protocolo}</h1>
-          <p className="text-sm text-slate-400">
-            Cliente · {row.cliente?.nome ?? "—"} · {formatDateTime(row.createdAt)}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <StatusBadge status={row.status} />
-          {row.status === "PENDENTE" ? (
-            <Button disabled={aproving} onClick={() => void onAprovar()}>
-              {aproving ? "…" : "Aprovar"}
+      <OperationPageHeader
+        isos={collectSolicitacaoContainerISOs(row)}
+        protocolo={row.protocolo}
+        actions={
+          <>
+            <StatusBadge status={row.status} />
+            {isCorporativa && permissoes?.podeGerarPDF ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pdfBusy}
+                onClick={() => void onBaixarPdfCorporativo()}
+              >
+                {pdfBusy ? "…" : "Baixar PDF"}
+              </Button>
+            ) : null}
+            {row.status === "PENDENTE" && !isCorporativa && permissoes?.podeAprovarOS ? (
+              <Button disabled={aproving} onClick={() => void onAprovar()}>
+                {aproving ? "…" : "Aprovar"}
+              </Button>
+            ) : null}
+            <Button variant="outline" asChild>
+              <Link href="/portal/solicitacoes">Voltar</Link>
             </Button>
-          ) : null}
-          <Button variant="outline" asChild>
-            <Link href="/portal/solicitacoes">Voltar</Link>
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
+      <p className="text-sm text-slate-400">
+        Cliente · {row.cliente?.razaoSocial ?? "—"} · {formatDateTime(row.createdAt)}
+      </p>
 
-      <Tabs defaultValue="unidades" className="w-full">
+      <Tabs defaultValue={isCorporativa ? "corporativa" : "unidades"} className="w-full">
         <TabsList className="w-full justify-start overflow-x-auto">
+          {isCorporativa ? <TabsTrigger value="corporativa">Dados da solicitação</TabsTrigger> : null}
           <TabsTrigger value="unidades">Unidades</TabsTrigger>
           <TabsTrigger value="eventos">Eventos</TabsTrigger>
           <TabsTrigger value="documentos">Documentos</TabsTrigger>
         </TabsList>
+
+        {isCorporativa ? (
+          <TabsContent value="corporativa" className="space-y-6">
+            {row.transporteSolicitacao ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Transporte</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-2 text-sm text-slate-300 sm:grid-cols-2">
+                  <p>
+                    Motorista: <span className="text-white">{row.transporteSolicitacao.nomeMotorista}</span>
+                  </p>
+                  <p>
+                    CPF: <span className="font-mono text-white">{row.transporteSolicitacao.cpfMotorista}</span>
+                  </p>
+                  <p>
+                    Tipo: <span className="text-white">{row.transporteSolicitacao.tipoCaminhao}</span>
+                  </p>
+                  <p>
+                    Placas:{" "}
+                    <span className="font-mono text-white">
+                      {row.transporteSolicitacao.placaCavalo} · {row.transporteSolicitacao.placaCarreta01}
+                      {row.transporteSolicitacao.placaCarreta02
+                        ? ` · ${row.transporteSolicitacao.placaCarreta02}`
+                        : ""}
+                    </span>
+                  </p>
+                </CardContent>
+              </Card>
+            ) : null}
+            {(row.containersSolicitacao?.length ?? 0) > 0 ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Containers</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {(row.containersSolicitacao ?? []).map((c) => (
+                    <div key={c.id} className="rounded-lg border border-white/10 bg-black/20 p-3 text-sm">
+                      <p className="font-mono text-base font-bold text-[var(--accent)]">
+                        {formatContainerISO(c.unidade) || c.unidade}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">Unidade #{c.ordem}</p>
+                      <p className="text-slate-400">
+                        {c.booking} · {c.status}
+                        {c.refrigerado ? ` · reefer ${c.setPoint ?? "—"}°C` : ""}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {c.processo} · {c.tamanho} · {c.tipo}
+                        {c.lacre ? ` · lacre ${c.lacre}` : ""}
+                      </p>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            ) : null}
+            {row.agendamentoSolicitacao ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Agendamento</CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm text-slate-300">
+                  <p>
+                    Data:{" "}
+                    <span className="text-white">
+                      {String(row.agendamentoSolicitacao.dataRef).slice(0, 10)}
+                    </span>
+                  </p>
+                  <p>
+                    Turno: <span className="text-white">{row.agendamentoSolicitacao.turno}</span>
+                  </p>
+                  {row.agendamentoSolicitacao.atendimentoEspecial ? (
+                    <p>
+                      Atendimento especial:{" "}
+                      <span className="text-white">
+                        {row.agendamentoSolicitacao.atendimentoEspecialTexto || "sim"}
+                      </span>
+                    </p>
+                  ) : null}
+                </CardContent>
+              </Card>
+            ) : null}
+            {row.solicitanteContato ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Contato do solicitante</CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm text-slate-300">
+                  <p className="text-white">{row.solicitanteContato.nome}</p>
+                  <p>{row.solicitanteContato.telefone}</p>
+                  <p>{row.solicitanteContato.email}</p>
+                </CardContent>
+              </Card>
+            ) : null}
+            {(row.anexosSolicitacao?.length ?? 0) > 0 ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Anexos</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  {(row.anexosSolicitacao ?? []).map((a) => (
+                    <div key={a.id} className="flex flex-wrap justify-between gap-2 border-b border-white/5 py-2">
+                      <span className="text-white">{a.filename}</span>
+                      <span className="text-slate-500">
+                        {a.mimeType} · {(a.size / 1024).toFixed(0)} KB
+                      </span>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            ) : null}
+            {isCorporativa ? (
+              <p className="text-xs text-slate-500">
+                Esta solicitação segue o fluxo corporativo: aprovação pela equipe RL (status permanece pendente até
+                análise).
+              </p>
+            ) : null}
+          </TabsContent>
+        ) : null}
 
         <TabsContent value="unidades" className="space-y-6">
           <Card>
@@ -159,7 +319,9 @@ export default function SolicitacaoDetailPage() {
                     className="flex flex-col gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div>
-                      <span className="font-mono text-white">{u.numeroIso}</span>
+                      <span className="font-mono text-base font-bold text-[var(--accent)]">
+                        {formatContainerISO(u.numeroIso) || u.numeroIso}
+                      </span>
                       <p className="text-xs text-slate-500">{u.tipo}</p>
                     </div>
                     <Button variant="ghost" size="sm" asChild>

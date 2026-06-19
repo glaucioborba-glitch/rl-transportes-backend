@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { GateCard } from "@/components/operador/gate-card";
+import { OperationCardIdentity } from "@/components/shared/operation-identity";
+import { collectSolicitacaoContainerISOs } from "@/lib/container-display";
 import { OperationalTimeline } from "@/components/operador/operational-timeline";
 import { DigitalSignaturePad } from "@/components/operador/digital-signature-pad";
 import { PhotoUploader, type PhotoEntry } from "@/components/operador/photo-uploader";
@@ -15,7 +17,7 @@ type Sol = {
   id: string;
   protocolo: string;
   status: string;
-  cliente?: { nome?: string };
+  cliente?: { razaoSocial?: string };
   unidades?: { id: string; numeroIso: string; tipo: string }[];
   portaria?: unknown;
   gate?: unknown;
@@ -160,10 +162,11 @@ export default function GatePage() {
                   }`}
                   onClick={() => setSelectedId(s.id)}
                 >
-                  <span className="font-mono text-white">{s.protocolo}</span>
-                  <span className="text-xs text-slate-500">
-                    {(s.unidades ?? []).map((u) => u.numeroIso).join(", ")}
-                  </span>
+                  <OperationCardIdentity
+                    isos={collectSolicitacaoContainerISOs(s)}
+                    protocolo={s.protocolo}
+                    size="md"
+                  />
                 </button>
               ))}
             </div>
