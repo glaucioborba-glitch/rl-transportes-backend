@@ -22,13 +22,17 @@ import {
   staffAprovarSolicitacaoV2,
   staffDownloadSolicitacaoV2Pdf,
   staffFetchSolicitacaoV2Detalhe,
+  staffFetchSolicitacaoHistoricoAlteracoes,
   staffRejeitarSolicitacaoV2,
   staffRemoverAnexoV2,
   staffUploadAnexoV2,
+  type BloqueioContainerRow,
 } from "@/lib/api/staff-client";
+import { BloqueioHoldPanel } from "@/components/staff/bloqueio-hold-panel";
 import { toast } from "@/lib/toast";
 import { collectSolicitacaoContainerISOs } from "@/lib/container-display";
 import { OperationPageHeader } from "@/components/shared/operation-identity";
+import { SolicitacaoHistoricoAlteracoes } from "@/components/solicitacao/solicitacao-historico-alteracoes";
 
 function TimelineIcon({ tipo }: { tipo: string }) {
   const cls = "h-4 w-4 shrink-0 text-violet-300/90";
@@ -84,6 +88,7 @@ export default function StaffSolicitacaoV2DetailPage() {
   const containers = (sol?.containersSolicitacao as Record<string, unknown>[] | undefined) ?? [];
   const anexos = (sol?.anexosSolicitacao as Record<string, unknown>[] | undefined) ?? [];
   const timeline = data?.timeline ?? [];
+  const bloqueios = (data?.bloqueiosAtivos ?? []) as BloqueioContainerRow[];
 
   async function onBaixarPdf() {
     if (!id) return;
@@ -189,6 +194,10 @@ export default function StaffSolicitacaoV2DetailPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
+      {id ? (
+        <BloqueioHoldPanel solicitacaoId={id} bloqueios={bloqueios} onChanged={() => void load()} />
+      ) : null}
+
       <OperationPageHeader
         isos={collectSolicitacaoContainerISOs({
           containersSolicitacao: containers as Array<{ unidade?: string; ordem?: number }>,
@@ -430,6 +439,10 @@ export default function StaffSolicitacaoV2DetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {id ? (
+        <SolicitacaoHistoricoAlteracoes solicitacaoId={id} load={staffFetchSolicitacaoHistoricoAlteracoes} />
+      ) : null}
 
       <Card className="border-white/10 bg-[#0b101c]/80">
         <CardHeader>

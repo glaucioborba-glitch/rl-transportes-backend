@@ -1,3 +1,4 @@
+import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
@@ -6,6 +7,7 @@ import { Role, TipoCliente } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
+import { clienteE2eDefaults } from './helpers/e2e-cliente.factory';
 
 describe('GRC Compliance (e2e)', () => {
   let app: INestApplication;
@@ -47,30 +49,29 @@ describe('GRC Compliance (e2e)', () => {
     const hash = await bcrypt.hash(password, 10);
 
     const admin = await prisma.user.create({
-      data: { email: emailAdmin, password: hash, role: Role.ADMIN },
+      data: { cpfCnpj: cpfCnpjForTestUser(emailAdmin), email: emailAdmin, password: hash, role: Role.ADMIN },
     });
     const operador = await prisma.user.create({
-      data: { email: emailOp, password: hash, role: Role.OPERADOR_GATE },
+      data: { cpfCnpj: cpfCnpjForTestUser(emailOp), email: emailOp, password: hash, role: Role.OPERADOR_GATE },
     });
     const sup = await prisma.user.create({
-      data: { email: emailSup, password: hash, role: Role.OPERADOR_GATE },
+      data: { cpfCnpj: cpfCnpjForTestUser(emailSup), email: emailSup, password: hash, role: Role.OPERADOR_GATE },
     });
 
     const cliente = await prisma.cliente.create({
-      data: {
-        nome: `E2E GRC Cli ${suffix}`,
+      data: clienteE2eDefaults({
+        razaoSocial: `E2E GRC Cli ${suffix}`,
+        nomeFantasia: `GRC Fan ${suffix}`,
         tipo: TipoCliente.PJ,
         cpfCnpj: `${suffix}`.replace(/\D/g, '').padStart(14, '0').slice(-14),
         email: `e2e-grc-clidata-${suffix}@local.test`,
-        telefone: '',
-        endereco: '',
-      },
+        emailNfse: `nfse-grc-${suffix}@local.test`,
+      }),
     });
     clienteId = cliente.id;
 
     const userCliente = await prisma.user.create({
-      data: {
-        email: emailCliente,
+      data: { cpfCnpj: cpfCnpjForTestUser(emailCliente), email: emailCliente,
         password: hash,
         role: Role.CLIENTE,
         clienteId,
@@ -86,7 +87,7 @@ describe('GRC Compliance (e2e)', () => {
   afterAll(async () => {
     await prisma.user.deleteMany({
       where: {
-        email: { in: [emailAdmin, emailOp, emailCliente, emailSup] },
+        cpfCnpj: { in: [cpfCnpjForTestUser(emailAdmin), cpfCnpjForTestUser(emailOp), cpfCnpjForTestUser(emailCliente), cpfCnpjForTestUser(emailSup)] },
       },
     });
     if (clienteId) {

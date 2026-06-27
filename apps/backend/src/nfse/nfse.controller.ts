@@ -7,12 +7,16 @@ import { Permissions } from '../common/decorators/permissions.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { FEATURE_FLAG_KEYS } from '../feature-flags/feature-flag.keys';
+import { FeatureFlagGuard } from '../feature-flags/feature-flag.guard';
+import { RequireFeatureFlag } from '../feature-flags/require-feature-flag.decorator';
 import { NfseService } from './nfse.service';
 
 @ApiTags('nfse')
 @ApiBearerAuth('access-token')
 @Controller('nfse')
-@UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
+@UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard, FeatureFlagGuard)
+@RequireFeatureFlag(FEATURE_FLAG_KEYS.FISCAL_INTEGRATION_ENABLED)
 export class NfseController {
   constructor(private readonly nfseService: NfseService) {}
 

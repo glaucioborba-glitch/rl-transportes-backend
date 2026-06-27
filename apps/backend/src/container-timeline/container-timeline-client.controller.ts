@@ -12,6 +12,7 @@ import { PessoaPermissoesGuard } from '../common/guards/pessoa-permissoes.guard'
 import type { CxPortalRequestUser } from '../cx-portais/types/cx-portal.types';
 import { ContainerTimelineService } from './container-timeline.service';
 import { Iso6346ParamPipe } from './iso6346-param.pipe';
+import { ArmazenagemBillingService } from '../armazenagem-faturamento/armazenagem-billing.service';
 
 @ApiTags('Container Timeline (Portal Cliente)')
 @ApiBearerAuth()
@@ -25,7 +26,10 @@ import { Iso6346ParamPipe } from './iso6346-param.pipe';
 )
 @CxPortalSegment('cliente')
 export class ContainerTimelineClientController {
-  constructor(private readonly timeline: ContainerTimelineService) {}
+  constructor(
+    private readonly timeline: ContainerTimelineService,
+    private readonly armazenagemBilling: ArmazenagemBillingService,
+  ) {}
 
   @Get(':iso/timeline')
   @ApiOperation({
@@ -40,5 +44,21 @@ export class ContainerTimelineClientController {
       throw new ForbiddenException('Acesso restrito ao portal cliente.');
     }
     return this.timeline.getClientTimeline(iso, u.clienteId);
+  }
+
+  @Get(':iso/pre-fatura')
+  @ApiOperation({
+    summary: 'Provisão de armazenagem (pré-fatura) do contêiner — tenant isolation',
+  })
+  async clientPreFatura(
+    @Param('iso', Iso6346ParamPipe) iso: string,
+    @Req() req: Request & { cxUser?: CxPortalRequestUser },
+  ) {
+    const u = req.cxUser;
+    if (!u || u.portalPapel !== 'CLIENTE' || !u.clienteId) {
+      throw new ForbiddenException('Acesso restrito ao portal cliente.');
+    }
+    await this.armazenagemBilling.assertClientOwnsContainer(iso, u.clienteId);
+    return this.armazenagemBilling.getPreFaturaForClient(iso, u.clienteId);
   }
 }

@@ -1,30 +1,45 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ApiError,
-  fetchAuthMe,
-  fetchCliente,
-  fetchCxFinanceiroBoletos,
-  fetchCxFinanceiroNfse,
-  fetchKpis,
-  fetchSlas,
-  fetchSolicitacoesPaginated,
+  ensurePortalPessoaSessionForPortal,
+  fetchPortalDashboard,
+  inferPortalClienteTipo,
+  portalAuthBootstrap,
   type SolicitacaoRow,
 } from "@/lib/api/portal-client";
 import type { KpisResponse, SlasResponse } from "@/lib/api/types";
+import { hasPortalClientSession } from "@/lib/portal-auth-mode";
+import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
 import { usePortalAuthStore } from "@/stores/portal-store";
-import type { PortalUser } from "@/stores/portal-store";
+import { usePessoaAutorizadaStore } from "@/stores/pessoaAutorizadaStore";
 
 export type DashboardFinanceCounts = {
   faturasEmAberto: number;
   boletosAbertosOuVencidos: number;
   nfseEmitidasAmostra: number;
+  faturadoMes: number;
 };
 
 export type DashboardData = {
   kpis: KpisResponse;
   slas: SlasResponse;
+  slaDesempenho: number;
+  slaCumpridos: number;
+  slaViolados: number;
+  unidades: {
+    total: number;
+    import: number;
+    export: number;
+    gateIn: number;
+    gateOut: number;
+  };
+  tendencias: {
+    solicitacoesMesVsAnteriorPct: number;
+    faturadoMesVsAnteriorPct: number;
+  };
   tracking: SolicitacaoRow[];
   recent: {
     items: SolicitacaoRow[];
@@ -37,128 +52,177 @@ export type DashboardData = {
   financeCounts: DashboardFinanceCounts;
 };
 
-function boletoNaoPago(b: Record<string, unknown>): boolean {
-  return String(b.statusPagamento ?? "").toLowerCase() !== "pago";
-}
-
-function boletoAbertoOuVencido(b: Record<string, unknown>): boolean {
-  const st = String(b.statusPagamento ?? "").toLowerCase();
-  return st === "pendente" || st === "vencido";
-}
-
-function todayRangeUtc() {
-  const d = new Date();
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  const from = `${y}-${m}-${day}T00:00:00.000Z`;
-  const to = `${y}-${m}-${day}T23:59:59.999Z`;
-  return { from, to };
-}
-
 export function usePortalDashboard(opts: { recentPage: number; recentLimit?: number }) {
+  const router = useRouter();
   const { recentPage, recentLimit = 8 } = opts;
   const revision = usePortalAuthStore((s) => s.dashboardRevision);
-  const setClienteNome = usePortalAuthStore((s) => s.setClienteNome);
+  const accessToken = usePortalAuthStore((s) => s.accessToken);
+  const sessionHydrated = usePortalAuthStore((s) => s.sessionHydrated);
+  const portalUser = usePortalAuthStore((s) => s.user);
+  const hasSession = hasPortalClientSession({ accessToken, sessionHydrated, user: portalUser });
+  const setCliente = usePortalAuthStore((s) => s.setCliente);
   const setUser = usePortalAuthStore((s) => s.setUser);
+  const setBloqueioFinanceiro = usePortalClienteAuthStore((s) => s.setBloqueioFinanceiro);
+  const pessoaId = usePessoaAutorizadaStore((s) => s.pessoa?.id ?? null);
 
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [awaitingPessoa, setAwaitingPessoa] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const { from: dayFrom, to: dayTo } = todayRangeUtc();
+    setAwaitingPessoa(false);
 
-      const [trackRes, recentRes, hojeRes, kpis, slas, cxBoletos, cxNfse] = await Promise.all([
-        fetchSolicitacoesPaginated({
-          page: 1,
-          limit: 5,
-          orderBy: "createdAt",
-          order: "desc",
-        }),
-        fetchSolicitacoesPaginated({
-          page: recentPage,
-          limit: recentLimit,
-          orderBy: "createdAt",
-          order: "desc",
-        }),
-        fetchSolicitacoesPaginated({
-          page: 1,
-          limit: 100,
-          createdFrom: dayFrom,
-          createdTo: dayTo,
-          orderBy: "createdAt",
-          order: "desc",
-        }),
-        fetchKpis(),
-        fetchSlas(),
-        fetchCxFinanceiroBoletos(),
-        fetchCxFinanceiroNfse(),
-      ]);
+    if (!hasSession) {
+      setLoading(false);
+      setError("Sessão expirada. Faça login novamente.");
+      return;
+    }
+
+    if (!pessoaId) {
+      const tipo = portalUser?.tipo ?? inferPortalClienteTipo(portalUser);
+      if (tipo === "PF" && portalUser?.cpfCnpj) {
+        const ensured = await ensurePortalPessoaSessionForPortal({
+          cpfCnpj: portalUser.cpfCnpj,
+          force: true,
+        });
+        if (ensured.status === "error") {
+          setError(ensured.message);
+          setLoading(false);
+          return;
+        }
+        if (ensured.status === "need-select") {
+          setAwaitingPessoa(true);
+          setLoading(false);
+          router.replace(
+            `/portal/auth/select-pessoa?next=${encodeURIComponent("/portal/dashboard")}`,
+          );
+          return;
+        }
+      } else {
+        try {
+          const boot = await portalAuthBootstrap();
+          if (boot.precisaSelecionarPessoa) {
+            setAwaitingPessoa(true);
+            setLoading(false);
+            router.replace(
+              `/portal/auth/select-pessoa?next=${encodeURIComponent("/portal/dashboard")}`,
+            );
+            return;
+          }
+        } catch {
+          setAwaitingPessoa(true);
+          setLoading(false);
+          router.replace(
+            `/portal/auth/select-pessoa?next=${encodeURIComponent("/portal/dashboard")}`,
+          );
+          return;
+        }
+      }
+    }
+
+    const pessoaAtual = usePessoaAutorizadaStore.getState().pessoa?.id;
+    if (!pessoaAtual) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const dash = await fetchPortalDashboard({
+        recentPage,
+        recentLimit,
+      });
 
       try {
-        const me = await fetchAuthMe();
-        const u: PortalUser = {
-          id: me.id,
-          email: me.email,
-          role: me.role,
-          permissions: me.permissions,
-          clienteId: me.clienteId ?? null,
-        };
-        setUser(u);
-        const cid = u.clienteId;
-        if (cid) {
-          try {
-            const c = await fetchCliente(cid);
-            const nome = typeof c.nome === "string" ? c.nome : null;
-            setClienteNome(nome);
-          } catch {
-            /* nome opcional */
-          }
+        const u = usePortalAuthStore.getState().user;
+        if (u) setUser(u);
+        const c = dash.cliente;
+        if (c?.id) {
+          setCliente({
+            id: c.id,
+            nomeFantasia: null,
+            razaoSocial: c.nome?.trim() || null,
+            cpfCnpj: typeof c.cpfCnpj === "string" ? c.cpfCnpj : "",
+          });
         }
       } catch {
-        /* sessão ainda pode exibir KPIs se /me falhar por rede */
+        /* */
       }
 
-      const trackItems = trackRes.items ?? [];
-      const recentItems = recentRes.items ?? [];
-      const recentTotal = recentRes.total ?? recentRes.meta?.total ?? recentItems.length;
-      const hojeItems = hojeRes.items ?? [];
+      const trackingItems = (dash.trackingSample ?? []) as SolicitacaoRow[];
+      const recentItems = (dash.recent?.items ?? []) as SolicitacaoRow[];
+      const recentTotal = dash.recent?.total ?? recentItems.length;
+      const hojeItems = (dash.solicitacoesHoje ?? []) as SolicitacaoRow[];
 
-      const pendenciasFinanceiras = cxBoletos.filter(boletoNaoPago).length;
-      const boletosAbertosOuVencidos = cxBoletos.filter(boletoAbertoOuVencido).length;
+      const kpis = dash.kpisCx;
+      const slas = dash.slasCx;
+
+      const pendenciasFinanceiras = dash.financeiro.boletosPendentes;
+
+      setBloqueioFinanceiro(Boolean(dash.isBloqueadoFinanceiramente));
 
       setData({
         kpis,
         slas,
-        tracking: trackItems,
+        slaDesempenho: dash.slas?.desempenho ?? 0,
+        slaCumpridos: dash.slas?.cumpridos ?? 0,
+        slaViolados: dash.slas?.violados ?? 0,
+        unidades: dash.unidades ?? {
+          total: 0,
+          import: 0,
+          export: 0,
+          gateIn: 0,
+          gateOut: 0,
+        },
+        tendencias: dash.tendencias ?? {
+          solicitacoesMesVsAnteriorPct: 0,
+          faturadoMesVsAnteriorPct: 0,
+        },
+        tracking: trackingItems,
         recent: {
           items: recentItems,
           total: recentTotal,
-          page: recentRes.page ?? recentPage,
-          limit: recentRes.limit ?? recentLimit,
+          page: dash.recent?.page ?? recentPage,
+          limit: dash.recent?.limit ?? recentLimit,
         },
         solicitacoesHoje: hojeItems,
         pendenciasFinanceiras,
         financeCounts: {
           faturasEmAberto: kpis.valores.faturamento_aberto,
-          boletosAbertosOuVencidos,
-          nfseEmitidasAmostra: cxNfse.length,
+          boletosAbertosOuVencidos: pendenciasFinanceiras,
+          nfseEmitidasAmostra: dash.financeiro.nfseEmitidas,
+          faturadoMes: dash.financeiro.faturadoMes ?? 0,
         },
       });
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Erro ao carregar dashboard");
+      const msg =
+        e instanceof ApiError
+          ? e.message
+          : e instanceof Error && e.message
+            ? e.message
+            : "Erro ao carregar dashboard";
+      setError(msg);
     } finally {
       setLoading(false);
     }
-  }, [recentLimit, recentPage, revision, setClienteNome, setUser]);
+  }, [
+    hasSession,
+    pessoaId,
+    portalUser,
+    recentLimit,
+    recentPage,
+    revision,
+    router,
+    setCliente,
+    setUser,
+    setBloqueioFinanceiro,
+  ]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  return { data, loading, error, reload: load };
+  return { data, loading, error, awaitingPessoa, reload: load };
 }

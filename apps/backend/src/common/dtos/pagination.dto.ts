@@ -37,10 +37,10 @@ export class ClientePaginationDto extends PaginationDto {
   @IsString()
   search?: string;
 
-  @ApiPropertyOptional({ enum: ['createdAt', 'nome', 'email'], default: 'createdAt' })
+  @ApiPropertyOptional({ enum: ['createdAt', 'razaoSocial', 'email'], default: 'createdAt' })
   @IsOptional()
-  @IsIn(['createdAt', 'nome', 'email'])
-  override orderBy?: 'createdAt' | 'nome' | 'email' = 'createdAt';
+  @IsIn(['createdAt', 'razaoSocial', 'email'])
+  override orderBy?: 'createdAt' | 'razaoSocial' | 'email' = 'createdAt';
 }
 
 /** Paginação para solicitações. */

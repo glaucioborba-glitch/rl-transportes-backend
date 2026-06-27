@@ -13,12 +13,21 @@ datasource db {
 // ============================================================================
 
 enum Role {
+  /// Dono do software SaaS — gestão global de terminais (fora do escopo operacional de um tenant).
+  SUPER_ADMIN
   ADMIN
   GERENTE
   OPERADOR_PORTARIA
   OPERADOR_GATE
   OPERADOR_PATIO
+  /// @deprecated Preferir ADMIN_CLIENTE (portal titular PJ/PF).
   CLIENTE
+  /// Titular do tenant portal (faturamento e gestão de equipe).
+  ADMIN_CLIENTE
+  /// Operador interno (identidade via PessoaAutorizada + CPF pós-login).
+  OPERADOR_INTERNO
+  /// Transportadora terceirizada — login direto com CNPJ; faturamento no tenant principal.
+  TRANSPORTADORA_TERCEIRA
 }
 
 enum TipoCliente {
@@ -26,12 +35,187 @@ enum TipoCliente {
   PF
 }
 
-/// Estado da solicitação no fluxo operacional.
+/// Estado da solicitação no fluxo operacional (ordem compatível com PostgreSQL: novos valores ao final).
 enum StatusSolicitacao {
   PENDENTE
   APROVADO
   CONCLUIDO
   REJEITADO
+  /// Análise staff (gate FL armazenagem / workflow unificado).
+  EM_ANALISE
+  /// Execução física após aprovação (portaria / gate / pátio).
+  EM_EXECUCAO
+  /// Aprovada e aguardando chegada física no gate (check-in).
+  AGUARDANDO_GATE_IN
+  /// Veículo dentro do terminal após check-in operacional v2.
+  EM_PATIO
+  /// Unidades posicionadas e aguardando check-out no gate.
+  AGUARDANDO_GATE_OUT
+  /// Cancelada explicitamente (cliente ou staff).
+  CANCELADO
+  /// Cancelada pelo cliente no portal (antes ou durante janela de execução).
+  CANCELADO_CLIENTE
+}
+
+enum TipoCaminhao {
+  LS
+  RODOTREM
+}
+
+/// Status do container no formulário corporativo (CHEIO/VAZIO). Tipo PG: `StatusContainerForm`.
+enum StatusContainer {
+  CHEIO
+  VAZIO
+
+  @@map("StatusContainerForm")
+}
+
+enum PatioStatus {
+  ESTOCADO
+  MOVIMENTANDO
+  SEPARADO
+  AGUARDANDO_GATE_OUT
+}
+
+enum MovTipo {
+  LIFT_ON
+  LIFT_OFF
+  SHIFT
+  REPOSICIONAMENTO
+}
+
+/// Tipo de fluxo logístico (armazenagem / TAL).
+enum TipoFluxoLogistico {
+  COLETA_CONTAINER
+  ENTREGA_BAIXA
+  EXPORTACAO
+  IMPORTACAO
+  SERVICO_ADICIONAL
+}
+
+enum TurnoAgendamento {
+  MANHA
+  TARDE
+}
+
+enum StatusAgendamentoTerminal {
+  PENDENTE
+  CONFIRMADO
+  CANCELADO
+  /// Cancelado pelo cliente no portal.
+  CANCELADO_CLIENTE
+}
+
+/// Modalidade de transporte rodoviário atrelado ao agendamento (First/Last Mile).
+enum ModalidadeTransporte {
+  FROTA_CLIENTE
+  FROTA_FL
+}
+
+/// Status da carga no agendamento terminal (cheio/vazio).
+enum StatusCarga {
+  CHEIO
+  VAZIO
+}
+
+/// Direção operacional do agendamento (entrada ou saída no gate).
+enum TipoOperacaoAgendamento {
+  GATE_IN
+  GATE_OUT
+}
+
+/// Intenção operacional escolhida no portal (dropdown Nova Solicitação).
+enum TipoOperacaoSolicitacaoIntent {
+  SOLICITAR_BAIXA
+  SOLICITAR_IMPORTACAO_COLETA_DEPOT
+  SOLICITAR_COLETA
+  SOLICITAR_EXPORTACAO_ENTREGA_DEPOT
+}
+
+/// Heurística V1 de permanência no pátio (alocação preditiva / ML futuro).
+enum GiroEstimado {
+  RAPIDO
+  MEDIO
+  LENTO
+}
+
+/// Cargo operacional no módulo RH / workforce planning.
+enum CargoFuncionario {
+  GATE_CHECKER
+  OPERADOR_EMPILHADEIRA
+  ADMINISTRATIVO
+}
+
+enum StatusFuncionario {
+  ATIVO
+  INATIVO
+}
+
+/// Turno de escala RH (inclui noite; agendamento portal usa apenas MANHA/TARDE).
+enum TurnoEscala {
+  MANHA
+  TARDE
+  NOITE
+}
+
+enum TenantStatus {
+  ATIVO
+  BLOQUEADO
+  SUSPENSO
+}
+
+enum StatusMotorista {
+  DISPONIVEL
+  EM_VIAGEM
+  OFFLINE
+}
+
+enum TipoVeiculo {
+  CAVALO
+  CARRETA_BUG
+  CARRETA_EXTENSIVA
+}
+
+enum StatusOrdemTransporte {
+  PENDENTE
+  DESPACHADA
+  EM_TRANSITO
+  NO_LOCAL
+  CONCLUIDA
+}
+
+/// Tipo físico do contêiner no TOS (Depot).
+enum TipoContainerTos {
+  DRY
+  REEFER
+  TANK
+}
+
+/// Eventos imutáveis do ciclo de vida (Event Sourcing).
+enum ContainerEventType {
+  SCHEDULED
+  GATE_IN_OCR_FAILED
+  GATE_IN_COMPLETED
+  YARD_ALLOCATED
+  REEFER_PLUGGED
+  REEFER_TEMP_LOGGED
+  REPAIR_REQUESTED
+  REPAIR_APPROVED
+  GATE_OUT_COMPLETED
+  PRE_MOUNTING_DONE
+}
+
+enum OutboxEventStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+/// Momento da avaria no fluxo gate.
+enum MomentoAvaria {
+  GATE_IN
+  GATE_OUT
 }
 
 enum TipoUnidade {
@@ -63,13 +247,103 @@ enum AcaoAuditoria {
   SEGURANCA
 }
 
+enum RegimeTributario {
+  MEI
+  SimplesNacional
+  LucroPresumido
+  LucroReal
+}
+
+/// Evento que dispara cobrança na regra tarifária.
+enum EventoGatilhoTarifa {
+  GATE_IN
+  GATE_OUT
+  DIARIA_ARMAZENAGEM
+  SHIFTING_EXTRA
+}
+
+/// Tipo de contêiner alvo da regra (filtro do rule engine).
+enum TipoContainerTarifa {
+  TODOS
+  DRY_20
+  DRY_40
+  REEFER
+  IMO_PERIGOSA
+}
+
+/// Gate-in ou gate-out.
+enum TipoVistoria {
+  GATE_IN
+  GATE_OUT
+}
+
+/// Ângulos obrigatórios da vistoria fotográfica.
+enum AnguloFotoVistoria {
+  FRENTE
+  TRASEIRA
+  LATERAL_DIREITA
+  LATERAL_ESQUERDA
+}
+
+enum TipoBloqueioContainer {
+  FINANCEIRO
+  FISCAL
+  AVARIA
+  JUDICIAL
+  OPERACIONAL
+}
+
+enum StatusBloqueioContainer {
+  ATIVO
+  LIBERADO
+}
+
+enum CategoriaAuditLog {
+  OPERACIONAL
+  FINANCEIRO
+  SEGURANCA
+  SISTEMA
+}
+
 // ============================================================================
 // MODELS
 // ============================================================================
 
+/// Terminal logístico (cliente B2B do SaaS RL Transportes).
+model Tenant {
+  id        String       @id @db.VarChar(64)
+  slug      String       @unique @db.VarChar(64)
+  nome      String       @db.VarChar(255)
+  status    TenantStatus @default(ATIVO)
+  plano     String       @default("STANDARD") @db.VarChar(32)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  config       TenantConfig?
+  users        User[]
+  clientes     Cliente[]
+  solicitacoes Solicitacao[]
+  funcionarios Funcionario[]
+  auditLogs    AuditLog[]
+  faturas      Fatura[]
+  faturamentos Faturamento[]
+  agendamentos AgendamentoTerminal[]
+  gateCheckIns GateCheckIn[]
+  tabelasPreco TabelaPreco[]
+  bloqueiosContainer BloqueioContainer[]
+  arquivosBancarios  ArquivoBancario[]
+
+  @@index([status])
+  @@map("tenants")
+}
+
 model User {
   id           String   @id @default(uuid())
-  email        String   @unique
+  tenantId     String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  /// CPF/CNPJ (14 dígitos) — único por tenant.
+  cpfCnpj      String   @map("cpf_cnpj") @db.VarChar(14)
+  email        String   @db.VarChar(255)
   password     String
   role         Role     @default(CLIENTE)
   /// Incrementado no logout para invalidar JWTs em circulação (access + refresh).
@@ -80,44 +354,205 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  portalPasswordResets PortalPasswordReset[]
+
+  gateCheckInsOperados  GateCheckIn[]  @relation("GateCheckInOperador")
+  gateCheckOutsOperados GateCheckOut[] @relation("GateCheckOutOperador")
+  patioMovimentacoes    PatioMovimentacao[] @relation("PatioMovOperador")
+  containerEventsCriados ContainerEvent[] @relation("ContainerEventCriador")
+  motoristaPerfil       Motorista?
+  transportadoraAutorizada TransportadoraAutorizada?
+
+  @@unique([tenantId, cpfCnpj])
+  @@unique([tenantId, email])
+  @@index([cpfCnpj])
   @@index([email])
   @@index([clienteId])
+  @@index([tenantId])
   @@map("users")
 }
 
+/// Tokens de redefinição de senha do portal cliente (UUID enviado por e-mail — SMTP futuro).
+model PortalPasswordReset {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@map("portal_password_resets")
+}
+
 model Cliente {
-  id          String   @id @default(uuid())
-  nome        String   @db.VarChar(255)
-  tipo        TipoCliente
-  cpfCnpj     String   @unique @db.VarChar(14)
-  email       String   @unique
-  telefone    String?
-  endereco    String?
+  id           String   @id @default(uuid())
+  tenantId     String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  /// Razão social (PJ) ou nome completo (PF) — coluna legada `nome` no banco.
+  razaoSocial  String   @map("nome") @db.VarChar(255)
+  nomeFantasia String?  @map("nome_fantasia") @db.VarChar(255)
+  tipo         TipoCliente
+  /// Obrigatório na UI para PF (provedores NFS-e).
+  dataNascimento DateTime? @map("data_nascimento")
+  cpfCnpj      String   @map("cpf_cnpj") @db.VarChar(14)
+  inscricaoMunicipal  String? @map("inscricao_municipal") @db.VarChar(32)
+  inscricaoEstadual   String? @map("inscricao_estadual") @db.VarChar(32)
+  isentoIE     Boolean  @default(false) @map("isento_ie")
+  email        String   @db.VarChar(255)
+  emailNfse    String   @map("email_nfse") @db.VarChar(255)
+  telefone     String   @db.VarChar(20)
+
+  enderecoLogradouro  String  @map("endereco_logradouro") @db.VarChar(255)
+  enderecoNumero      String  @map("endereco_numero") @db.VarChar(20)
+  enderecoComplemento String? @map("endereco_complemento") @db.VarChar(120)
+  enderecoBairro      String  @map("endereco_bairro") @db.VarChar(120)
+  enderecoCidade      String  @map("endereco_cidade") @db.VarChar(120)
+  enderecoUf          String  @map("endereco_uf") @db.VarChar(2)
+  enderecoCep         String  @map("endereco_cep") @db.VarChar(8)
+  /// Obrigatório para NFS-e (PF e PJ); preenchido pela normalização de endereço.
+  codigoMunicipioIbge String @map("codigo_municipio_ibge") @db.VarChar(7)
+
+  /// @deprecated Colunas legadas; não usar em novos cadastros (PJ simplificado).
+  regimeTributario    RegimeTributario? @map("regime_tributario")
+  /// @deprecated Colunas legadas; não usar em novos cadastros (PJ simplificado).
+  descricaoAtividade  String? @map("descricao_atividade") @db.VarChar(500)
+  /// @deprecated Colunas legadas; não usar em novos cadastros (PJ simplificado).
+  cnae                String? @db.VarChar(7)
+
+  responsavel         String? @db.VarChar(255)
+  responsavelTelefone String? @map("responsavel_telefone") @db.VarChar(20)
+  responsavelEmail    String? @map("responsavel_email") @db.VarChar(255)
+
+  /// Perfil financeiro individual (fallback: TenantConfig.parametros.operacao).
+  diasToleranciaBloqueio Int?     @map("dias_tolerancia_bloqueio")
+  percentualMultaAtraso  Decimal? @map("percentual_multa_atraso") @db.Decimal(5, 2)
+  percentualJurosAoMes   Decimal? @map("percentual_juros_ao_mes") @db.Decimal(5, 2)
+
+  tabelaPrecoId String?      @map("tabela_preco_id")
+  tabelaPreco   TabelaPreco? @relation(fields: [tabelaPrecoId], references: [id], onDelete: SetNull)
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   deletedAt   DateTime?
 
   solicitacoes     Solicitacao[]
   faturamentos     Faturamento[]
+  tabelaTarifaria  TabelaTarifaria?
+  preFaturas       PreFatura[]
+  faturasArmazenagem Fatura[]
   usuarioPortal    User?
+  agendamentos     AgendamentoTerminal[]
+  pessoasAutorizadas PessoaAutorizada[]
+  transportadorasAutorizadas TransportadoraAutorizada[]
+  containersTos    Container[]
+  pilhasLogicas    PilhaLogica[]
 
+  @@unique([tenantId, cpfCnpj])
+  @@unique([tenantId, email])
   @@index([cpfCnpj])
   @@index([email])
   @@index([deletedAt])
+  @@index([tenantId])
+  @@index([tabelaPrecoId])
   @@map("clientes")
 }
 
+/// Pessoas autorizadas a operar no portal com login corporativo (CNPJ/CPF único).
+model PessoaAutorizada {
+  id        String   @id @default(uuid())
+  clienteId String   @map("cliente_id")
+  nome      String   @db.VarChar(255)
+  email     String   @db.VarChar(255)
+  cpf       String?  @db.VarChar(11)
+  telefone  String?  @db.VarChar(20)
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  permissoes PermissaoPessoaAutorizada?
+
+  @@unique([clienteId, cpf])
+  @@index([clienteId])
+  @@map("pessoas_autorizadas")
+}
+
+/// Transportadora terceirizada autorizada pelo cliente principal (delegação operacional B2B).
+model TransportadoraAutorizada {
+  id           String   @id @default(uuid())
+  clienteId    String   @map("cliente_id")
+  cnpj         String   @db.VarChar(14)
+  razaoSocial  String   @map("razao_social") @db.VarChar(255)
+  emailContato String   @map("email_contato") @db.VarChar(255)
+  ativo        Boolean  @default(true)
+  userId       String   @unique @map("user_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  cliente Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clienteId, cnpj])
+  @@index([clienteId])
+  @@map("transportadoras_autorizadas")
+}
+
+/// Permissões operacionais RBAC por pessoa autorizada (dentro do CNPJ).
+model PermissaoPessoaAutorizada {
+  id                       String   @id @default(uuid())
+  pessoaId                 String   @unique @map("pessoa_id")
+  podeCriarSolicitacao     Boolean  @default(true) @map("pode_criar_solicitacao")
+  podeAnexarDocumentos     Boolean  @default(true) @map("pode_anexar_documentos")
+  podeAgendarTurno         Boolean  @default(true) @map("pode_agendar_turno")
+  podeVisualizarFinanceiro Boolean  @default(false) @map("pode_visualizar_financeiro")
+  podeAprovarOS            Boolean  @default(false) @map("pode_aprovar_os")
+  podeVerOS                Boolean  @default(true) @map("pode_ver_os")
+  podeAlterarDadosGate     Boolean  @default(false) @map("pode_alterar_dados_gate")
+  podeGerarPDF             Boolean  @default(true) @map("pode_gerar_pdf")
+  podeGerenciarPessoas     Boolean  @default(false) @map("pode_gerenciar_pessoas")
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  pessoa PessoaAutorizada @relation(fields: [pessoaId], references: [id], onDelete: Cascade)
+
+  @@index([pessoaId])
+  @@map("permissoes_pessoa_autorizada")
+}
+
+/// **Solicitações corporativas (Portal v2 — LS / Rodotrem):** o aggregate persistido é este modelo
+/// mais `TransporteSolicitacao`, `ContainerSolicitacao`, `AgendamentoSolicitacao`, `SolicitanteContato`
+/// e `SolicitacaoAnexo`. Não há tabelas paralelas `*V2` para preservar FKs operacionais (`Unidade`,
+/// `Portaria`, `FaturamentoSolicitacao`, etc.). Rótulos “femininos” (APROVADA, …) para PDF/relatório:
+/// view `vw_solicitacoes_legacy` / `vw_solicitacoes_v1_compat` (`statusV2Label`).
 model Solicitacao {
   id        String   @id @default(uuid())
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   protocolo String   @unique
   clienteId String
   cliente   Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
   status    StatusSolicitacao @default(PENDENTE)
+  /// Incrementado quando placa, motorista, CPF ou ISO do contêiner mudam — invalida QR anterior.
+  versaoCredencial Int @default(1) @map("versao_credencial")
+  /// Intenção operacional do portal (Baixa, Coleta, Importação depot, Exportação depot).
+  tipoOperacao TipoOperacaoSolicitacaoIntent? @map("tipo_operacao")
+  /// Classificação FL / TAL (coleta, export/import, serviços adicionais).
+  tipoFluxo           TipoFluxoLogistico?
+  /// Tags de serviço adicional (ex.: inspeção, reparo, pesagem) — JSON string[] ou objetos.
+  servicosAdicionais    Json?
+  /// Previsão informada pelo cliente (import/coleta depot) — opcional.
+  previsaoRetirada      DateTime? @map("previsao_retirada")
+  /// Deadline navio/booking (export/entrega depot) — opcional.
+  bookingDeadline       DateTime? @map("booking_deadline")
+  /// Classificação heurística de giro (calculada no backend).
+  giroEstimado          GiroEstimado? @map("giro_estimado")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   deletedAt DateTime?
 
   unidades Unidade[] @relation("SolicitacaoUnidades")
+  agendamentos AgendamentoTerminal[]
   portaria Portaria?
   gate     Gate?
   patio    Patio?
@@ -125,10 +560,102 @@ model Solicitacao {
 
   faturamentosVinculados FaturamentoSolicitacao[]
 
+  transporteSolicitacao     TransporteSolicitacao?
+  containersSolicitacao     ContainerSolicitacao[]
+  vistorias                 Vistoria[]
+  agendamentoSolicitacao    AgendamentoSolicitacao?
+  solicitanteContato        SolicitanteContato?
+  anexosSolicitacao         SolicitacaoAnexo[]
+  gateCheckIns              GateCheckIn[]
+  patioUnidadesV2           PatioUnidade[]
+  bloqueiosContainer        BloqueioContainer[]
+
   @@index([clienteId])
   @@index([status])
   @@index([deletedAt])
+  @@index([tenantId])
   @@map("solicitacoes")
+}
+
+model TransporteSolicitacao {
+  id             String       @id @default(uuid())
+  solicitacaoId  String       @unique
+  solicitacao    Solicitacao  @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  nomeMotorista  String       @map("nome_motorista") @db.VarChar(255)
+  cpfMotorista   String       @map("cpf_motorista") @db.VarChar(11)
+  tipoCaminhao   TipoCaminhao @map("tipo_caminhao")
+  placaCavalo    String       @map("placa_cavalo") @db.VarChar(10)
+  placaCarreta01 String       @map("placa_carreta_01") @db.VarChar(10)
+  placaCarreta02 String?      @map("placa_carreta_02") @db.VarChar(10)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@map("transporte_solicitacao")
+}
+
+model ContainerSolicitacao {
+  id            String              @id @default(uuid())
+  solicitacaoId String
+  solicitacao   Solicitacao         @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  unidade       String              @db.VarChar(64)
+  booking       String              @db.VarChar(120)
+  processo      String              @db.VarChar(120)
+  tamanho       String              @db.VarChar(32)
+  tipo          String              @db.VarChar(64)
+  status        StatusContainer @map("status_container")
+  lacre         String?             @db.VarChar(120)
+  refrigerado   Boolean             @default(false)
+  setPoint      Float?              @map("set_point")
+  reeferId      String?             @map("reefer_id") @db.VarChar(64)
+  ordem         Int
+  createdAt     DateTime            @default(now())
+
+  @@unique([solicitacaoId, ordem])
+  @@index([solicitacaoId])
+  @@index([booking])
+  @@map("containers_solicitacao")
+}
+
+model AgendamentoSolicitacao {
+  id                      String            @id @default(uuid())
+  solicitacaoId           String            @unique
+  solicitacao             Solicitacao       @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  dataRef                 DateTime          @map("data_ref") @db.Date
+  turno                   TurnoAgendamento
+  atendimentoEspecial     Boolean           @default(false) @map("atendimento_especial")
+  atendimentoEspecialTexto String?          @map("atendimento_especial_texto") @db.VarChar(500)
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+
+  @@map("agendamentos_solicitacao")
+}
+
+model SolicitanteContato {
+  id            String      @id @default(uuid())
+  solicitacaoId String      @unique
+  solicitacao   Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  nome          String      @db.VarChar(255)
+  telefone      String      @db.VarChar(20)
+  email         String      @db.VarChar(255)
+  createdAt     DateTime    @default(now())
+
+  @@map("solicitante_contato")
+}
+
+model SolicitacaoAnexo {
+  id            String      @id @default(uuid())
+  solicitacaoId String
+  solicitacao   Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  filename      String      @db.VarChar(255)
+  mimeType      String      @map("mime_type") @db.VarChar(100)
+  size          Int
+  urlS3         String      @map("url_s3") @db.Text
+  expiresAt     DateTime    @map("expires_at")
+  createdAt     DateTime    @default(now())
+
+  @@index([solicitacaoId])
+  @@index([expiresAt])
+  @@map("solicitacao_anexos")
 }
 
 model Unidade {
@@ -137,6 +664,10 @@ model Unidade {
   solicitacao   Solicitacao @relation("SolicitacaoUnidades", fields: [solicitacaoId], references: [id], onDelete: Cascade)
   numeroIso     String   @unique
   tipo          TipoUnidade
+  /// Impede portaria/gate/pátio/saída quando true (avaria, fiscal, etc.).
+  movimentacaoBloqueada Boolean  @default(false) @map("movimentacao_bloqueada")
+  bloqueioMotivo        String?  @map("bloqueio_motivo") @db.VarChar(500)
+  bloqueioTipo          String?  @map("bloqueio_tipo") @db.VarChar(64)
   createdAt     DateTime @default(now())
 
   @@index([solicitacaoId])
@@ -149,6 +680,10 @@ model Portaria {
   solicitacaoId   String   @unique
   solicitacao     Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
   placaVeiculo    String?  @db.VarChar(10)
+  motoristaNome            String?  @map("motorista_nome") @db.VarChar(255)
+  motoristaCpf             String?  @map("motorista_cpf") @db.VarChar(11)
+  transportadoraNome       String?  @map("transportadora_nome") @db.VarChar(255)
+  motoristaTelefone        String?  @map("motorista_telefone") @db.VarChar(20)
   fotosCaminhao   Json     @default("[]")
   fotosContainer  Json     @default("[]")
   fotosLacre      Json     @default("[]")
@@ -174,6 +709,56 @@ model Gate {
   @@map("gates")
 }
 
+/// Check-in operacional v2 (fotos entrada, divergências, amarração com PDF antifraude).
+model GateCheckIn {
+  id              String      @id @default(uuid())
+  tenantId        String      @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant          Tenant      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  solicitacaoId   String
+  solicitacao     Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  operadorId      String
+  operador        User        @relation("GateCheckInOperador", fields: [operadorId], references: [id], onDelete: Restrict)
+  dataHora        DateTime    @default(now()) @map("data_hora")
+  placaCavalo     String      @map("placa_cavalo") @db.VarChar(12)
+  placaCarreta01  String      @map("placa_carreta_01") @db.VarChar(12)
+  placaCarreta02  String?     @map("placa_carreta_02") @db.VarChar(12)
+  motoristaNome   String      @map("motorista_nome") @db.VarChar(255)
+  motoristaCpf    String      @map("motorista_cpf") @db.VarChar(11)
+  /// URLs S3 ou `local://` (mesmo padrão de anexos).
+  fotosEntrada    Json        @default("[]") @map("fotos_entrada")
+  divergenciasJson Json       @default("[]") @map("divergencias_json")
+  ocrPlacaJson    Json?       @map("ocr_placa_json")
+  pdfHashValidado String?     @map("pdf_hash_validado") @db.VarChar(64)
+
+  checkOut GateCheckOut?
+  patioUnidades PatioUnidade[]
+  preFaturas    PreFatura[]
+  vistorias     Vistoria[]
+
+  @@index([solicitacaoId])
+  @@index([operadorId])
+  @@index([dataHora])
+  @@index([tenantId])
+  @@map("gate_v2_check_ins")
+}
+
+model GateCheckOut {
+  id               String      @id @default(uuid())
+  gateInId         String      @unique @map("gate_in_id")
+  gateIn           GateCheckIn @relation(fields: [gateInId], references: [id], onDelete: Cascade)
+  operadorId       String      @map("operador_id")
+  operador         User        @relation("GateCheckOutOperador", fields: [operadorId], references: [id], onDelete: Restrict)
+  dataHora         DateTime    @default(now()) @map("data_hora")
+  fotosSaida       Json        @default("[]") @map("fotos_saida")
+  divergenciasJson Json        @default("[]") @map("divergencias_json")
+
+  vistorias Vistoria[]
+
+  @@index([operadorId])
+  @@index([dataHora])
+  @@map("gate_v2_check_outs")
+}
+
 model Patio {
   id            String   @id @default(uuid())
   solicitacaoId String   @unique
@@ -189,6 +774,68 @@ model Patio {
   @@map("patios")
 }
 
+/// Yard Management v2 — baia física no terminal.
+model PatioPosicao {
+  id          String   @id @default(uuid())
+  codigoBaia  String   @unique @map("codigo_baia") @db.VarChar(16)
+  comprimento Int
+  largura     Int
+  capacidade  Int
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  unidadesAtuais     PatioUnidade[]      @relation("PosicaoAtual")
+  movimentacoesOrigem PatioMovimentacao[] @relation("MovOrigem")
+  movimentacoesDestino PatioMovimentacao[] @relation("MovDestino")
+  pilhaLogica        PilhaLogica?
+
+  @@map("patio_v2_posicoes")
+}
+
+/// Unidade (container ISO) rastreada no pátio após Gate In.
+model PatioUnidade {
+  id             String        @id @default(uuid())
+  unidadeIso     String        @map("unidade_iso") @db.VarChar(16)
+  solicitacaoId  String        @map("solicitacao_id")
+  solicitacao    Solicitacao   @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  gateInId       String        @map("gate_in_id")
+  gateIn         GateCheckIn   @relation(fields: [gateInId], references: [id], onDelete: Cascade)
+  posicaoAtualId String?       @map("posicao_atual_id")
+  posicaoAtual   PatioPosicao? @relation("PosicaoAtual", fields: [posicaoAtualId], references: [id], onDelete: SetNull)
+  status         PatioStatus   @default(SEPARADO)
+  refrigerado    Boolean       @default(false)
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  movimentacoes PatioMovimentacao[]
+
+  @@unique([gateInId, unidadeIso])
+  @@index([solicitacaoId])
+  @@index([unidadeIso])
+  @@index([status])
+  @@index([posicaoAtualId])
+  @@map("patio_v2_unidades")
+}
+
+model PatioMovimentacao {
+  id         String        @id @default(uuid())
+  unidadeId  String        @map("unidade_id")
+  unidade    PatioUnidade  @relation(fields: [unidadeId], references: [id], onDelete: Cascade)
+  operadorId String        @map("operador_id")
+  operador   User          @relation("PatioMovOperador", fields: [operadorId], references: [id], onDelete: Restrict)
+  origemId   String?       @map("origem_id")
+  origem     PatioPosicao? @relation("MovOrigem", fields: [origemId], references: [id], onDelete: SetNull)
+  destinoId  String?       @map("destino_id")
+  destino    PatioPosicao? @relation("MovDestino", fields: [destinoId], references: [id], onDelete: SetNull)
+  tipo       MovTipo
+  observacao String?       @db.VarChar(500)
+  createdAt  DateTime      @default(now()) @map("created_at")
+
+  @@index([unidadeId])
+  @@index([operadorId])
+  @@index([createdAt])
+  @@map("patio_v2_movimentacoes")
+}
+
 model Saida {
   id            String   @id @default(uuid())
   solicitacaoId String   @unique
@@ -200,8 +847,195 @@ model Saida {
   @@map("saidas")
 }
 
+/// Agendamento por container, data e turno (fila operacional / capacidade AM·PM).
+model AgendamentoTerminal {
+  id                    String                    @id @default(uuid())
+  tenantId              String                    @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant                Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  clienteId             String
+  cliente               Cliente                   @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  solicitacaoId         String?
+  solicitacao           Solicitacao?              @relation(fields: [solicitacaoId], references: [id], onDelete: SetNull)
+  numeroIso             String                    @map("numero_iso") @db.VarChar(11)
+  dataRef               DateTime                  @map("data_ref") @db.Date
+  turno                 TurnoAgendamento
+  status                StatusAgendamentoTerminal @default(PENDENTE)
+  tipoOperacao          TipoOperacaoAgendamento   @default(GATE_IN) @map("tipo_operacao")
+  modalidadeTransporte  ModalidadeTransporte      @default(FROTA_CLIENTE) @map("modalidade_transporte")
+  statusCarga           StatusCarga               @map("status_carga")
+  localOrigem           String?                   @map("local_origem") @db.VarChar(255)
+  localDestino          String?                   @map("local_destino") @db.VarChar(255)
+  /// Preenchido pelo backoffice quando modalidade = FROTA_FL.
+  valorFrete            Decimal?                  @map("valor_frete") @db.Decimal(10, 2)
+  /// Preenchido na triagem intranet quando status = CANCELADO por reprovação manual.
+  motivoReprovacao      String?                   @map("motivo_reprovacao") @db.VarChar(500)
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  containersTos Container[]
+  ordensTransporte OrdemTransporte[]
+
+  @@unique([dataRef, turno, numeroIso, tipoOperacao])
+  @@index([clienteId, dataRef])
+  @@index([dataRef, turno, status])
+  @@index([numeroIso, tipoOperacao])
+  @@index([tenantId])
+  @@map("agendamentos_terminal")
+}
+
+/// Aggregate root TOS — ciclo de vida do contêiner no depot (estado derivado dos eventos).
+model Container {
+  id             String           @id @default(uuid())
+  /// ISO 6346: 4 letras + 7 dígitos (ex.: ABCD1234567).
+  numero         String           @unique @db.VarChar(11)
+  tipo           TipoContainerTos
+  clienteId      String           @map("cliente_id")
+  cliente        Cliente          @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  agendamentoId  String           @map("agendamento_id")
+  agendamento    AgendamentoTerminal @relation(fields: [agendamentoId], references: [id], onDelete: Restrict)
+  version        Int              @default(1)
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  eventos ContainerEvent[]
+  avarias AvariaRecord[]
+
+  @@index([clienteId])
+  @@index([agendamentoId])
+  @@map("containers_tos")
+}
+
+/// Event Sourcing — log imutável de transições do contêiner.
+model ContainerEvent {
+  id          String             @id @default(uuid())
+  containerId String             @map("container_id")
+  container   Container          @relation(fields: [containerId], references: [id], onDelete: Cascade)
+  eventType   ContainerEventType @map("event_type")
+  payload     Json               @default("{}")
+  criadoPor   String?            @map("criado_por")
+  criador     User?              @relation("ContainerEventCriador", fields: [criadoPor], references: [id], onDelete: SetNull)
+  createdAt   DateTime           @default(now()) @map("created_at")
+
+  @@index([containerId, createdAt])
+  @@index([eventType])
+  @@map("container_events")
+}
+
+/// Registro de avarias com fotos no gate-in ou gate-out.
+model AvariaRecord {
+  id          String        @id @default(uuid())
+  containerId String        @map("container_id")
+  container   Container     @relation(fields: [containerId], references: [id], onDelete: Cascade)
+  descricao   String        @db.VarChar(1000)
+  fotos       String[]      @default([])
+  momento     MomentoAvaria
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  @@index([containerId])
+  @@map("avaria_records")
+}
+
+/// Pilha lógica do pátio (OCC + read model CQRS por cliente/baia).
+model PilhaLogica {
+  id             String        @id @default(uuid())
+  codigo         String        @db.VarChar(32)
+  clienteId      String        @map("cliente_id")
+  cliente        Cliente       @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  patioPosicaoId String?       @unique @map("patio_posicao_id")
+  patioPosicao   PatioPosicao? @relation(fields: [patioPosicaoId], references: [id], onDelete: SetNull)
+  version        Int           @default(1)
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  @@unique([clienteId, codigo])
+  @@index([clienteId])
+  @@map("pilhas_logicas")
+}
+
+/// Transactional Outbox — faturamento e integrações assíncronas idempotentes.
+model OutboxEvent {
+  id            String            @id @default(uuid())
+  aggregateType String            @map("aggregate_type") @db.VarChar(64)
+  aggregateId   String            @map("aggregate_id")
+  eventType     String            @map("event_type") @db.VarChar(64)
+  payload       Json
+  status        OutboxEventStatus @default(PENDING)
+  errorText     String?           @map("error_text") @db.Text
+  createdAt     DateTime          @default(now()) @map("created_at")
+  processedAt   DateTime?         @map("processed_at")
+
+  @@index([status, createdAt])
+  @@map("outbox_events")
+}
+
+/// Motorista da frota própria FL (login vinculado a User).
+model Motorista {
+  id        String          @id @default(uuid())
+  nome      String          @db.VarChar(255)
+  cnh       String          @unique @db.VarChar(20)
+  telefone  String          @db.VarChar(20)
+  usuarioId String          @unique @map("usuario_id")
+  usuario   User            @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  status    StatusMotorista @default(DISPONIVEL)
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+
+  ordensTransporte OrdemTransporte[]
+
+  @@index([status])
+  @@map("motoristas")
+}
+
+/// Veículo da frota (cavalo ou carreta).
+model Veiculo {
+  id        String      @id @default(uuid())
+  placa     String      @unique @db.VarChar(10)
+  tipo      TipoVeiculo
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  ordensTransporte OrdemTransporte[]
+
+  @@map("veiculos")
+}
+
+/// Ordem de Transporte (OT) — despacho First/Last Mile.
+model OrdemTransporte {
+  id             String                @id @default(uuid())
+  agendamentoId  String                @unique @map("agendamento_id")
+  agendamento    AgendamentoTerminal   @relation(fields: [agendamentoId], references: [id], onDelete: Restrict)
+  motoristaId    String                @map("motorista_id")
+  motorista      Motorista             @relation(fields: [motoristaId], references: [id], onDelete: Restrict)
+  veiculoId      String                @map("veiculo_id")
+  veiculo        Veiculo               @relation(fields: [veiculoId], references: [id], onDelete: Restrict)
+  status         StatusOrdemTransporte @default(PENDENTE)
+  dataDespacho   DateTime?             @map("data_despacho")
+  dataInicio     DateTime?             @map("data_inicio")
+  dataChegada    DateTime?             @map("data_chegada")
+  dataConclusao  DateTime?             @map("data_conclusao")
+  podFotoUrl     String?               @map("pod_foto_url") @db.Text
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+
+  @@index([motoristaId, status])
+  @@index([status])
+  @@map("ordens_transporte")
+}
+
+/// Limites configuráveis de slots por turno (admin).
+model CapacidadeTurnoTerminal {
+  id               String   @id @default(uuid())
+  turno            TurnoAgendamento @unique
+  limiteContainers Int      @default(30) @map("limite_containers")
+  updatedAt        DateTime @updatedAt
+
+  @@map("capacidade_turno_terminal")
+}
+
 model Faturamento {
   id           String   @id @default(uuid())
+  tenantId     String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   clienteId    String
   cliente      Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
   periodo      String
@@ -216,10 +1050,145 @@ model Faturamento {
   nfsEmitidas              NfsEmitida[]
   boletos                  Boleto[]
   solicitacoesVinculadas   FaturamentoSolicitacao[]
+  faturasArmazenagem       Fatura[]
 
   @@index([clienteId])
+  @@index([tenantId])
   @@unique([clienteId, periodo])
   @@map("faturamentos")
+}
+
+enum StatusPreFatura {
+  ABERTA
+  CONSOLIDADA
+}
+
+enum StatusPagamentoFatura {
+  PENDENTE
+  PROCESSANDO
+  AGUARDANDO_PAGAMENTO
+  VENCIDA
+  PAGO
+  CANCELADO
+}
+
+/// Estágio da régua de cobrança (dunning) — evita notificações duplicadas.
+enum EstagioCobranca {
+  NENHUM
+  PRE_VENCIMENTO
+  VENCIMENTO_HOJE
+  ATRASO_LEVE
+  PRE_BLOQUEIO
+}
+
+enum TipoArquivoBancario {
+  REMESSA
+  RETORNO
+}
+
+enum StatusArquivoBancario {
+  PENDENTE
+  PROCESSANDO
+  CONCLUIDO
+  ERRO
+}
+
+/// Tarifário de armazenagem/demurrage por cliente (free time + diária).
+model TabelaTarifaria {
+  id                  String   @id @default(uuid())
+  clienteId           String   @unique @map("cliente_id")
+  cliente             Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  freeTimeDias        Int      @default(5) @map("free_time_dias")
+  valorDiaria         Decimal  @map("valor_diaria") @db.Decimal(10, 2)
+  valorServicosExtras Decimal  @default(0) @map("valor_servicos_extras") @db.Decimal(10, 2)
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("tabelas_tarifarias")
+}
+
+/// Provisão diária de armazenagem — consolidada no Gate-Out.
+model PreFatura {
+  id               String           @id @default(uuid())
+  containerIso     String           @map("container_iso") @db.VarChar(16)
+  clienteId        String           @map("cliente_id")
+  cliente          Cliente          @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  gateInId         String           @map("gate_in_id")
+  gateIn           GateCheckIn      @relation(fields: [gateInId], references: [id], onDelete: Cascade)
+  gateInAt         DateTime         @map("gate_in_at")
+  valorAcumulado   Decimal          @default(0) @map("valor_acumulado") @db.Decimal(10, 2)
+  diasCobrados     Int              @default(0) @map("dias_cobrados")
+  status           StatusPreFatura  @default(ABERTA)
+  /// Primeiro dia útil após free time (início da cobrança de diárias).
+  cobrancaInicioEm DateTime?        @map("cobranca_inicio_em")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  fatura Fatura?
+  itens  ItemFaturaArmazenagem[]
+
+  @@unique([gateInId, containerIso])
+  @@index([clienteId, status])
+  @@index([containerIso])
+  @@map("pre_faturas")
+}
+
+/// Fatura definitiva emitida no Gate-Out (NFS-e / cobrança).
+model Fatura {
+  id                String                @id @default(uuid())
+  tenantId          String                @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant            Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  preFaturaId       String                @unique @map("pre_fatura_id")
+  preFatura         PreFatura             @relation(fields: [preFaturaId], references: [id], onDelete: Cascade)
+  clienteId         String                @map("cliente_id")
+  cliente           Cliente               @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  valorTotal        Decimal               @map("valor_total") @db.Decimal(10, 2)
+  /// Valor com multa/juros (CRON diário); null = igual a valorTotal.
+  valorAtualizado   Decimal?              @map("valor_atualizado") @db.Decimal(10, 2)
+  dataEmissao       DateTime              @default(now()) @map("data_emissao")
+  dataVencimento    DateTime?             @map("data_vencimento")
+  linkNfse          String?               @map("link_nfse") @db.VarChar(500)
+  linkBoleto        String?               @map("link_boleto") @db.VarChar(500)
+  linkPix           String?               @map("link_pix") @db.VarChar(500)
+  numeroRps         String?               @map("numero_rps") @db.VarChar(32)
+  serieRps          String?               @map("serie_rps") @db.VarChar(16)
+  processamentoErro String?               @map("processamento_erro") @db.Text
+  statusPagamento   StatusPagamentoFatura @default(PENDENTE) @map("status_pagamento")
+  /// Data efetiva de pagamento (conciliação CNAB / baixa manual).
+  dataPagamento     DateTime?             @map("data_pagamento")
+  /// Nosso número bancário para conciliação de retorno CNAB.
+  nossoNumero       String?               @map("nosso_numero") @db.VarChar(32)
+  /// Último estágio de cobrança notificado (régua dunning).
+  estagioCobranca   EstagioCobranca       @default(NENHUM) @map("estagio_cobranca")
+  faturamentoId     String?               @map("faturamento_id")
+  faturamento       Faturamento?          @relation(fields: [faturamentoId], references: [id], onDelete: SetNull)
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+
+  @@index([clienteId])
+  @@index([faturamentoId])
+  @@index([statusPagamento])
+  @@index([estagioCobranca])
+  @@index([nossoNumero])
+  @@index([tenantId])
+  @@map("faturas_armazenagem")
+}
+
+/// Histórico de arquivos CNAB (remessa/retorno) processados pela tesouraria.
+model ArquivoBancario {
+  id               String                @id @default(uuid())
+  tenantId         String                @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  nomeArquivo      String                @map("nome_arquivo") @db.VarChar(255)
+  tipo             TipoArquivoBancario
+  status           StatusArquivoBancario @default(PENDENTE)
+  dataUpload       DateTime              @default(now()) @map("data_upload")
+  processadoEm     DateTime?             @map("processado_em")
+  logProcessamento Json?                 @map("log_processamento")
+
+  @@index([tenantId, status])
+  @@index([dataUpload])
+  @@map("arquivos_bancarios")
 }
 
 /// Itens (linhas) do faturamento no período — `valorTotal` do cabeçalho = soma de `valor`.
@@ -250,34 +1219,43 @@ model FaturamentoSolicitacao {
 }
 
 model NfsEmitida {
-  id            String   @id @default(uuid())
-  faturamentoId String
-  faturamento   Faturamento @relation(fields: [faturamentoId], references: [id], onDelete: Cascade)
-  numeroNfe     String   @unique
-  xmlNfe        String   @db.Text
-  statusIpm     String   @default("pendente")
-  /// IBGE do município (7 dígitos) — usado ao plugar provedor municipal real.
-  municipioIbge String?  @db.VarChar(7)
-  /// Identificador do conector (ex.: webmania, focus) — definido na integração.
-  provedor      String?  @db.VarChar(64)
-  referenciaExterna String? @db.VarChar(255)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                String   @id @default(uuid())
+  faturamentoId     String
+  faturamento       Faturamento @relation(fields: [faturamentoId], references: [id], onDelete: Cascade)
+  numeroNfe         String   @unique
+  xmlNfe            String   @db.Text
+  statusIpm         String   @default("pendente")
+  municipioIbge     String?  @db.VarChar(7)
+  provedor          String?  @db.VarChar(64)
+  referenciaExterna String?  @db.VarChar(255)
+  linkNfsePdf       String?  @map("link_nfse_pdf") @db.VarChar(500)
+  rpsNumero         String?  @map("rps_numero") @db.VarChar(32)
+  rpsSerie          String?  @map("rps_serie") @db.VarChar(16)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@index([faturamentoId])
+  @@index([statusIpm])
   @@map("nfs_emitidas")
 }
 
 model Boleto {
-  id              String   @id @default(uuid())
-  faturamentoId   String
-  faturamento     Faturamento @relation(fields: [faturamentoId], references: [id], onDelete: Cascade)
-  numeroBoleto    String   @unique
-  dataVencimento  DateTime
-  valorBoleto     Decimal  @db.Decimal(10, 2)
-  statusPagamento String   @default("pendente")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                String   @id @default(uuid())
+  faturamentoId     String
+  faturamento       Faturamento @relation(fields: [faturamentoId], references: [id], onDelete: Cascade)
+  numeroBoleto      String   @unique
+  dataVencimento    DateTime
+  valorBoleto       Decimal  @db.Decimal(10, 2)
+  /// Valor com multa/juros (CRON diário); null = igual a valorBoleto.
+  valorAtualizado   Decimal? @map("valor_atualizado") @db.Decimal(10, 2)
+  statusPagamento   String   @default("pendente")
+  linkPdf           String?  @map("link_pdf") @db.VarChar(500)
+  pixCopiaCola      String?  @map("pix_copia_cola") @db.VarChar(512)
+  pixQrCodeUrl      String?  @map("pix_qr_code_url") @db.VarChar(500)
+  provedor          String?  @db.VarChar(64)
+  referenciaExterna String?  @map("referencia_externa") @db.VarChar(255)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@index([faturamentoId])
   @@index([statusPagamento])
@@ -298,4 +1276,386 @@ model Auditoria {
   @@index([usuario])
   @@index([createdAt])
   @@map("auditorias")
+}
+
+/// Trilha de auditoria imutável (append-only) — linha do tempo narrativa centrada no contêiner.
+model AuditLog {
+  id                 String             @id @default(uuid())
+  tenantId           String             @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  entidadeId         String             @map("entidade_id") @db.VarChar(36)
+  entidadeTipo       String             @map("entidade_tipo") @db.VarChar(64)
+  categoria          CategoriaAuditLog  @default(SISTEMA)
+  acao               String             @db.VarChar(64)
+  usuarioId          String             @map("usuario_id") @db.VarChar(64)
+  usuarioNome        String             @map("usuario_nome") @db.VarChar(255)
+  usuarioRole        String             @map("usuario_role") @db.VarChar(64)
+  /// Espinha dorsal de busca — ISO do contêiner (indexado).
+  containerIso       String?            @map("container_iso") @db.VarChar(16)
+  descricaoNarrativa String             @default("") @map("descricao_narrativa") @db.Text
+  dadosAnteriores    Json?              @map("dados_anteriores")
+  dadosNovos         Json?              @map("dados_novos")
+  ipAddress          String?            @map("ip_address") @db.VarChar(64)
+  criadoEm           DateTime           @default(now()) @map("criado_em")
+
+  @@index([entidadeId, entidadeTipo])
+  @@index([usuarioId])
+  @@index([criadoEm])
+  @@index([tenantId])
+  @@index([containerIso])
+  @@index([categoria])
+  @@map("audit_logs")
+}
+
+/// Auditoria dedicada ao Portal CX (cliente/fornecedor/IAM).
+model PortalAuditoria {
+  id              String   @id @default(uuid())
+  clienteId       String?  @map("cliente_id")
+  usuarioPortalId String?  @map("usuario_portal_id")
+  acao            String   @db.VarChar(120)
+  rota            String   @db.VarChar(512)
+  metodoHttp      String   @map("metodo_http") @db.VarChar(16)
+  payloadEnviado  Json?    @map("payload_enviado")
+  resultado       Json?
+  ip              String   @db.VarChar(64)
+  userAgent       String   @map("user_agent") @db.VarChar(512)
+  createdAt       DateTime @default(now()) @map("data")
+
+  @@index([clienteId])
+  @@index([usuarioPortalId])
+  @@index([createdAt])
+  @@map("portal_auditorias")
+}
+
+/// Auditoria de dispositivo / sessão (LGPD — rastreabilidade antifraude).
+model DeviceAuditoria {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id") @db.VarChar(64)
+  clienteId       String?  @map("cliente_id") @db.VarChar(36)
+  fingerprint     String   @db.VarChar(128)
+  ip              String   @db.VarChar(64)
+  geoloc          String?  @db.Text
+  userAgent       String   @map("user_agent") @db.VarChar(1024)
+  deviceType      String?  @map("device_type") @db.VarChar(32)
+  rota            String   @db.VarChar(512)
+  metodo          String   @db.VarChar(16)
+  sessionId       String?  @map("session_id") @db.VarChar(128)
+  securityHeaders Json?    @map("security_headers")
+  timestamp       DateTime @default(now())
+
+  @@index([userId, timestamp])
+  @@index([timestamp])
+  @@map("device_auditorias")
+}
+
+model SecurityAlert {
+  id          String   @id @default(uuid())
+  userId      String?  @map("user_id") @db.VarChar(64)
+  clienteId   String?  @map("cliente_id") @db.VarChar(36)
+  risco       Decimal? @db.Decimal(6, 2)
+  tipo        String   @db.VarChar(96)
+  ip          String?  @db.VarChar(64)
+  geo         Json?
+  fingerprint String?  @db.VarChar(128)
+  rota        String?  @db.VarChar(512)
+  metodo      String?  @db.VarChar(16)
+  contexto    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("security_alerts")
+}
+
+model LoginAttempt {
+  id           String   @id @default(uuid())
+  userId       String?  @map("user_id") @db.VarChar(64)
+  documento    String?  @db.VarChar(14)
+  sucesso      Boolean
+  ip           String?  @db.VarChar(64)
+  geo          Json?
+  userAgent    String?  @map("user_agent") @db.VarChar(1024)
+  motivo       String?  @db.VarChar(255)
+  fingerprint  String?  @db.VarChar(128)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([documento, createdAt])
+  @@map("login_attempts")
+}
+
+// ============================================================================
+// CX / TENANT — persistência (fonte da verdade PostgreSQL; Redis só cache)
+// ============================================================================
+
+model TenantConfig {
+  id                   String   @id @default(uuid())
+  tenantId             String   @unique @map("tenant_id") @db.VarChar(64)
+  tenant               Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Legado — mantido para compatibilidade com integrações CX.
+  tenantKey            String   @unique @map("tenant_key") @db.VarChar(64)
+  nome                 String   @db.VarChar(255)
+  /// Configuração profunda (branding, turnos, free time, flags operacionais).
+  parametros           Json     @default("{}")
+  clienteIds           Json     @default("[]") @map("cliente_ids")
+  slasHorasProxy       Json     @map("slas_horas_proxy")
+  horarioFuncionamento String   @map("horario_funcionamento") @db.VarChar(64)
+  regrasOperacao       String   @map("regras_operacao") @db.Text
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@map("tenant_configs")
+}
+
+model CxPortalFornecedorIdentity {
+  id           String   @id @default(uuid())
+  cpfCnpj      String   @unique @map("cpf_cnpj") @db.VarChar(14)
+  email        String   @db.VarChar(255)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  tenantId     String   @map("tenant_id") @db.VarChar(64)
+  papel        String   @db.VarChar(32)
+  tokenVersion Int      @default(0) @map("token_version")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("cx_portal_fornecedor_identities")
+}
+
+model CxPortalBrandingConfig {
+  id           String   @id @default(uuid())
+  tenantId     String   @unique @map("tenant_id") @db.VarChar(64)
+  cores        Json
+  logoUrl      String?  @map("logo_url") @db.VarChar(500)
+  tema         String   @default("light") @db.VarChar(16)
+  menuItens    Json     @default("[]") @map("menu_itens")
+  slasExibidos Json     @default("[]") @map("slas_exibidos")
+  kpisExibidos Json     @default("[]") @map("kpis_exibidos")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("cx_portal_branding_configs")
+}
+
+model CxPortalTicket {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id") @db.VarChar(64)
+  autorSub    String   @map("autor_sub") @db.VarChar(128)
+  portalPapel String   @map("portal_papel") @db.VarChar(32)
+  assunto     String   @db.VarChar(255)
+  corpo       String   @db.Text
+  categoria   String   @db.VarChar(32)
+  status      String   @default("aberto") @db.VarChar(32)
+  respostas   Json     @default("[]")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId, createdAt])
+  @@index([autorSub])
+  @@map("cx_portal_tickets")
+}
+
+model CxPortalAnalyticsHit {
+  id          String   @id @default(uuid())
+  path        String   @db.VarChar(500)
+  sub         String   @db.VarChar(128)
+  portalPapel String   @map("portal_papel") @db.VarChar(32)
+  tenantId    String   @map("tenant_id") @db.VarChar(64)
+  hitAt       DateTime @map("hit_at")
+  tempoMs     Int?     @map("tempo_ms")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([hitAt])
+  @@index([tenantId, hitAt])
+  @@map("cx_portal_analytics_hits")
+}
+
+model CxPortalMarketplacePreference {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id") @db.VarChar(64)
+  sub       String   @db.VarChar(128)
+  servicos  Json     @default("[]")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, sub])
+  @@map("cx_portal_marketplace_preferences")
+}
+
+model PlataformaApiClientRecord {
+  id                  String   @id @default(uuid())
+  apiKey              String   @unique @map("api_key") @db.VarChar(128)
+  secret              String   @db.VarChar(255)
+  label               String   @db.VarChar(255)
+  tenantId            String   @map("tenant_id") @db.VarChar(64)
+  clienteIds          Json     @default("[]") @map("cliente_ids")
+  requestsPerMinute   Int      @default(120) @map("requests_per_minute")
+  enabled             Boolean  @default(true)
+  servicosHabilitados Json     @default("[]") @map("servicos_habilitados")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("plataforma_api_clients")
+}
+
+/// Feature toggles (H4) — rollouts canary e contingência operacional.
+model FeatureFlag {
+  id        String   @id @default(uuid())
+  chave     String   @unique @db.VarChar(128)
+  ativo     Boolean  @default(false)
+  regras    Json     @default("{}")
+  descricao String?  @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("feature_flags")
+}
+
+/// Colaborador operacional cadastrado no módulo RH (workforce planning).
+model Funcionario {
+  id        String            @id @default(uuid())
+  tenantId  String            @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  nome      String            @db.VarChar(255)
+  cpf       String            @db.VarChar(11)
+  cargo     CargoFuncionario
+  status    StatusFuncionario @default(ATIVO)
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+  escalas   EscalaTurno[]
+
+  @@unique([tenantId, cpf])
+  @@index([cargo, status])
+  @@index([tenantId])
+  @@map("funcionarios")
+}
+
+/// Alocação de funcionário em turno (matriz semanal).
+model EscalaTurno {
+  id            String          @id @default(uuid())
+  funcionarioId String          @map("funcionario_id")
+  funcionario   Funcionario     @relation(fields: [funcionarioId], references: [id], onDelete: Cascade)
+  data          DateTime        @db.Date
+  turno         TurnoEscala
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  @@unique([funcionarioId, data, turno])
+  @@index([data, turno])
+  @@map("escalas_turno")
+}
+
+/// Tabela de preços do tenant (billing engine — múltiplas por terminal).
+model TabelaPreco {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  nome      String   @db.VarChar(255)
+  ativa     Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  regras   RegraTarifaria[]
+  clientes Cliente[]
+
+  @@index([tenantId, ativa])
+  @@map("tabelas_preco")
+}
+
+/// Regra tarifária dentro de uma tabela de preços (uma linha = um evento + tipo de contêiner).
+model RegraTarifaria {
+  id              String               @id @default(uuid())
+  tabelaPrecoId   String               @map("tabela_preco_id")
+  tabelaPreco     TabelaPreco          @relation(fields: [tabelaPrecoId], references: [id], onDelete: Cascade)
+  nome            String?              @db.VarChar(120)
+  eventoGatilho   EventoGatilhoTarifa  @map("evento_gatilho")
+  tipoContainer   TipoContainerTarifa  @default(TODOS) @map("tipo_container")
+  valor           Decimal              @db.Decimal(10, 2)
+  diasFreeTime    Int                  @default(0) @map("dias_free_time")
+  ativa           Boolean              @default(true)
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+
+  itens ItemFaturaArmazenagem[]
+
+  @@index([tabelaPrecoId, ativa, eventoGatilho])
+  @@map("regras_tarifarias")
+}
+
+/// Vistoria fotográfica de gate (damage control — 4 fotos + avarias).
+model Vistoria {
+  id             String        @id @default(uuid())
+  solicitacaoId  String        @map("solicitacao_id")
+  solicitacao    Solicitacao   @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  gateCheckInId  String?       @map("gate_check_in_id")
+  gateCheckIn    GateCheckIn?  @relation(fields: [gateCheckInId], references: [id], onDelete: SetNull)
+  gateCheckOutId String?       @unique @map("gate_check_out_id")
+  gateCheckOut   GateCheckOut? @relation(fields: [gateCheckOutId], references: [id], onDelete: SetNull)
+  tipo           TipoVistoria
+  /// Códigos rápidos de avaria (ex: AMASSADO_LATERAL, SEM_LACRE).
+  avarias        Json          @default("[]")
+  criadoEm       DateTime      @default(now()) @map("criado_em")
+
+  fotos FotoVistoria[]
+
+  @@index([solicitacaoId, tipo])
+  @@index([gateCheckInId])
+  @@map("vistorias")
+}
+
+model FotoVistoria {
+  id         String             @id @default(uuid())
+  vistoriaId String             @map("vistoria_id")
+  vistoria   Vistoria           @relation(fields: [vistoriaId], references: [id], onDelete: Cascade)
+  angulo     AnguloFotoVistoria
+  /// URL pública (S3/R2) ou rota de mídia da API em dev local.
+  url        String             @db.VarChar(1000)
+  storageKey String?            @map("storage_key") @db.VarChar(500)
+  createdAt  DateTime           @default(now()) @map("created_at")
+
+  @@unique([vistoriaId, angulo])
+  @@index([vistoriaId])
+  @@map("fotos_vistoria")
+}
+
+/// Hold/Release — bloqueio operacional de contêiner (gate, pátio, saída).
+model BloqueioContainer {
+  id             String                  @id @default(uuid())
+  tenantId       String                  @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant         Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  solicitacaoId  String                  @map("solicitacao_id")
+  solicitacao    Solicitacao             @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  tipo           TipoBloqueioContainer
+  motivo         String                  @db.VarChar(500)
+  status         StatusBloqueioContainer @default(ATIVO)
+  /// UUID do usuário staff ou literal `SISTEMA` para automações.
+  bloqueadoPorId String                  @map("bloqueado_por_id") @db.VarChar(64)
+  dataBloqueio   DateTime                @default(now()) @map("data_bloqueio")
+  liberadoPorId  String?                 @map("liberado_por_id") @db.VarChar(64)
+  dataLiberacao  DateTime?               @map("data_liberacao")
+  /// Referência opcional (boleto/fatura) para bloqueios financeiros automáticos.
+  referenciaId   String?                 @map("referencia_id") @db.VarChar(64)
+
+  @@index([solicitacaoId, status])
+  @@index([tenantId, status])
+  @@index([tipo, status])
+  @@map("bloqueios_container")
+}
+
+/// Item de cobrança provisionado (detalhe do rule engine sobre a pré-fatura).
+model ItemFaturaArmazenagem {
+  id               String              @id @default(uuid())
+  preFaturaId      String              @map("pre_fatura_id")
+  preFatura        PreFatura           @relation(fields: [preFaturaId], references: [id], onDelete: Cascade)
+  regraTarifariaId String?             @map("regra_tarifaria_id")
+  regraTarifaria   RegraTarifaria?     @relation(fields: [regraTarifariaId], references: [id], onDelete: SetNull)
+  eventoGatilho    EventoGatilhoTarifa @map("evento_gatilho")
+  descricao        String              @db.VarChar(255)
+  quantidade       Int                 @default(1)
+  valorUnitario    Decimal             @map("valor_unitario") @db.Decimal(10, 2)
+  valorTotal       Decimal             @map("valor_total") @db.Decimal(10, 2)
+  createdAt        DateTime            @default(now()) @map("created_at")
+
+  @@index([preFaturaId, eventoGatilho])
+  @@map("itens_fatura_armazenagem")
 }

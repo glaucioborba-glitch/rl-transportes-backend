@@ -1,3 +1,4 @@
+import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
@@ -6,6 +7,7 @@ import { Role, TipoCliente } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
+import { clienteE2eDefaults } from './helpers/e2e-cliente.factory';
 
 describe('Integracao mobilidade (e2e)', () => {
   let app: INestApplication;
@@ -45,27 +47,26 @@ describe('Integracao mobilidade (e2e)', () => {
     const hash = await bcrypt.hash(password, 10);
 
     const cliente = await prisma.cliente.create({
-      data: {
-        nome: `E2E Int ${suffix}`,
+      data: clienteE2eDefaults({
+        razaoSocial: `E2E Int ${suffix}`,
+        nomeFantasia: `E2E Int Fan ${suffix}`,
         tipo: TipoCliente.PJ,
         cpfCnpj: `${suffix}`.replace(/\D/g, '').padStart(14, '0').slice(-14),
         email: `e2e-int-cli-${suffix}@local.test`,
-        telefone: '',
-        endereco: '',
-      },
+        emailNfse: `nfse-int-${suffix}@local.test`,
+      }),
     });
     clienteId = cliente.id;
     process.env.INTEGRACAO_API_KEYS = `${apiKey}|${clienteId}`;
 
     const admin = await prisma.user.create({
-      data: { email: emailAdmin, password: hash, role: Role.ADMIN },
+      data: { cpfCnpj: cpfCnpjForTestUser(emailAdmin), email: emailAdmin, password: hash, role: Role.ADMIN },
     });
     const op = await prisma.user.create({
-      data: { email: emailOp, password: hash, role: Role.OPERADOR_GATE },
+      data: { cpfCnpj: cpfCnpjForTestUser(emailOp), email: emailOp, password: hash, role: Role.OPERADOR_GATE },
     });
     const cli = await prisma.user.create({
-      data: {
-        email: emailCliente,
+      data: { cpfCnpj: cpfCnpjForTestUser(emailCliente), email: emailCliente,
         password: hash,
         role: Role.CLIENTE,
         clienteId,
@@ -79,7 +80,7 @@ describe('Integracao mobilidade (e2e)', () => {
 
   afterAll(async () => {
     await prisma.user.deleteMany({
-      where: { email: { in: [emailAdmin, emailOp, emailCliente] } },
+      where: { cpfCnpj: { in: [cpfCnpjForTestUser(emailAdmin), cpfCnpjForTestUser(emailOp), cpfCnpjForTestUser(emailCliente)] } },
     });
     await prisma.cliente.deleteMany({ where: { id: clienteId } });
     await app.close();

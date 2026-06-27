@@ -8,10 +8,17 @@ import { RlLogo } from "@/components/portal/rl-logo";
 import { Button } from "@/components/ui/button";
 import { clearStaffSessionCookie } from "@/lib/auth-staff-cookie";
 
-const NAV = [
-  { href: "/bi/operacional", label: "Operacional", accent: "text-cyan-400" },
-  { href: "/bi/financeiro", label: "Financeiro", accent: "text-emerald-400" },
-  { href: "/bi/corporativo", label: "Corporativo", accent: "text-blue-400" },
+const NAV_BASE: {
+  href: string;
+  label: string;
+  accent: string;
+  roles: readonly string[];
+}[] = [
+  { href: "/bi/visao-operacional", label: "Visão Operacional", accent: "text-cyan-400", roles: ["ADMIN", "GERENTE"] },
+  { href: "/bi/torre-de-controle", label: "Torre de Controle", accent: "text-violet-400", roles: ["ADMIN"] },
+  { href: "/bi/operacional", label: "Legado · Ops", accent: "text-zinc-400", roles: ["ADMIN", "GERENTE"] },
+  { href: "/bi/financeiro", label: "Legado · Fin", accent: "text-emerald-400", roles: ["ADMIN"] },
+  { href: "/bi/corporativo", label: "Corporativo", accent: "text-blue-400", roles: ["ADMIN", "GERENTE"] },
 ];
 
 export function BiHeader() {
@@ -19,12 +26,15 @@ export function BiHeader() {
   const router = useRouter();
   const user = useStaffAuthStore((s) => s.user);
   const clear = useStaffAuthStore((s) => s.clear);
-  const allowed = user?.role === "ADMIN" || user?.role === "GERENTE";
+  const role = user?.role;
+  const allowed = role === "ADMIN" || role === "GERENTE";
+
+  const nav = NAV_BASE.filter((item) => role && item.roles.includes(role));
 
   function logout() {
     clear();
     clearStaffSessionCookie();
-    router.replace("/operador/login");
+    router.replace("/login/staff");
   }
 
   if (!allowed) {
@@ -38,7 +48,7 @@ export function BiHeader() {
   return (
     <header className="sticky top-0 z-50 border-b border-cyan-500/20 bg-[#04080c]/95 backdrop-blur-xl">
       <div className="mx-auto flex max-w-[1680px] flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <Link href="/bi/operacional" className="flex items-center gap-3">
+        <Link href={role === "ADMIN" ? "/bi/torre-de-controle" : "/bi/visao-operacional"} className="flex items-center gap-3">
           <RlLogo />
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-cyan-500/80">Business Intelligence</p>
@@ -51,7 +61,7 @@ export function BiHeader() {
       </div>
       <nav className="border-t border-white/5 bg-[#030608]/95">
         <div className="mx-auto flex max-w-[1680px] gap-1 overflow-x-auto px-2 py-2">
-          {NAV.map(({ href, label, accent }) => {
+          {nav.map(({ href, label, accent }) => {
             const active = pathname === href || pathname.startsWith(href + "/");
             return (
               <Link

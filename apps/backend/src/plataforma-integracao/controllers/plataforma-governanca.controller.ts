@@ -37,7 +37,7 @@ export class PlataformaGovernancaController {
   @Roles(Role.ADMIN, Role.GERENTE)
   @Permissions('plataforma:estatisticas:read')
   @ApiOperation({ summary: 'Rotas mais chamadas e perfil de erros' })
-  estatisticas() {
+  async estatisticas() {
     const regs = this.consumoStore.ultimos(5000);
     const err4 = regs.filter((r) => r.statusHttp >= 400 && r.statusHttp < 500).length;
     const err5 = regs.filter((r) => r.statusHttp >= 500).length;
@@ -52,7 +52,7 @@ export class PlataformaGovernancaController {
         erros4xx: err4,
         erros5xx: err5,
         latenciaMediaExternaMs: latMedia,
-        apiClientsRegistrados: this.clients.listar().length,
+        apiClientsRegistrados: (await this.clients.listar()).length,
       },
     };
   }

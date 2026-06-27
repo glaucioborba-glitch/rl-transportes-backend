@@ -1,13 +1,22 @@
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { ConflictException, HttpException, HttpStatus, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { AcaoAuditoria, Role } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { PasswordPolicyService } from '../common/security/password-policy.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { SessionService } from './session/session.service';
+import { DeviceService } from './session/device.service';
+import { LoginTelemetryService } from '../security-center/login-telemetry.service';
+
+/** CNPJ válido (testes) — mesmo formato armazenado em `User.cpfCnpj`. */
+const DOC_TEST = '11000000000108';
+const TENANT_TEST = 'default';
+const BF_KEY = `brute_force:login:${TENANT_TEST}:${DOC_TEST}`;
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -28,6 +37,7 @@ describe('AuthService', () => {
     expire: jest.fn(),
     del: jest.fn(),
     get: jest.fn(),
+    setex: jest.fn(),
   };
 
   const auditoria = {
@@ -45,6 +55,10 @@ describe('AuthService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: RedisService, useValue: redis },
         { provide: AuditoriaService, useValue: auditoria },
+        {
+          provide: PasswordPolicyService,
+          useValue: { assertStrong: jest.fn() },
+        },
         {
           provide: JwtService,
           useValue: {
@@ -66,6 +80,24 @@ describe('AuthService', () => {
             }),
           },
         },
+        {
+          provide: SessionService,
+          useValue: {
+            registerSession: jest.fn().mockResolvedValue({ sessionId: 'sid-1' }),
+            removeSession: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: DeviceService,
+          useValue: {
+            extractHeaders: jest.fn().mockReturnValue({}),
+            computeFingerprint: jest.fn().mockReturnValue('fp-1'),
+          },
+        },
+        {
+          provide: LoginTelemetryService,
+          useValue: { record: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
 
@@ -75,50 +107,58 @@ describe('AuthService', () => {
     redis.incr.mockResolvedValue(1);
     redis.expire.mockResolvedValue(1);
     redis.del.mockResolvedValue(1);
+    redis.get.mockResolvedValue(null);
+    redis.setex.mockResolvedValue(undefined);
   });
 
   it('validateUser retorna null se senha errada', async () => {
     prisma.user.findUnique.mockResolvedValue({
       id: '1',
+      cpfCnpj: DOC_TEST,
       email: 'a@a.com',
       password: await bcrypt.hash('ok', 4),
       role: Role.ADMIN,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    const u = await service.validateUser('a@a.com', 'wrong');
+    const u = await service.validateUser(TENANT_TEST, DOC_TEST, 'wrong');
     expect(u).toBeNull();
   });
 
   it('login lança Unauthorized se credenciais inválidas', async () => {
+    redis.get.mockResolvedValue(null);
     redis.incr.mockResolvedValue(1);
     prisma.user.findUnique.mockResolvedValue(null);
-    await expect(service.login('x@x.com', 'y')).rejects.toThrow(UnauthorizedException);
+    await expect(service.login(TENANT_TEST, DOC_TEST, 'y')).rejects.toThrow(UnauthorizedException);
+    expect(redis.incr).toHaveBeenCalledWith(BF_KEY);
     expect(redis.del).not.toHaveBeenCalled();
   });
 
-  it('login lança 429 após mais de 5 tentativas', async () => {
-    redis.incr.mockResolvedValue(6);
-    const err = await service.login('a@a.com', 'x').then(
-      () => {
-        throw new Error('esperava rejeição');
-      },
-      (e: unknown) => e,
-    );
-    expect(err).toBeInstanceOf(HttpException);
-    expect((err as HttpException).getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
+  it('login bloqueia após 5 tentativas incorretas (Redis)', async () => {
+    redis.get.mockResolvedValue('5');
+    await expect(service.login(TENANT_TEST, DOC_TEST, 'x')).rejects.toThrow(UnauthorizedException);
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('login aplica TTL de 15 min na 5ª senha incorreta', async () => {
+    redis.get.mockResolvedValue(null);
+    redis.incr.mockResolvedValue(5);
+    prisma.user.findUnique.mockResolvedValue(null);
+    await expect(service.login(TENANT_TEST, DOC_TEST, 'x')).rejects.toThrow(UnauthorizedException);
+    expect(redis.expire).toHaveBeenCalledWith(BF_KEY, 900);
   });
 
   it('refresh falha quando tokenVersion do JWT não confere com o usuário', async () => {
     jwtService.verify.mockReturnValue({
       sub: 'u1',
+      cpfCnpj: DOC_TEST,
       email: 'a@a.com',
       role: Role.ADMIN,
       tv: 0,
     });
     prisma.user.findUnique.mockResolvedValue({
       id: 'u1',
+      cpfCnpj: DOC_TEST,
       email: 'a@a.com',
       password: 'x',
       role: Role.ADMIN,
@@ -133,6 +173,7 @@ describe('AuthService', () => {
     prisma.user.findUnique.mockResolvedValue(null);
     const created = {
       id: 'new-id',
+      cpfCnpj: DOC_TEST,
       email: 'n@n.com',
       password: 'hash',
       role: Role.CLIENTE,
@@ -147,7 +188,7 @@ describe('AuthService', () => {
     );
 
     const r = await service.createUser(
-      { email: 'n@n.com', password: 'senha12345', role: Role.CLIENTE },
+      { cpfCnpj: DOC_TEST, email: 'n@n.com', password: 'senha12345', role: Role.CLIENTE },
       'admin-id',
       '127.0.0.1',
       'jest',
@@ -166,11 +207,11 @@ describe('AuthService', () => {
     );
   });
 
-  it('createUser lança Conflict se e-mail já existe', async () => {
+  it('createUser lança Conflict se CPF/CNPJ já existe', async () => {
     prisma.user.findUnique.mockResolvedValue({ id: 'x' });
     await expect(
       service.createUser(
-        { email: 'x@x.com', password: 'senha12345', role: Role.CLIENTE },
+        { cpfCnpj: DOC_TEST, email: 'x@x.com', password: 'senha12345', role: Role.CLIENTE },
         'admin',
         '127.0.0.1',
         'ua',
@@ -178,12 +219,45 @@ describe('AuthService', () => {
     ).rejects.toThrow(ConflictException);
   });
 
+  it('login usa documento sanitizado de 14 dígitos (pipe corporativo)', async () => {
+    redis.incr.mockResolvedValue(1);
+    prisma.user.findUnique.mockResolvedValue(null);
+    await expect(service.login(TENANT_TEST, '11000000000108', 'y')).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { tenantId_cpfCnpj: { tenantId: TENANT_TEST, cpfCnpj: '11000000000108' } },
+    });
+  });
+
+  it('login normaliza CPF mascarado antes da busca', async () => {
+    redis.incr.mockResolvedValue(1);
+    prisma.user.findUnique.mockResolvedValue(null);
+    await expect(service.login(TENANT_TEST, '529.982.247-25', 'y')).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { tenantId_cpfCnpj: { tenantId: TENANT_TEST, cpfCnpj: '00052998224725' } },
+    });
+  });
+
+  it('login CNPJ sanitizado bate com User.cpfCnpj armazenado', async () => {
+    redis.incr.mockResolvedValue(1);
+    prisma.user.findUnique.mockResolvedValue(null);
+    await expect(service.login(TENANT_TEST, '11.000.000/0001-08', 'y')).rejects.toThrow(
+      UnauthorizedException,
+    );
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({
+      where: { tenantId_cpfCnpj: { tenantId: TENANT_TEST, cpfCnpj: '11000000000108' } },
+    });
+  });
+
   it('logout incrementa tokenVersion em transação e registra auditoria', async () => {
     const userUpdate = jest.fn().mockResolvedValue({});
     prisma.$transaction.mockImplementationOnce(async (fn: (tx: any) => Promise<void>) =>
       fn({ user: { update: userUpdate, create: jest.fn() } }),
     );
-    await service.logout('user-uuid', '127.0.0.1', 'test-agent');
+    await service.logout('user-uuid', { ip: '127.0.0.1', userAgent: 'test-agent' });
     expect(userUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'user-uuid' },

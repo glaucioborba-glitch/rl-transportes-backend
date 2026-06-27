@@ -23,7 +23,11 @@ import { PortalContainerTimelineSlideOver } from "@/components/portal/container-
 import type { SolicitacaoRow } from "@/lib/api/portal-client";
 import { CalendarClock, Container, Gauge, LayoutGrid, TrendingDown, TrendingUp, WalletCards } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
+import { PORTAL_BLOQUEIO_FINANCEIRO_TOAST, PORTAL_SCHEDULING_DISABLED_CLASS } from "@/lib/portal-financeiro-block";
+import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
+import { toast } from "@/lib/toast";
 
 const TURNOS = [
   { id: "m", label: "Manhã · 07:00–13:00 (UTC)", startH: 7, endH: 13, cap: 40 },
@@ -62,6 +66,8 @@ function countInTurn(rows: SolicitacaoRow[], startH: number, endH: number) {
 }
 
 export function PortalDashboardClient() {
+  const searchParams = useSearchParams();
+  const bloqueadoFin = usePortalClienteAuthStore((s) => s.isBloqueadoFinanceiramente);
   const [recentPage, setRecentPage] = useState(1);
   const recentLimit = 8;
   const health = usePortalHealth();
@@ -76,6 +82,12 @@ export function PortalDashboardClient() {
     setTimelineIso(iso);
     setTimelineOpen(true);
   }
+
+  useEffect(() => {
+    if (searchParams.get("bloqueioFinanceiro") === "1") {
+      toast.error(PORTAL_BLOQUEIO_FINANCEIRO_TOAST);
+    }
+  }, [searchParams]);
 
   const agendamentosHoje = data?.solicitacoesHoje.length ?? 0;
 
@@ -417,8 +429,17 @@ export function PortalDashboardClient() {
                   </div>
                 );
               })}
-              <Button className="w-full" variant="outline" asChild>
-                <Link href="/portal/solicitacoes">Nova solicitação</Link>
+              <Button
+                className={`w-full ${PORTAL_SCHEDULING_DISABLED_CLASS}`}
+                variant="outline"
+                disabled={bloqueadoFin}
+                asChild={!bloqueadoFin}
+              >
+                {bloqueadoFin ? (
+                  <span>Nova solicitação</span>
+                ) : (
+                  <Link href="/portal/solicitacoes">Nova solicitação</Link>
+                )}
               </Button>
             </CardContent>
           </Card>

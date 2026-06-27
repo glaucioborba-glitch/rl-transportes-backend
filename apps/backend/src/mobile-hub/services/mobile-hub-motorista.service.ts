@@ -34,7 +34,7 @@ export class MobileHubMotoristaService {
       ok: true,
       protocolo: proto,
       status: sol.status,
-      clienteNomeProxy: sol.cliente?.nome ?? null,
+      clienteNomeProxy: sol.cliente?.razaoSocial ?? null,
     };
   }
 

@@ -2,29 +2,43 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { resolvePortalClienteDisplayName } from "@/lib/portal-cliente-display";
 import { usePortalAuthStore } from "@/stores/portal-store";
+import { usePessoaPermissoesStore, DEFAULT_PERMISSOES } from "@/stores/pessoaPermissoesStore";
 import { RlLogo } from "./rl-logo";
 
-const NAV = [
+const NAV_ALL = [
   { href: "/portal/dashboard", label: "Dashboard" },
-  { href: "/portal/solicitacoes", label: "Solicitações" },
-  { href: "/portal/agendamentos", label: "Agendamentos" },
-  { href: "/portal/financeiro", label: "Financeiro" },
+  { href: "/portal/solicitacoes", label: "Solicitações", perm: "podeVerOS" as const },
+  { href: "/cliente/portal/patiamento", label: "Meu Patiamento", perm: "podeVerOS" as const },
+  { href: "/portal/financeiro", label: "Financeiro", perm: "podeVisualizarFinanceiro" as const },
   { href: "/portal/documentos", label: "Documentos" },
+  { href: "/portal/perfil/seguranca", label: "Segurança" },
   { href: "/portal/perfil", label: "Perfil" },
 ] as const;
 
 export function PortalHeader() {
   const pathname = usePathname();
+  const cliente = usePortalAuthStore((s) => s.cliente);
   const clienteNome = usePortalAuthStore((s) => s.clienteNome);
-  const user = usePortalAuthStore((s) => s.user);
+  const permissoes = usePessoaPermissoesStore((s) => s.permissoes);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const display = clienteNome ?? user?.email ?? "Portal";
+  const NAV = useMemo(
+    () =>
+      NAV_ALL.filter((item) => {
+        if (!("perm" in item) || !item.perm) return true;
+        const p = permissoes ?? DEFAULT_PERMISSOES;
+        return !!p[item.perm];
+      }),
+    [permissoes],
+  );
+
+  const empresaNome = resolvePortalClienteDisplayName(cliente, clienteNome) ?? "Portal";
 
   const linkCls = (href: string) =>
     cn(
@@ -33,6 +47,10 @@ export function PortalHeader() {
         ? "bg-white/10 text-white"
         : "text-slate-400 hover:bg-white/5 hover:text-white",
     );
+
+  const identityBlock = (
+    <p className="truncate text-sm font-semibold text-white">{empresaNome}</p>
+  );
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-[#080a0d]/80 backdrop-blur-xl">
@@ -44,7 +62,7 @@ export function PortalHeader() {
               <p className="truncate text-xs font-medium uppercase tracking-widest text-slate-500">
                 RL Transportes
               </p>
-              <p className="truncate text-sm font-semibold text-white">{display}</p>
+              {identityBlock}
             </div>
           </Link>
           <div className="md:hidden">
@@ -76,7 +94,7 @@ export function PortalHeader() {
           ))}
         </nav>
       )}
-      <p className="px-4 pb-3 text-center text-xs text-slate-500 sm:hidden">{display}</p>
+      <div className="px-4 pb-3 text-center sm:hidden">{identityBlock}</div>
     </header>
   );
 }

@@ -10,9 +10,15 @@ import { clearStaffSessionCookie } from "@/lib/auth-staff-cookie";
 import { useRouter } from "next/navigation";
 
 const LINKS: { href: string; label: string; roles?: string[] }[] = [
+  {
+    href: "/operador/dashboard",
+    label: "Dashboard",
+    roles: ["ADMIN", "GERENTE", "OPERADOR_PORTARIA", "OPERADOR_GATE", "OPERADOR_PATIO"],
+  },
   { href: "/operador/portaria", label: "Portaria", roles: ["ADMIN", "GERENTE", "OPERADOR_PORTARIA"] },
   { href: "/operador/gate", label: "Gate", roles: ["ADMIN", "GERENTE", "OPERADOR_GATE"] },
   { href: "/operador/patio", label: "Pátio", roles: ["ADMIN", "GERENTE", "OPERADOR_PATIO"] },
+  { href: "/operador/dispatch", label: "Dispatch", roles: ["ADMIN", "GERENTE", "OPERADOR_GATE"] },
   {
     href: "/cockpit",
     label: "Cockpit TOC",
@@ -35,13 +41,13 @@ export function OperadorHeader() {
   function logout() {
     clear();
     clearStaffSessionCookie();
-    router.replace("/operador/login");
+    router.replace("/login/staff");
   }
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-[#080a0d]/95 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <Link href="/operador/portaria" className="flex items-center gap-3">
+        <Link href="/operador/dashboard" className="flex items-center gap-3">
           <RlLogo />
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">RL Terminal</p>

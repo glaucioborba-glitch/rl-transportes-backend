@@ -16,8 +16,8 @@ export class CockpitTenantService {
     private readonly mapa: CockpitMapService,
   ) {}
 
-  listar() {
-    const ts = this.tenants.listar();
+  async listar() {
+    const ts = await this.tenants.listar();
     return {
       geradoEm: new Date().toISOString(),
       terminais: ts.map((t: PlataformaTenant) => ({
@@ -30,7 +30,7 @@ export class CockpitTenantService {
   }
 
   async dashboard(tenantId: string) {
-    const t = this.tenants.obter(tenantId);
+    const t = await this.tenants.obter(tenantId);
     if (!t) throw new NotFoundException('Terminal não encontrado');
     const filtroCliente =
       t.clienteIds?.length > 0 ? { clienteId: { in: t.clienteIds } } : undefined;

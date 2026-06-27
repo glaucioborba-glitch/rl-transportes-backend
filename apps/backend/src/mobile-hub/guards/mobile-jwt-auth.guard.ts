@@ -45,6 +45,7 @@ export class MobileJwtAuthGuard implements CanActivate {
       req.mobileUser = {
         sub: mot.id,
         email: mot.email,
+        cpfCnpj: mot.cpfCnpj,
         mobileRole: 'MOTORISTA',
         deviceId: pl.deviceId,
         tv: mot.tokenVersion,
@@ -73,6 +74,7 @@ export class MobileJwtAuthGuard implements CanActivate {
     req.mobileUser = {
       sub: user.id,
       email: user.email,
+      cpfCnpj: user.cpfCnpj,
       mobileRole: pl.mobileRole,
       deviceId: pl.deviceId,
       tv: user.tokenVersion,

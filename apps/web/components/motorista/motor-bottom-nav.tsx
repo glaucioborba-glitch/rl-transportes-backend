@@ -6,6 +6,7 @@ import { ClipboardList, ListOrdered, MapPin, QrCode } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV = [
+  { href: "/motorista/viagens", label: "Viagens", Icon: MapPin },
   { href: "/motorista/checkin", label: "Check-in", Icon: ClipboardList },
   { href: "/motorista/senha", label: "Senha", Icon: QrCode },
   { href: "/motorista/fila", label: "Fila", Icon: ListOrdered },

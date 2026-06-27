@@ -8,8 +8,10 @@ import {
   Post,
   Query,
   Request,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
@@ -55,6 +57,26 @@ export class SolicitacoesController {
       },
       user,
     );
+  }
+
+  @Get('export/csv')
+  @Roles(
+    Role.ADMIN,
+    Role.GERENTE,
+    Role.OPERADOR_PORTARIA,
+    Role.OPERADOR_GATE,
+    Role.OPERADOR_PATIO,
+  )
+  @Permissions('solicitacoes:ler')
+  async exportCsv(
+    @Res({ passthrough: false }) res: Response,
+    @Query() query: SolicitacaoPaginationDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const csv = await this.solicitacoesService.buildExportCsv(query, user);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="solicitacoes.csv"');
+    res.send(`\uFEFF${csv}`);
   }
 
   @Get(':id')

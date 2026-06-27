@@ -24,7 +24,7 @@ export function GrcHeader() {
   function logout() {
     clear();
     clearStaffSessionCookie();
-    router.replace("/operador/login");
+    router.replace("/login/staff");
   }
 
   if (!allowed) {

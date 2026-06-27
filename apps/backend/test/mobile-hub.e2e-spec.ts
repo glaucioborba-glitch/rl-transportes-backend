@@ -1,3 +1,4 @@
+import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
@@ -6,6 +7,7 @@ import { Role, StatusSolicitacao, TipoCliente } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
+import { clienteE2eDefaults } from './helpers/e2e-cliente.factory';
 
 function cnpjUnico() {
   const n = `1${Date.now()}${process.hrtime.bigint() % 1000n}`.replace(/\D/g, '');
@@ -29,7 +31,8 @@ describe('Mobile hub (e2e)', () => {
 
   beforeAll(async () => {
     delete process.env.MOBILE_CRITICAL_PIN;
-    process.env.MOBILE_MOTORISTA_SEED = `${motEmail}|${password}|${protocolo}`;
+    const motDoc = cpfCnpjForTestUser(motEmail);
+    process.env.MOBILE_MOTORISTA_SEED = `${motDoc}|${password}|${protocolo}`;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -50,14 +53,14 @@ describe('Mobile hub (e2e)', () => {
     const hash = await bcrypt.hash(password, 10);
 
     const cliente = await prisma.cliente.create({
-      data: {
-        nome: `E2E Mobile ${suffix}`,
+      data: clienteE2eDefaults({
+        razaoSocial: `E2E Mobile ${suffix}`,
+        nomeFantasia: `Mob Fan ${suffix}`,
         tipo: TipoCliente.PJ,
         cpfCnpj: cnpjUnico(),
         email: `c-mail-${suffix}@local.test`,
-        telefone: '',
-        endereco: '',
-      },
+        emailNfse: `nfse-mob-${suffix}@local.test`,
+      }),
     });
     clienteId = cliente.id;
 
@@ -71,6 +74,7 @@ describe('Mobile hub (e2e)', () => {
 
     await prisma.user.create({
       data: {
+        cpfCnpj: cpfCnpjForTestUser(opEmail),
         email: opEmail,
         password: hash,
         role: Role.OPERADOR_GATE,
@@ -80,6 +84,7 @@ describe('Mobile hub (e2e)', () => {
 
     await prisma.user.create({
       data: {
+        cpfCnpj: cpfCnpjForTestUser(cliEmail),
         email: cliEmail,
         password: hash,
         role: Role.CLIENTE,
@@ -89,6 +94,7 @@ describe('Mobile hub (e2e)', () => {
 
     await prisma.user.create({
       data: {
+        cpfCnpj: cpfCnpjForTestUser(adminEmail),
         email: adminEmail,
         password: hash,
         role: Role.ADMIN,
@@ -99,8 +105,14 @@ describe('Mobile hub (e2e)', () => {
 
   afterAll(async () => {
     delete process.env.MOBILE_MOTORISTA_SEED;
+    const docList = [
+      cpfCnpjForTestUser(opEmail),
+      cpfCnpjForTestUser(cliEmail),
+      cpfCnpjForTestUser(adminEmail),
+      cpfCnpjForTestUser(motEmail),
+    ];
     const orphanUsers = await prisma.user.findMany({
-      where: { email: { in: [opEmail, cliEmail, adminEmail, motEmail] } },
+      where: { cpfCnpj: { in: docList } },
       select: { id: true },
     });
     const orphanIds = orphanUsers.map((u) => u.id);
@@ -109,7 +121,7 @@ describe('Mobile hub (e2e)', () => {
     }
     await prisma.solicitacao.deleteMany({ where: { protocolo } });
     await prisma.user.deleteMany({
-      where: { email: { in: [opEmail, cliEmail, adminEmail, motEmail] } },
+      where: { cpfCnpj: { in: docList } },
     });
     await prisma.cliente.deleteMany({ where: { id: clienteId } });
     await app.close();
@@ -119,7 +131,7 @@ describe('Mobile hub (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/mobile/v1/auth/login')
       .send({
-        email: opEmail,
+        documento: cpfCnpjForTestUser(opEmail),
         password,
         deviceId,
         mobileRole: 'OPERADOR_MOBILE',
@@ -130,7 +142,7 @@ describe('Mobile hub (e2e)', () => {
 
   it('ciclo gate-in → pátio → gate-out → sync flush', async () => {
     const login = await request(app.getHttpServer()).post('/mobile/v1/auth/login').send({
-      email: opEmail,
+      documento: cpfCnpjForTestUser(opEmail),
       password,
       deviceId,
       mobileRole: 'OPERADOR_MOBILE',
@@ -170,7 +182,7 @@ describe('Mobile hub (e2e)', () => {
 
   it('motorista check-in e solicitacao', async () => {
     const login = await request(app.getHttpServer()).post('/mobile/v1/auth/login').send({
-      email: motEmail,
+      documento: cpfCnpjForTestUser(motEmail),
       password,
       deviceId: `${deviceId}-m`,
       mobileRole: 'MOTORISTA',
@@ -195,7 +207,7 @@ describe('Mobile hub (e2e)', () => {
 
   it('cliente tracking', async () => {
     const login = await request(app.getHttpServer()).post('/mobile/v1/auth/login').send({
-      email: cliEmail,
+      documento: cpfCnpjForTestUser(cliEmail),
       password,
       deviceId: `${deviceId}-c`,
       mobileRole: 'CLIENTE_APP',
@@ -213,7 +225,7 @@ describe('Mobile hub (e2e)', () => {
 
   it('telemetria e admin agregado', async () => {
     const login = await request(app.getHttpServer()).post('/mobile/v1/auth/login').send({
-      email: cliEmail,
+      documento: cpfCnpjForTestUser(cliEmail),
       password,
       deviceId: `${deviceId}-t`,
       mobileRole: 'CLIENTE_APP',
@@ -226,7 +238,9 @@ describe('Mobile hub (e2e)', () => {
       .send({ latenciaMsMedia: 80, usoOffline: false })
       .expect(201);
 
-    const admin = await prisma.user.findUniqueOrThrow({ where: { email: adminEmail } });
+    const admin = await prisma.user.findUniqueOrThrow({
+      where: { cpfCnpj: cpfCnpjForTestUser(adminEmail) },
+    });
     const staff = authService.issueTokens(admin);
     const agg = await request(app.getHttpServer())
       .get('/mobile/v1/admin/telemetria')

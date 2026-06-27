@@ -12,16 +12,21 @@ import {
   ApiError,
   aprovarSolicitacao,
   fetchSolicitacao,
+  fetchSolicitacaoHistoricoAlteracoes,
+  fetchSolicitacaoVistorias,
   portalDownloadSolicitacaoV2Pdf,
   type SolicitacaoRow,
 } from "@/lib/api/portal-client";
 import { formatDateTime } from "@/lib/portal-tracking";
+import type { VistoriaPortalRow } from "@/lib/gate-vistoria";
+import { VistoriaGallery } from "@/components/portal/vistoria-gallery";
 import { collectSolicitacaoContainerISOs } from "@/lib/container-display";
 import { OperationPageHeader } from "@/components/shared/operation-identity";
 import { toast } from "@/lib/toast";
 import { formatContainerISO } from "@/utils/containerFormatter";
 import { usePortalAuthStore } from "@/stores/portal-store";
 import { usePessoaPermissoesStore } from "@/stores/pessoaPermissoesStore";
+import { SolicitacaoHistoricoAlteracoes } from "@/components/solicitacao/solicitacao-historico-alteracoes";
 
 function PhotoStrip({ title, urls }: { title: string; urls: unknown }) {
   const list = Array.isArray(urls) ? urls.filter((u) => typeof u === "string") : [];
@@ -78,6 +83,7 @@ export default function SolicitacaoDetailPage() {
   const bumpDashboard = usePortalAuthStore((s) => s.bumpDashboard);
   const permissoes = usePessoaPermissoesStore((s) => s.permissoes);
   const [row, setRow] = useState<SolicitacaoRow | null>(null);
+  const [vistorias, setVistorias] = useState<VistoriaPortalRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [aproving, setAproving] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
@@ -90,6 +96,12 @@ export default function SolicitacaoDetailPage() {
       try {
         const s = await fetchSolicitacao(id);
         if (!cancelled) setRow(s);
+        try {
+          const v = await fetchSolicitacaoVistorias(id);
+          if (!cancelled) setVistorias(v);
+        } catch {
+          if (!cancelled) setVistorias([]);
+        }
       } catch (e) {
         toast.error(e instanceof ApiError ? e.message : "Erro ao carregar");
         if (!cancelled) router.push("/portal/solicitacoes");
@@ -184,6 +196,7 @@ export default function SolicitacaoDetailPage() {
           {isCorporativa ? <TabsTrigger value="corporativa">Dados da solicitação</TabsTrigger> : null}
           <TabsTrigger value="unidades">Unidades</TabsTrigger>
           <TabsTrigger value="eventos">Eventos</TabsTrigger>
+          {isCorporativa ? <TabsTrigger value="historico">Histórico de Alterações</TabsTrigger> : null}
           <TabsTrigger value="documentos">Documentos</TabsTrigger>
         </TabsList>
 
@@ -338,7 +351,7 @@ export default function SolicitacaoDetailPage() {
           {p ? (
             <Card>
               <CardHeader>
-                <CardTitle>Fotos (portaria)</CardTitle>
+                <CardTitle>Fotos (portaria legado)</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
                 <PhotoStrip title="Contêiner" urls={p.fotosContainer} />
@@ -348,6 +361,18 @@ export default function SolicitacaoDetailPage() {
               </CardContent>
             </Card>
           ) : null}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Vistoria Gate (escudo de responsabilidade)</CardTitle>
+              <CardDescription>
+                4 fotos obrigatórias por entrada/saída e avarias registradas no gate operacional.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <VistoriaGallery vistorias={vistorias} />
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="eventos">
@@ -364,6 +389,12 @@ export default function SolicitacaoDetailPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {isCorporativa && id ? (
+          <TabsContent value="historico">
+            <SolicitacaoHistoricoAlteracoes solicitacaoId={id} load={fetchSolicitacaoHistoricoAlteracoes} />
+          </TabsContent>
+        ) : null}
 
         <TabsContent value="documentos">
           <Card>

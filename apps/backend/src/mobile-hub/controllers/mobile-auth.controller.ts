@@ -1,13 +1,21 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
-import { IsEmail, IsIn, IsString, MinLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsIn, IsString, MaxLength, MinLength } from 'class-validator';
 import { MobileIdentityService } from '../identity/mobile-identity.service';
 import type { MobileRole } from '../types/mobile-hub.types';
+import { LoginDocumentoPipe } from '../../common/pipes/login-documento.pipe';
+import { sanitizeDocumentoInput } from '../../common/utils/login-documento.util';
 
 class MobileLoginDto {
-  @ApiProperty()
-  @IsEmail()
-  email: string;
+  @ApiProperty({ description: 'CPF ou CNPJ' })
+  @Type(() => String)
+  @Transform(({ value }) => sanitizeDocumentoInput(value))
+  @IsString()
+  @MinLength(10)
+  @MaxLength(14)
+  documento: string;
 
   @ApiProperty()
   @IsString()
@@ -37,13 +45,13 @@ export class MobileAuthController {
 
   @Post('login')
   @ApiOperation({ summary: 'Login mobile (JWT dedicado + device binding)' })
-  login(@Body() body: MobileLoginDto) {
-    return this.identity.login(body.email, body.password, body.deviceId, body.mobileRole);
+  login(@Body(LoginDocumentoPipe) body: MobileLoginDto, @Req() req: Request) {
+    return this.identity.login(body.documento, body.password, body.deviceId, body.mobileRole, req);
   }
 
   @Post('refresh')
   @ApiOperation({ summary: 'Refresh token mobile' })
-  refresh(@Body() body: MobileRefreshDto) {
-    return this.identity.refresh(body.refreshToken);
+  refresh(@Body() body: MobileRefreshDto, @Req() req: Request) {
+    return this.identity.refresh(body.refreshToken, req);
   }
 }

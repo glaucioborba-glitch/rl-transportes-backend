@@ -1,0 +1,825 @@
+================================================================================
+RL TRANSPORTES — Código completo: autenticação corporativa / Intranet
+Gerado em: 2026-05-25
+================================================================================
+
+NOTAS:
+- corporate-auth-client.ts        → apps/web/lib/api/corporate-auth-client.ts
+- corporate-auth.controller.ts    → NÃO EXISTE; equivalente: auth.controller.ts
+- corporate-auth.service.ts       → NÃO EXISTE; equivalente: auth.service.ts
+- cpf-cnpj.pipe.ts                → apps/backend/src/corporate-auth/validators/
+                                    (re-export; implementação em corporate-cpf-cnpj.pipe.ts)
+- auth.module.ts                  → apps/backend/src/auth/auth.module.ts
+
+================================================================================
+FILE: apps/web/lib/api/corporate-auth-client.ts
+================================================================================
+
+import type { AuthLoginResponse } from "@/lib/api/types";
+import { getDeviceSecurityHeaders } from "@/lib/device-client-headers";
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public detail?: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+export function getApiBase(): string {
+  return process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://localhost:3001";
+}
+
+export function defaultApiCredentials(): RequestCredentials {
+  return typeof window === "undefined" ? "same-origin" : "include";
+}
+
+function authUrl(path: "login" | "refresh"): string {
+  if (typeof window === "undefined") return `${getApiBase()}/auth/${path}`;
+  return `/api/auth/${path}`;
+}
+
+async function parseJson<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  if (!text) return {} as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new ApiError("Resposta inválida da API", res.status);
+  }
+}
+
+const LOGIN_TIMEOUT_MS = 25_000;
+
+/** Remove máscara — enviar sempre somente dígitos ao backend. */
+export function sanitizeCorporateDocumento(raw: string): string {
+  return raw.replace(/\D/g, "");
+}
+
+/** STAFF / motorista (JWT corporativo): não usar no Portal Cliente — use `portalClienteLogin`. */
+export async function authLogin(
+  documento: string,
+  password: string,
+  opts?: { cookieMode?: boolean },
+): Promise<AuthLoginResponse> {
+  const cookieMode = opts?.cookieMode ?? false;
+  const documentoLimpo = sanitizeCorporateDocumento(documento);
+  const apiBase = getApiBase();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS);
+  let res: Response;
+  try {
+    const devHeaders = typeof window !== "undefined" ? await getDeviceSecurityHeaders() : {};
+    if (cookieMode && typeof window !== "undefined") {
+      res = await fetch("/api/auth/login", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          ...devHeaders,
+          "X-RL-Auth-Cookie": "1",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ documento: documentoLimpo, password }),
+        signal: controller.signal,
+      });
+    } else {
+      res = await fetch(authUrl("login"), {
+        method: "POST",
+        headers: { ...devHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ documento: documentoLimpo, password }),
+        credentials: typeof window !== "undefined" ? "include" : "same-origin",
+        signal: controller.signal,
+      });
+    }
+  } catch (e: unknown) {
+    const aborted =
+      (e instanceof DOMException && e.name === "AbortError") ||
+      (e instanceof Error && e.name === "AbortError");
+    if (aborted) {
+      throw new ApiError(
+        `Tempo esgotado ao contatar a API (${apiBase}). Verifique se o Nest está rodando e se REDIS está acessível.`,
+        0,
+      );
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  if (!res.ok) {
+    const raw = await res.text();
+    let msg = raw?.trim() || `Falha no login (${res.status})`;
+    try {
+      const j = JSON.parse(raw) as { message?: string | string[] };
+      if (Array.isArray(j.message)) msg = j.message.join(", ");
+      else if (typeof j.message === "string" && j.message.trim()) msg = j.message.trim();
+    } catch {
+      /* */
+    }
+    throw new ApiError(msg, res.status);
+  }
+  const data = await parseJson<AuthLoginResponse & { user?: AuthLoginResponse["user"] }>(res);
+  if (cookieMode) {
+    if (!data?.user) throw new ApiError("Resposta de login inválida (esperado objeto user).", res.status);
+    return { accessToken: "", refreshToken: "", user: data.user };
+  }
+  if (!data?.accessToken?.trim() || !data?.user) {
+    throw new ApiError("Resposta de login inválida ou incompleta da API.", res.status);
+  }
+  return data as AuthLoginResponse;
+}
+
+/** Refresh JWT corporativo (motorista / Bearer). Staff cookie mode usa `/api/auth/refresh`. */
+export async function authRefresh(
+  refreshToken: string | null | undefined,
+  opts?: { cookieMode?: boolean },
+): Promise<Pick<AuthLoginResponse, "accessToken" | "refreshToken">> {
+  const cookieMode = opts?.cookieMode ?? false;
+  if (!cookieMode && (!refreshToken || refreshToken.length < 10)) {
+    throw new ApiError("Sessão expirada", 401);
+  }
+  const devHeaders = typeof window !== "undefined" ? await getDeviceSecurityHeaders() : {};
+  const res =
+    cookieMode && typeof window !== "undefined"
+      ? await fetch("/api/auth/refresh", {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            ...devHeaders,
+            "X-RL-Auth-Cookie": "1",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(cookieMode && !refreshToken ? {} : { refreshToken }),
+        })
+      : await fetch(authUrl("refresh"), {
+          method: "POST",
+          headers: { ...devHeaders, "Content-Type": "application/json" },
+          body: JSON.stringify(cookieMode && !refreshToken ? {} : { refreshToken }),
+          credentials: "include",
+        });
+  if (!res.ok) {
+    throw new ApiError("Sessão expirada", res.status);
+  }
+  if (cookieMode) {
+    await parseJson<{ ok?: boolean }>(res);
+    return { accessToken: "", refreshToken: "" };
+  }
+  return parseJson(res);
+}
+
+================================================================================
+FILE: apps/backend/src/auth/auth.controller.ts
+(equivalente a corporate-auth.controller.ts)
+================================================================================
+
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Request,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
+import { AuthGuard } from '@nestjs/passport';
+import type { Response } from 'express';
+import type { Request as ExpressRequest } from 'express';
+import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
+import { PortalIdentityService } from '../cx-portais/identity/portal-identity.service';
+import { Permissions } from '../common/decorators/permissions.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { PermissionsGuard } from '../common/guards/permissions.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { AUTH_REFRESH_COOKIE } from './auth-cookie.constants';
+import { attachAuthCookies, clearAuthCookies } from './auth-cookie.util';
+import { attachFreshCsrfCookie, clearCsrfCookie } from './csrf-cookie.util';
+import { AuthService } from './auth.service';
+import { CreateUserDto } from './dto/create-user.dto';
+import { LoginDto } from './dto/login.dto';
+import { RefreshDto } from './dto/refresh.dto';
+import { AuthRegisterDto } from './dto/auth-register.dto';
+import { AuthResetPasswordDto } from './dto/auth-reset-password.dto';
+import { CpfCnpjValidationPipe } from '../common/pipes/cpf-cnpj-validation.pipe';
+import { CorporateCpfCnpjPipe } from '../corporate-auth/validators/corporate-cpf-cnpj.pipe';
+
+function wantsCookieAuth(req: ExpressRequest): boolean {
+  return (
+    process.env.AUTH_HTTP_ONLY_COOKIES === '1' && String(req.headers['x-rl-auth-cookie'] || '') === '1'
+  );
+}
+
+@ApiTags('auth')
+@Controller('auth')
+export class AuthController {
+  constructor(
+    private readonly authService: AuthService,
+    private readonly portalIdentity: PortalIdentityService,
+  ) {}
+
+  @Post('register')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Cadastro portal (mesmo fluxo que POST /portal/register)' })
+  async register(@Body(CpfCnpjValidationPipe) body: AuthRegisterDto) {
+    return this.portalIdentity.registrarClientePortal(body);
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Redefinir senha com token (mesmo fluxo que POST /portal/redefinir-senha)' })
+  async resetPassword(@Body() body: AuthResetPasswordDto) {
+    return this.portalIdentity.redefinirSenhaComToken(body.token, body.newPassword);
+  }
+
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  async login(
+    @Body(CorporateCpfCnpjPipe) dto: LoginDto,
+    @Request() req: ExpressRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const cookieMode = wantsCookieAuth(req);
+    if (cookieMode) {
+      clearAuthCookies(res);
+    }
+    const ip = req.ip || req.socket?.remoteAddress || undefined;
+    const userAgent = req.get('user-agent') || undefined;
+    const out = await this.authService.login(dto.documento, dto.password, { ip, userAgent }, req);
+    if (cookieMode) {
+      attachAuthCookies(res, out.accessToken, out.refreshToken);
+      attachFreshCsrfCookie(res);
+      return { user: out.user };
+    }
+    attachFreshCsrfCookie(res);
+    return out;
+  }
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  async refresh(
+    @Body() dto: RefreshDto,
+    @Request() req: ExpressRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const fromCookie =
+      process.env.AUTH_HTTP_ONLY_COOKIES === '1'
+        ? (req as ExpressRequest & { cookies?: Record<string, string> }).cookies?.[AUTH_REFRESH_COOKIE]
+        : undefined;
+    const refreshToken = dto.refreshToken || fromCookie;
+    if (!refreshToken || refreshToken.length < 10) {
+      throw new BadRequestException('refreshToken obrigatório (body ou cookie rl_rt)');
+    }
+    const out = await this.authService.refresh(refreshToken, req);
+    if (wantsCookieAuth(req)) {
+      clearAuthCookies(res);
+      attachAuthCookies(res, out.accessToken, out.refreshToken);
+    }
+    attachFreshCsrfCookie(res);
+    return wantsCookieAuth(req) ? { ok: true } : out;
+  }
+
+  @Get('me')
+  @ApiBearerAuth('access-token')
+  @UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
+  @Permissions('auth:sessao')
+  me(@CurrentUser() user: AuthUser) {
+    return user;
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Encerrar sessão atual',
+    description:
+      'Remove a sessão atual no Redis (quando JWT inclui sid). Sem sid, incrementa tokenVersion (logout global legado).',
+  })
+  @ApiBearerAuth('access-token')
+  @UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
+  @Permissions('auth:sessao')
+  async logout(
+    @CurrentUser() user: AuthUser,
+    @Request() req: ExpressRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    const userAgent = req.get('user-agent') || 'unknown';
+    await this.authService.logout(user.id, {
+      sessionId: user.sid,
+      ip,
+      userAgent,
+    });
+    clearAuthCookies(res);
+    clearCsrfCookie(res);
+  }
+
+  @Post('users')
+  @ApiBearerAuth('access-token')
+  @UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
+  @Roles(Role.ADMIN)
+  @Permissions('users:criar')
+  createUser(@Body() dto: CreateUserDto, @Request() req: ExpressRequest & { user: AuthUser }) {
+    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    const userAgent = req.get('user-agent') || 'unknown';
+    return this.authService.createUser(dto, req.user.id, ip, userAgent);
+  }
+}
+
+================================================================================
+FILE: apps/backend/src/auth/auth.service.ts
+(equivalente a corporate-auth.service.ts)
+================================================================================
+
+import {
+  ConflictException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
+import type { StringValue } from 'ms';
+import type { User } from '@prisma/client';
+import { AcaoAuditoria } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
+import { permissionsForRole } from '../common/constants/role-permissions';
+import { AuditoriaService } from '../auditoria/auditoria.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { PRISMA_SERIALIZABLE_TX } from '../prisma/transaction-options';
+import { PasswordPolicyService } from '../common/security/password-policy.service';
+import { RedisService } from '../redis/redis.service';
+import type { JwtPayload } from './strategies/jwt.strategy';
+import { CreateUserDto } from './dto/create-user.dto';
+import { normalizeLoginDocumento, sanitizeDocumentoInput } from '../common/utils/login-documento.util';
+import { SessionService } from './session/session.service';
+import { DeviceService } from './session/device.service';
+import { parseDurationToSeconds } from './session/session.util';
+import { LoginTelemetryService } from '../security-center/login-telemetry.service';
+import type { Request } from 'express';
+
+const BCRYPT_ROUNDS = 12;
+
+@Injectable()
+export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+    private readonly redisService: RedisService,
+    private readonly auditoria: AuditoriaService,
+    private readonly passwordPolicy: PasswordPolicyService,
+    private readonly sessionService: SessionService,
+    private readonly deviceService: DeviceService,
+    private readonly loginTelemetry: LoginTelemetryService,
+  ) {}
+
+  async validateUser(cpfCnpj: string, password: string): Promise<User | null> {
+    const user = await this.prisma.user.findUnique({ where: { cpfCnpj } });
+    if (!user) return null;
+    const ok = await bcrypt.compare(password, user.password);
+    return ok ? user : null;
+  }
+
+  /** Sanitiza e alinha ao formato `User.cpfCnpj` (14 dígitos) para lookup. */
+  private resolveLoginDocumento(documento: string): string {
+    const sanitized = sanitizeDocumentoInput(documento);
+    if (sanitized.length === 14) return sanitized;
+    if (sanitized.length === 11) return sanitized.padStart(14, '0');
+    if (sanitized.length === 10) return sanitized.padStart(11, '0').padStart(14, '0');
+    return sanitized;
+  }
+
+  async login(
+    documento: string,
+    password: string,
+    audit?: { ip?: string; userAgent?: string },
+    req?: Request,
+  ) {
+    const normalized = this.resolveLoginDocumento(documento);
+    const key = `login_attempt:${normalized}`;
+    let redisRateLimit = true;
+    let attempts = 0;
+    try {
+      attempts = await this.redisService.incr(key);
+      if (attempts === 1) {
+        await this.redisService.expire(key, 60);
+      }
+      if (attempts > 5) {
+        throw new HttpException(
+          'Muitas tentativas de login. Tente novamente mais tarde.',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+    } catch (e) {
+      if (e instanceof HttpException && e.getStatus() === HttpStatus.TOO_MANY_REQUESTS) {
+        throw e;
+      }
+      redisRateLimit = false;
+      this.logger.warn(
+        `Redis indisponível no login; rate limit desativado nesta requisição: ${(e as Error).message}`,
+      );
+    }
+
+    const user = await this.validateUser(normalized, password);
+    if (!user) {
+      await this.loginTelemetry.record({
+        documento: normalized,
+        sucesso: false,
+        motivo: 'Credenciais inválidas',
+        req,
+      });
+      throw new UnauthorizedException('Credenciais inválidas');
+    }
+
+    if (redisRateLimit) {
+      try {
+        await this.redisService.del(key);
+      } catch (e) {
+        this.logger.warn(`Redis del após login ignorado: ${(e as Error).message}`);
+      }
+    }
+    let sessionBundle:
+      | { sessionId: string; fingerprint: string; ttlSec: number }
+      | undefined;
+    if (req) {
+      try {
+        const ip = String(req.ip || req.socket?.remoteAddress || '');
+        const ua = req.get('user-agent') || '';
+        const hdr = this.deviceService.extractHeaders(req);
+        const fp = this.deviceService.computeFingerprint(ip, ua, hdr);
+        const refreshExp = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
+        const ttlSec = parseDurationToSeconds(refreshExp);
+        const { sessionId } = await this.sessionService.registerSession(
+          user.id,
+          {
+            fingerprint: fp,
+            ip,
+            userAgent: ua,
+            channel: 'staff',
+          },
+          ttlSec,
+        );
+        sessionBundle = { sessionId, fingerprint: fp, ttlSec };
+      } catch (e) {
+        this.logger.warn(`Sessão Redis (staff) não registrada: ${(e as Error).message}`);
+      }
+    }
+    const tokens = this.issueTokens(user, sessionBundle);
+
+    try {
+      await this.auditoria.registrar({
+        tabela: 'auth',
+        registroId: user.id,
+        acao: AcaoAuditoria.INSERT,
+        usuario: user.id,
+        dadosDepois: {
+          event: 'LOGIN_SUCCESS',
+          cpfCnpj: user.cpfCnpj,
+          clienteId: user.clienteId ?? null,
+        },
+        ip: audit?.ip,
+        userAgent: audit?.userAgent,
+      });
+    } catch (e) {
+      this.logger.warn(`Auditoria de login não registrada: ${(e as Error).message}`);
+    }
+
+    try {
+      await this.loginTelemetry.record({
+        documento: normalized,
+        userId: user.id,
+        sucesso: true,
+        req,
+      });
+    } catch (e) {
+      this.logger.warn(`Telemetria login: ${(e as Error).message}`);
+    }
+
+    return tokens;
+  }
+
+  async refresh(refreshToken: string, req?: Request) {
+    const secret =
+      this.configService.get<string>('secrets.jwtRefreshSecret') ??
+      this.configService.getOrThrow<string>('JWT_REFRESH_SECRET');
+    let payload: JwtPayload;
+    try {
+      payload = this.jwtService.verify<JwtPayload>(refreshToken, { secret });
+    } catch {
+      throw new UnauthorizedException('Refresh token inválido ou expirado');
+    }
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user) {
+      throw new UnauthorizedException('Usuário não encontrado');
+    }
+    const payloadTv = payload.tv ?? 0;
+    if (user.tokenVersion !== payloadTv) {
+      throw new UnauthorizedException('Sessão revogada. Faça login novamente.');
+    }
+
+    const refreshExp = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
+    const ttlSec = parseDurationToSeconds(refreshExp);
+
+    if (payload.sid && payload.fp !== undefined) {
+      const ip = String(req?.ip || req?.socket?.remoteAddress || '');
+      const ua = req?.get('user-agent') || '';
+      const hdr = req ? this.deviceService.extractHeaders(req) : {};
+      const fpNow = this.deviceService.computeFingerprint(ip, ua, hdr);
+      if (fpNow !== payload.fp) {
+        throw new UnauthorizedException('Fingerprint não coincide com a sessão');
+      }
+      const ok = await this.sessionService.assertSessionValid(
+        user.id,
+        payload.sid,
+        fpNow,
+        ttlSec,
+      );
+      if (!ok) {
+        throw new UnauthorizedException('Sessão inválida ou expirada');
+      }
+      return this.issueTokens(user, {
+        sessionId: payload.sid,
+        fingerprint: fpNow,
+        ttlSec,
+      });
+    }
+
+    return this.issueTokens(user);
+  }
+
+  issueTokens(
+    user: User,
+    session?: { sessionId: string; fingerprint: string; ttlSec: number },
+  ) {
+    const base: JwtPayload = {
+      sub: user.id,
+      cpfCnpj: user.cpfCnpj,
+      email: user.email,
+      role: user.role,
+      tv: user.tokenVersion,
+      clienteId: user.clienteId ?? null,
+    };
+    const accessPayload: JwtPayload = session
+      ? { ...base, sid: session.sessionId }
+      : base;
+    const refreshPayload: JwtPayload = session
+      ? { ...base, sid: session.sessionId, fp: session.fingerprint }
+      : base;
+    const accessExpires = this.configService.get<string>('JWT_EXPIRES_IN') ?? '1h';
+    const refreshExpires = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
+    const refreshSecret =
+      this.configService.get<string>('secrets.jwtRefreshSecret') ??
+      this.configService.getOrThrow<string>('JWT_REFRESH_SECRET');
+
+    const accessOpts: JwtSignOptions = { expiresIn: accessExpires as StringValue };
+    const refreshOpts: JwtSignOptions = {
+      secret: refreshSecret,
+      expiresIn: refreshExpires as StringValue,
+    };
+
+    const datahubTiEmailCsv = this.configService.get<string>('DATAHUB_TI_EMAILS') ?? '';
+    return {
+      accessToken: this.jwtService.sign(accessPayload, accessOpts),
+      refreshToken: this.jwtService.sign(refreshPayload, refreshOpts),
+      user: {
+        id: user.id,
+        cpfCnpj: user.cpfCnpj,
+        email: user.email,
+        role: user.role,
+        permissions: permissionsForRole(user.role, {
+          email: user.email,
+          datahubTiEmailCsv,
+        }),
+        clienteId: user.clienteId ?? null,
+        createdAt: user.createdAt,
+      },
+    };
+  }
+
+  async logout(
+    userId: string,
+    opts?: { sessionId?: string; ip?: string; userAgent?: string },
+  ) {
+    const sessionId = opts?.sessionId;
+    const ip = opts?.ip;
+    const userAgent = opts?.userAgent;
+
+    if (sessionId) {
+      const ttl = parseDurationToSeconds(
+        this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d',
+      );
+      await this.sessionService.removeSession(userId, sessionId, ttl);
+      try {
+        await this.auditoria.registrar({
+          tabela: 'auth',
+          registroId: userId,
+          acao: AcaoAuditoria.SEGURANCA,
+          usuario: userId,
+          dadosDepois: {
+            event: 'LOGOUT_SESSION',
+            sessionId,
+            at: new Date().toISOString(),
+          },
+          ip,
+          userAgent,
+        });
+      } catch (e) {
+        this.logger.warn(`Auditoria logout sessão: ${(e as Error).message}`);
+      }
+      return;
+    }
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.user.update({
+          where: { id: userId },
+          data: { tokenVersion: { increment: 1 } },
+        });
+        await this.auditoria.registrar(
+          {
+            tabela: 'auth',
+            registroId: userId,
+            acao: AcaoAuditoria.INSERT,
+            usuario: userId,
+            dadosDepois: { event: 'LOGOUT', at: new Date().toISOString() },
+            ip,
+            userAgent,
+          },
+          tx,
+        );
+      },
+      PRISMA_SERIALIZABLE_TX,
+    );
+  }
+
+  /** Lista sessões Redis ativas (staff) — formato enriquecido para UI. */
+  async listActiveSessions(userId: string) {
+    return this.sessionService.getActiveSessions(userId);
+  }
+
+  /** Encerra uma sessão específica do próprio usuário. */
+  async revokeOwnSession(userId: string, sessionId: string): Promise<void> {
+    const ttl = parseDurationToSeconds(
+      this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d',
+    );
+    await this.sessionService.assertSessionOwnedAndRemove(userId, sessionId, ttl);
+  }
+
+  async createUser(
+    dto: CreateUserDto,
+    usuarioId: string,
+    ip: string,
+    userAgent: string,
+  ) {
+    const email = dto.email.toLowerCase();
+    let cpfCnpj: string;
+    try {
+      cpfCnpj = normalizeLoginDocumento(dto.cpfCnpj);
+    } catch {
+      throw new ConflictException('Documento inválido');
+    }
+    const existsDoc = await this.prisma.user.findUnique({ where: { cpfCnpj } });
+    if (existsDoc) {
+      throw new ConflictException('CPF/CNPJ já cadastrado');
+    }
+    const exists = await this.prisma.user.findUnique({ where: { email } });
+    if (exists) {
+      throw new ConflictException('E-mail já cadastrado');
+    }
+    this.passwordPolicy.assertStrong(dto.password);
+    const password = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+    const user = await this.prisma.$transaction(
+      async (tx) => {
+        const created = await tx.user.create({
+          data: {
+            cpfCnpj,
+            email,
+            password,
+            role: dto.role,
+          },
+        });
+        await this.auditoria.registrar(
+          {
+            tabela: 'users',
+            registroId: created.id,
+            acao: AcaoAuditoria.INSERT,
+            usuario: usuarioId,
+            dadosAntes: null,
+            dadosDepois: {
+              id: created.id,
+              cpfCnpj: created.cpfCnpj,
+              email: created.email,
+              role: created.role,
+              tokenVersion: created.tokenVersion,
+              clienteId: created.clienteId,
+              createdAt: created.createdAt,
+            },
+            ip,
+            userAgent,
+          },
+          tx,
+        );
+        return created;
+      },
+      PRISMA_SERIALIZABLE_TX,
+    );
+    const { password: _p, ...safe } = user;
+    return safe;
+  }
+}
+
+================================================================================
+FILE: apps/backend/src/corporate-auth/validators/cpf-cnpj.pipe.ts
+(re-export)
+================================================================================
+
+export { CorporateCpfCnpjPipe, CpfCnpjPipe } from './corporate-cpf-cnpj.pipe';
+
+================================================================================
+FILE: apps/backend/src/corporate-auth/validators/corporate-cpf-cnpj.pipe.ts
+(implementação completa do pipe)
+================================================================================
+
+import { BadRequestException, Injectable, PipeTransform } from '@nestjs/common';
+import { sanitizeDocumentoInput } from '../../common/utils/login-documento.util';
+
+const MSG_TAMANHO =
+  'Documento deve ter 11 (CPF) ou 14 (CNPJ) dígitos';
+
+/**
+ * Login corporativo (intranet / staff): aceita CPF/CNPJ com ou sem máscara.
+ * Retorna somente dígitos — canonicalização para lookup fica no AuthService.
+ */
+@Injectable()
+export class CorporateCpfCnpjPipe implements PipeTransform {
+  transform(body: Record<string, unknown>) {
+    if (body == null || typeof body !== 'object') return body;
+    const sanitized = sanitizeDocumentoInput(body['documento']);
+    if (!sanitized || (sanitized.length !== 11 && sanitized.length !== 14)) {
+      throw new BadRequestException(MSG_TAMANHO);
+    }
+    body['documento'] = sanitized;
+    return body;
+  }
+}
+
+/** Alias do pipe corporativo (path legado da spec). */
+export { CorporateCpfCnpjPipe as CpfCnpjPipe };
+
+================================================================================
+FILE: apps/backend/src/auth/auth.module.ts
+================================================================================
+
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { JwtModule, type JwtModuleOptions } from '@nestjs/jwt';
+import type { StringValue } from 'ms';
+import { PassportModule } from '@nestjs/passport';
+import { AuditoriaModule } from '../auditoria/auditoria.module';
+import { CxPortaisModule } from '../cx-portais/cx-portais.module';
+import { SecurityCenterModule } from '../security-center/security-center.module';
+import { AuthController } from './auth.controller';
+import { AuthService } from './auth.service';
+import { JwtStrategy } from './strategies/jwt.strategy';
+import { SessionModule } from './session/session.module';
+import { SessionController } from './session/session.controller';
+
+@Module({
+  imports: [
+    CxPortaisModule,
+    AuditoriaModule,
+    SessionModule,
+    SecurityCenterModule,
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): JwtModuleOptions => {
+        const secret = config.get<string>('secrets.jwtSecret') ?? config.getOrThrow<string>('JWT_SECRET');
+        return {
+          secret,
+          signOptions: {
+            expiresIn: (config.get<string>('JWT_EXPIRES_IN') ?? '1h') as StringValue,
+          },
+        };
+      },
+    }),
+  ],
+  controllers: [AuthController, SessionController],
+  providers: [AuthService, JwtStrategy],
+  exports: [AuthService],
+})
+export class AuthModule {}
+
+================================================================================
+FIM
+================================================================================

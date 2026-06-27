@@ -7,9 +7,13 @@ import type { CxPortalRequestUser } from '../types/cx-portal.types';
 export class CxPortalRateLimitGuard implements CanActivate {
   constructor(private readonly limiter: CxPortalRateLimitService) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<Request & { cxUser?: CxPortalRequestUser }>();
-    this.limiter.poke(req, req.cxUser);
+    const raw = (req as Request & { path?: string }).path || req.url || '';
+    if (raw.includes('minhas-permissoes')) {
+      return true;
+    }
+    await this.limiter.poke(req, req.cxUser);
     return true;
   }
 }

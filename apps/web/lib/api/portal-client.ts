@@ -10,6 +10,7 @@ import { getDeviceSecurityHeaders, appendDeviceSecurityHeaders } from "@/lib/dev
 import { maybeUnwrapCircuitJson } from "@/lib/resilience/circuit-open";
 import type { ContainerTimelineResponse } from "@/lib/container-timeline";
 import { stripContainerISO } from "@/utils/containerFormatter";
+import { hasPortalClientSession, isPortalCookieAuthMode } from "@/lib/portal-auth-mode";
 import type {
   KpisResponse,
   PaginatedResponse,
@@ -20,6 +21,57 @@ import type {
 export { ApiError, getApiBase, defaultApiCredentials } from "@/lib/api/corporate-auth-client";
 
 const LOGIN_TIMEOUT_MS = 25_000;
+const PORTAL_COOKIE_HEADERS: Record<string, string> = { "X-RL-Portal-Cookie": "1" };
+
+function portalApiUrl(path: string): string {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  if (isPortalCookieAuthMode() && typeof window !== "undefined") {
+    return `/api/portal/proxy${p}`;
+  }
+  return `${getApiBase()}${p}`;
+}
+
+/** Restaura sessão portal a partir de cookies HttpOnly (sobrevive F5). */
+export async function portalHydrateSessionFromCookies(): Promise<boolean> {
+  if (!isPortalCookieAuthMode()) return false;
+  try {
+    const res = await fetch("/api/portal/me", {
+      credentials: "include",
+      headers: { Accept: "application/json", ...PORTAL_COOKIE_HEADERS },
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as PortalLoginResponse;
+    if (!data?.portalIdentity) return false;
+    applyPortalLoginResponse({
+      accessToken: "",
+      refreshToken: "",
+      tokenType: "Bearer",
+      portalIdentity: data.portalIdentity,
+      clienteId: data.clienteId ?? null,
+      portalPapel: data.portalPapel,
+      tenantId: data.tenantId,
+      tipo: data.tipo,
+      cliente: data.cliente,
+      usuario: data.usuario,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function portalLogoutCookies(): Promise<void> {
+  if (!isPortalCookieAuthMode()) return;
+  try {
+    await fetch("/api/portal/logout", {
+      method: "POST",
+      credentials: "include",
+      headers: PORTAL_COOKIE_HEADERS,
+    });
+  } catch {
+    /* ignore */
+  }
+}
 
 /** GET `/health` — sem autenticação; usado pelo modo degradado do portal. */
 export type PortalHealthResponse = {
@@ -119,10 +171,11 @@ export {
   type EnsurePortalPessoaResult,
 } from "@/lib/portal-pessoa-session";
 
-/** CLIENTE: exclusivamente `POST ${API_URL}/portal/login` (Bearer no portal). */
+/** CLIENTE: exclusivamente `POST /portal/login` (Bearer ou cookies HttpOnly via BFF). */
 export async function portalClienteLogin(documento: string, password: string): Promise<PortalLoginResponse> {
+  const cookieMode = isPortalCookieAuthMode();
   const apiBase = getApiBase();
-  const url = `${apiBase}/portal/login`;
+  const url = cookieMode && typeof window !== "undefined" ? "/api/portal/login" : `${apiBase}/portal/login`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS);
   let res: Response;
@@ -130,7 +183,11 @@ export async function portalClienteLogin(documento: string, password: string): P
     const devHeaders = typeof window !== "undefined" ? await getDeviceSecurityHeaders() : {};
     res = await fetch(url, {
       method: "POST",
-      headers: { ...devHeaders, "Content-Type": "application/json" },
+      headers: {
+        ...devHeaders,
+        ...PORTAL_COOKIE_HEADERS,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         documento: documento.replace(/\D/g, ""),
         password,
@@ -164,6 +221,15 @@ export async function portalClienteLogin(documento: string, password: string): P
     throw new ApiError(msg, res.status);
   }
   const data = await parseJson<PortalLoginResponse>(res);
+  if (cookieMode) {
+    if (!data?.portalIdentity) throw new ApiError("Resposta /portal/login incompleta.", res.status);
+    return {
+      ...data,
+      accessToken: "",
+      refreshToken: "",
+      tokenType: "Bearer",
+    } as PortalLoginResponse;
+  }
   if (!data?.accessToken?.trim() || !data?.refreshToken?.trim() || !data?.portalIdentity) {
     throw new ApiError("Resposta /portal/login incompleta.", res.status);
   }
@@ -171,27 +237,58 @@ export async function portalClienteLogin(documento: string, password: string): P
 }
 
 export async function portalClienteRefresh(refreshToken: string): Promise<PortalLoginResponse> {
+  const cookieMode = isPortalCookieAuthMode();
   const devHeaders = typeof window !== "undefined" ? await getDeviceSecurityHeaders() : {};
-  const res = await fetch(`${getApiBase()}/portal/refresh`, {
+  const url =
+    cookieMode && typeof window !== "undefined" ? "/api/portal/refresh" : `${getApiBase()}/portal/refresh`;
+  const res = await fetch(url, {
     method: "POST",
-    headers: { ...devHeaders, "Content-Type": "application/json" },
-    body: JSON.stringify({ refreshToken }),
+    headers: { ...devHeaders, ...PORTAL_COOKIE_HEADERS, "Content-Type": "application/json" },
+    body: JSON.stringify(cookieMode && !refreshToken?.trim() ? {} : { refreshToken }),
     credentials: "include",
   });
   if (!res.ok) throw new ApiError("Sessão portal expirada", res.status);
+  if (cookieMode) {
+    await parseJson<{ ok?: boolean }>(res);
+    const hydrated = await portalHydrateSessionFromCookies();
+    if (!hydrated) throw new ApiError("Sessão portal expirada", 401);
+    const st = usePortalClienteAuthStore.getState();
+    return {
+      accessToken: st.accessToken ?? "",
+      refreshToken: st.refreshToken ?? "",
+      tokenType: "Bearer",
+      portalIdentity: {
+        sub: st.user!.id,
+        email: st.user!.email,
+        cpfCnpj: st.user!.cpfCnpj,
+        portalPapel: "CLIENTE",
+        tenantId: "default",
+      },
+      clienteId: st.user?.clienteId ?? null,
+      portalPapel: "CLIENTE",
+      tenantId: "default",
+    };
+  }
   return parseJson(res);
 }
 
-/** Requisições autenticadas portal CX: `Authorization: Bearer` + `Content-Type` a partir de `usePortalClienteAuthStore.getState().accessToken` (ou refresh antes). */
+/** Requisições autenticadas portal CX (Bearer em memória ou cookies HttpOnly via proxy BFF). */
 export async function portalRequest(path: string, init?: RequestInit): Promise<Response> {
-  const base = getApiBase();
-  const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
+  const url = portalApiUrl(path);
+  const cookieMode = isPortalCookieAuthMode();
 
   const st0 = usePortalClienteAuthStore.getState();
   let accessToken = st0.accessToken?.trim() ? st0.accessToken : null;
   const initialRefresh = st0.refreshToken;
 
-  if (!accessToken) {
+  if (!accessToken && cookieMode) {
+    if (!st0.sessionHydrated) {
+      await portalHydrateSessionFromCookies();
+    }
+    accessToken = cookieMode ? "cookie" : null;
+  }
+
+  if (!accessToken && !cookieMode) {
     if (!initialRefresh?.trim()) {
       throw new ApiError("Sessão não iniciada", 401);
     }
@@ -209,37 +306,43 @@ export async function portalRequest(path: string, init?: RequestInit): Promise<R
     }
   }
 
-  const doFetch = async (token: string) => {
+  const doFetch = async (token: string | null) => {
     const headers = new Headers(init?.headers);
-    headers.set("Content-Type", "application/json");
-    headers.set("Authorization", `Bearer ${token}`);
+    if (!headers.has("Content-Type") && init?.body && !(init.body instanceof FormData)) {
+      headers.set("Content-Type", "application/json");
+    }
+    if (token && token !== "cookie") headers.set("Authorization", `Bearer ${token}`);
+    if (cookieMode) {
+      for (const [k, v] of Object.entries(PORTAL_COOKIE_HEADERS)) headers.set(k, v);
+    }
     if (!headers.has("Accept")) headers.set("Accept", "application/json");
     applyCsrfHeaders(headers, init?.method);
     await appendDeviceSecurityHeaders(headers);
     return fetch(url, { ...init, headers, credentials: init?.credentials ?? "include" });
   };
 
-  let res = await doFetch(accessToken!);
+  let res = await doFetch(accessToken);
 
   if (res.status === 401) {
     const st = usePortalClienteAuthStore.getState();
     const rt = st.refreshToken;
-    if (!rt?.trim()) {
+    if (cookieMode || rt?.trim()) {
+      try {
+        const next = await portalClienteRefresh(rt ?? "");
+        if (!cookieMode) applyPortalLoginResponse(next);
+        const tok = cookieMode ? "cookie" : next.accessToken.trim();
+        if (!tok) {
+          st.clear();
+          throw new ApiError("Sessão expirada", 401);
+        }
+        res = await doFetch(tok);
+      } catch (e) {
+        usePortalClienteAuthStore.getState().clear();
+        throw e instanceof ApiError ? e : new ApiError("Sessão expirada", 401);
+      }
+    } else {
       st.clear();
       throw new ApiError("Sessão expirada", 401);
-    }
-    try {
-      const next = await portalClienteRefresh(rt);
-      applyPortalLoginResponse(next);
-      const tok = next.accessToken.trim();
-      if (!tok) {
-        st.clear();
-        throw new ApiError("Sessão expirada", 401);
-      }
-      res = await doFetch(tok);
-    } catch (e) {
-      usePortalClienteAuthStore.getState().clear();
-      throw e instanceof ApiError ? e : new ApiError("Sessão expirada", 401);
     }
   }
 
@@ -248,15 +351,20 @@ export async function portalRequest(path: string, init?: RequestInit): Promise<R
 
 /** GET autenticado sem `Content-Type: application/json` (PDF, CSV, etc.). */
 export async function portalMediaRequest(path: string, init?: RequestInit): Promise<Response> {
-  const base = getApiBase();
-  const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
+  const url = portalApiUrl(path);
+  const cookieMode = isPortalCookieAuthMode();
   const method = (init?.method ?? "GET").toUpperCase();
 
   const st0 = usePortalClienteAuthStore.getState();
   let accessToken = st0.accessToken?.trim() ? st0.accessToken : null;
   const initialRefresh = st0.refreshToken;
 
-  if (!accessToken) {
+  if (!accessToken && cookieMode) {
+    if (!st0.sessionHydrated) await portalHydrateSessionFromCookies();
+    accessToken = "cookie";
+  }
+
+  if (!accessToken && !cookieMode) {
     if (!initialRefresh?.trim()) {
       throw new ApiError("Sessão não iniciada", 401);
     }
@@ -276,7 +384,10 @@ export async function portalMediaRequest(path: string, init?: RequestInit): Prom
 
   const doFetch = async (token: string) => {
     const headers = new Headers(init?.headers);
-    headers.set("Authorization", `Bearer ${token}`);
+    if (token !== "cookie") headers.set("Authorization", `Bearer ${token}`);
+    if (cookieMode) {
+      for (const [k, v] of Object.entries(PORTAL_COOKIE_HEADERS)) headers.set(k, v);
+    }
     if (!headers.has("Accept")) headers.set("Accept", "*/*");
     applyCsrfHeaders(headers, method);
     await appendDeviceSecurityHeaders(headers);
@@ -288,22 +399,23 @@ export async function portalMediaRequest(path: string, init?: RequestInit): Prom
   if (res.status === 401) {
     const st = usePortalClienteAuthStore.getState();
     const rt = st.refreshToken;
-    if (!rt?.trim()) {
+    if (cookieMode || rt?.trim()) {
+      try {
+        const next = await portalClienteRefresh(rt ?? "");
+        if (!cookieMode) applyPortalLoginResponse(next);
+        const tok = cookieMode ? "cookie" : next.accessToken.trim();
+        if (!tok) {
+          st.clear();
+          throw new ApiError("Sessão expirada", 401);
+        }
+        res = await doFetch(tok);
+      } catch (e) {
+        usePortalClienteAuthStore.getState().clear();
+        throw e instanceof ApiError ? e : new ApiError("Sessão expirada", 401);
+      }
+    } else {
       st.clear();
       throw new ApiError("Sessão expirada", 401);
-    }
-    try {
-      const next = await portalClienteRefresh(rt);
-      applyPortalLoginResponse(next);
-      const tok = next.accessToken.trim();
-      if (!tok) {
-        st.clear();
-        throw new ApiError("Sessão expirada", 401);
-      }
-      res = await doFetch(tok);
-    } catch (e) {
-      usePortalClienteAuthStore.getState().clear();
-      throw e instanceof ApiError ? e : new ApiError("Sessão expirada", 401);
     }
   }
 
@@ -333,14 +445,19 @@ export async function portalMultipartRequest(
   form: FormData,
   method: "POST" | "PUT" | "PATCH" = "POST",
 ): Promise<Response> {
-  const base = getApiBase();
-  const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
+  const url = portalApiUrl(path);
+  const cookieMode = isPortalCookieAuthMode();
 
   const st0 = usePortalClienteAuthStore.getState();
   let accessToken = st0.accessToken?.trim() ? st0.accessToken : null;
   const initialRefresh = st0.refreshToken;
 
-  if (!accessToken) {
+  if (!accessToken && cookieMode) {
+    if (!st0.sessionHydrated) await portalHydrateSessionFromCookies();
+    accessToken = "cookie";
+  }
+
+  if (!accessToken && !cookieMode) {
     if (!initialRefresh?.trim()) {
       throw new ApiError("Sessão não iniciada", 401);
     }
@@ -358,36 +475,40 @@ export async function portalMultipartRequest(
     }
   }
 
-  const doFetch = async (token: string) => {
+  const doFetch = async (token: string | null) => {
     const headers = new Headers();
-    headers.set("Authorization", `Bearer ${token}`);
+    if (token && token !== "cookie") headers.set("Authorization", `Bearer ${token}`);
+    if (cookieMode) {
+      for (const [k, v] of Object.entries(PORTAL_COOKIE_HEADERS)) headers.set(k, v);
+    }
     if (!headers.has("Accept")) headers.set("Accept", "application/json");
     applyCsrfHeaders(headers, method);
     await appendDeviceSecurityHeaders(headers);
     return fetch(url, { method, body: form, headers, credentials: "include" });
   };
 
-  let res = await doFetch(accessToken!);
+  let res = await doFetch(accessToken);
 
   if (res.status === 401) {
     const st = usePortalClienteAuthStore.getState();
     const rt = st.refreshToken;
-    if (!rt?.trim()) {
+    if (cookieMode || rt?.trim()) {
+      try {
+        const next = await portalClienteRefresh(rt ?? "");
+        if (!cookieMode) applyPortalLoginResponse(next);
+        const tok = cookieMode ? "cookie" : next.accessToken.trim();
+        if (!tok) {
+          st.clear();
+          throw new ApiError("Sessão expirada", 401);
+        }
+        res = await doFetch(tok);
+      } catch (e) {
+        usePortalClienteAuthStore.getState().clear();
+        throw e instanceof ApiError ? e : new ApiError("Sessão expirada", 401);
+      }
+    } else {
       st.clear();
       throw new ApiError("Sessão expirada", 401);
-    }
-    try {
-      const next = await portalClienteRefresh(rt);
-      applyPortalLoginResponse(next);
-      const tok = next.accessToken.trim();
-      if (!tok) {
-        st.clear();
-        throw new ApiError("Sessão expirada", 401);
-      }
-      res = await doFetch(tok);
-    } catch (e) {
-      usePortalClienteAuthStore.getState().clear();
-      throw e instanceof ApiError ? e : new ApiError("Sessão expirada", 401);
     }
   }
 
@@ -480,6 +601,7 @@ export function normalizePortalDashboard(
       orderBy: "createdAt",
       order: "desc",
     },
+    isBloqueadoFinanceiramente: Boolean(dash.isBloqueadoFinanceiramente),
   };
 }
 
@@ -524,6 +646,48 @@ export function portalCriarPessoaAutorizada(payload: {
       telefone: payload.telefone?.replace(/\D/g, ""),
     }),
   });
+}
+
+export type TransportadoraAutorizadaRow = {
+  id: string;
+  cnpj: string;
+  razaoSocial: string;
+  emailContato: string;
+  ativo: boolean;
+  createdAt?: string;
+};
+
+export function portalListarTransportadorasAutorizadas(clienteId: string) {
+  return portalJson<TransportadoraAutorizadaRow[]>(
+    `/cliente/transportadoras-autorizadas/${encodeURIComponent(clienteId)}`,
+  );
+}
+
+export function portalCriarTransportadoraAutorizada(payload: {
+  cnpj: string;
+  razaoSocial: string;
+  emailContato: string;
+  password: string;
+}) {
+  return portalJson<TransportadoraAutorizadaRow>("/cliente/transportadoras-autorizadas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...payload,
+      cnpj: payload.cnpj.replace(/\D/g, ""),
+    }),
+  });
+}
+
+export function portalAlternarTransportadoraAtiva(id: string, ativo: boolean) {
+  return portalJson<TransportadoraAutorizadaRow>(
+    `/cliente/transportadoras-autorizadas/${encodeURIComponent(id)}/ativo`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ativo }),
+    },
+  );
 }
 
 export function portalPessoaAtual() {
@@ -593,8 +757,14 @@ export function clearPortalMinhasPermissoesCache(): void {
 export async function portalAuthBootstrap(opts?: {
   force?: boolean;
 }): Promise<PortalAuthBootstrapResponse> {
+  const st = usePortalClienteAuthStore.getState();
+  const cookieMode = isPortalCookieAuthMode();
+  if (!st.accessToken?.trim() && cookieMode && !st.sessionHydrated) {
+    await portalHydrateSessionFromCookies();
+  }
   const token = usePortalClienteAuthStore.getState().accessToken;
-  if (!token) return EMPTY_BOOTSTRAP;
+  const hydrated = usePortalClienteAuthStore.getState().sessionHydrated;
+  if (!token?.trim() && !(cookieMode && hydrated && st.user)) return EMPTY_BOOTSTRAP;
 
   const { usePessoaAutorizadaStore } = await import("@/stores/pessoaAutorizadaStore");
   const { usePessoaPermissoesStore } = await import("@/stores/pessoaPermissoesStore");
@@ -705,8 +875,12 @@ export function portalAuthHealth() {
 
 /** Permissões da pessoa — delega ao bootstrap (sem loop). */
 export async function portalMinhasPermissoes(opts?: { force?: boolean }): Promise<PermissoesPessoaRow | null> {
-  const token = usePortalClienteAuthStore.getState().accessToken;
-  if (!token) return null;
+  const st = usePortalClienteAuthStore.getState();
+  const cookieMode = isPortalCookieAuthMode();
+  if (!st.accessToken?.trim() && cookieMode && !st.sessionHydrated) {
+    await portalHydrateSessionFromCookies();
+  }
+  if (!hasPortalClientSession(usePortalClienteAuthStore.getState())) return null;
 
   if (!opts?.force && minhasPermissoesCache !== undefined) {
     return minhasPermissoesCache;
@@ -773,6 +947,7 @@ export type SolicitacaoRow = {
   id: string;
   protocolo: string;
   status: string;
+  versaoCredencial?: number;
   tipoOperacao?: TipoOperacaoSolicitacaoIntent | null;
   createdAt: string;
   updatedAt?: string;
@@ -864,6 +1039,28 @@ export function fetchSolicitacao(id: string) {
   return portalJson<SolicitacaoRow>(`/cliente/portal/solicitacoes/${id}`);
 }
 
+export function fetchSolicitacaoVistorias(id: string) {
+  return portalJson<import("@/lib/gate-vistoria").VistoriaPortalRow[]>(
+    `/cliente/portal/solicitacoes/${encodeURIComponent(id)}/vistorias`,
+  );
+}
+
+export type AuditLogUiItem = {
+  id: string;
+  criadoEm: string;
+  acao: string;
+  usuarioId: string;
+  usuarioNome: string;
+  usuarioRole: string;
+  deltas: Array<{ campo: string; label: string; antes: unknown; depois: unknown }>;
+};
+
+export function fetchSolicitacaoHistoricoAlteracoes(id: string) {
+  return portalJson<{ solicitacaoId: string; items: AuditLogUiItem[] }>(
+    `/cliente/portal/solicitacoes/${encodeURIComponent(id)}/historico-alteracoes`,
+  );
+}
+
 export function aprovarSolicitacao(id: string) {
   return portalJson<SolicitacaoRow>(`/cliente/portal/solicitacoes/${id}/aprovar`, { method: "PATCH" });
 }
@@ -892,7 +1089,7 @@ export type UpdatePortalSolicitacaoPayload = {
   }>;
   agendamento: {
     dataRef: string;
-    turno: "MANHA" | "TARDE";
+    turno: string;
     atendimentoEspecial: boolean;
     atendimentoEspecialTexto?: string;
   };
@@ -924,7 +1121,7 @@ export type TipoOperacaoAgendamento = "GATE_IN" | "GATE_OUT";
 export type CreateAgendamentoPortalPayload = {
   numeroIso: string;
   dataRef: string;
-  turno: "MANHA" | "TARDE";
+  turno: string;
   tipoOperacao: TipoOperacaoAgendamento;
   modalidadeTransporte: ModalidadeTransporte;
   statusCarga: StatusCargaAgendamento;
@@ -987,7 +1184,7 @@ export type CreateSolicitacaoV2Payload = {
   }>;
   agendamento: {
     dataRef: string;
-    turno: "MANHA" | "TARDE";
+    turno: string;
     atendimentoEspecial: boolean;
     atendimentoEspecialTexto?: string;
   };
@@ -996,6 +1193,10 @@ export type CreateSolicitacaoV2Payload = {
     telefone: string;
     email: string;
   };
+  /** Import/coleta — ISO 8601 */
+  previsaoRetirada?: string;
+  /** Export — ISO 8601 */
+  bookingDeadline?: string;
 };
 
 export function criarSolicitacaoV2(body: CreateSolicitacaoV2Payload) {
@@ -1084,6 +1285,37 @@ export async function fetchNfse(id: string) {
   return row;
 }
 
+/** Fatura Gate-Out (armazenagem) com links NFS-e / boleto / PIX — H9. */
+export type FaturaArmazenagemPortal = {
+  id: string;
+  valorTotal: number | string;
+  dataEmissao: string;
+  statusPagamento: string;
+  linkNfse: string | null;
+  linkBoleto: string | null;
+  linkPix: string | null;
+  numeroRps: string | null;
+  serieRps: string | null;
+  preFatura?: {
+    containerIso?: string;
+    diasCobrados?: number;
+  } | null;
+};
+
+export async function fetchFaturasArmazenagemPaginated(params: { page?: number; limit?: number }) {
+  const rows = await portalJson<FaturaArmazenagemPortal[]>("/cliente/portal/financeiro/faturas-armazenagem");
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 20;
+  return slicePage(rows, page, limit);
+}
+
+export async function fetchFaturaArmazenagem(id: string) {
+  const rows = await portalJson<FaturaArmazenagemPortal[]>("/cliente/portal/financeiro/faturas-armazenagem");
+  const row = rows.find((r) => String(r.id) === String(id));
+  if (!row) throw new ApiError("Fatura de armazenagem não encontrada", 404);
+  return row;
+}
+
 /** Resposta `GET /cliente/portal/dashboard` (consolidado KPIs + solicitações + financeiro). */
 export type PortalDashboardConsolidatedResponse = {
   cliente: {
@@ -1149,6 +1381,7 @@ export type PortalDashboardConsolidatedResponse = {
     cacheHit?: boolean;
     slaAmostraConcluidas?: number;
   };
+  isBloqueadoFinanceiramente?: boolean;
 };
 
 /** @deprecated Use `PortalDashboardConsolidatedResponse` e `cliente.nome`. */
@@ -1510,5 +1743,12 @@ export function portalContainerTimeline(isoDisplay: string) {
   const iso = stripContainerISO(isoDisplay);
   return portalJson<ContainerTimelineResponse>(
     `/client/container/${encodeURIComponent(iso)}/timeline`,
+  );
+}
+
+export function portalContainerPreFatura(isoDisplay: string) {
+  const iso = stripContainerISO(isoDisplay);
+  return portalJson<import("@/lib/armazenagem-pre-fatura").PreFaturaPortalResponse>(
+    `/client/container/${encodeURIComponent(iso)}/pre-fatura`,
   );
 }

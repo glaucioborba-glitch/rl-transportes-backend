@@ -10,6 +10,8 @@ import { clearStaffSessionCookie } from "@/lib/auth-staff-cookie";
 
 const LINKS: { href: string; label: string }[] = [
   { href: "/rh", label: "Painel" },
+  { href: "/rh/equipe", label: "Equipe" },
+  { href: "/rh/equipe/escalas", label: "Escalas" },
   { href: "/rh/colaboradores", label: "Colaboradores" },
   { href: "/rh/estrutura", label: "Estrutura" },
   { href: "/rh/jornada", label: "Jornada" },
@@ -29,7 +31,7 @@ export function RhHeader() {
   function logout() {
     clear();
     clearStaffSessionCookie();
-    router.replace("/operador/login");
+    router.replace("/login/staff");
   }
 
   if (!allowed) {

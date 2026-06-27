@@ -5,6 +5,8 @@ import { ApiError, authRefresh, getApiBase } from "@/lib/api/corporate-auth-clie
 import { applyCsrfHeaders } from "@/lib/csrf-client";
 import { appendDeviceSecurityHeaders } from "@/lib/device-client-headers";
 import { maybeUnwrapCircuitJson } from "@/lib/resilience/circuit-open";
+import type { VistoriaAngulo } from "@/lib/gate-vistoria";
+import { vistoriaFieldName } from "@/lib/image-compress-vistoria";
 
 async function parseJson<T>(res: Response): Promise<T> {
   const text = await res.text();
@@ -124,11 +126,23 @@ export type StaffSolicitacaoV2List = {
   limit: number;
 };
 
+export type BloqueioContainerRow = {
+  id: string;
+  tipo: "FINANCEIRO" | "FISCAL" | "AVARIA" | "JUDICIAL" | "OPERACIONAL";
+  motivo: string;
+  status: "ATIVO" | "LIBERADO";
+  bloqueadoPorId: string;
+  dataBloqueio: string;
+  liberadoPorId: string | null;
+  dataLiberacao: string | null;
+};
+
 export async function staffFetchSolicitacaoV2Detalhe(id: string) {
   return staffJson<{
     solicitacao: Record<string, unknown>;
     auditoria: unknown[];
     securityAlerts: unknown[];
+    bloqueiosAtivos: BloqueioContainerRow[];
     timeline: Array<{
       id: string;
       tipo: string;
@@ -140,6 +154,22 @@ export async function staffFetchSolicitacaoV2Detalhe(id: string) {
     statusV2Label: string;
     resumoRisco: { totalAlertas: number; riscoMax: number | null };
   }>(`/v2/solicitacoes/${encodeURIComponent(id)}`);
+}
+
+export type StaffAuditLogUiItem = {
+  id: string;
+  criadoEm: string;
+  acao: string;
+  usuarioId: string;
+  usuarioNome: string;
+  usuarioRole: string;
+  deltas: Array<{ campo: string; label: string; antes: unknown; depois: unknown }>;
+};
+
+export function staffFetchSolicitacaoHistoricoAlteracoes(id: string) {
+  return staffJson<{ solicitacaoId: string; items: StaffAuditLogUiItem[] }>(
+    `/v2/solicitacoes/${encodeURIComponent(id)}/historico-alteracoes`,
+  );
 }
 
 export function staffListarSolicitacoesV2(params: { page?: number; limit?: number; status?: string }) {
@@ -221,10 +251,17 @@ export function staffGatePreCheckOut(gateInId: string) {
   return staffJson<Record<string, unknown>>(`/v2/gate/check-ins/${encodeURIComponent(gateInId)}/pre-checkout`);
 }
 
-export async function staffGateCheckIn(solicitacaoId: string, payload: Record<string, unknown>, fotos: File[]) {
+export async function staffGateCheckIn(
+  solicitacaoId: string,
+  payload: Record<string, unknown>,
+  fotos: Record<VistoriaAngulo, File>,
+) {
   const fd = new FormData();
   fd.append("data", JSON.stringify(payload));
-  for (const f of fotos) fd.append("fotos", f);
+  for (const angulo of Object.keys(fotos) as VistoriaAngulo[]) {
+    const f = fotos[angulo];
+    if (f) fd.append(vistoriaFieldName(angulo), f);
+  }
   const res = await staffRequest(`/v2/gate/solicitacoes/${encodeURIComponent(solicitacaoId)}/check-in`, {
     method: "POST",
     body: fd,
@@ -236,10 +273,44 @@ export async function staffGateCheckIn(solicitacaoId: string, payload: Record<st
   return parseJson<Record<string, unknown>>(res);
 }
 
-export async function staffGateCheckOut(gateInId: string, payload: Record<string, unknown>, fotos: File[]) {
+export function staffAplicarBloqueioSolicitacao(
+  solicitacaoId: string,
+  payload: { tipo: BloqueioContainerRow["tipo"]; motivo: string },
+) {
+  return staffJson<BloqueioContainerRow>(`/v2/solicitacoes/${encodeURIComponent(solicitacaoId)}/bloqueios`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function staffLiberarBloqueioSolicitacao(solicitacaoId: string, bloqueioId: string) {
+  return staffJson<BloqueioContainerRow>(
+    `/v2/solicitacoes/${encodeURIComponent(solicitacaoId)}/bloqueios/${encodeURIComponent(bloqueioId)}/liberar`,
+    { method: "POST" },
+  );
+}
+
+export function staffGateValidarQr(params: { protocolo: string; container?: string; versao?: number }) {
+  const sp = new URLSearchParams({ protocolo: params.protocolo.trim() });
+  if (params.container?.trim()) sp.set("container", params.container.trim());
+  if (params.versao != null) sp.set("versao", String(params.versao));
+  return staffJson<{ valido: boolean; motivo?: string; solicitacao?: Record<string, unknown> }>(
+    `/gate/validar-qr?${sp.toString()}`,
+  );
+}
+
+export async function staffGateCheckOut(
+  gateInId: string,
+  payload: Record<string, unknown>,
+  fotos: Record<VistoriaAngulo, File>,
+) {
   const fd = new FormData();
   fd.append("data", JSON.stringify(payload));
-  for (const f of fotos) fd.append("fotos", f);
+  for (const angulo of Object.keys(fotos) as VistoriaAngulo[]) {
+    const f = fotos[angulo];
+    if (f) fd.append(vistoriaFieldName(angulo), f);
+  }
   const res = await staffRequest(`/v2/gate/check-ins/${encodeURIComponent(gateInId)}/check-out`, {
     method: "POST",
     body: fd,
@@ -262,6 +333,8 @@ export async function staffGateOcrPlacaMock(file: File) {
   return parseJson<Record<string, unknown>>(res);
 }
 
+export type GiroEstimado = "RAPIDO" | "MEDIO" | "LENTO";
+
 export type StaffPatioInventario = {
   geradoEm: string;
   lotacaoTotal: number;
@@ -283,6 +356,7 @@ export type StaffPatioInventario = {
       refrigerado: boolean;
       protocolo: string;
       cliente: string;
+      giroEstimado?: GiroEstimado | null;
     }[];
   }[];
 };

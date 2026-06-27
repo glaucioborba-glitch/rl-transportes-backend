@@ -39,8 +39,8 @@ export class PlataformaTenantController {
   @Roles(Role.ADMIN)
   @Permissions('plataforma:tenant:write')
   @ApiOperation({ summary: 'Criar terminal / tenant (memória — Fase 18)' })
-  criar(@Body() dto: CriarTenantDto) {
-    const t = this.tenants.criar(dto.nome, dto.clienteIds ?? [], dto.config);
+  async criar(@Body() dto: CriarTenantDto) {
+    const t = await this.tenants.criar(dto.nome, dto.clienteIds ?? [], dto.config);
     return { success: true, data: t };
   }
 
@@ -48,16 +48,16 @@ export class PlataformaTenantController {
   @Roles(Role.ADMIN)
   @Permissions('plataforma:tenant:read')
   @ApiOperation({ summary: 'Listar tenants' })
-  listar() {
-    return { success: true, data: this.tenants.listar() };
+  async listar() {
+    return { success: true, data: await this.tenants.listar() };
   }
 
   @Get(':id/config')
   @Roles(Role.ADMIN, Role.GERENTE)
   @Permissions('plataforma:tenant:read')
   @ApiOperation({ summary: 'Configuração isolada do terminal (SLA, horários, regras)' })
-  config(@Param('id') id: string) {
-    const t = this.tenants.obter(id);
+  async config(@Param('id') id: string) {
+    const t = await this.tenants.obter(id);
     if (!t) return { success: false, error: { code: 'NOT_FOUND', message: 'Tenant não encontrado.' } };
     return { success: true, data: { id: t.id, nome: t.nome, clienteIds: t.clienteIds, config: t.config } };
   }

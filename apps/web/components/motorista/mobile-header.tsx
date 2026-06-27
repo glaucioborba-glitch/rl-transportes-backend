@@ -15,7 +15,7 @@ const links = [
   { href: "/motorista/tracking", label: "Tracking" },
 ];
 
-export function MobileHeader({ title }: { title: string }) {
+export function MobileHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   const router = useRouter();
   const email = useMotoristaAuthStore((s) => s.user?.email ?? "");
   const clear = useMotoristaAuthStore((s) => s.clear);
@@ -32,7 +32,11 @@ export function MobileHeader({ title }: { title: string }) {
       <div className="mx-auto flex max-w-lg items-center justify-between gap-3 px-3 py-3">
         <div className="min-w-0">
           <h1 className="truncate text-lg font-bold text-white">{title}</h1>
-          {email ? <p className="truncate text-xs text-slate-500">{email}</p> : null}
+          {subtitle ? (
+            <p className="truncate text-xs text-slate-500">{subtitle}</p>
+          ) : email ? (
+            <p className="truncate text-xs text-slate-500">{email}</p>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <button

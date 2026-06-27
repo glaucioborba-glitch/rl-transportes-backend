@@ -153,7 +153,7 @@ export class DatahubEtlService {
       this.prisma.cliente.findMany({
         where: { deletedAt: null },
         take: 6000,
-        select: { id: true, nome: true, tipo: true },
+        select: { id: true, razaoSocial: true, tipo: true },
       }),
       this.prisma.solicitacao.findMany({
         where: { deletedAt: null },
@@ -210,7 +210,7 @@ export class DatahubEtlService {
       duracaoMs: Date.now() - t0,
       clientes: clientes.map((c) => ({
         id: c.id,
-        nome: c.nome,
+        nome: c.razaoSocial,
         tipo: String(c.tipo),
       })),
       solicitacoes: solicitacoes.map((s) => ({

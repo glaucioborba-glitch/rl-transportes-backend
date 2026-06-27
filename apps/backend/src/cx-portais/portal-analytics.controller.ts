@@ -25,7 +25,7 @@ export class PortalAnalyticsController {
     summary: 'Analytics de uso dos portais',
     description: 'Somente **ADMIN/GERENTE** com JWT corporativo.',
   })
-  resumo(@Req() _req: Request) {
+  async resumo(@Req() _req: Request) {
     void _req;
     return this.analytics.resumo();
   }

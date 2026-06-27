@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, StatusIpm, StatusPagamento, StatusSolicitacao } from '@prisma/client';
+import { Prisma, StatusIpm, StatusSolicitacao } from '@prisma/client';
+import { BOLETO_STATUS } from '../common/finance/boleto-status.constants';
 import {
   areasCriticasDeIncidentes,
   calcularIndicesCertificacao,
@@ -126,7 +127,7 @@ export class GrcComplianceService {
     }
 
     const boVenc = await this.prisma.boleto.count({
-      where: { statusPagamento: StatusPagamento.VENCIDO },
+      where: { statusPagamento: BOLETO_STATUS.VENCIDO },
     });
     if (boVenc > 0) {
       out.push({

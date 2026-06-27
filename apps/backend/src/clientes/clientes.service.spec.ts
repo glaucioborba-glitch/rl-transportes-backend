@@ -1,9 +1,19 @@
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AcaoAuditoria, Prisma, Role, TipoCliente } from '@prisma/client';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { AddressService } from '../common/address/address.service';
+import type { NormalizedPostalAddress } from '../common/address/address.service';
+import type { PostalAddressInput } from '../common/address/address.service';
 import { ClientesService } from './clientes.service';
+import { SessionService } from '../auth/session/session.service';
 import { PrismaService } from '../prisma/prisma.service';
+import type { CreateClienteDto } from './dto/create-cliente.dto';
 
 describe('ClientesService', () => {
   let service: ClientesService;
@@ -29,6 +39,30 @@ describe('ClientesService', () => {
     },
   };
 
+  function mockNormalize(input: PostalAddressInput): NormalizedPostalAddress {
+    const cep = input.cep.replace(/\D/g, '');
+    return {
+      cep,
+      logradouro: input.logradouro?.trim() || 'Rua Mock',
+      bairro: input.bairro?.trim() || 'Centro',
+      cidade: input.cidade?.trim() || 'São Paulo',
+      uf: (input.uf?.trim() || 'SP').toUpperCase(),
+      numero: input.numero?.trim() || '10',
+      complemento: input.complemento?.trim() ? input.complemento.trim() : null,
+      codigoIbge: input.codigoIbge?.replace(/\D/g, '').padStart(7, '0') || '3550308',
+    };
+  }
+
+  const addressService = {
+    normalize: jest.fn().mockImplementation(async (x: PostalAddressInput) => mockNormalize(x)),
+  };
+
+  const sessionService = {
+    getSession: jest.fn().mockResolvedValue({
+      permissoesPessoa: { podeGerenciarPessoas: true },
+    }),
+  };
+
   beforeEach(async () => {
     prisma.$transaction.mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>, _opts?: unknown) =>
       fn(tx),
@@ -38,6 +72,8 @@ describe('ClientesService', () => {
         ClientesService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditoriaService, useValue: auditoria },
+        { provide: AddressService, useValue: addressService },
+        { provide: SessionService, useValue: sessionService },
       ],
     }).compile();
 
@@ -48,14 +84,49 @@ describe('ClientesService', () => {
     );
   });
 
-  const clienteRow = (over: Partial<Record<string, unknown>> = {}) => ({
-    id: 'c1',
-    nome: 'X',
+  const dtoPf = (): CreateClienteDto => ({
+    nomeCompleto: 'Maria Silva',
     tipo: TipoCliente.PF,
-    cpfCnpj: '11144477735',
+    cpfCnpj: '52998224725',
+    dataNascimento: '1990-05-15',
     email: 'x@x.com',
     telefone: '11999999999',
-    endereco: 'Rua',
+    enderecoLogradouro: 'Rua',
+    enderecoNumero: '10',
+    enderecoBairro: 'Centro',
+    enderecoCidade: 'São Paulo',
+    enderecoUf: 'SP',
+    enderecoCep: '01310100',
+    codigoMunicipioIbge: '3550308',
+  });
+
+  const clienteRow = (over: Partial<Record<string, unknown>> = {}) => ({
+    id: 'c1',
+    razaoSocial: 'Maria Silva',
+    tipo: TipoCliente.PF,
+    cpfCnpj: '52998224725'.padStart(14, '0'),
+    dataNascimento: new Date('1990-05-15T12:00:00.000Z'),
+    nomeFantasia: null,
+    inscricaoMunicipal: null,
+    inscricaoEstadual: null,
+    isentoIE: false,
+    email: 'x@x.com',
+    emailNfse: 'x@x.com',
+    telefone: '11999999999',
+    enderecoLogradouro: 'Rua',
+    enderecoNumero: '10',
+    enderecoComplemento: null,
+    enderecoBairro: 'Centro',
+    enderecoCidade: 'São Paulo',
+    enderecoUf: 'SP',
+    enderecoCep: '01310100',
+    codigoMunicipioIbge: '3550308',
+    regimeTributario: null,
+    descricaoAtividade: null,
+    cnae: null,
+    responsavel: null,
+    responsavelTelefone: null,
+    responsavelEmail: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     deletedAt: null,
@@ -68,19 +139,7 @@ describe('ClientesService', () => {
     it('deve criar cliente PF válido', async () => {
       tx.cliente.create.mockResolvedValue(clienteRow());
 
-      await service.create(
-        {
-          nome: 'X',
-          tipo: TipoCliente.PF,
-          cpfCnpj: '11144477735',
-          email: 'x@x.com',
-          telefone: '11999999999',
-          endereco: 'Rua',
-        },
-        'user-1',
-        ctx.ip,
-        ctx.ua,
-      );
+      await service.create(dtoPf(), 'user-1', ctx.ip, ctx.ua);
 
       expect(tx.cliente.create).toHaveBeenCalled();
       expect(auditoria.registrar).toHaveBeenCalledWith(
@@ -95,19 +154,7 @@ describe('ClientesService', () => {
 
     it('deve registrar auditoria em INSERT', async () => {
       tx.cliente.create.mockResolvedValue(clienteRow());
-      await service.create(
-        {
-          nome: 'X',
-          tipo: TipoCliente.PF,
-          cpfCnpj: '11144477735',
-          email: 'x@x.com',
-          telefone: '11999999999',
-          endereco: 'Rua',
-        },
-        'u',
-        ctx.ip,
-        ctx.ua,
-      );
+      await service.create(dtoPf(), 'u', ctx.ip, ctx.ua);
       expect(auditoria.registrar).toHaveBeenCalled();
     });
 
@@ -118,21 +165,9 @@ describe('ClientesService', () => {
           clientVersion: 'test',
         }),
       );
-      await expect(
-        service.create(
-          {
-            nome: 'Y',
-            tipo: TipoCliente.PF,
-            cpfCnpj: '11144477735',
-            email: 'y@x.com',
-            telefone: '11',
-            endereco: 'Rua',
-          },
-          'u',
-          ctx.ip,
-          ctx.ua,
-        ),
-      ).rejects.toThrow(ConflictException);
+      await expect(service.create({ ...dtoPf(), email: 'y@x.com' }, 'u', ctx.ip, ctx.ua)).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 
@@ -153,6 +188,7 @@ describe('ClientesService', () => {
         {
           sub: 'u',
           id: 'u',
+          cpfCnpj: '11000000000108',
           email: 'a@a.com',
           role: Role.CLIENTE,
           permissions: [],
@@ -176,6 +212,7 @@ describe('ClientesService', () => {
           {
             sub: 'u',
             id: 'u',
+            cpfCnpj: '11000000000108',
             email: 'a@a.com',
             role: Role.CLIENTE,
             permissions: [],
@@ -200,6 +237,7 @@ describe('ClientesService', () => {
       const r = await service.findOne('c-own', {
         sub: 'u',
         id: 'u',
+        cpfCnpj: '11000000000108',
         email: 'a@a.com',
         role: Role.CLIENTE,
         permissions: [],
@@ -211,7 +249,7 @@ describe('ClientesService', () => {
     it('CLIENTE recebe Forbidden ao consultar id de outro cadastro (com auditoria)', async () => {
       prisma.cliente.findFirst.mockResolvedValue({
         id: 'outro',
-        nome: 'Outro',
+        razaoSocial: 'Outro',
         tipo: TipoCliente.PJ,
         cpfCnpj: '11222333000181',
         email: 'o@o.com',
@@ -221,6 +259,7 @@ describe('ClientesService', () => {
         service.findOne('outro', {
           sub: 'u',
           id: 'u',
+          cpfCnpj: '11000000000108',
           email: 'a@a.com',
           role: Role.CLIENTE,
           permissions: [],
@@ -235,6 +274,7 @@ describe('ClientesService', () => {
         service.findOne('c1', {
           sub: 'u',
           id: 'u',
+          cpfCnpj: '11000000000108',
           email: 'a@a.com',
           role: Role.CLIENTE,
           permissions: [],
@@ -252,12 +292,12 @@ describe('ClientesService', () => {
   describe('update', () => {
     it('deve atualizar cliente', async () => {
       const cur = clienteRow();
-      const upd = { ...cur, nome: 'Novo' };
+      const upd = { ...cur, razaoSocial: 'Novo' };
       prisma.cliente.findUnique.mockResolvedValue(cur);
       tx.cliente.update.mockResolvedValue(upd);
 
-      const r = await service.update('c1', { nome: 'Novo' }, 'u1', ctx.ip, ctx.ua);
-      expect(r.nome).toBe('Novo');
+      const r = await service.update('c1', { nomeCompleto: 'Novo' }, 'u1', ctx.ip, ctx.ua);
+      expect(r.razaoSocial).toBe('Novo');
     });
 
     it('deve registrar auditoria em UPDATE', async () => {
@@ -277,9 +317,42 @@ describe('ClientesService', () => {
 
     it('deve lançar NotFoundException se ID não existir', async () => {
       prisma.cliente.findUnique.mockResolvedValue(null);
-      await expect(service.update('bad', { nome: 'X' }, 'u', ctx.ip, ctx.ua)).rejects.toThrow(
+      await expect(service.update('bad', { razaoSocial: 'X' }, 'u', ctx.ip, ctx.ua)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('deve rejeitar alteração de cpfCnpj no PATCH', async () => {
+      prisma.cliente.findUnique.mockResolvedValue(clienteRow());
+      await expect(
+        service.update('c1', { cpfCnpj: '11000000000199' }, 'u1', ctx.ip, ctx.ua),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('deve exigir podeGerenciarPessoas para CLIENTE alterar cadastro', async () => {
+      prisma.cliente.findUnique.mockResolvedValue(clienteRow());
+      sessionService.getSession.mockResolvedValueOnce({
+        permissoesPessoa: { podeGerenciarPessoas: false },
+      });
+      await expect(
+        service.update(
+          'c1',
+          { razaoSocial: 'Novo' },
+          'u1',
+          ctx.ip,
+          ctx.ua,
+          {
+            sub: 'u1',
+            id: 'u1',
+            email: 'a@a.com',
+            cpfCnpj: '11000000000108',
+            role: Role.CLIENTE,
+            permissions: [],
+            clienteId: 'c1',
+            sid: 'sess-1',
+          },
+        ),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 

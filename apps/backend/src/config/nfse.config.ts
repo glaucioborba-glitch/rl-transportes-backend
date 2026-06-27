@@ -14,7 +14,16 @@ export default registerAs('nfse', () => ({
     /** Senha do portal (usuário = CNPJ do prestador). Obrigatória para transmitir. */
     senha: process.env.NFSE_IPM_SENHA || '',
     municipioIbge: process.env.NFSE_IPM_MUNICIPIO_IBGE || '4211306',
-    /** Nome do elemento XML (filho de &lt;nf&gt;) com valor C no cancelamento (NTE-35/2021). Conferir no portal se rejeitado. */
+    certPath: process.env.NFSE_IPM_CERT_PATH || '',
+    certPass: process.env.NFSE_IPM_CERT_PASS || '',
     tagIndicadorCancelamento: (process.env.NFSE_IPM_TAG_CANCEL || 'tipo').replace(/[^a-zA-Z0-9_]/g, '') || 'tipo',
+    armazenagem: {
+      codigoLocalPrestacao: process.env.NFSE_ARM_CODIGO_LOCAL || '8221',
+      codigoAtividade: process.env.NFSE_ARM_CODIGO_ATIVIDADE || '4930201',
+      codigoItemListaServico: process.env.NFSE_ARM_CODIGO_ITEM || '160201',
+      aliquotaPercent: Number(process.env.NFSE_ARM_ALIQUOTA ?? '2') || 2,
+      situacaoTributaria: process.env.NFSE_ARM_SIT_TRIB || '0',
+    },
+    tomadorTomFallback: process.env.NFSE_TOMADOR_TOM_FALLBACK || '8221',
   },
 }));

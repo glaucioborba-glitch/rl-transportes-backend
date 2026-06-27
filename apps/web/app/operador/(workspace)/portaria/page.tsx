@@ -25,7 +25,7 @@ function normPlaca(s: string) {
 }
 
 type SolRow = { id: string; protocolo: string; status: string };
-type ClienteRow = { id: string; nome: string };
+type ClienteRow = { id: string; razaoSocial: string };
 
 export default function PortariaPage() {
   const [pendentes, setPendentes] = useState<SolRow[]>([]);
@@ -254,11 +254,11 @@ export default function PortariaPage() {
                         className="w-full px-3 py-2 text-left hover:bg-white/10"
                         onClick={() => {
                           setClienteId(c.id);
-                          setClienteQ(c.nome);
+                          setClienteQ(c.razaoSocial);
                           setClientesHit([]);
                         }}
                       >
-                        {c.nome}
+                        {c.razaoSocial}
                       </button>
                     </li>
                   ))}

@@ -16,6 +16,7 @@ import {
   registrarViolacaoSequenciaOperacional,
 } from '../common/security/scope-audit.util';
 import { PRISMA_SERIALIZABLE_TX } from '../prisma/transaction-options';
+import { ServicosLogisticosService } from '../servicos-logisticos/servicos-logisticos.service';
 import { SolicitacaoPaginationDto } from '../common/dtos/pagination.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AddUnidadeSolicitacaoDto } from './dto/add-unidade-solicitacao.dto';
@@ -26,12 +27,47 @@ import { CreateSaidaDto } from './dto/create-saida.dto';
 import { CreateSolicitacaoDto } from './dto/create-solicitacao.dto';
 import { UpdateSolicitacaoDto } from './dto/update-solicitacao.dto';
 
-/** Transições válidas de status (documento Semana 2). */
+/** Transições válidas — FL armazenagem alinhado a: solicitado → análise → aprovado → execução → concluído. */
 export const VALID_STATUS_TRANSITIONS: Record<StatusSolicitacao, StatusSolicitacao[]> = {
-  [StatusSolicitacao.PENDENTE]: [StatusSolicitacao.APROVADO, StatusSolicitacao.REJEITADO],
-  [StatusSolicitacao.APROVADO]: [StatusSolicitacao.CONCLUIDO, StatusSolicitacao.REJEITADO],
+  [StatusSolicitacao.PENDENTE]: [
+    StatusSolicitacao.EM_ANALISE,
+    StatusSolicitacao.APROVADO,
+    StatusSolicitacao.REJEITADO,
+    StatusSolicitacao.CANCELADO,
+  ],
+  [StatusSolicitacao.EM_ANALISE]: [
+    StatusSolicitacao.APROVADO,
+    StatusSolicitacao.REJEITADO,
+    StatusSolicitacao.CANCELADO,
+  ],
+  [StatusSolicitacao.APROVADO]: [
+    StatusSolicitacao.EM_EXECUCAO,
+    StatusSolicitacao.CONCLUIDO,
+    StatusSolicitacao.REJEITADO,
+    StatusSolicitacao.CANCELADO,
+  ],
+  [StatusSolicitacao.EM_EXECUCAO]: [
+    StatusSolicitacao.CONCLUIDO,
+    StatusSolicitacao.REJEITADO,
+    StatusSolicitacao.CANCELADO,
+  ],
+  [StatusSolicitacao.AGUARDANDO_GATE_IN]: [
+    StatusSolicitacao.EM_PATIO,
+    StatusSolicitacao.CANCELADO,
+  ],
+  [StatusSolicitacao.EM_PATIO]: [
+    StatusSolicitacao.AGUARDANDO_GATE_OUT,
+    StatusSolicitacao.CONCLUIDO,
+    StatusSolicitacao.CANCELADO,
+  ],
+  [StatusSolicitacao.AGUARDANDO_GATE_OUT]: [
+    StatusSolicitacao.CONCLUIDO,
+    StatusSolicitacao.CANCELADO,
+  ],
   [StatusSolicitacao.CONCLUIDO]: [],
   [StatusSolicitacao.REJEITADO]: [],
+  [StatusSolicitacao.CANCELADO]: [],
+  [StatusSolicitacao.CANCELADO_CLIENTE]: [],
 };
 
 function gerarProtocolo(): string {
@@ -49,6 +85,7 @@ export class SolicitacoesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditoria: AuditoriaService,
+    private readonly servicosLogisticos: ServicosLogisticosService,
   ) {}
 
   async create(dto: CreateSolicitacaoDto, actorUserId: string) {
@@ -69,6 +106,11 @@ export class SolicitacoesService {
                 protocolo,
                 clienteId: dto.clienteId,
                 status: StatusSolicitacao.PENDENTE,
+                tipoFluxo: dto.tipoFluxo ?? undefined,
+                servicosAdicionais:
+                  dto.servicosAdicionais?.length && dto.servicosAdicionais.length > 0
+                    ? (dto.servicosAdicionais as Prisma.InputJsonValue)
+                    : undefined,
               },
             });
             await tx.unidade.createMany({
@@ -150,19 +192,50 @@ export class SolicitacoesService {
     );
   }
 
+  private async assertUnidadesNaoBloqueadas(
+    solicitacaoId: string,
+    etapa: 'PORTARIA' | 'GATE' | 'PATIO' | 'SAIDA',
+    actorUserId: string,
+    unidadesCarregadas?: Array<{
+      numeroIso: string;
+      movimentacaoBloqueada: boolean;
+      bloqueioMotivo: string | null;
+      bloqueioTipo: string | null;
+    }>,
+  ) {
+    const unidades =
+      unidadesCarregadas ??
+      (await this.prisma.unidade.findMany({ where: { solicitacaoId } }));
+    const bloq = unidades.filter((u) => u.movimentacaoBloqueada);
+    if (bloq.length === 0) return;
+    this.servicosLogisticos.notificarBloqueioMovimentacao({
+      solicitacaoId,
+      etapa,
+      usuario: actorUserId,
+      isos: bloq.map((u) => u.numeroIso),
+      motivos: bloq.map((u) => u.bloqueioMotivo ?? u.bloqueioTipo ?? 'bloqueado'),
+    });
+    throw new BadRequestException(
+      `Movimentação bloqueada para contêiner(is): ${bloq.map((u) => u.numeroIso).join(', ')}`,
+    );
+  }
+
   private async assertSomenteAprovadoParaOperacao(
     solicitacao: { id: string; status: StatusSolicitacao },
     etapa: 'PORTARIA' | 'GATE' | 'PATIO' | 'SAIDA',
     actorUserId: string,
   ) {
-    if (solicitacao.status !== StatusSolicitacao.APROVADO) {
+    const ok =
+      solicitacao.status === StatusSolicitacao.APROVADO ||
+      solicitacao.status === StatusSolicitacao.EM_EXECUCAO;
+    if (!ok) {
       await registrarViolacaoSequenciaOperacional(this.auditoria, { usuario: actorUserId }, {
         solicitacaoId: solicitacao.id,
         etapa,
-        motivo: `Status da solicitação é ${solicitacao.status}; apenas APROVADO permite esta etapa.`,
+        motivo: `Status da solicitação é ${solicitacao.status}; requer APROVADO ou EM_EXECUCAO.`,
       });
       throw new BadRequestException(
-        'Operação permitida somente para solicitações aprovadas pelo cliente.',
+        'Operação permitida somente para solicitações aprovadas ou em execução no terminal.',
       );
     }
   }
@@ -170,11 +243,13 @@ export class SolicitacoesService {
   async registerPortaria(dto: CreatePortariaDto, actorUserId: string) {
     const solicitacao = await this.prisma.solicitacao.findFirst({
       where: { id: dto.solicitacaoId, deletedAt: null },
+      include: { unidades: true },
     });
     if (!solicitacao) {
       throw new NotFoundException('Solicitação não encontrada');
     }
     await this.assertSomenteAprovadoParaOperacao(solicitacao, 'PORTARIA', actorUserId);
+    await this.assertUnidadesNaoBloqueadas(solicitacao.id, 'PORTARIA', actorUserId, solicitacao.unidades);
 
     return this.prisma.$transaction(
       async (tx) => {
@@ -184,14 +259,43 @@ export class SolicitacoesService {
         const row = existing
           ? await tx.portaria.update({
               where: { solicitacaoId: dto.solicitacaoId },
-              data: { placaVeiculo: dto.placa },
+              data: {
+                placaVeiculo: dto.placa,
+                motoristaNome: dto.motoristaNome ?? null,
+                motoristaCpf: dto.motoristaCpf ?? null,
+                transportadoraNome: dto.transportadoraNome ?? null,
+                motoristaTelefone: dto.motoristaTelefone ?? null,
+              },
             })
           : await tx.portaria.create({
               data: {
                 solicitacaoId: dto.solicitacaoId,
                 placaVeiculo: dto.placa,
+                motoristaNome: dto.motoristaNome ?? null,
+                motoristaCpf: dto.motoristaCpf ?? null,
+                transportadoraNome: dto.transportadoraNome ?? null,
+                motoristaTelefone: dto.motoristaTelefone ?? null,
               },
             });
+
+        if (solicitacao.status === StatusSolicitacao.APROVADO) {
+          await tx.solicitacao.update({
+            where: { id: dto.solicitacaoId },
+            data: { status: StatusSolicitacao.EM_EXECUCAO },
+          });
+          await this.auditoria.registrar(
+            {
+              tabela: 'solicitacoes',
+              registroId: dto.solicitacaoId,
+              acao: AcaoAuditoria.UPDATE,
+              usuario: actorUserId,
+              dadosAntes: { status: StatusSolicitacao.APROVADO },
+              dadosDepois: { status: StatusSolicitacao.EM_EXECUCAO, motivo: 'portaria_iniciada' },
+            },
+            tx,
+          );
+        }
+
         await this.auditoria.registrar(
           {
             tabela: 'portarias',
@@ -273,6 +377,29 @@ export class SolicitacoesService {
     ]);
 
     return { items, total, page, limit: Math.min(limit, 100), orderBy, order };
+  }
+
+  /** Exportação CSV (até 2000 linhas — processamento pesado deve ir para fila no futuro). */
+  async buildExportCsv(pagination: SolicitacaoPaginationDto, actor?: AuthUser): Promise<string> {
+    const { items } = await this.findAllPaginated(
+      { ...pagination, page: 1, limit: 2000 },
+      { clienteId: pagination.clienteId, status: pagination.status },
+      actor,
+    );
+    const header = 'protocolo,status,tipoFluxo,clienteId,clienteRazao,isos\n';
+    const lines = items.map((s) => {
+      const isos = s.unidades.map((u) => u.numeroIso).join('|');
+      const nome = (s.cliente?.razaoSocial ?? '').replace(/"/g, '""');
+      return [
+        s.protocolo,
+        s.status,
+        s.tipoFluxo ?? '',
+        s.clienteId,
+        `"${nome}"`,
+        isos,
+      ].join(',');
+    });
+    return `${header}${lines.join('\n')}`;
   }
 
   async findOne(
@@ -435,12 +562,13 @@ export class SolicitacoesService {
   async registerGate(dto: CreateGateDto, actorUserId: string) {
     const solicitacao = await this.prisma.solicitacao.findFirst({
       where: { id: dto.solicitacaoId, deletedAt: null },
-      include: { portaria: true },
+      include: { portaria: true, unidades: true },
     });
     if (!solicitacao) {
       throw new NotFoundException('Solicitação não encontrada');
     }
     await this.assertSomenteAprovadoParaOperacao(solicitacao, 'GATE', actorUserId);
+    await this.assertUnidadesNaoBloqueadas(solicitacao.id, 'GATE', actorUserId, solicitacao.unidades);
     if (!solicitacao.portaria) {
       await registrarViolacaoSequenciaOperacional(this.auditoria, { usuario: actorUserId }, {
         solicitacaoId: solicitacao.id,
@@ -489,12 +617,13 @@ export class SolicitacoesService {
   async registerPatio(dto: CreatePatioDto, actorUserId: string) {
     const solicitacao = await this.prisma.solicitacao.findFirst({
       where: { id: dto.solicitacaoId, deletedAt: null },
-      include: { gate: true },
+      include: { gate: true, unidades: true },
     });
     if (!solicitacao) {
       throw new NotFoundException('Solicitação não encontrada');
     }
     await this.assertSomenteAprovadoParaOperacao(solicitacao, 'PATIO', actorUserId);
+    await this.assertUnidadesNaoBloqueadas(solicitacao.id, 'PATIO', actorUserId, solicitacao.unidades);
     if (!solicitacao.gate) {
       await registrarViolacaoSequenciaOperacional(this.auditoria, { usuario: actorUserId }, {
         solicitacaoId: solicitacao.id,
@@ -557,12 +686,13 @@ export class SolicitacoesService {
   async registerSaida(dto: CreateSaidaDto, actorUserId: string) {
     const solicitacao = await this.prisma.solicitacao.findFirst({
       where: { id: dto.solicitacaoId, deletedAt: null },
-      include: { patio: true },
+      include: { patio: true, unidades: true },
     });
     if (!solicitacao) {
       throw new NotFoundException('Solicitação não encontrada');
     }
     await this.assertSomenteAprovadoParaOperacao(solicitacao, 'SAIDA', actorUserId);
+    await this.assertUnidadesNaoBloqueadas(solicitacao.id, 'SAIDA', actorUserId, solicitacao.unidades);
     if (!solicitacao.patio) {
       await registrarViolacaoSequenciaOperacional(this.auditoria, { usuario: actorUserId }, {
         solicitacaoId: solicitacao.id,

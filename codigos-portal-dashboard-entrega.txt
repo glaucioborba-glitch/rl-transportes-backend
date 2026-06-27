@@ -1,0 +1,2148 @@
+﻿=== apps/backend/src/cx-portais/identity/portal-identity.controller.ts ===
+import { Body, Controller, Get, Header, HttpCode, HttpStatus, NotFoundException, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
+import { ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
+import { IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { PortalIdentityService } from './portal-identity.service';
+import { attachFreshCsrfCookie } from '../../auth/csrf-cookie.util';
+import { PortalRegisterDto } from '../dto/portal-register.dto';
+import { CpfCnpjValidationPipe } from '../../common/pipes/cpf-cnpj-validation.pipe';
+import { LoginDocumentoPipe } from '../../common/pipes/login-documento.pipe';
+
+class PortalLoginDto {
+  @ApiProperty({ description: 'CPF ou CNPJ do usuÃ¡rio' })
+  @IsString()
+  @MinLength(11)
+  documento: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(4)
+  password: string;
+
+  @ApiProperty({ required: false, enum: ['CLIENTE', 'FORNECEDOR', 'PARCEIRO'] })
+  @IsOptional()
+  @IsIn(['CLIENTE', 'FORNECEDOR', 'PARCEIRO'])
+  papel?: 'CLIENTE' | 'FORNECEDOR' | 'PARCEIRO';
+
+  @ApiProperty({ required: false, description: 'Tenant lÃ³gico (multi-terminal Fase 18)', example: 'default' })
+  @IsOptional()
+  @IsString()
+  tenantId?: string;
+}
+
+class PortalRefreshDto {
+  @ApiProperty()
+  @IsString()
+  refreshToken: string;
+}
+
+class Portal2faDto {
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  code?: string;
+}
+
+class PortalEsqueciSenhaDto {
+  @ApiProperty()
+  @IsEmail()
+  email!: string;
+}
+
+class PortalRedefinirSenhaDto {
+  @ApiProperty({ description: 'Token UUID enviado por e-mail' })
+  @IsString()
+  @MinLength(10)
+  token!: string;
+
+  @ApiProperty({ minLength: 8 })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  novaSenha!: string;
+}
+
+@ApiTags('cx-portal-iam')
+@Controller('portal')
+export class PortalIdentityController {
+  constructor(private readonly identity: PortalIdentityService) {}
+
+  @Get('email-preview')
+  @ApiOperation({ summary: 'Somente desenvolvimento: HTML do e-mail de recuperaÃ§Ã£o de senha' })
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  emailPreview(@Query('token') token?: string, @Query('nome') nome?: string) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new NotFoundException();
+    }
+    return this.identity.getResetPreviewHtml(nome?.trim() || 'Cliente exemplo', token?.trim() || 'exemplo-uuid');
+  }
+
+  @Post('register')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Cadastro self-service (CLIENTE + Cliente Prisma)' })
+  async register(@Body(CpfCnpjValidationPipe) body: PortalRegisterDto, @Res({ passthrough: true }) res: Response) {
+    const out = await this.identity.registrarClientePortal(body);
+    attachFreshCsrfCookie(res);
+    return out;
+  }
+
+  @Post('esqueci-senha')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Solicitar link de redefiniÃ§Ã£o (mock: log no servidor)' })
+  async esqueciSenha(@Body() body: PortalEsqueciSenhaDto, @Res({ passthrough: true }) res: Response) {
+    const out = await this.identity.pedirRecuperacaoSenha(body.email);
+    attachFreshCsrfCookie(res);
+    return out;
+  }
+
+  @Post('redefinir-senha')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Concluir redefiniÃ§Ã£o com token recebido por e-mail' })
+  async redefinirSenha(@Body() body: PortalRedefinirSenhaDto, @Res({ passthrough: true }) res: Response) {
+    const out = await this.identity.redefinirSenhaComToken(body.token, body.novaSenha);
+    attachFreshCsrfCookie(res);
+    return out;
+  }
+
+  @Post('login')
+  @ApiOperation({
+    summary: 'Login IAM portal (JWT hÃ­brido)',
+    description:
+      '**CLIENTE:** usuÃ¡rio Prisma `Role.CLIENTE`. **FORNECEDOR/PARCEIRO:** seed em memÃ³ria `CX_PORTAL_FORNECEDOR_SEED`. Chaves pÃºblicas Fase 18 **nÃ£o** autenticam aqui.',
+  })
+  async login(@Body(LoginDocumentoPipe) body: PortalLoginDto, @Res({ passthrough: true }) res: Response) {
+    const out = await this.identity.login(body.documento, body.password, body.papel, body.tenantId);
+    attachFreshCsrfCookie(res);
+    return out;
+  }
+
+  @Post('refresh')
+  @ApiOperation({ summary: 'Refresh token portal (par de tokens dedicados)' })
+  async refresh(@Body() body: PortalRefreshDto, @Res({ passthrough: true }) res: Response) {
+    const out = await this.identity.refresh(body.refreshToken);
+    attachFreshCsrfCookie(res);
+    return out;
+  }
+
+  @Post('2fa')
+  @ApiOperation({ summary: '2FA opcional (stub nesta fase)' })
+  async twoFa(@Body() body: Portal2faDto) {
+    return this.identity.twoFaStub(body);
+  }
+}
+
+
+=== apps/backend/src/cx-portais/services/dashboard-portal.service.ts ===
+import { BadRequestException, Injectable } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
+import { StatusSolicitacao, type TipoCliente } from '@prisma/client';
+import { PrismaService } from '../../prisma/prisma.service';
+import { PlataformaTenantStore } from '../../plataforma-integracao/stores/plataforma-tenant.store';
+import type { CxPortalRequestUser } from '../types/cx-portal.types';
+
+export type DashboardPortalOptions = {
+  recentPage?: number;
+  recentLimit?: number;
+};
+
+export type DashboardUltimaSolicitacao = {
+  id: string;
+  protocolo: string;
+  status: StatusSolicitacao;
+  createdAt: Date;
+};
+
+/** Contrato oficial `GET /cliente/portal/dashboard` + campos legados consumidos pelo Next. */
+export type DashboardPortalConsolidated = {
+  cliente: {
+    id: string;
+    nome: string;
+    tipo: TipoCliente;
+    cpfCnpj: string;
+    emailNfse: string | null;
+    endereco: {
+      logradouro: string;
+      numero: string;
+      bairro: string;
+      cidade: string;
+      uf: string;
+      cep: string;
+      codigoIbge: string;
+      complemento: string | null;
+    };
+  } | null;
+  solicitacoes: {
+    abertas: number;
+    emAndamento: number;
+    concluidas: number;
+    canceladas: number;
+    ultimas: DashboardUltimaSolicitacao[];
+  };
+  financeiro: {
+    boletosPendentes: number;
+    nfseEmitidas: number;
+    faturadoMes: number;
+    /** Janela mÃ³vel 30 dias (UTC) â€” compat dashboards antigos. */
+    totalFaturadoPeriodo: number;
+  };
+  slas: {
+    cumpridos: number;
+    violados: number;
+  };
+
+  totalSolicitacoes: number;
+  solicitacoesRecentes: unknown[];
+  kpis: {
+    abertas: number;
+    emAndamento: number;
+    concluÃ­das: number;
+  };
+  kpisCx: {
+    personalizaveis: string[];
+    valores: {
+      ciclo_medio_horas: number | null;
+      containers_ativos: number;
+      faturamento_aberto: number;
+    };
+  };
+  slasCx: {
+    tenantId: string;
+    contratadosProxy: Record<string, number>;
+    historicoProxy: { periodo: string; cumprimentoPctProxy: number }[];
+  };
+  trackingSample: unknown[];
+  solicitacoesHoje: unknown[];
+  recent: {
+    items: unknown[];
+    total: number;
+    page: number;
+    limit: number;
+    orderBy: string;
+    order: string;
+  };
+  meta: {
+    tenantId: string;
+    slasHorasProxy: Record<string, number> | null;
+  };
+};
+
+const SOL_INC: Prisma.SolicitacaoInclude = {
+  cliente: true,
+  portaria: true,
+  gate: true,
+  patio: true,
+  saida: true,
+  unidades: true,
+};
+
+function monthBoundsUtc(ref = new Date()): { start: Date; end: Date } {
+  const y = ref.getUTCFullYear();
+  const m = ref.getUTCMonth();
+  const start = new Date(Date.UTC(y, m, 1, 0, 0, 0, 0));
+  const end = new Date(Date.UTC(y, m + 1, 0, 23, 59, 59, 999));
+  return { start, end };
+}
+
+function decToNumber(v: unknown): number {
+  if (v === null || v === undefined) return 0;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  if (typeof v === 'object' && v !== null && 'toNumber' in v && typeof (v as { toNumber: () => number }).toNumber === 'function') {
+    try {
+      return (v as { toNumber: () => number }).toNumber();
+    } catch {
+      return 0;
+    }
+  }
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+@Injectable()
+export class DashboardPortalService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenants: PlataformaTenantStore,
+  ) {}
+
+  private clientScope(cx: CxPortalRequestUser, clienteIdParam?: string): string {
+    if (cx.portalPapel === 'STAFF') {
+      if (!clienteIdParam) {
+        throw new BadRequestException('ParÃ¢metro clienteId obrigatÃ³rio para visÃ£o ADMIN/GERENTE');
+      }
+      return clienteIdParam;
+    }
+    if (!cx.clienteId) {
+      throw new BadRequestException('UsuÃ¡rio portal sem vÃ­nculo de cliente');
+    }
+    return cx.clienteId;
+  }
+
+  private formatDoc(cpfCnpj: string): string {
+    const d = cpfCnpj.replace(/\D/g, '');
+    if (d.length === 14) {
+      const tail11 = d.slice(-11);
+      if (/^\d{11}$/.test(tail11) && d.startsWith('000')) return tail11;
+      return d;
+    }
+    return d;
+  }
+
+  private async safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+    try {
+      return await fn();
+    } catch {
+      return fallback;
+    }
+  }
+
+  async getClienteContext(clienteId: string): Promise<DashboardPortalConsolidated['cliente']> {
+    return this.safe(async () => {
+      const c = await this.prisma.cliente.findFirst({
+        where: { id: clienteId, deletedAt: null },
+      });
+      if (!c) return null;
+      const nome = (c.razaoSocial ?? '').trim() || 'Cliente';
+      const rawEmailNfse = (c.emailNfse ?? '').trim();
+      const emailNfse = rawEmailNfse.length ? rawEmailNfse : null;
+      return {
+        id: c.id,
+        nome,
+        tipo: c.tipo,
+        cpfCnpj: this.formatDoc(c.cpfCnpj),
+        emailNfse,
+        endereco: {
+          cep: (c.enderecoCep ?? '').trim(),
+          logradouro: (c.enderecoLogradouro ?? '').trim(),
+          numero: (c.enderecoNumero ?? '').trim(),
+          complemento: c.enderecoComplemento?.trim() ?? null,
+          bairro: (c.enderecoBairro ?? '').trim(),
+          cidade: (c.enderecoCidade ?? '').trim(),
+          uf: (c.enderecoUf ?? '').trim(),
+          codigoIbge: (c.codigoMunicipioIbge ?? '').trim(),
+        },
+      };
+    }, null);
+  }
+
+  private async loadSolicitacaoKpis(clienteId: string): Promise<{
+    totalSolicitacoes: number;
+    abertas: number;
+    emAndamento: number;
+    concluidas: number;
+    canceladas: number;
+    concluidas30d: number;
+    ciclo_medio_horas: number | null;
+    containers_ativos: number;
+    faturamento_aberto: number;
+  }> {
+    const base: Prisma.SolicitacaoWhereInput = { clienteId, deletedAt: null };
+    const since30 = new Date();
+    since30.setUTCDate(since30.getUTCDate() - 30);
+
+    const [
+      totalSolicitacoes,
+      abertas,
+      emAndamento,
+      concluidas,
+      canceladas,
+      concluidas30d,
+      cicloRows,
+      containersAtivos,
+      faturamentoAberto,
+    ] = await Promise.all([
+      this.safe(() => this.prisma.solicitacao.count({ where: base }), 0),
+      this.safe(
+        () =>
+          this.prisma.solicitacao.count({
+            where: { ...base, status: StatusSolicitacao.PENDENTE },
+          }),
+        0,
+      ),
+      this.safe(
+        () =>
+          this.prisma.solicitacao.count({
+            where: { ...base, status: StatusSolicitacao.APROVADO },
+          }),
+        0,
+      ),
+      this.safe(
+        () =>
+          this.prisma.solicitacao.count({
+            where: { ...base, status: StatusSolicitacao.CONCLUIDO },
+          }),
+        0,
+      ),
+      this.safe(
+        () =>
+          this.prisma.solicitacao.count({
+            where: { ...base, status: StatusSolicitacao.REJEITADO },
+          }),
+        0,
+      ),
+      this.safe(
+        () =>
+          this.prisma.solicitacao.count({
+            where: {
+              ...base,
+              status: StatusSolicitacao.CONCLUIDO,
+              updatedAt: { gte: since30 },
+            },
+          }),
+        0,
+      ),
+      this.safe(
+        () =>
+          this.prisma.solicitacao.findMany({
+            where: { ...base, status: StatusSolicitacao.CONCLUIDO },
+            take: 30,
+            orderBy: { updatedAt: 'desc' },
+            select: { createdAt: true, updatedAt: true },
+          }),
+        [],
+      ),
+      this.safe(
+        () =>
+          this.prisma.solicitacao.count({
+            where: {
+              clienteId,
+              deletedAt: null,
+              status: { in: [StatusSolicitacao.PENDENTE, StatusSolicitacao.APROVADO] },
+              saida: { is: null },
+            },
+          }),
+        0,
+      ),
+      this.safe(
+        () =>
+          this.prisma.faturamento.count({
+            where: {
+              clienteId,
+              statusBoleto: { not: 'pago' },
+            },
+          }),
+        0,
+      ),
+    ]);
+
+    const ciclo_medio_horas =
+      cicloRows.length > 0
+        ? Math.round(
+            (cicloRows.reduce((a, r) => {
+              const du = r.updatedAt instanceof Date ? r.updatedAt.getTime() : 0;
+              const dc = r.createdAt instanceof Date ? r.createdAt.getTime() : 0;
+              return a + (du - dc) / 3600000;
+            }, 0) /
+              cicloRows.length) *
+              10,
+          ) / 10
+        : null;
+
+    return {
+      totalSolicitacoes,
+      abertas,
+      emAndamento,
+      concluidas,
+      canceladas,
+      concluidas30d,
+      ciclo_medio_horas,
+      containers_ativos: containersAtivos,
+      faturamento_aberto: faturamentoAberto,
+    };
+  }
+
+  async getFinanceiro(clienteId: string): Promise<DashboardPortalConsolidated['financeiro']> {
+    const since30 = new Date();
+    since30.setUTCDate(since30.getUTCDate() - 30);
+    const { start: mesInicio, end: mesFim } = monthBoundsUtc();
+
+    const [boletosPendentes, nfseEmitidas, sum30, sumMes] = await Promise.all([
+      this.safe(
+        () =>
+          this.prisma.boleto.count({
+            where: {
+              faturamento: { clienteId },
+              NOT: { statusPagamento: { equals: 'pago', mode: 'insensitive' } },
+            },
+          }),
+        0,
+      ),
+      this.safe(
+        () =>
+          this.prisma.nfsEmitida.count({
+            where: { faturamento: { clienteId } },
+          }),
+        0,
+      ),
+      this.safe(
+        () =>
+          this.prisma.faturamento.aggregate({
+            where: { clienteId, createdAt: { gte: since30 } },
+            _sum: { valorTotal: true },
+          }),
+        { _sum: { valorTotal: null } },
+      ),
+      this.safe(
+        () =>
+          this.prisma.faturamento.aggregate({
+            where: {
+              clienteId,
+              createdAt: { gte: mesInicio, lte: mesFim },
+            },
+            _sum: { valorTotal: true },
+          }),
+        { _sum: { valorTotal: null } },
+      ),
+    ]);
+
+    const totalFaturadoPeriodo = decToNumber(sum30._sum.valorTotal);
+    const faturadoMes = decToNumber(sumMes._sum.valorTotal);
+
+    return {
+      boletosPendentes,
+      nfseEmitidas,
+      faturadoMes,
+      totalFaturadoPeriodo,
+    };
+  }
+
+  async getSlas(
+    cx: CxPortalRequestUser,
+    concluidas30d: number,
+  ): Promise<{
+    slas: { cumpridos: number; violados: number };
+    slasCx: DashboardPortalConsolidated['slasCx'];
+    slasHorasProxy: Record<string, number> | null;
+  }> {
+    return this.safe(async () => {
+      const t = this.tenants.obter(cx.tenantId) ?? this.tenants.obter('default');
+      const historicoProxy = [
+        { periodo: '30d', cumprimentoPctProxy: 94 },
+        { periodo: '90d', cumprimentoPctProxy: 91 },
+      ];
+      const pct30 =
+        historicoProxy.find((h) => h.periodo === '30d')?.cumprimentoPctProxy ??
+        historicoProxy[0]?.cumprimentoPctProxy ??
+        94;
+      const ratio = Math.min(100, Math.max(0, pct30)) / 100;
+      const base = Math.max(0, Math.floor(concluidas30d));
+      const cumpridos = Math.round(base * ratio);
+      const violados = Math.max(0, base - cumpridos);
+
+      const slasCx = {
+        tenantId: cx.tenantId,
+        contratadosProxy: t?.config.slasHorasProxy ?? { gate: 4, patio: 72, saida: 24 },
+        historicoProxy,
+      };
+
+      return {
+        slas: { cumpridos, violados },
+        slasCx,
+        slasHorasProxy: t?.config.slasHorasProxy ?? null,
+      };
+    }, {
+      slas: { cumpridos: 0, violados: 0 },
+      slasCx: {
+        tenantId: cx.tenantId,
+        contratadosProxy: { gate: 4, patio: 72, saida: 24 },
+        historicoProxy: [{ periodo: '30d', cumprimentoPctProxy: 94 }],
+      },
+      slasHorasProxy: null,
+    });
+  }
+
+  async buildConsolidated(
+    cx: CxPortalRequestUser,
+    clienteIdParam?: string,
+    opts?: DashboardPortalOptions,
+  ): Promise<DashboardPortalConsolidated> {
+    const clienteId = this.clientScope(cx, clienteIdParam);
+    const page = Math.max(1, opts?.recentPage ?? 1);
+    const limit = Math.min(100, Math.max(1, opts?.recentLimit ?? 8));
+    const skip = (page - 1) * limit;
+
+    const todayUtc = new Date();
+    const y = todayUtc.getUTCFullYear();
+    const m = String(todayUtc.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(todayUtc.getUTCDate()).padStart(2, '0');
+    const dayStart = new Date(`${y}-${m}-${day}T00:00:00.000Z`);
+    const dayEnd = new Date(`${y}-${m}-${day}T23:59:59.999Z`);
+
+    const solKpis = await this.loadSolicitacaoKpis(clienteId);
+    const fin = await this.getFinanceiro(clienteId);
+    const slaPack = await this.getSlas(cx, solKpis.concluidas30d);
+
+    const [clienteCtx, ultimas, solicitacoesRecentesPage, trackingSample, solicitacoesHoje, totalRecent] =
+      await Promise.all([
+        this.getClienteContext(clienteId),
+        this.safe(
+          () =>
+            this.prisma.solicitacao.findMany({
+              where: { clienteId, deletedAt: null },
+              take: 10,
+              orderBy: { createdAt: 'desc' },
+              select: {
+                id: true,
+                protocolo: true,
+                status: true,
+                createdAt: true,
+              },
+            }),
+          [],
+        ),
+        this.safe(
+          () =>
+            this.prisma.solicitacao.findMany({
+              where: { clienteId, deletedAt: null },
+              skip,
+              take: limit,
+              orderBy: { createdAt: 'desc' },
+              include: SOL_INC,
+            }),
+          [],
+        ),
+        this.safe(
+          () =>
+            this.prisma.solicitacao.findMany({
+              where: { clienteId, deletedAt: null },
+              take: 5,
+              orderBy: { createdAt: 'desc' },
+              include: SOL_INC,
+            }),
+          [],
+        ),
+        this.safe(
+          () =>
+            this.prisma.solicitacao.findMany({
+              where: {
+                clienteId,
+                deletedAt: null,
+                createdAt: { gte: dayStart, lte: dayEnd },
+              },
+              take: 100,
+              orderBy: { createdAt: 'desc' },
+              include: SOL_INC,
+            }),
+          [],
+        ),
+        this.safe(
+          () =>
+            this.prisma.solicitacao.count({
+              where: { clienteId, deletedAt: null },
+            }),
+          0,
+        ),
+      ]);
+
+    const solicitacoesBlock = {
+      abertas: solKpis.abertas,
+      emAndamento: solKpis.emAndamento,
+      concluidas: solKpis.concluidas,
+      canceladas: solKpis.canceladas,
+      ultimas,
+    };
+
+    return {
+      cliente: clienteCtx,
+      solicitacoes: solicitacoesBlock,
+      financeiro: fin,
+      slas: slaPack.slas,
+      totalSolicitacoes: solKpis.totalSolicitacoes,
+      solicitacoesRecentes: solicitacoesRecentesPage,
+      kpis: {
+        abertas: solKpis.abertas,
+        emAndamento: solKpis.emAndamento,
+        concluÃ­das: solKpis.concluidas,
+      },
+      kpisCx: {
+        personalizaveis: ['ciclo_medio_horas', 'containers_ativos', 'faturamento_aberto'],
+        valores: {
+          ciclo_medio_horas: solKpis.ciclo_medio_horas,
+          containers_ativos: solKpis.containers_ativos,
+          faturamento_aberto: solKpis.faturamento_aberto,
+        },
+      },
+      slasCx: slaPack.slasCx,
+      trackingSample,
+      solicitacoesHoje,
+      recent: {
+        items: solicitacoesRecentesPage,
+        total: totalRecent,
+        page,
+        limit,
+        orderBy: 'createdAt',
+        order: 'desc',
+      },
+      meta: {
+        tenantId: cx.tenantId,
+        slasHorasProxy: slaPack.slasHorasProxy,
+      },
+    };
+  }
+}
+
+
+=== apps/backend/src/clientes/clientes.service.ts ===
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  ForbiddenException,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
+import { AcaoAuditoria, Prisma, TipoCliente, Role } from '@prisma/client';
+import type { AuthUser } from '../common/decorators/current-user.decorator';
+import { PrismaService } from '../prisma/prisma.service';
+import { PRISMA_SERIALIZABLE_TX } from '../prisma/transaction-options';
+import { AuditoriaService } from '../auditoria/auditoria.service';
+import { registrarTentativaForaDeEscopo } from '../common/security/scope-audit.util';
+import { ClientePaginationDto } from '../common/dtos/pagination.dto';
+import { CreateClienteDto } from './dto/create-cliente.dto';
+import { UpdateClienteDto } from './dto/update-cliente.dto';
+import { clienteCreateInputFromDto, parseDataNascimentoPf } from './cliente-fiscal.mapper';
+import { AddressService } from '../common/address/address.service';
+import {
+  applyNormalizedToCreateDto,
+  mergePostalForUpdate,
+  normalizedToClienteUpdateData,
+  postalInputFromCreateDto,
+} from '../common/address/cliente-address-bridge';
+
+/** Whitelist de ordenaÃ§Ã£o (alinha ao ClientePaginationDto e evita chaves arbitrÃ¡rias). */
+const CLIENTE_ORDER_BY = new Set(['createdAt', 'razaoSocial', 'email']);
+
+const PF_FORBIDDEN_KEYS: (keyof CreateClienteDto)[] = [
+  'nomeFantasia',
+  'inscricaoMunicipal',
+  'inscricaoEstadual',
+  'regimeTributario',
+  'descricaoAtividade',
+  'cnae',
+  'responsavel',
+  'responsavelTelefone',
+  'responsavelEmail',
+];
+
+const ADDR_UPDATE_KEYS = new Set<keyof UpdateClienteDto>([
+  'enderecoCep',
+  'enderecoLogradouro',
+  'enderecoNumero',
+  'enderecoComplemento',
+  'enderecoBairro',
+  'enderecoCidade',
+  'enderecoUf',
+  'codigoMunicipioIbge',
+]);
+
+const PJ_FORBIDDEN_NONEMPTY: (keyof CreateClienteDto)[] = ['nomeCompleto', 'dataNascimento', 'telefoneContato'];
+
+@Injectable()
+export class ClientesService {
+  private readonly logger = new Logger(ClientesService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private auditoria: AuditoriaService,
+    private addressService: AddressService,
+  ) {}
+
+  private assertDtoAlinhadoAoTipo(dto: Partial<CreateClienteDto>, tipoEfetivo: TipoCliente) {
+    if (tipoEfetivo === TipoCliente.PF) {
+      if (dto.razaoSocial !== undefined) {
+        throw new BadRequestException(
+          'Use "nomeCompleto" para Pessoa FÃ­sica em vez de "razaoSocial".',
+        );
+      }
+      for (const key of PF_FORBIDDEN_KEYS) {
+        const v = dto[key];
+        if (v === undefined || v === null) continue;
+        if (typeof v === 'string' && v.trim() === '') continue;
+        if (key === 'isentoIE' && v === false) continue;
+        throw new BadRequestException(
+          `Campo "${String(key)}" nÃ£o Ã© permitido para Pessoa FÃ­sica.`,
+        );
+      }
+      if (dto.isentoIE === true) {
+        throw new BadRequestException('Campo "isentoIE" nÃ£o Ã© permitido para Pessoa FÃ­sica.');
+      }
+      return;
+    }
+
+    if (tipoEfetivo === TipoCliente.PJ) {
+      for (const key of PJ_FORBIDDEN_NONEMPTY) {
+        const v = dto[key];
+        if (v === undefined || v === null) continue;
+        if (typeof v === 'string' && v.trim() === '') continue;
+        throw new BadRequestException(
+          `Campo "${String(key)}" nÃ£o Ã© permitido para Pessoa JurÃ­dica.`,
+        );
+      }
+    }
+  }
+
+  private ensurePjNomeFantasia(
+    dto: CreateClienteDto | UpdateClienteDto,
+    options?: { tipoEfetivo: TipoCliente; nomeFantasiaAtual?: string | null },
+  ) {
+    const t = options?.tipoEfetivo ?? dto.tipo;
+    if (t !== TipoCliente.PJ) return;
+    const sent = 'nomeFantasia' in dto && dto.nomeFantasia !== undefined;
+    const val = sent
+      ? String(dto.nomeFantasia ?? '').trim()
+      : (options?.nomeFantasiaAtual ?? '').trim();
+    if (!val) {
+      throw new BadRequestException('Nome fantasia Ã© obrigatÃ³rio para pessoa jurÃ­dica.');
+    }
+  }
+
+  private addressFieldsInPatch(dto: UpdateClienteDto): boolean {
+    for (const k of ADDR_UPDATE_KEYS) {
+      if (dto[k] !== undefined) return true;
+    }
+    return false;
+  }
+
+  async create(
+    createClienteDto: CreateClienteDto,
+    usuarioId: string,
+    ip: string,
+    userAgent: string,
+  ) {
+    this.assertDtoAlinhadoAoTipo(createClienteDto, createClienteDto.tipo);
+    this.ensurePjNomeFantasia(createClienteDto, { tipoEfetivo: createClienteDto.tipo });
+    const dtoNorm = { ...createClienteDto };
+    const normalizedAddr = await this.addressService.normalize(postalInputFromCreateDto(dtoNorm));
+    applyNormalizedToCreateDto(dtoNorm, normalizedAddr);
+    const data = clienteCreateInputFromDto(dtoNorm);
+
+    try {
+      const cliente = await this.prisma.$transaction(async (tx) => {
+        const novoCliente = await tx.cliente.create({
+          data,
+        });
+
+        await this.auditoria.registrar(
+          {
+            tabela: 'clientes',
+            registroId: novoCliente.id,
+            acao: AcaoAuditoria.INSERT,
+            usuario: usuarioId,
+            dadosAntes: null,
+            dadosDepois: novoCliente,
+            ip,
+            userAgent,
+          },
+          tx,
+        );
+
+        return novoCliente;
+      }, PRISMA_SERIALIZABLE_TX);
+
+      return this.sanitizeCliente(cliente);
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'CPF/CNPJ ou E-mail jÃ¡ cadastrado no sistema',
+        );
+      }
+      throw error;
+    }
+  }
+
+  async findAllPaginated(query: ClientePaginationDto, actor?: AuthUser) {
+    let page = query.page ?? 1;
+    let limit = query.limit ?? 10;
+    if (page < 1) page = 1;
+    if (limit < 1 || limit > 100) limit = 10;
+
+    const skip = (page - 1) * limit;
+    const rawOrderBy = query.orderBy ?? 'createdAt';
+    const orderBy = CLIENTE_ORDER_BY.has(rawOrderBy) ? rawOrderBy : 'createdAt';
+    const order = query.order ?? 'desc';
+
+    const search = query.search?.trim();
+    const where: Prisma.ClienteWhereInput = { deletedAt: null };
+    if (actor?.role === Role.CLIENTE) {
+      if (!actor.clienteId) {
+        throw new ForbiddenException(
+          'UsuÃ¡rio de portal sem vÃ­nculo a cliente; contate o suporte.',
+        );
+      }
+      where.id = actor.clienteId;
+    }
+    if (search) {
+      const digits = search.replace(/\D/g, '');
+      const orClause: Prisma.ClienteWhereInput[] = [
+        { razaoSocial: { contains: search, mode: 'insensitive' } },
+        { nomeFantasia: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+      ];
+      if (digits.length >= 3) {
+        orClause.push({ cpfCnpj: { contains: digits } });
+      }
+      where.OR = orClause;
+    }
+
+    const [clientes, total] = await Promise.all([
+      this.prisma.cliente.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { [orderBy]: order },
+        select: {
+          id: true,
+          razaoSocial: true,
+          nomeFantasia: true,
+          tipo: true,
+          email: true,
+          telefone: true,
+          createdAt: true,
+          solicitacoes: {
+            where: { deletedAt: null },
+            select: {
+              id: true,
+              protocolo: true,
+              status: true,
+            },
+          },
+        },
+      }),
+      this.prisma.cliente.count({ where }),
+    ]);
+
+    return {
+      data: clientes,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async findOne(
+    id: string,
+    actor?: AuthUser,
+    leitura?: { ip?: string; userAgent?: string },
+  ) {
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        solicitacoes: {
+          where: { deletedAt: null },
+          include: { unidades: true },
+        },
+      },
+    });
+
+    if (!cliente) {
+      throw new NotFoundException(`Cliente com ID ${id} nÃ£o encontrado.`);
+    }
+
+    if (actor?.role === Role.CLIENTE) {
+      if (!actor.clienteId) {
+        throw new ForbiddenException(
+          'UsuÃ¡rio de portal sem vÃ­nculo a cliente; contate o suporte.',
+        );
+      }
+      if (id !== actor.clienteId) {
+        this.logger.warn(
+          `Acesso negado: usuÃ¡rio ${actor.id} consultou cadastro de cliente ${id} (vÃ­nculo ${actor.clienteId})`,
+        );
+        await registrarTentativaForaDeEscopo(
+          this.auditoria,
+          { usuario: actor.id, ip: leitura?.ip, userAgent: leitura?.userAgent },
+          {
+            recurso: 'cliente',
+            tentativaClienteId: id,
+            atorClienteId: actor.clienteId,
+            registroId: id,
+          },
+        );
+        throw new ForbiddenException('Acesso negado a este cadastro.');
+      }
+    }
+
+    return cliente;
+  }
+
+  async update(
+    id: string,
+    updateClienteDto: UpdateClienteDto,
+    usuarioId: string,
+    ip: string,
+    userAgent: string,
+  ) {
+    const clienteAntes = await this.prisma.cliente.findUnique({
+      where: { id },
+    });
+
+    if (!clienteAntes) {
+      throw new NotFoundException(`Cliente com ID ${id} nÃ£o encontrado.`);
+    }
+
+    const tipoFinal = updateClienteDto.tipo ?? clienteAntes.tipo;
+    this.assertDtoAlinhadoAoTipo(updateClienteDto, tipoFinal);
+    this.ensurePjNomeFantasia(updateClienteDto, {
+      tipoEfetivo: tipoFinal,
+      nomeFantasiaAtual: clienteAntes.nomeFantasia,
+    });
+
+    const addrTouched = this.addressFieldsInPatch(updateClienteDto);
+    let normalizedPostal = addrTouched
+      ? await this.addressService.normalize(mergePostalForUpdate(clienteAntes, updateClienteDto))
+      : undefined;
+
+    try {
+      const clienteDepois = await this.prisma.$transaction(async (tx) => {
+        const dadosAtualizacao: Prisma.ClienteUpdateInput = {};
+
+        if (normalizedPostal) {
+          Object.assign(dadosAtualizacao, normalizedToClienteUpdateData(normalizedPostal));
+        }
+
+        if (updateClienteDto.nomeCompleto !== undefined && tipoFinal === TipoCliente.PF) {
+          dadosAtualizacao.razaoSocial = String(updateClienteDto.nomeCompleto).trim();
+        }
+
+        const assign = <K extends keyof UpdateClienteDto>(
+          key: K,
+          fn?: (v: NonNullable<UpdateClienteDto[K]>) => unknown,
+        ) => {
+          if (normalizedPostal && ADDR_UPDATE_KEYS.has(key)) return;
+          const v = updateClienteDto[key];
+          if (v === undefined) return;
+          dadosAtualizacao[key as keyof Prisma.ClienteUpdateInput] = (
+            fn ? fn(v as NonNullable<typeof v>) : v
+          ) as never;
+        };
+
+        assign('razaoSocial', (v) => String(v).trim());
+        assign('nomeFantasia', (v) => (v == null || String(v).trim() === '' ? null : String(v).trim()));
+        assign('tipo');
+        assign('cpfCnpj', (v) => {
+          const d = String(v).replace(/\D/g, '');
+          if (tipoFinal === TipoCliente.PF && d.length === 11) return d.padStart(14, '0');
+          return d;
+        });
+        assign('inscricaoMunicipal', (v) => String(v).replace(/\D/g, '') || null);
+        assign('inscricaoEstadual', (v) => String(v).replace(/\D/g, '') || null);
+        assign('isentoIE');
+        assign('email', (v) => String(v).trim().toLowerCase());
+        assign('emailNfse', (v) => String(v).trim().toLowerCase());
+        assign('telefone', (v) => String(v).replace(/\D/g, ''));
+        assign('enderecoLogradouro', (v) => String(v).trim());
+        assign('enderecoNumero', (v) => String(v).trim());
+        assign('enderecoComplemento', (v) =>
+          v == null || String(v).trim() === '' ? null : String(v).trim(),
+        );
+        assign('enderecoBairro', (v) => String(v).trim());
+        assign('enderecoCidade', (v) => String(v).trim());
+        assign('enderecoUf', (v) => String(v).trim().toUpperCase());
+        assign('enderecoCep', (v) => String(v).replace(/\D/g, ''));
+        assign('codigoMunicipioIbge', (v) => String(v).replace(/\D/g, ''));
+        assign('regimeTributario');
+        assign('descricaoAtividade', (v) => String(v).trim());
+        assign('cnae', (v) => String(v).replace(/\D/g, ''));
+        assign('responsavel', (v) => String(v).trim());
+        assign('responsavelTelefone', (v) => String(v).replace(/\D/g, ''));
+        assign('responsavelEmail', (v) => String(v).trim().toLowerCase());
+
+        if (updateClienteDto.dataNascimento !== undefined) {
+          if (tipoFinal === TipoCliente.PF) {
+            dadosAtualizacao.dataNascimento = parseDataNascimentoPf(
+              String(updateClienteDto.dataNascimento),
+            );
+          } else {
+            dadosAtualizacao.dataNascimento = null;
+          }
+        }
+
+        if (tipoFinal === TipoCliente.PF) {
+          const em =
+            (dadosAtualizacao.email as string | undefined) ?? clienteAntes.email;
+          const emLower = em.trim().toLowerCase();
+          const emailNfseSent = updateClienteDto.emailNfse;
+          const emailNfseNext =
+            emailNfseSent !== undefined
+              ? String(emailNfseSent).trim().toLowerCase()
+              : ((dadosAtualizacao.emailNfse as string | undefined) ?? emLower);
+
+          const telPrincipal =
+            updateClienteDto.telefone !== undefined
+              ? String(updateClienteDto.telefone).replace(/\D/g, '')
+              : clienteAntes.telefone.replace(/\D/g, '');
+          const telContato =
+            updateClienteDto.telefoneContato !== undefined
+              ? String(updateClienteDto.telefoneContato).replace(/\D/g, '')
+              : telPrincipal;
+
+          Object.assign(dadosAtualizacao, {
+            nomeFantasia: null,
+            inscricaoMunicipal: null,
+            inscricaoEstadual: null,
+            isentoIE: false,
+            regimeTributario: null,
+            descricaoAtividade: null,
+            cnae: null,
+            responsavel: null,
+            responsavelTelefone: null,
+            responsavelEmail: null,
+            emailNfse: emailNfseNext,
+            telefone: telContato,
+          });
+        }
+
+        const updated = await tx.cliente.update({
+          where: { id },
+          data: dadosAtualizacao,
+        });
+
+        await this.auditoria.registrar(
+          {
+            tabela: 'clientes',
+            registroId: id,
+            acao: AcaoAuditoria.UPDATE,
+            usuario: usuarioId,
+            dadosAntes: clienteAntes,
+            dadosDepois: updated,
+            ip,
+            userAgent,
+          },
+          tx,
+        );
+
+        return updated;
+      }, PRISMA_SERIALIZABLE_TX);
+
+      return this.sanitizeCliente(clienteDepois);
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'CPF/CNPJ ou E-mail jÃ¡ cadastrado no sistema',
+        );
+      }
+      throw error;
+    }
+  }
+
+  async remove(id: string, usuarioId: string, ip: string, userAgent: string) {
+    const cliente = await this.prisma.cliente.findUnique({
+      where: { id },
+    });
+
+    if (!cliente) {
+      throw new NotFoundException(`Cliente com ID ${id} nÃ£o encontrado.`);
+    }
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.cliente.update({
+          where: { id },
+          data: { deletedAt: new Date() },
+        });
+
+        await this.auditoria.registrar(
+          {
+            tabela: 'clientes',
+            registroId: id,
+            acao: AcaoAuditoria.DELETE,
+            usuario: usuarioId,
+            dadosAntes: cliente,
+            dadosDepois: null,
+            ip,
+            userAgent,
+          },
+          tx,
+        );
+      },
+      PRISMA_SERIALIZABLE_TX,
+    );
+
+    return { id, removed: true, timestamp: new Date() };
+  }
+
+  private sanitizeCliente(cliente: Record<string, unknown>) {
+    return { ...cliente };
+  }
+}
+
+
+=== apps/backend/prisma/schema.prisma ===
+// Schema Prisma â€” RL Transportes (PostgreSQL).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum Role {
+  ADMIN
+  GERENTE
+  OPERADOR_PORTARIA
+  OPERADOR_GATE
+  OPERADOR_PATIO
+  CLIENTE
+}
+
+enum TipoCliente {
+  PJ
+  PF
+}
+
+/// Estado da solicitaÃ§Ã£o no fluxo operacional.
+enum StatusSolicitacao {
+  PENDENTE
+  APROVADO
+  CONCLUIDO
+  REJEITADO
+}
+
+enum TipoUnidade {
+  IMPORT
+  EXPORT
+  GATE_IN
+  GATE_OUT
+}
+
+enum StatusPagamento {
+  PENDENTE
+  PAGO
+  VENCIDO
+  CANCELADO
+}
+
+enum StatusIpm {
+  PENDENTE
+  ENVIADO
+  ACEITO
+  REJEITADO
+}
+
+enum AcaoAuditoria {
+  INSERT
+  UPDATE
+  DELETE
+  READ
+  SEGURANCA
+}
+
+enum RegimeTributario {
+  MEI
+  SimplesNacional
+  LucroPresumido
+  LucroReal
+}
+
+// ============================================================================
+// MODELS
+// ============================================================================
+
+model User {
+  id           String   @id @default(uuid())
+  /// CPF/CNPJ (14 dÃ­gitos; CPF com zeros Ã  esquerda) â€” login Ãºnico.
+  cpfCnpj      String   @unique @map("cpf_cnpj") @db.VarChar(14)
+  email        String   @unique
+  password     String
+  role         Role     @default(CLIENTE)
+  /// Incrementado no logout para invalidar JWTs em circulaÃ§Ã£o (access + refresh).
+  tokenVersion Int      @default(0)
+  /// VÃ­nculo opcional ao cadastro de cliente (portal do cliente).
+  clienteId    String?  @unique
+  cliente      Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  portalPasswordResets PortalPasswordReset[]
+
+  @@index([cpfCnpj])
+  @@index([email])
+  @@index([clienteId])
+  @@map("users")
+}
+
+/// Tokens de redefiniÃ§Ã£o de senha do portal cliente (UUID enviado por e-mail â€” SMTP futuro).
+model PortalPasswordReset {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@map("portal_password_resets")
+}
+
+model Cliente {
+  id           String   @id @default(uuid())
+  /// RazÃ£o social (PJ) ou nome completo (PF) â€” coluna legada `nome` no banco.
+  razaoSocial  String   @map("nome") @db.VarChar(255)
+  nomeFantasia String?  @map("nome_fantasia") @db.VarChar(255)
+  tipo         TipoCliente
+  /// ObrigatÃ³rio na UI para PF (provedores NFS-e).
+  dataNascimento DateTime? @map("data_nascimento")
+  cpfCnpj      String   @unique @db.VarChar(14)
+  inscricaoMunicipal  String? @map("inscricao_municipal") @db.VarChar(32)
+  inscricaoEstadual   String? @map("inscricao_estadual") @db.VarChar(32)
+  isentoIE     Boolean  @default(false) @map("isento_ie")
+  email        String   @unique
+  emailNfse    String   @map("email_nfse") @db.VarChar(255)
+  telefone     String   @db.VarChar(20)
+
+  enderecoLogradouro  String  @map("endereco_logradouro") @db.VarChar(255)
+  enderecoNumero      String  @map("endereco_numero") @db.VarChar(20)
+  enderecoComplemento String? @map("endereco_complemento") @db.VarChar(120)
+  enderecoBairro      String  @map("endereco_bairro") @db.VarChar(120)
+  enderecoCidade      String  @map("endereco_cidade") @db.VarChar(120)
+  enderecoUf          String  @map("endereco_uf") @db.VarChar(2)
+  enderecoCep         String  @map("endereco_cep") @db.VarChar(8)
+  /// ObrigatÃ³rio para NFS-e (PF e PJ); preenchido pela normalizaÃ§Ã£o de endereÃ§o.
+  codigoMunicipioIbge String @map("codigo_municipio_ibge") @db.VarChar(7)
+
+  regimeTributario    RegimeTributario? @map("regime_tributario")
+  descricaoAtividade  String? @map("descricao_atividade") @db.VarChar(500)
+  cnae                String? @db.VarChar(7)
+
+  responsavel         String? @db.VarChar(255)
+  responsavelTelefone String? @map("responsavel_telefone") @db.VarChar(20)
+  responsavelEmail    String? @map("responsavel_email") @db.VarChar(255)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  solicitacoes     Solicitacao[]
+  faturamentos     Faturamento[]
+  usuarioPortal    User?
+
+  @@index([cpfCnpj])
+  @@index([email])
+  @@index([deletedAt])
+  @@map("clientes")
+}
+
+model Solicitacao {
+  id        String   @id @default(uuid())
+  protocolo String   @unique
+  clienteId String
+  cliente   Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  status    StatusSolicitacao @default(PENDENTE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  unidades Unidade[] @relation("SolicitacaoUnidades")
+  portaria Portaria?
+  gate     Gate?
+  patio    Patio?
+  saida    Saida?
+
+  faturamentosVinculados FaturamentoSolicitacao[]
+
+  @@index([clienteId])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("solicitacoes")
+}
+
+model Unidade {
+  id            String   @id @default(uuid())
+  solicitacaoId String
+  solicitacao   Solicitacao @relation("SolicitacaoUnidades", fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  numeroIso     String   @unique
+  tipo          TipoUnidade
+  createdAt     DateTime @default(now())
+
+  @@index([solicitacaoId])
+  @@index([numeroIso])
+  @@map("unidades_solicitacao")
+}
+
+model Portaria {
+  id              String   @id @default(uuid())
+  solicitacaoId   String   @unique
+  solicitacao     Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  placaVeiculo    String?  @db.VarChar(10)
+  fotosCaminhao   Json     @default("[]")
+  fotosContainer  Json     @default("[]")
+  fotosLacre      Json     @default("[]")
+  fotosAvarias    Json     @default("[]")
+  statusOcr       String   @default("pendente")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([solicitacaoId])
+  @@map("portarias")
+}
+
+model Gate {
+  id                String   @id @default(uuid())
+  solicitacaoId     String   @unique
+  solicitacao       Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  ricAssinado       Boolean  @default(false)
+  assinaturaBinaria Bytes?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([solicitacaoId])
+  @@map("gates")
+}
+
+model Patio {
+  id            String   @id @default(uuid())
+  solicitacaoId String   @unique
+  solicitacao   Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  quadra        String
+  fileira       String
+  posicao       String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([solicitacaoId])
+  @@unique([quadra, fileira, posicao])
+  @@map("patios")
+}
+
+model Saida {
+  id            String   @id @default(uuid())
+  solicitacaoId String   @unique
+  solicitacao   Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  dataHoraSaida DateTime
+  createdAt     DateTime @default(now())
+
+  @@index([solicitacaoId])
+  @@map("saidas")
+}
+
+model Faturamento {
+  id           String   @id @default(uuid())
+  clienteId    String
+  cliente      Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  periodo      String
+  /// Sempre igual Ã  soma dos itens; nÃ£o informar manualmente no serviÃ§o.
+  valorTotal   Decimal  @db.Decimal(10, 2)
+  statusNfe    String   @default("pendente")
+  statusBoleto String   @default("pendente")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  itens                    FaturamentoItem[]
+  nfsEmitidas              NfsEmitida[]
+  boletos                  Boleto[]
+  solicitacoesVinculadas   FaturamentoSolicitacao[]
+
+  @@index([clienteId])
+  @@unique([clienteId, periodo])
+  @@map("faturamentos")
+}
+
+/// Itens (linhas) do faturamento no perÃ­odo â€” `valorTotal` do cabeÃ§alho = soma de `valor`.
+model FaturamentoItem {
+  id            String  @id @default(uuid())
+  faturamentoId String
+  faturamento   Faturamento @relation(fields: [faturamentoId], references: [id], onDelete: Cascade)
+  descricao     String  @db.VarChar(500)
+  valor         Decimal @db.Decimal(10, 2)
+  createdAt     DateTime @default(now())
+
+  @@index([faturamentoId])
+  @@map("faturamento_itens")
+}
+
+/// VÃ­nculo operacional: solicitaÃ§Ãµes incluÃ­das em um faturamento por perÃ­odo.
+model FaturamentoSolicitacao {
+  id              String      @id @default(uuid())
+  faturamentoId   String
+  faturamento     Faturamento @relation(fields: [faturamentoId], references: [id], onDelete: Cascade)
+  solicitacaoId   String
+  solicitacao     Solicitacao @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+  createdAt       DateTime    @default(now())
+
+  @@unique([faturamentoId, solicitacaoId])
+  @@index([solicitacaoId])
+  @@map("faturamento_solicitacoes")
+}
+
+model NfsEmitida {
+  id            String   @id @default(uuid())
+  faturamentoId String
+  faturamento   Faturamento @relation(fields: [faturamentoId], references: [id], onDelete: Cascade)
+  numeroNfe     String   @unique
+  xmlNfe        String   @db.Text
+  statusIpm     String   @default("pendente")
+  /// IBGE do municÃ­pio (7 dÃ­gitos) â€” usado ao plugar provedor municipal real.
+  municipioIbge String?  @db.VarChar(7)
+  /// Identificador do conector (ex.: webmania, focus) â€” definido na integraÃ§Ã£o.
+  provedor      String?  @db.VarChar(64)
+  referenciaExterna String? @db.VarChar(255)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([faturamentoId])
+  @@map("nfs_emitidas")
+}
+
+model Boleto {
+  id              String   @id @default(uuid())
+  faturamentoId   String
+  faturamento     Faturamento @relation(fields: [faturamentoId], references: [id], onDelete: Cascade)
+  numeroBoleto    String   @unique
+  dataVencimento  DateTime
+  valorBoleto     Decimal  @db.Decimal(10, 2)
+  statusPagamento String   @default("pendente")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([faturamentoId])
+  @@index([statusPagamento])
+  @@map("boletos")
+}
+
+model Auditoria {
+  id          String   @id @default(uuid())
+  tabela      String
+  registroId  String
+  acao        AcaoAuditoria
+  usuario     String
+  dadosAntes  Json?
+  dadosDepois Json?
+  createdAt   DateTime @default(now())
+
+  @@index([tabela, registroId])
+  @@index([usuario])
+  @@index([createdAt])
+  @@map("auditorias")
+}
+
+=== apps/web/lib/api/portal-client.ts ===
+import { applyCsrfHeaders } from "@/lib/csrf-client";
+import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
+import { ApiError, getApiBase } from "@/lib/api/corporate-auth-client";
+import type {
+  AuthLoginResponse,
+  KpisResponse,
+  PaginatedResponse,
+  PortalLoginResponse,
+  SlasResponse,
+} from "@/lib/api/types";
+
+export { ApiError, getApiBase, defaultApiCredentials } from "@/lib/api/corporate-auth-client";
+
+const LOGIN_TIMEOUT_MS = 25_000;
+
+async function parseJson<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  if (!text) return {} as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new ApiError("Resposta invÃ¡lida da API", res.status);
+  }
+}
+
+export function mapPortalLoginToUser(r: PortalLoginResponse): AuthLoginResponse["user"] {
+  const pi = r.portalIdentity;
+  return {
+    id: pi.sub,
+    cpfCnpj: pi.cpfCnpj,
+    email: pi.email,
+    role: pi.portalPapel,
+    permissions: [],
+    clienteId: r.clienteId ?? null,
+  };
+}
+
+/** CLIENTE: exclusivamente `POST ${API_URL}/portal/login` (Bearer no portal). */
+export async function portalClienteLogin(documento: string, password: string): Promise<PortalLoginResponse> {
+  const apiBase = getApiBase();
+  const url = `${apiBase}/portal/login`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), LOGIN_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        documento: documento.replace(/\D/g, ""),
+        password,
+        papel: "CLIENTE",
+        tenantId: "default",
+      }),
+      credentials: "include",
+      signal: controller.signal,
+    });
+  } catch (e: unknown) {
+    const aborted =
+      (e instanceof DOMException && e.name === "AbortError") ||
+      (e instanceof Error && e.name === "AbortError");
+    if (aborted) {
+      throw new ApiError(`Tempo esgotado ao contatar a API (${apiBase}).`, 0);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  if (!res.ok) {
+    const raw = await res.text();
+    let msg = raw?.trim() || `Falha no login portal (${res.status})`;
+    try {
+      const j = JSON.parse(raw) as { message?: string | string[] };
+      if (Array.isArray(j.message)) msg = j.message.join(", ");
+      else if (typeof j.message === "string" && j.message.trim()) msg = j.message.trim();
+    } catch {
+      /* */
+    }
+    throw new ApiError(msg, res.status);
+  }
+  const data = await parseJson<PortalLoginResponse>(res);
+  if (!data?.accessToken?.trim() || !data?.refreshToken?.trim() || !data?.portalIdentity) {
+    throw new ApiError("Resposta /portal/login incompleta.", res.status);
+  }
+  return data;
+}
+
+export async function portalClienteRefresh(
+  refreshToken: string,
+): Promise<Pick<PortalLoginResponse, "accessToken" | "refreshToken">> {
+  const res = await fetch(`${getApiBase()}/portal/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refreshToken }),
+    credentials: "include",
+  });
+  if (!res.ok) throw new ApiError("SessÃ£o portal expirada", res.status);
+  return parseJson(res);
+}
+
+/** RequisiÃ§Ãµes autenticadas portal CX: `Authorization: Bearer` + `Content-Type` a partir de `usePortalClienteAuthStore.getState().accessToken` (ou refresh antes). */
+export async function portalRequest(path: string, init?: RequestInit): Promise<Response> {
+  const base = getApiBase();
+  const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
+
+  const st0 = usePortalClienteAuthStore.getState();
+  let accessToken = st0.accessToken?.trim() ? st0.accessToken : null;
+  const initialRefresh = st0.refreshToken;
+
+  if (!accessToken) {
+    if (!initialRefresh?.trim()) {
+      throw new ApiError("SessÃ£o nÃ£o iniciada", 401);
+    }
+    try {
+      const next = await portalClienteRefresh(initialRefresh);
+      st0.setSession(next.accessToken, next.refreshToken, st0.user);
+      accessToken = next.accessToken.trim() ? next.accessToken : null;
+    } catch {
+      st0.clear();
+      throw new ApiError("SessÃ£o expirada", 401);
+    }
+    if (!accessToken) {
+      st0.clear();
+      throw new ApiError("SessÃ£o nÃ£o iniciada", 401);
+    }
+  }
+
+  const doFetch = (token: string) => {
+    const headers = new Headers(init?.headers);
+    headers.set("Content-Type", "application/json");
+    headers.set("Authorization", `Bearer ${token}`);
+    if (!headers.has("Accept")) headers.set("Accept", "application/json");
+    applyCsrfHeaders(headers, init?.method);
+    return fetch(url, { ...init, headers, credentials: init?.credentials ?? "include" });
+  };
+
+  let res = await doFetch(accessToken!);
+
+  if (res.status === 401) {
+    const st = usePortalClienteAuthStore.getState();
+    const rt = st.refreshToken;
+    if (!rt?.trim()) {
+      st.clear();
+      throw new ApiError("SessÃ£o expirada", 401);
+    }
+    try {
+      const next = await portalClienteRefresh(rt);
+      st.setSession(next.accessToken, next.refreshToken, st.user);
+      const tok = next.accessToken.trim();
+      if (!tok) {
+        st.clear();
+        throw new ApiError("SessÃ£o expirada", 401);
+      }
+      res = await doFetch(tok);
+    } catch (e) {
+      usePortalClienteAuthStore.getState().clear();
+      throw e instanceof ApiError ? e : new ApiError("SessÃ£o expirada", 401);
+    }
+  }
+
+  return res;
+}
+
+export async function portalJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await portalRequest(path, init);
+  if (res.status === 401) {
+    usePortalClienteAuthStore.getState().clear();
+    throw new ApiError("NÃ£o autorizado", 401);
+  }
+  if (!res.ok) {
+    const err = await res.text();
+    throw new ApiError(err || `Erro HTTP ${res.status}`, res.status);
+  }
+  return parseJson<T>(res);
+}
+
+export function fetchKpis() {
+  return portalJson<KpisResponse>("/cliente/portal/kpis");
+}
+
+export function fetchSlas() {
+  return portalJson<SlasResponse>("/cliente/portal/slas");
+}
+
+export function fetchCxFinanceiroBoletos() {
+  return portalJson<Record<string, unknown>[]>("/cliente/portal/financeiro/boletos");
+}
+
+export function fetchCxFinanceiroNfse() {
+  return portalJson<Record<string, unknown>[]>("/cliente/portal/financeiro/nfse");
+}
+
+export type SolicitacaoRow = {
+  id: string;
+  protocolo: string;
+  status: string;
+  createdAt: string;
+  updatedAt?: string;
+  cliente?: { id: string; razaoSocial: string };
+  unidades?: { id: string; numeroIso: string; tipo: string }[];
+  portaria?: {
+    createdAt?: string;
+    fotosContainer?: unknown;
+    fotosCaminhao?: unknown;
+    fotosLacre?: unknown;
+    fotosAvarias?: unknown;
+  } | null;
+  gate?: unknown | null;
+  patio?: unknown | null;
+  saida?: unknown | null;
+};
+
+export async function fetchSolicitacoesPaginated(params: {
+  page?: number;
+  limit?: number;
+  status?: string;
+  createdFrom?: string;
+  createdTo?: string;
+  protocolo?: string;
+  orderBy?: string;
+  order?: string;
+}) {
+  const sp = new URLSearchParams();
+  if (params.page) sp.set("page", String(params.page));
+  if (params.limit) sp.set("limit", String(params.limit));
+  if (params.status) sp.set("status", params.status);
+  if (params.createdFrom) sp.set("createdFrom", params.createdFrom);
+  if (params.createdTo) sp.set("createdTo", params.createdTo);
+  if (params.protocolo?.trim()) sp.set("protocolo", params.protocolo.trim());
+  if (params.orderBy) sp.set("orderBy", params.orderBy);
+  if (params.order) sp.set("order", params.order);
+  const q = sp.toString();
+  return portalJson<PaginatedResponse<SolicitacaoRow>>(`/cliente/portal/solicitacoes${q ? `?${q}` : ""}`);
+}
+
+export function fetchSolicitacao(id: string) {
+  return portalJson<SolicitacaoRow>(`/cliente/portal/solicitacoes/${id}`);
+}
+
+export function aprovarSolicitacao(id: string) {
+  return portalJson<SolicitacaoRow>(`/cliente/portal/solicitacoes/${id}/aprovar`, { method: "PATCH" });
+}
+
+function slicePage<T>(rows: T[], page: number, limit: number): PaginatedResponse<T> {
+  const p = Math.max(1, page);
+  const l = Math.max(1, limit);
+  const start = (p - 1) * l;
+  const items = rows.slice(start, start + l);
+  const totalPages = Math.max(1, Math.ceil(rows.length / l));
+  return {
+    items,
+    total: rows.length,
+    page: p,
+    limit: l,
+    meta: { total: rows.length, page: p, limit: l, totalPages },
+  };
+}
+
+export async function fetchFaturamentoPaginated(params: { page?: number; limit?: number; periodo?: string }) {
+  const rows = await portalJson<Record<string, unknown>[]>("/cliente/portal/financeiro/faturas");
+  void params.periodo;
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 20;
+  return slicePage(rows, page, limit);
+}
+
+export async function fetchFaturamento(id: string) {
+  const rows = await portalJson<Record<string, unknown>[]>("/cliente/portal/financeiro/faturas");
+  const row = rows.find((r) => String(r.id) === String(id));
+  if (!row) throw new ApiError("Fatura nÃ£o encontrada", 404);
+  return row;
+}
+
+export async function fetchBoletosPaginated(params: { page?: number; limit?: number }) {
+  const rows = await portalJson<Record<string, unknown>[]>("/cliente/portal/financeiro/boletos");
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 100;
+  return slicePage(rows, page, limit);
+}
+
+export async function fetchBoleto(id: string) {
+  const rows = await portalJson<Record<string, unknown>[]>("/cliente/portal/financeiro/boletos");
+  const row = rows.find((r) => String(r.id) === String(id));
+  if (!row) throw new ApiError("Boleto nÃ£o encontrado", 404);
+  return row;
+}
+
+export async function fetchNfsePaginated(params: { page?: number; limit?: number }) {
+  const rows = await portalJson<Record<string, unknown>[]>("/cliente/portal/financeiro/nfse");
+  const page = params.page ?? 1;
+  const limit = params.limit ?? 50;
+  return slicePage(rows, page, limit);
+}
+
+export async function fetchNfse(id: string) {
+  const rows = await portalJson<Record<string, unknown>[]>("/cliente/portal/financeiro/nfse");
+  const row = rows.find((r) => String(r.id) === String(id));
+  if (!row) throw new ApiError("NFSe nÃ£o encontrada", 404);
+  return row;
+}
+
+/** Resposta `GET /cliente/portal/dashboard` (consolidado KPIs + solicitaÃ§Ãµes + financeiro). */
+export type PortalDashboardConsolidatedResponse = {
+  cliente: {
+    id: string;
+    nome: string;
+    tipo: string;
+    cpfCnpj: string;
+    emailNfse: string | null;
+    endereco: {
+      cep: string;
+      logradouro: string;
+      numero: string;
+      complemento: string | null;
+      bairro: string;
+      cidade: string;
+      uf: string;
+      codigoIbge: string;
+    };
+  } | null;
+  solicitacoes: {
+    abertas: number;
+    emAndamento: number;
+    concluidas: number;
+    canceladas: number;
+    ultimas: { id: string; protocolo: string; status: string; createdAt: string }[];
+  };
+  totalSolicitacoes: number;
+  solicitacoesRecentes: SolicitacaoRow[];
+  kpis: { abertas: number; emAndamento: number; concluÃ­das: number };
+  kpisCx: KpisResponse;
+  financeiro: {
+    boletosPendentes: number;
+    nfseEmitidas: number;
+    faturadoMes: number;
+    totalFaturadoPeriodo: number;
+  };
+  slas: { cumpridos: number; violados: number };
+  slasCx: SlasResponse;
+  trackingSample: SolicitacaoRow[];
+  solicitacoesHoje: SolicitacaoRow[];
+  recent: {
+    items: SolicitacaoRow[];
+    total: number;
+    page: number;
+    limit: number;
+    orderBy: string;
+    order: string;
+  };
+  meta: { tenantId: string; slasHorasProxy: Record<string, number> | null };
+};
+
+/** @deprecated Use `PortalDashboardConsolidatedResponse` e `cliente.nome`. */
+export type PortalDashboardResponse = PortalDashboardConsolidatedResponse;
+
+/**
+ * Dashboard CX consolidado â€” uma Ãºnica chamada substitui kpis + slas + solicitaÃ§Ãµes + financeiro.
+ * Aceita string legada `(clienteId)` ou objeto com paginaÃ§Ã£o da lista recente.
+ */
+export function fetchPortalDashboard(
+  opts?: string | { clienteId?: string; recentPage?: number; recentLimit?: number },
+) {
+  const o = typeof opts === "string" ? { clienteId: opts } : opts ?? {};
+  const sp = new URLSearchParams();
+  if (o.clienteId) sp.set("clienteId", o.clienteId);
+  if (o.recentPage != null) sp.set("recentPage", String(o.recentPage));
+  if (o.recentLimit != null) sp.set("recentLimit", String(o.recentLimit));
+  const q = sp.toString();
+  return portalJson<PortalDashboardConsolidatedResponse>(
+    `/cliente/portal/dashboard${q ? `?${q}` : ""}`,
+  );
+}
+
+function portalOnboardingHeaders(extra?: HeadersInit): Headers {
+  const h = new Headers(extra);
+  h.set("Content-Type", "application/json");
+  const t = usePortalClienteAuthStore.getState().accessToken?.trim();
+  if (t) h.set("Authorization", `Bearer ${t}`);
+  return h;
+}
+
+async function throwPortalOnboardingError(res: Response, fallback: string): Promise<never> {
+  const text = await res.text();
+  let msg = fallback;
+  let detail: string | undefined;
+  try {
+    const j = JSON.parse(text) as {
+      message?: string | string[] | Record<string, unknown>;
+      detail?: string;
+      statusCode?: number;
+    };
+    if (typeof j.detail === "string" && j.detail.trim()) detail = j.detail.trim();
+    if (typeof j.message === "string" && j.message.trim()) {
+      msg = j.message.trim();
+    } else if (Array.isArray(j.message)) {
+      msg = j.message.join(", ");
+    } else if (j.message && typeof j.message === "object") {
+      const inner = j.message as { message?: string; detail?: string };
+      if (typeof inner.detail === "string" && inner.detail.trim()) detail = inner.detail.trim();
+      if (typeof inner.message === "string" && inner.message.trim()) msg = inner.message.trim();
+    }
+  } catch {
+    if (text?.trim()) msg = text.trim();
+  }
+  throw new ApiError(msg, res.status, detail);
+}
+
+/** Cadastro portal â€” PF (NFS-e) ou PJ fiscal completo (`POST /portal/register`). */
+export type PortalClienteRegisterPayload =
+  | {
+      nomeCompleto: string;
+      tipo: "PF";
+      cpfCnpj: string;
+      dataNascimento: string;
+      email: string;
+      telefone: string;
+      telefoneContato?: string;
+      emailNfse?: string;
+      enderecoLogradouro: string;
+      enderecoNumero: string;
+      enderecoComplemento?: string;
+      enderecoBairro: string;
+      enderecoCidade: string;
+      enderecoUf: string;
+      enderecoCep: string;
+      codigoMunicipioIbge: string;
+      password: string;
+    }
+  | {
+      razaoSocial: string;
+      nomeFantasia: string;
+      tipo: "PJ";
+      cpfCnpj: string;
+      inscricaoMunicipal?: string;
+      inscricaoEstadual?: string;
+      isentoIE: boolean;
+      email: string;
+      emailNfse: string;
+      telefone: string;
+      enderecoLogradouro: string;
+      enderecoNumero: string;
+      enderecoComplemento?: string;
+      enderecoBairro: string;
+      enderecoCidade: string;
+      enderecoUf: string;
+      enderecoCep: string;
+      codigoMunicipioIbge: string;
+      regimeTributario: "MEI" | "SimplesNacional" | "LucroPresumido" | "LucroReal";
+      descricaoAtividade: string;
+      cnae: string;
+      responsavel: string;
+      responsavelTelefone: string;
+      responsavelEmail: string;
+      password: string;
+    };
+
+/** IAM pÃºblico â€” nÃ£o usa `portalRequest` (sem Bearer obrigatÃ³rio). Header Bearer sÃ³ se jÃ¡ existir sessÃ£o portal. */
+export async function portalClienteRegister(data: PortalClienteRegisterPayload): Promise<{ ok: boolean; message: string }> {
+  const res = await fetch(`${getApiBase()}/portal/register`, {
+    method: "POST",
+    headers: portalOnboardingHeaders(),
+    body: JSON.stringify(data),
+    credentials: "include",
+  });
+  if (!res.ok) await throwPortalOnboardingError(res, "Falha no cadastro");
+  return parseJson<{ ok: boolean; message: string }>(res);
+}
+
+export async function portalClienteEsqueciSenha(
+  email: string,
+): Promise<{ ok?: boolean; message: string }> {
+  const res = await fetch(`${getApiBase()}/portal/esqueci-senha`, {
+    method: "POST",
+    headers: portalOnboardingHeaders(),
+    body: JSON.stringify({ email }),
+    credentials: "include",
+  });
+  if (!res.ok) await throwPortalOnboardingError(res, "NÃ£o foi possÃ­vel enviar a solicitaÃ§Ã£o");
+  return parseJson<{ ok?: boolean; message: string }>(res);
+}
+
+export async function portalClienteRedefinirSenha(token: string, novaSenha: string): Promise<{ ok: boolean; message: string }> {
+  const res = await fetch(`${getApiBase()}/portal/redefinir-senha`, {
+    method: "POST",
+    headers: portalOnboardingHeaders(),
+    body: JSON.stringify({ token, novaSenha }),
+    credentials: "include",
+  });
+  if (!res.ok) await throwPortalOnboardingError(res, "NÃ£o foi possÃ­vel redefinir a senha");
+  return parseJson<{ ok: boolean; message: string }>(res);
+}
+
+
+=== apps/web/hooks/use-portal-dashboard.ts ===
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import {
+  ApiError,
+  fetchPortalDashboard,
+  type SolicitacaoRow,
+} from "@/lib/api/portal-client";
+import type { KpisResponse, SlasResponse } from "@/lib/api/types";
+import { usePortalAuthStore } from "@/stores/portal-store";
+
+export type DashboardFinanceCounts = {
+  faturasEmAberto: number;
+  boletosAbertosOuVencidos: number;
+  nfseEmitidasAmostra: number;
+};
+
+export type DashboardData = {
+  kpis: KpisResponse;
+  slas: SlasResponse;
+  tracking: SolicitacaoRow[];
+  recent: {
+    items: SolicitacaoRow[];
+    total: number;
+    page: number;
+    limit: number;
+  };
+  solicitacoesHoje: SolicitacaoRow[];
+  pendenciasFinanceiras: number;
+  financeCounts: DashboardFinanceCounts;
+};
+
+export function usePortalDashboard(opts: { recentPage: number; recentLimit?: number }) {
+  const { recentPage, recentLimit = 8 } = opts;
+  const revision = usePortalAuthStore((s) => s.dashboardRevision);
+  const setClienteNome = usePortalAuthStore((s) => s.setClienteNome);
+  const setUser = usePortalAuthStore((s) => s.setUser);
+
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const dash = await fetchPortalDashboard({
+        recentPage,
+        recentLimit,
+      });
+
+      try {
+        const u = usePortalAuthStore.getState().user;
+        if (u) setUser(u);
+        const nome = dash.cliente?.nome?.trim();
+        if (nome) setClienteNome(nome);
+      } catch {
+        /* */
+      }
+
+      const trackingItems = (dash.trackingSample ?? []) as SolicitacaoRow[];
+      const recentItems = (dash.recent?.items ?? []) as SolicitacaoRow[];
+      const recentTotal = dash.recent?.total ?? recentItems.length;
+      const hojeItems = (dash.solicitacoesHoje ?? []) as SolicitacaoRow[];
+
+      const kpis = dash.kpisCx;
+      const slas = dash.slasCx;
+
+      const pendenciasFinanceiras = dash.financeiro.boletosPendentes;
+
+      setData({
+        kpis,
+        slas,
+        tracking: trackingItems,
+        recent: {
+          items: recentItems,
+          total: recentTotal,
+          page: dash.recent?.page ?? recentPage,
+          limit: dash.recent?.limit ?? recentLimit,
+        },
+        solicitacoesHoje: hojeItems,
+        pendenciasFinanceiras,
+        financeCounts: {
+          faturasEmAberto: kpis.valores.faturamento_aberto,
+          boletosAbertosOuVencidos: pendenciasFinanceiras,
+          nfseEmitidasAmostra: dash.financeiro.nfseEmitidas,
+        },
+      });
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Erro ao carregar dashboard");
+    } finally {
+      setLoading(false);
+    }
+  }, [recentLimit, recentPage, revision, setClienteNome, setUser]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return { data, loading, error, reload: load };
+}
+
+
+=== apps/backend/src/cx-portais/strategies/jwt-portal.strategy.ts ===
+import { UnauthorizedException } from '@nestjs/common';
+import type { PortalAccessTokenPayload } from '../types/cx-portal.types';
+
+/**
+ * Valida claims mÃ­nimas do access token portal (CLIENTE).
+ * Usado pelo `CxPortalAuthGuard` apÃ³s `verifyAccess`.
+ */
+export function assertPortalClienteTokenPayload(pl: PortalAccessTokenPayload): void {
+  if (pl.portalPapel !== 'CLIENTE') return;
+  if (!pl.cpfCnpj?.replace(/\D/g, '').length) {
+    throw new UnauthorizedException('Token portal invÃ¡lido: cpfCnpj ausente.');
+  }
+  if (pl.clienteId == null || String(pl.clienteId).trim() === '') {
+    throw new UnauthorizedException('Token portal invÃ¡lido: clienteId ausente.');
+  }
+}
+

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
@@ -15,7 +16,12 @@ import { SecurityEventsService } from '../security-center/security-events.servic
 import { SolicitacaoAnexoStorageService } from '../modules/solicitacoes-v2/solicitacao-anexo.storage';
 import { SolicitacoesV2Service } from '../modules/solicitacoes-v2/solicitacoes-v2.service';
 import { PatioV2Service } from '../patio-v2/patio.service';
+import { ArmazenagemBillingService } from '../armazenagem-faturamento/armazenagem-billing.service';
+import { YardAllocationService } from '../yard-allocation/yard-allocation.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { VistoriaService, type VistoriaPhotoUpload } from '../vistoria/vistoria.service';
+import { HoldReleaseService } from '../hold-release/hold-release.service';
+import { AnguloFotoVistoria, TipoVistoria } from '@prisma/client';
 import { extractPessoaResponsavelFromAudit } from '../pessoas-autorizadas/pessoa-context.util';
 import type { GateCheckInDto } from './dto/gate-checkin.dto';
 import type { GateCheckOutDto } from './dto/gate-checkout.dto';
@@ -45,6 +51,10 @@ export class GateV2Service {
     private readonly securityEvents: SecurityEventsService,
     private readonly solicitacoesV2: SolicitacoesV2Service,
     private readonly patioV2: PatioV2Service,
+    private readonly armazenagemBilling: ArmazenagemBillingService,
+    private readonly yardAllocation: YardAllocationService,
+    private readonly vistoria: VistoriaService,
+    private readonly holdRelease: HoldReleaseService,
   ) {}
 
   private hasCritical(divs: GateDivergenciaItemDto[]): boolean {
@@ -180,6 +190,7 @@ export class GateV2Service {
       solicitacaoId,
       protocolo: s.protocolo,
       status: s.status,
+      giroEstimado: s.giroEstimado ?? null,
       pdf: verificacaoPdf,
       transporte: ts,
       containers: s.containersSolicitacao,
@@ -198,12 +209,10 @@ export class GateV2Service {
     solicitacaoId: string,
     operadorId: string,
     dto: GateCheckInDto,
-    files: Express.Multer.File[],
+    fotosVistoria: Map<AnguloFotoVistoria, VistoriaPhotoUpload>,
     opts?: { skipPdfHash?: boolean },
   ) {
-    if (!files?.length) {
-      throw new BadRequestException('Envie ao menos uma foto de entrada');
-    }
+    this.vistoria.assertFotosCompletas(fotosVistoria);
 
     const sol = await this.prisma.solicitacao.findFirst({
       where: { id: solicitacaoId, deletedAt: null, transporteSolicitacao: { isNot: null } },
@@ -245,17 +254,6 @@ export class GateV2Service {
     const auto = this.detectAutoDivergencias(ts, dto, sol.containersSolicitacao);
     const divergencias = this.mergeDivergencias(auto, dto.divergenciasOperador);
 
-    const fotos: string[] = [];
-    for (const f of files) {
-      const { url } = await this.storage.persist({
-        solicitacaoId,
-        buffer: f.buffer,
-        mimeType: f.mimetype,
-        originalName: `gate/in/${f.originalname}`,
-      });
-      fotos.push(url);
-    }
-
     const pCav = assertPlate('Placa cavalo', dto.placaCavalo);
     const p01 = assertPlate('Placa carreta 01', dto.placaCarreta01);
     let p02: string | null = null;
@@ -268,44 +266,81 @@ export class GateV2Service {
       p02 = assertPlate('Placa carreta 02', dto.placaCarreta02);
     }
 
-    const row = await this.prisma.$transaction(async (tx) => {
-      const gi = await tx.gateCheckIn.create({
-        data: {
-          solicitacaoId,
-          operadorId,
-          placaCavalo: pCav,
-          placaCarreta01: p01,
-          placaCarreta02: p02,
-          motoristaNome: dto.motoristaNome.trim(),
-          motoristaCpf: normalizeCpfDigits(dto.motoristaCpf),
-          fotosEntrada: fotos as unknown as Prisma.InputJsonValue,
-          divergenciasJson: divergencias as unknown as Prisma.InputJsonValue,
-          pdfHashValidado: dto.pdfHash?.trim() ?? null,
-        },
-      });
-      await tx.solicitacao.update({
-        where: { id: solicitacaoId },
-        data: { status: StatusSolicitacao.EM_PATIO },
-      });
-      await this.auditoria.registrar(
-        {
-          tabela: 'gate_v2_check_ins',
-          registroId: gi.id,
-          acao: AcaoAuditoria.INSERT,
-          usuario: operadorId,
-          solicitacaoId,
-          dadosDepois: {
-            gateCheckInId: gi.id,
-            divergencias,
-            fotosCount: fotos.length,
-            ...(pessoaResponsavel ? { pessoaResponsavel } : {}),
+    let row;
+    let vistoriaStorageKeys: string[] = [];
+    try {
+      row = await this.prisma.$transaction(async (tx) => {
+        const gi = await tx.gateCheckIn.create({
+          data: {
+            solicitacaoId,
+            operadorId,
+            placaCavalo: pCav,
+            placaCarreta01: p01,
+            placaCarreta02: p02,
+            motoristaNome: dto.motoristaNome.trim(),
+            motoristaCpf: normalizeCpfDigits(dto.motoristaCpf),
+            fotosEntrada: [] as unknown as Prisma.InputJsonValue,
+            divergenciasJson: divergencias as unknown as Prisma.InputJsonValue,
+            pdfHashValidado: dto.pdfHash?.trim() ?? null,
           },
-        },
-        tx,
-      );
-      await this.patioV2.provisionFromGateIn(gi.id, solicitacaoId, tx);
-      return gi;
-    });
+        });
+
+        const vist = await this.vistoria.createVistoria(tx, {
+          solicitacaoId,
+          tipo: TipoVistoria.GATE_IN,
+          gateCheckInId: gi.id,
+          avarias: dto.avarias,
+          fotos: fotosVistoria,
+        });
+        vistoriaStorageKeys = vist.fotos
+          .map((f) => f.storageKey)
+          .filter((k): k is string => Boolean(k));
+
+        await tx.gateCheckIn.update({
+          where: { id: gi.id },
+          data: { fotosEntrada: vist.publicUrls as unknown as Prisma.InputJsonValue },
+        });
+
+        await tx.solicitacao.update({
+          where: { id: solicitacaoId },
+          data: { status: StatusSolicitacao.EM_PATIO },
+        });
+        await this.auditoria.registrar(
+          {
+            tabela: 'gate_v2_check_ins',
+            registroId: gi.id,
+            acao: AcaoAuditoria.INSERT,
+            usuario: operadorId,
+            solicitacaoId,
+            dadosDepois: {
+              gateCheckInId: gi.id,
+              divergencias,
+              fotosCount: vist.publicUrls.length,
+              avarias: dto.avarias ?? [],
+              ...(pessoaResponsavel ? { pessoaResponsavel } : {}),
+            },
+          },
+          tx,
+        );
+        await this.patioV2.provisionFromGateIn(gi.id, solicitacaoId, tx);
+        await this.yardAllocation.applyGiroEstimado(solicitacaoId, {
+          referenceAt: gi.dataHora,
+          tx,
+        });
+        await this.armazenagemBilling.openPreFaturasForGateIn(
+          gi.id,
+          sol.clienteId,
+          gi.dataHora,
+          tx,
+        );
+        return gi;
+      });
+    } catch (err) {
+      if (vistoriaStorageKeys.length) {
+        await this.vistoria.rollbackUploaded(vistoriaStorageKeys);
+      }
+      throw err;
+    }
 
     this.securityEvents.emit({
       type: 'CRITICAL_EVENT',
@@ -363,11 +398,9 @@ export class GateV2Service {
     gateInId: string,
     operadorId: string,
     dto: GateCheckOutDto,
-    files: Express.Multer.File[],
+    fotosVistoria: Map<AnguloFotoVistoria, VistoriaPhotoUpload>,
   ) {
-    if (!files?.length) {
-      throw new BadRequestException('Envie ao menos uma foto de saída');
-    }
+    this.vistoria.assertFotosCompletas(fotosVistoria);
 
     const gi = await this.prisma.gateCheckIn.findFirst({
       where: { id: gateInId },
@@ -387,55 +420,73 @@ export class GateV2Service {
     const pessoaResponsavel = await this.resolvePessoaResponsavelSolicitacao(gi.solicitacaoId);
 
     const divergencias = this.mergeDivergencias([], dto.divergenciasOperador);
-    const fotos: string[] = [];
-    for (const f of files) {
-      const { url } = await this.storage.persist({
-        solicitacaoId: gi.solicitacaoId,
-        buffer: f.buffer,
-        mimeType: f.mimetype,
-        originalName: `gate/out/${f.originalname}`,
-      });
-      fotos.push(url);
-    }
 
     const now = new Date();
-    await this.prisma.$transaction(async (tx) => {
-      const co = await tx.gateCheckOut.create({
-        data: {
-          gateInId,
-          operadorId,
-          fotosSaida: fotos as unknown as Prisma.InputJsonValue,
-          divergenciasJson: divergencias as unknown as Prisma.InputJsonValue,
-        },
-      });
-      await tx.solicitacao.update({
-        where: { id: gi.solicitacaoId },
-        data: { status: StatusSolicitacao.CONCLUIDO },
-      });
-      await tx.saida.upsert({
-        where: { solicitacaoId: gi.solicitacaoId },
-        create: { solicitacaoId: gi.solicitacaoId, dataHoraSaida: now },
-        update: { dataHoraSaida: now },
-      });
-      await this.auditoria.registrar(
-        {
-          tabela: 'gate_v2_check_outs',
-          registroId: co.id,
-          acao: AcaoAuditoria.INSERT,
-          usuario: operadorId,
-          solicitacaoId: gi.solicitacaoId,
-          dadosDepois: {
+    let vistoriaStorageKeys: string[] = [];
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const co = await tx.gateCheckOut.create({
+          data: {
             gateInId,
-            gateOutId: co.id,
-            divergencias,
-            fotosCount: fotos.length,
-            ...(pessoaResponsavel ? { pessoaResponsavel } : {}),
+            operadorId,
+            fotosSaida: [] as unknown as Prisma.InputJsonValue,
+            divergenciasJson: divergencias as unknown as Prisma.InputJsonValue,
           },
-        },
-        tx,
-      );
-      await this.patioV2.finalizeFromGateOut(gateInId, operadorId, tx);
-    });
+        });
+
+        const vist = await this.vistoria.createVistoria(tx, {
+          solicitacaoId: gi.solicitacaoId,
+          tipo: TipoVistoria.GATE_OUT,
+          gateCheckInId: gi.id,
+          gateCheckOutId: co.id,
+          avarias: dto.avarias,
+          fotos: fotosVistoria,
+        });
+        vistoriaStorageKeys = vist.fotos
+          .map((f) => f.storageKey)
+          .filter((k): k is string => Boolean(k));
+
+        await tx.gateCheckOut.update({
+          where: { id: co.id },
+          data: { fotosSaida: vist.publicUrls as unknown as Prisma.InputJsonValue },
+        });
+
+        await tx.solicitacao.update({
+          where: { id: gi.solicitacaoId },
+          data: { status: StatusSolicitacao.CONCLUIDO },
+        });
+        await tx.saida.upsert({
+          where: { solicitacaoId: gi.solicitacaoId },
+          create: { solicitacaoId: gi.solicitacaoId, dataHoraSaida: now },
+          update: { dataHoraSaida: now },
+        });
+        await this.auditoria.registrar(
+          {
+            tabela: 'gate_v2_check_outs',
+            registroId: co.id,
+            acao: AcaoAuditoria.INSERT,
+            usuario: operadorId,
+            solicitacaoId: gi.solicitacaoId,
+            dadosDepois: {
+              gateInId,
+              gateOutId: co.id,
+              divergencias,
+              fotosCount: vist.publicUrls.length,
+              avarias: dto.avarias ?? [],
+              ...(pessoaResponsavel ? { pessoaResponsavel } : {}),
+            },
+          },
+          tx,
+        );
+        await this.patioV2.finalizeFromGateOut(gateInId, operadorId, tx);
+        await this.armazenagemBilling.consolidateOnGateOut(gateInId, now, tx);
+      });
+    } catch (err) {
+      if (vistoriaStorageKeys.length) {
+        await this.vistoria.rollbackUploaded(vistoriaStorageKeys);
+      }
+      throw err;
+    }
 
     this.securityEvents.emit({
       type: 'CRITICAL_EVENT',
@@ -663,10 +714,10 @@ export class GateV2Service {
   }
 
   /**
-   * Valida payload do QR Code da credencial do motorista (protocolo + container).
+   * Valida payload do QR Code da credencial do motorista (protocolo + container + versão).
    * Retorna apenas identificadores operacionais — sem dados financeiros.
    */
-  async validarQrCredencial(protocoloRaw: string, containerRaw?: string) {
+  async validarQrCredencial(protocoloRaw: string, containerRaw?: string, versaoRaw?: number) {
     const protocolo = protocoloRaw.trim();
     if (!protocolo) {
       return { valido: false, motivo: 'Protocolo obrigatório' };
@@ -689,6 +740,15 @@ export class GateV2Service {
 
     if (!sol) {
       return { valido: false, motivo: 'Solicitação não encontrada' };
+    }
+
+    await this.holdRelease.assertSemBloqueioAtivo(sol.id);
+
+    const versaoAtual = sol.versaoCredencial ?? 1;
+    if (versaoRaw === undefined || versaoRaw !== versaoAtual) {
+      throw new ForbiddenException(
+        'QR Code desatualizado ou inválido. Uma alteração foi feita nesta solicitação. Exija a nova credencial gerada no portal.',
+      );
     }
 
     const intent = sol.tipoOperacao;
@@ -759,6 +819,7 @@ export class GateV2Service {
         dataRef: ag?.dataRef?.toISOString().slice(0, 10) ?? null,
         data: ag?.dataRef?.toISOString().slice(0, 10) ?? null,
         turno: ag?.turno ?? null,
+        versaoCredencial: sol.versaoCredencial,
         modalidadeTransporte:
           agTerminal?.modalidadeTransporte ?? ModalidadeTransporte.FROTA_CLIENTE,
         tipoOperacaoGate: agTerminal?.tipoOperacao ?? null,

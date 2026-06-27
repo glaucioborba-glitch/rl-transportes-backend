@@ -1,6 +1,7 @@
 import { useMotoristaAuthStore } from "@/stores/motorista-auth-store";
-import { ApiError, authRefresh, defaultApiCredentials, getApiBase } from "@/lib/api/portal-client";
+import { ApiError, authRefresh, defaultApiCredentials, getApiBase } from "@/lib/api/corporate-auth-client";
 import { applyCsrfHeaders } from "@/lib/csrf-client";
+import { appendDeviceSecurityHeaders } from "@/lib/device-client-headers";
 
 async function parseJson<T>(res: Response): Promise<T> {
   const text = await res.text();
@@ -12,17 +13,18 @@ async function parseJson<T>(res: Response): Promise<T> {
   }
 }
 
-export { ApiError } from "@/lib/api/portal-client";
+export { ApiError } from "@/lib/api/corporate-auth-client";
 
 export async function motoristaRequest(path: string, init?: RequestInit): Promise<Response> {
   const base = getApiBase();
   const url = `${base}${path.startsWith("/") ? path : `/${path}`}`;
 
-  const doFetch = (token: string | null) => {
+  const doFetch = async (token: string | null) => {
     const headers = new Headers(init?.headers);
     if (token) headers.set("Authorization", `Bearer ${token}`);
     if (!headers.has("Accept")) headers.set("Accept", "application/json");
     applyCsrfHeaders(headers, init?.method);
+    await appendDeviceSecurityHeaders(headers);
     const credentials = init?.credentials ?? defaultApiCredentials();
     return fetch(url, { ...init, headers, credentials });
   };
@@ -82,4 +84,54 @@ export async function motoristaFetchSolicitacao(id: string): Promise<Record<stri
     }
     throw e;
   }
+}
+
+export type MotoristaViagemResponse = {
+  motorista: { id: string; nome: string; status?: string };
+  viagem: null | {
+    ordemId: string;
+    status: string;
+    veiculoPlaca: string;
+    podFotoUrl?: string | null;
+    agendamentoId: string;
+    numeroIso: string;
+    origem: string | null;
+    destino: string | null;
+    booking: string | null;
+    dataRef: string;
+    turno: string;
+    tipoOperacao: string;
+    statusCarga: string;
+    clienteNome: string;
+  };
+};
+
+export function motoristaViagemAtiva() {
+  return motoristaJson<MotoristaViagemResponse>("/dispatch/motorista/viagem-ativa");
+}
+
+export async function motoristaAtualizarOrdemStatus(
+  ordemId: string,
+  status: string,
+  podFoto?: File | null,
+) {
+  if (podFoto) {
+    const fd = new FormData();
+    fd.append("status", status);
+    fd.append("podFoto", podFoto);
+    const res = await motoristaRequest(`/dispatch/ordem/${encodeURIComponent(ordemId)}/status`, {
+      method: "PATCH",
+      body: fd,
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new ApiError(err || `Erro HTTP ${res.status}`, res.status);
+    }
+    return res.json() as Promise<unknown>;
+  }
+  return motoristaJson<unknown>(`/dispatch/ordem/${encodeURIComponent(ordemId)}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
 }

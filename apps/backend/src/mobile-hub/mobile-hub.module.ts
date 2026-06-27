@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule, type JwtModuleOptions } from '@nestjs/jwt';
 import type { StringValue } from 'ms';
+import { SessionModule } from '../auth/session/session.module';
 import { AuditoriaModule } from '../auditoria/auditoria.module';
 import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -42,6 +43,7 @@ import { MobileTelemetryStore } from './stores/mobile-telemetry.store';
     AuditoriaModule,
     PlataformaCoreModule,
     AuthModule,
+    SessionModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

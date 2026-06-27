@@ -3,9 +3,10 @@ import {
   NotFoundException,
   ConflictException,
   ForbiddenException,
+  BadRequestException,
   Logger,
 } from '@nestjs/common';
-import { AcaoAuditoria, Prisma, Role } from '@prisma/client';
+import { AcaoAuditoria, Prisma, TipoCliente, Role } from '@prisma/client';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { PRISMA_SERIALIZABLE_TX } from '../prisma/transaction-options';
@@ -14,9 +15,68 @@ import { registrarTentativaForaDeEscopo } from '../common/security/scope-audit.u
 import { ClientePaginationDto } from '../common/dtos/pagination.dto';
 import { CreateClienteDto } from './dto/create-cliente.dto';
 import { UpdateClienteDto } from './dto/update-cliente.dto';
+import { assertClienteDocumentoDisponivel } from './cliente-documento.util';
+import { clienteCreateInputFromDto, parseDataNascimentoPf } from './cliente-fiscal.mapper';
+import { SessionService } from '../auth/session/session.service';
+import { AddressService } from '../common/address/address.service';
+import {
+  applyNormalizedToCreateDto,
+  mergePostalForUpdate,
+  normalizedToClienteUpdateData,
+  postalInputFromCreateDto,
+} from '../common/address/cliente-address-bridge';
 
 /** Whitelist de ordenação (alinha ao ClientePaginationDto e evita chaves arbitrárias). */
-const CLIENTE_ORDER_BY = new Set(['createdAt', 'nome', 'email']);
+const CLIENTE_ORDER_BY = new Set(['createdAt', 'razaoSocial', 'email']);
+
+const PF_FORBIDDEN_KEYS: (keyof CreateClienteDto)[] = [
+  'nomeFantasia',
+  'inscricaoMunicipal',
+  'inscricaoEstadual',
+  'responsavel',
+  'responsavelTelefone',
+  'responsavelEmail',
+];
+
+const ADDR_UPDATE_KEYS = new Set<keyof UpdateClienteDto>([
+  'enderecoCep',
+  'enderecoLogradouro',
+  'enderecoNumero',
+  'enderecoComplemento',
+  'enderecoBairro',
+  'enderecoCidade',
+  'enderecoUf',
+  'codigoMunicipioIbge',
+]);
+
+/** Campos cadastrais da empresa — exigem `podeGerenciarPessoas` quando o ator é CLIENTE. */
+const CADASTRO_EMPRESA_PATCH_KEYS: (keyof UpdateClienteDto)[] = [
+  'razaoSocial',
+  'nomeCompleto',
+  'nomeFantasia',
+  'tipo',
+  'inscricaoMunicipal',
+  'inscricaoEstadual',
+  'isentoIE',
+  'email',
+  'emailNfse',
+  'telefone',
+  'telefoneContato',
+  'enderecoLogradouro',
+  'enderecoNumero',
+  'enderecoComplemento',
+  'enderecoBairro',
+  'enderecoCidade',
+  'enderecoUf',
+  'enderecoCep',
+  'codigoMunicipioIbge',
+  'responsavel',
+  'responsavelTelefone',
+  'responsavelEmail',
+  'dataNascimento',
+];
+
+const PJ_FORBIDDEN_NONEMPTY: (keyof CreateClienteDto)[] = ['nomeCompleto', 'dataNascimento', 'telefoneContato'];
 
 @Injectable()
 export class ClientesService {
@@ -25,7 +85,94 @@ export class ClientesService {
   constructor(
     private prisma: PrismaService,
     private auditoria: AuditoriaService,
+    private addressService: AddressService,
+    private sessionService: SessionService,
   ) {}
+
+  private assertDtoAlinhadoAoTipo(dto: Partial<CreateClienteDto>, tipoEfetivo: TipoCliente) {
+    if (tipoEfetivo === TipoCliente.PF) {
+      if (dto.razaoSocial !== undefined) {
+        throw new BadRequestException(
+          'Use "nomeCompleto" para Pessoa Física em vez de "razaoSocial".',
+        );
+      }
+      for (const key of PF_FORBIDDEN_KEYS) {
+        const v = dto[key];
+        if (v === undefined || v === null) continue;
+        if (typeof v === 'string' && v.trim() === '') continue;
+        if (key === 'isentoIE' && v === false) continue;
+        throw new BadRequestException(
+          `Campo "${String(key)}" não é permitido para Pessoa Física.`,
+        );
+      }
+      if (dto.isentoIE === true) {
+        throw new BadRequestException('Campo "isentoIE" não é permitido para Pessoa Física.');
+      }
+      return;
+    }
+
+    if (tipoEfetivo === TipoCliente.PJ) {
+      for (const key of PJ_FORBIDDEN_NONEMPTY) {
+        const v = dto[key];
+        if (v === undefined || v === null) continue;
+        if (typeof v === 'string' && v.trim() === '') continue;
+        throw new BadRequestException(
+          `Campo "${String(key)}" não é permitido para Pessoa Jurídica.`,
+        );
+      }
+    }
+  }
+
+  private ensurePjNomeFantasia(
+    dto: CreateClienteDto | UpdateClienteDto,
+    options?: { tipoEfetivo: TipoCliente; nomeFantasiaAtual?: string | null },
+  ) {
+    const t = options?.tipoEfetivo ?? dto.tipo;
+    if (t !== TipoCliente.PJ) return;
+    const sent = 'nomeFantasia' in dto && dto.nomeFantasia !== undefined;
+    const val = sent
+      ? String(dto.nomeFantasia ?? '').trim()
+      : (options?.nomeFantasiaAtual ?? '').trim();
+    if (!val) {
+      throw new BadRequestException('Nome fantasia é obrigatório para pessoa jurídica.');
+    }
+  }
+
+  private addressFieldsInPatch(dto: UpdateClienteDto): boolean {
+    for (const k of ADDR_UPDATE_KEYS) {
+      if (dto[k] !== undefined) return true;
+    }
+    return false;
+  }
+
+  private touchesCadastroEmpresa(dto: UpdateClienteDto): boolean {
+    return CADASTRO_EMPRESA_PATCH_KEYS.some((k) => dto[k] !== undefined);
+  }
+
+  private async assertCanAlterarCadastroEmpresa(actor?: AuthUser): Promise<void> {
+    if (!actor || actor.role === Role.ADMIN || actor.role === Role.GERENTE) {
+      return;
+    }
+    if (actor.role !== Role.CLIENTE) {
+      return;
+    }
+    if (!actor.clienteId) {
+      throw new ForbiddenException(
+        'Usuário de portal sem vínculo a cliente; contate o suporte.',
+      );
+    }
+    if (!actor.sid) {
+      throw new ForbiddenException(
+        'Selecione sua identidade antes de alterar o cadastro da empresa.',
+      );
+    }
+    const sess = await this.sessionService.getSession(actor.id, actor.sid);
+    if (!sess?.permissoesPessoa?.podeGerenciarPessoas) {
+      throw new ForbiddenException(
+        'Apenas administradores da empresa podem alterar os dados cadastrais.',
+      );
+    }
+  }
 
   async create(
     createClienteDto: CreateClienteDto,
@@ -33,19 +180,20 @@ export class ClientesService {
     ip: string,
     userAgent: string,
   ) {
-    const cpfCnpjClean = createClienteDto.cpfCnpj.replace(/\D/g, '');
+    this.assertDtoAlinhadoAoTipo(createClienteDto, createClienteDto.tipo);
+    this.ensurePjNomeFantasia(createClienteDto, { tipoEfetivo: createClienteDto.tipo });
+    const dtoNorm = { ...createClienteDto };
+    const normalizedAddr = await this.addressService.normalize(postalInputFromCreateDto(dtoNorm));
+    applyNormalizedToCreateDto(dtoNorm, normalizedAddr);
+    const data = clienteCreateInputFromDto(dtoNorm);
+    await assertClienteDocumentoDisponivel(this.prisma, data.cpfCnpj, {
+      tipo: createClienteDto.tipo,
+    });
 
     try {
       const cliente = await this.prisma.$transaction(async (tx) => {
         const novoCliente = await tx.cliente.create({
-          data: {
-            nome: createClienteDto.nome,
-            tipo: createClienteDto.tipo,
-            cpfCnpj: cpfCnpjClean,
-            email: createClienteDto.email.toLowerCase(),
-            telefone: createClienteDto.telefone ?? '',
-            endereco: createClienteDto.endereco ?? '',
-          },
+          data,
         });
 
         await this.auditoria.registrar(
@@ -103,7 +251,8 @@ export class ClientesService {
     if (search) {
       const digits = search.replace(/\D/g, '');
       const orClause: Prisma.ClienteWhereInput[] = [
-        { nome: { contains: search, mode: 'insensitive' } },
+        { razaoSocial: { contains: search, mode: 'insensitive' } },
+        { nomeFantasia: { contains: search, mode: 'insensitive' } },
         { email: { contains: search, mode: 'insensitive' } },
       ];
       if (digits.length >= 3) {
@@ -120,7 +269,8 @@ export class ClientesService {
         orderBy: { [orderBy]: order },
         select: {
           id: true,
-          nome: true,
+          razaoSocial: true,
+          nomeFantasia: true,
           tipo: true,
           email: true,
           telefone: true,
@@ -201,6 +351,7 @@ export class ClientesService {
     usuarioId: string,
     ip: string,
     userAgent: string,
+    actor?: AuthUser,
   ) {
     const clienteAntes = await this.prisma.cliente.findUnique({
       where: { id },
@@ -210,27 +361,132 @@ export class ClientesService {
       throw new NotFoundException(`Cliente com ID ${id} não encontrado.`);
     }
 
+    if (updateClienteDto.cpfCnpj !== undefined) {
+      throw new BadRequestException('O CNPJ não pode ser alterado após o cadastro.');
+    }
+
+    if (actor?.role === Role.CLIENTE) {
+      if (!actor.clienteId || id !== actor.clienteId) {
+        throw new ForbiddenException('Acesso negado a este cadastro.');
+      }
+    }
+
+    if (this.touchesCadastroEmpresa(updateClienteDto)) {
+      await this.assertCanAlterarCadastroEmpresa(actor);
+    }
+
+    const tipoFinal = updateClienteDto.tipo ?? clienteAntes.tipo;
+    this.assertDtoAlinhadoAoTipo(updateClienteDto, tipoFinal);
+    this.ensurePjNomeFantasia(updateClienteDto, {
+      tipoEfetivo: tipoFinal,
+      nomeFantasiaAtual: clienteAntes.nomeFantasia,
+    });
+
+    const addrTouched = this.addressFieldsInPatch(updateClienteDto);
+    let normalizedPostal = addrTouched
+      ? await this.addressService.normalize(mergePostalForUpdate(clienteAntes, updateClienteDto))
+      : undefined;
+
     try {
       const clienteDepois = await this.prisma.$transaction(async (tx) => {
         const dadosAtualizacao: Prisma.ClienteUpdateInput = {};
 
-        if (updateClienteDto.nome !== undefined) {
-          dadosAtualizacao.nome = updateClienteDto.nome;
+        if (normalizedPostal) {
+          Object.assign(dadosAtualizacao, normalizedToClienteUpdateData(normalizedPostal));
         }
-        if (updateClienteDto.tipo !== undefined) {
-          dadosAtualizacao.tipo = updateClienteDto.tipo;
+
+        if (updateClienteDto.nomeCompleto !== undefined && tipoFinal === TipoCliente.PF) {
+          dadosAtualizacao.razaoSocial = String(updateClienteDto.nomeCompleto).trim();
         }
-        if (updateClienteDto.cpfCnpj !== undefined) {
-          dadosAtualizacao.cpfCnpj = updateClienteDto.cpfCnpj.replace(/\D/g, '');
+
+        const assign = <K extends keyof UpdateClienteDto>(
+          key: K,
+          fn?: (v: NonNullable<UpdateClienteDto[K]>) => unknown,
+        ) => {
+          if (normalizedPostal && ADDR_UPDATE_KEYS.has(key)) return;
+          const v = updateClienteDto[key];
+          if (v === undefined) return;
+          dadosAtualizacao[key as keyof Prisma.ClienteUpdateInput] = (
+            fn ? fn(v as NonNullable<typeof v>) : v
+          ) as never;
+        };
+
+        assign('razaoSocial', (v) => String(v).trim());
+        assign('nomeFantasia', (v) => (v == null || String(v).trim() === '' ? null : String(v).trim()));
+        assign('tipo');
+        assign('inscricaoMunicipal', (v) => String(v).replace(/\D/g, '') || null);
+        assign('inscricaoEstadual', (v) => String(v).replace(/\D/g, '') || null);
+        assign('isentoIE');
+        assign('email', (v) => String(v).trim().toLowerCase());
+        assign('emailNfse', (v) => String(v).trim().toLowerCase());
+        assign('telefone', (v) => String(v).replace(/\D/g, ''));
+        assign('enderecoLogradouro', (v) => String(v).trim());
+        assign('enderecoNumero', (v) => String(v).trim());
+        assign('enderecoComplemento', (v) =>
+          v == null || String(v).trim() === '' ? null : String(v).trim(),
+        );
+        assign('enderecoBairro', (v) => String(v).trim());
+        assign('enderecoCidade', (v) => String(v).trim());
+        assign('enderecoUf', (v) => String(v).trim().toUpperCase());
+        assign('enderecoCep', (v) => String(v).replace(/\D/g, ''));
+        assign('codigoMunicipioIbge', (v) => String(v).replace(/\D/g, ''));
+        assign('responsavel', (v) => String(v).trim());
+        assign('responsavelTelefone', (v) => String(v).replace(/\D/g, ''));
+        assign('responsavelEmail', (v) => String(v).trim().toLowerCase());
+        assign('diasToleranciaBloqueio', (v) =>
+          v == null || v === ('' as unknown) ? null : Number(v),
+        );
+        assign('percentualMultaAtraso', (v) =>
+          v == null || v === ('' as unknown) ? null : Number(v),
+        );
+        assign('percentualJurosAoMes', (v) =>
+          v == null || v === ('' as unknown) ? null : Number(v),
+        );
+
+        if (updateClienteDto.dataNascimento !== undefined) {
+          if (tipoFinal === TipoCliente.PF) {
+            const raw = String(updateClienteDto.dataNascimento).trim();
+            dadosAtualizacao.dataNascimento = raw
+              ? parseDataNascimentoPf(raw)
+              : null;
+          } else {
+            dadosAtualizacao.dataNascimento = null;
+          }
         }
-        if (updateClienteDto.email !== undefined) {
-          dadosAtualizacao.email = updateClienteDto.email.toLowerCase();
-        }
-        if (updateClienteDto.telefone !== undefined) {
-          dadosAtualizacao.telefone = updateClienteDto.telefone;
-        }
-        if (updateClienteDto.endereco !== undefined) {
-          dadosAtualizacao.endereco = updateClienteDto.endereco;
+
+        if (tipoFinal === TipoCliente.PF) {
+          const em =
+            (dadosAtualizacao.email as string | undefined) ?? clienteAntes.email;
+          const emLower = em.trim().toLowerCase();
+          const emailNfseSent = updateClienteDto.emailNfse;
+          const emailNfseNext =
+            emailNfseSent !== undefined
+              ? String(emailNfseSent).trim().toLowerCase()
+              : ((dadosAtualizacao.emailNfse as string | undefined) ?? emLower);
+
+          const telPrincipal =
+            updateClienteDto.telefone !== undefined
+              ? String(updateClienteDto.telefone).replace(/\D/g, '')
+              : clienteAntes.telefone.replace(/\D/g, '');
+          const telContato =
+            updateClienteDto.telefoneContato !== undefined
+              ? String(updateClienteDto.telefoneContato).replace(/\D/g, '')
+              : telPrincipal;
+
+          Object.assign(dadosAtualizacao, {
+            nomeFantasia: null,
+            inscricaoMunicipal: null,
+            inscricaoEstadual: null,
+            isentoIE: false,
+            regimeTributario: null,
+            descricaoAtividade: null,
+            cnae: null,
+            responsavel: null,
+            responsavelTelefone: null,
+            responsavelEmail: null,
+            emailNfse: emailNfseNext,
+            telefone: telContato,
+          });
         }
 
         const updated = await tx.cliente.update({
@@ -305,8 +561,7 @@ export class ClientesService {
     return { id, removed: true, timestamp: new Date() };
   }
 
-  private sanitizeCliente(cliente: any) {
-    const { ...safe } = cliente;
-    return safe;
+  private sanitizeCliente(cliente: Record<string, unknown>) {
+    return { ...cliente };
   }
 }

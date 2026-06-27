@@ -2,10 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  ContainerTimeline,
-  ContainerTimelineSheet,
-} from "@/components/container-timeline/container-timeline-ui";
+import { ContainerTimeline, ContainerTimelineSheet } from "@/components/container-timeline/container-timeline-ui";
+import { PreFaturaCustosCard } from "@/components/portal/pre-fatura-custos-card";
 import { ApiError, portalContainerTimeline } from "@/lib/api/portal-client";
 import type { ContainerTimelineResponse } from "@/lib/container-timeline";
 import { toast } from "@/lib/toast";
@@ -48,7 +46,10 @@ export function PortalContainerTimelineSlideOver({
     >
       {loading ? <Skeleton className="h-64 w-full" /> : null}
       {!loading && data ? (
-        <ContainerTimeline eventos={data.eventos} showAdminMeta={false} />
+        <div className="space-y-6">
+          <PreFaturaCustosCard iso={iso ?? data.isoFormatado} compact />
+          <ContainerTimeline eventos={data.eventos} showAdminMeta={false} />
+        </div>
       ) : null}
     </ContainerTimelineSheet>
   );

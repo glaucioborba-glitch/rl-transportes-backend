@@ -116,7 +116,7 @@ function TrackingInner() {
   }, [sid]);
 
   const clienteNome =
-    (sol?.cliente as { nome?: string } | undefined)?.nome ?? (typeof sol?.cliente === "string" ? sol.cliente : null);
+    (sol?.cliente as { razaoSocial?: string } | undefined)?.razaoSocial ?? (typeof sol?.cliente === "string" ? sol.cliente : null);
   const isos: string[] = ((sol?.unidades as { numeroIso?: string }[]) ?? [])
     .map((u) => u.numeroIso)
     .filter((x): x is string => Boolean(x && String(x).trim()));

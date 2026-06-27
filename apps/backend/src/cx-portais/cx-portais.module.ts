@@ -47,7 +47,12 @@ import { PessoasPermissoesModule } from '../pessoas-permissoes/pessoas-permissoe
 import { AgendamentosModule } from '../agendamentos/agendamentos.module';
 import { YardReadModule } from '../yard-read/yard-read.module';
 import { ContainerTimelineModule } from '../container-timeline/container-timeline.module';
+import { ArmazenagemFaturamentoModule } from '../armazenagem-faturamento/armazenagem-faturamento.module';
 import { ContainerTimelineClientController } from '../container-timeline/container-timeline-client.controller';
+import { AuditLogModule } from '../audit-log/audit-log.module';
+import { VistoriaModule } from '../vistoria/vistoria.module';
+import { VistoriaPortalController } from '../vistoria/vistoria-portal.controller';
+import { HoldReleaseModule } from '../hold-release/hold-release.module';
 
 /**
  * Fase 20 — Camada CX: portais cliente/fornecedor, IAM dedicado, branding, tickets e analytics.
@@ -69,6 +74,10 @@ import { ContainerTimelineClientController } from '../container-timeline/contain
     AgendamentosModule,
     YardReadModule,
     ContainerTimelineModule,
+    ArmazenagemFaturamentoModule,
+    AuditLogModule,
+    VistoriaModule,
+    HoldReleaseModule,
     PlataformaCoreModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -92,6 +101,7 @@ import { ContainerTimelineClientController } from '../container-timeline/contain
     PortalAnalyticsController,
     SecurityPortalController,
     ContainerTimelineClientController,
+    VistoriaPortalController,
   ],
   providers: [
     PortalJwtService,

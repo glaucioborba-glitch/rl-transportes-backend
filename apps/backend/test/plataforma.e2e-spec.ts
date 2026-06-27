@@ -1,3 +1,4 @@
+import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
@@ -43,9 +44,9 @@ describe('Plataforma Fase 18 (e2e)', () => {
     auth = app.get(AuthService);
     const hash = await bcrypt.hash(password, 10);
     const [ua, ug, uo] = await Promise.all([
-      prisma.user.create({ data: { email: emailAdmin, password: hash, role: Role.ADMIN } }),
-      prisma.user.create({ data: { email: emailGerente, password: hash, role: Role.GERENTE } }),
-      prisma.user.create({ data: { email: emailOp, password: hash, role: Role.OPERADOR_GATE } }),
+      prisma.user.create({ data: { cpfCnpj: cpfCnpjForTestUser(emailAdmin), email: emailAdmin, password: hash, role: Role.ADMIN } }),
+      prisma.user.create({ data: { cpfCnpj: cpfCnpjForTestUser(emailGerente), email: emailGerente, password: hash, role: Role.GERENTE } }),
+      prisma.user.create({ data: { cpfCnpj: cpfCnpjForTestUser(emailOp), email: emailOp, password: hash, role: Role.OPERADOR_GATE } }),
     ]);
     idAdmin = ua.id;
     idGerente = ug.id;

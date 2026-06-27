@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+import { ObservabilityModule } from '../observability/observability.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { RedisModule } from '../redis/redis.module';
 import { ObservabilidadeController } from './observabilidade.controller';
@@ -10,7 +11,7 @@ import { ObservabilidadeService } from './observabilidade.service';
 import { ObservabilidadeAccessGuard } from './observabilidade-access.guard';
 
 @Module({
-  imports: [PrismaModule, RedisModule],
+  imports: [PrismaModule, RedisModule, ObservabilityModule],
   controllers: [ObservabilidadeController],
   providers: [
     ObservabilidadeTelemetryStore,

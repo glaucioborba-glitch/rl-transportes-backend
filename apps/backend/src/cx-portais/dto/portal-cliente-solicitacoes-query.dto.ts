@@ -46,6 +46,23 @@ export class PortalClienteSolicitacoesQueryDto {
   protocolo?: string;
 
   @ApiPropertyOptional({
+    description: 'Contém no número ISO do contêiner (containersSolicitacao.unidade ou unidades.numeroIso)',
+  })
+  @IsOptional()
+  @IsString()
+  container?: string;
+
+  @ApiPropertyOptional({ description: 'Contém em containersSolicitacao.booking' })
+  @IsOptional()
+  @IsString()
+  booking?: string;
+
+  @ApiPropertyOptional({ description: 'Contém em containersSolicitacao.processo' })
+  @IsOptional()
+  @IsString()
+  processo?: string;
+
+  @ApiPropertyOptional({
     enum: ['createdAt', 'updatedAt', 'protocolo', 'status'],
     default: 'createdAt',
   })

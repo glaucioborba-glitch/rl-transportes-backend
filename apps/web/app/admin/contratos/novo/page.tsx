@@ -21,7 +21,7 @@ export default function AdminContratoNovoPage() {
   const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("dados");
-  const [clientes, setClientes] = useState<{ id: string; nome: string }[]>([]);
+  const [clientes, setClientes] = useState<{ id: string; razaoSocial: string }[]>([]);
   const [clienteId, setClienteId] = useState("");
   const [vIni, setVIni] = useState("");
   const [vFim, setVFim] = useState("");
@@ -35,7 +35,7 @@ export default function AdminContratoNovoPage() {
   ]);
 
   useEffect(() => {
-    void staffJson<{ data: { id: string; nome: string }[] }>("/clientes?page=1&limit=100")
+    void staffJson<{ data: { id: string; razaoSocial: string }[] }>("/clientes?page=1&limit=100")
       .then((r) => setClientes(r.data ?? []))
       .catch(() => setClientes([]));
   }, []);
@@ -51,7 +51,7 @@ export default function AdminContratoNovoPage() {
   ];
 
   async function submit() {
-    const nome = clientes.find((c) => c.id === clienteId)?.nome ?? "Cliente";
+    const nome = clientes.find((c) => c.id === clienteId)?.razaoSocial ?? "Cliente";
     const id = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `ct-${Date.now()}`;
     const base: Omit<AdminContract, "fingerprint" | "versaoDoc" | "createdAt" | "id"> = {
       clienteId,
@@ -117,7 +117,7 @@ export default function AdminContratoNovoPage() {
               <option value="">Selecione…</option>
               {clientes.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.nome}
+                  {c.razaoSocial}
                 </option>
               ))}
             </select>
@@ -246,7 +246,7 @@ export default function AdminContratoNovoPage() {
       {tab === "revisao" && (
         <ContractCard title="Revisão & assinatura lógica" subtitle="Fingerprint SHA-256 será gerado no save">
           <ul className="text-sm text-zinc-400 space-y-1">
-            <li>Cliente: {clienteId ? clientes.find((c) => c.id === clienteId)?.nome : "—"}</li>
+            <li>Cliente: {clienteId ? clientes.find((c) => c.id === clienteId)?.razaoSocial : "—"}</li>
             <li>
               Vigência: {vIni || "—"} → {vFim || "—"}
             </li>

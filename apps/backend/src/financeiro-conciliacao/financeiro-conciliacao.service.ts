@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AcaoAuditoria, Prisma, StatusPagamento } from '@prisma/client';
+import { AcaoAuditoria, Prisma } from '@prisma/client';
+import { BOLETO_STATUS, BOLETO_STATUS_ABERTO } from '../common/finance/boleto-status.constants';
 import { randomUUID } from 'crypto';
 import {
   construirForecastFinanceiro,
@@ -167,7 +168,7 @@ export class FinanceiroConciliacaoService {
 
     const boletosAbertos = await this.prisma.boleto.findMany({
       where: {
-        statusPagamento: { in: [StatusPagamento.PENDENTE, StatusPagamento.VENCIDO] },
+        statusPagamento: { in: [...BOLETO_STATUS_ABERTO] },
         dataVencimento: { gte: iniDia, lte: fim },
       },
       select: { valorBoleto: true },
@@ -278,7 +279,7 @@ export class FinanceiroConciliacaoService {
     const [emAberto, total] = await Promise.all([
       this.prisma.boleto.aggregate({
         where: {
-          statusPagamento: { in: [StatusPagamento.VENCIDO, StatusPagamento.PENDENTE] },
+          statusPagamento: { in: [BOLETO_STATUS.VENCIDO, BOLETO_STATUS.PENDENTE] },
         },
         _sum: { valorBoleto: true },
       }),

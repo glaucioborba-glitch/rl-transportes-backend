@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { StatusPagamento } from '@prisma/client';
+import { StatusPagamentoFatura } from '@prisma/client';
+import { BOLETO_STATUS_ABERTO } from '../common/finance/boleto-status.constants';
 import type { DespesaEntity } from './tesouraria.domain';
 import { TesourariaStoreService } from './tesouraria-store.service';
 import {
@@ -185,7 +186,7 @@ export class TesourariaService {
 
     const boletosAbertos = await this.prisma.boleto.findMany({
       where: {
-        statusPagamento: { in: [StatusPagamento.PENDENTE, StatusPagamento.VENCIDO] },
+        statusPagamento: { in: [...BOLETO_STATUS_ABERTO] },
         dataVencimento: { gte: iniDia, lte: fim },
       },
       select: { valorBoleto: true },

@@ -5,11 +5,15 @@ export type AuthUser = {
   sub: string;
   id: string;
   email: string;
+  cpfCnpj: string;
   role: Role;
+  tenantId?: string;
   /** Derivado do papel (RBAC granular). */
   permissions: string[];
   /** Preenchido quando `User.clienteId` existe (portal do cliente). */
   clienteId?: string | null;
+  /** Identificador da sessão Redis (logout pontual). */
+  sid?: string;
 };
 
 export const CurrentUser = createParamDecorator(

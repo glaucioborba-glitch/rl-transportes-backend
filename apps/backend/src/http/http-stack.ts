@@ -5,28 +5,9 @@ import * as cookieParser from 'cookie-parser';
 import type { Request } from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
-import { getCorsOrigins } from '../config/security.config';
 import { csrfProtectionMiddleware } from '../common/middleware/csrf.middleware';
 
-const CORS_METHODS = ['GET', 'POST', 'PATCH', 'DELETE', 'PUT', 'OPTIONS'] as const;
-
-const ALLOWED_HEADERS = [
-  'Content-Type',
-  'Authorization',
-  'X-Request-Id',
-  'X-Request-ID',
-  'X-Api-Key',
-  'X-Public-Api-Key',
-  'X-Public-Api-Secret',
-  'X-Tenant-ID',
-  'X-Integracao-Interno',
-  'X-Integracao-Signature',
-  'X-Mobile-Critical-Pin',
-  'X-RL-Auth-Cookie',
-  'X-CSRF-Token',
-];
-
-/** Helmet, cookies, CSRF opcional, rate limit, CORS por env, compressão — espelha produção nos e2e que chamarem esta função. */
+/** Helmet, cookies, CSRF opcional, rate limit, compressão — CORS global em `main.ts`. */
 export function applyBaseHttpStack(app: INestApplication, logger?: Logger): void {
   const server = app.getHttpAdapter().getInstance();
 
@@ -52,33 +33,12 @@ export function applyBaseHttpStack(app: INestApplication, logger?: Logger): void
           p.startsWith('/public/') ||
           p.startsWith('/marketplace/') ||
           p.startsWith('/gateway/') ||
-          p.startsWith('/mobile/')
+          p.startsWith('/mobile/') ||
+          p.startsWith('/portal/auth/')
         );
       },
     }),
   );
-
-  const origins = getCorsOrigins();
-  if (logger && origins.length) {
-    logger.log(`CORS permitidas: ${origins.join(', ')}`);
-  }
-
-  app.enableCors({
-    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean | string) => void) => {
-      if (!origin) {
-        callback(null, true);
-        return;
-      }
-      if (origins.includes(origin)) {
-        callback(null, origin);
-        return;
-      }
-      callback(null, false);
-    },
-    credentials: true,
-    methods: [...CORS_METHODS],
-    allowedHeaders: [...ALLOWED_HEADERS],
-  });
 
   server.use(compression());
 }

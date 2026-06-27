@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, staffGateFila, type StaffGateFilaItem } from "@/lib/api/staff-client";
+import { GateQrValidatorCard } from "@/components/gate/gate-qr-validator-card";
 import { OperationCardIdentity } from "@/components/shared/operation-identity";
 import { toast } from "@/lib/toast";
 
@@ -51,6 +52,8 @@ export default function StaffGateFilaPage() {
           Atualizar
         </Button>
       </div>
+
+      <GateQrValidatorCard />
 
       <Card className="border-white/10 bg-[#0b101c]/90">
         <CardHeader>

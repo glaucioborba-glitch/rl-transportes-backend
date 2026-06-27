@@ -2,6 +2,8 @@ import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { PlataformaApiClient, PlataformaServicoId } from '../plataforma.types';
+import { ConfigCacheService } from '../../common/cache/config-cache.service';
+import { PrismaService } from '../../prisma/prisma.service';
 
 const TODOS_SERVICOS: PlataformaServicoId[] = [
   'tracking_operacional',
@@ -39,48 +41,120 @@ function parseBootstrap(raw: string): Omit<PlataformaApiClient, 'id'>[] {
 
 @Injectable()
 export class PlataformaApiClientStore implements OnModuleInit {
-  private readonly clientsById = new Map<string, PlataformaApiClient>();
-  private readonly byKey = new Map<string, string>();
+  private readonly prefix = 'plt:api';
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
+    private readonly cache: ConfigCacheService,
+  ) {}
 
-  onModuleInit() {
+  async onModuleInit() {
     const raw =
       process.env.PLATAFORMA_API_CLIENTS ??
       this.config.get<string>('PLATAFORMA_API_CLIENTS') ??
       'demo-pk|demo-sk|Cliente demo API|default|240';
     for (const row of parseBootstrap(raw)) {
-      this.registrarInterno(row);
+      await this.prisma.plataformaApiClientRecord.upsert({
+        where: { apiKey: row.apiKey },
+        create: {
+          id: randomUUID(),
+          apiKey: row.apiKey,
+          secret: row.secret,
+          label: row.label,
+          tenantId: row.tenantId,
+          clienteIds: row.clienteIds,
+          requestsPerMinute: row.requestsPerMinute,
+          enabled: row.enabled,
+          servicosHabilitados: row.servicosHabilitados,
+        },
+        update: {
+          secret: row.secret,
+          label: row.label,
+          tenantId: row.tenantId,
+          clienteIds: row.clienteIds,
+          requestsPerMinute: row.requestsPerMinute,
+          enabled: row.enabled,
+          servicosHabilitados: row.servicosHabilitados,
+        },
+      });
+      await this.cache.invalidate(this.cache.key(this.prefix, row.apiKey));
     }
   }
 
-  private registrarInterno(row: Omit<PlataformaApiClient, 'id'>): PlataformaApiClient {
-    const id = randomUUID();
-    const full: PlataformaApiClient = { id, ...row };
-    this.clientsById.set(id, full);
-    this.byKey.set(full.apiKey, id);
-    return full;
+  private mapRow(row: {
+    id: string;
+    apiKey: string;
+    secret: string;
+    label: string;
+    tenantId: string;
+    clienteIds: unknown;
+    requestsPerMinute: number;
+    enabled: boolean;
+    servicosHabilitados: unknown;
+  }): PlataformaApiClient {
+    return {
+      id: row.id,
+      apiKey: row.apiKey,
+      secret: row.secret,
+      label: row.label,
+      tenantId: row.tenantId,
+      clienteIds: (row.clienteIds as string[]) ?? [],
+      requestsPerMinute: row.requestsPerMinute,
+      enabled: row.enabled,
+      servicosHabilitados: (row.servicosHabilitados as PlataformaServicoId[]) ?? [],
+    };
+  }
+
+  private async loadByApiKey(apiKey: string): Promise<PlataformaApiClient | undefined> {
+    const ck = this.cache.key(this.prefix, apiKey.trim());
+    const cached = await this.cache.get<PlataformaApiClient>(ck);
+    if (cached) return cached;
+    const row = await this.prisma.plataformaApiClientRecord.findUnique({
+      where: { apiKey: apiKey.trim() },
+    });
+    if (!row) return undefined;
+    const mapped = this.mapRow(row);
+    await this.cache.set(ck, mapped);
+    return mapped;
   }
 
   /** ADMIN — cria parceiro/API corporativa. */
-  criarClienteApi(row: Omit<PlataformaApiClient, 'id'>): PlataformaApiClient {
-    if (this.byKey.has(row.apiKey)) {
-      throw new Error('API Key já existente');
-    }
-    return this.registrarInterno(row);
+  async criarClienteApi(row: Omit<PlataformaApiClient, 'id'>): Promise<PlataformaApiClient> {
+    const existing = await this.prisma.plataformaApiClientRecord.findUnique({
+      where: { apiKey: row.apiKey },
+    });
+    if (existing) throw new Error('API Key já existente');
+    const created = await this.prisma.plataformaApiClientRecord.create({
+      data: {
+        id: randomUUID(),
+        apiKey: row.apiKey,
+        secret: row.secret,
+        label: row.label,
+        tenantId: row.tenantId,
+        clienteIds: row.clienteIds,
+        requestsPerMinute: row.requestsPerMinute,
+        enabled: row.enabled,
+        servicosHabilitados: row.servicosHabilitados,
+      },
+    });
+    const mapped = this.mapRow(created);
+    await this.cache.set(this.cache.key(this.prefix, row.apiKey), mapped);
+    return mapped;
   }
 
-  listar(): PlataformaApiClient[] {
-    return [...this.clientsById.values()];
+  async listar(): Promise<PlataformaApiClient[]> {
+    const rows = await this.prisma.plataformaApiClientRecord.findMany({ orderBy: { createdAt: 'asc' } });
+    return rows.map((r) => this.mapRow(r));
   }
 
-  obterPorId(id: string): PlataformaApiClient | undefined {
-    return this.clientsById.get(id);
+  async obterPorId(id: string): Promise<PlataformaApiClient | undefined> {
+    const row = await this.prisma.plataformaApiClientRecord.findUnique({ where: { id } });
+    return row ? this.mapRow(row) : undefined;
   }
 
-  obterPorApiKey(apiKey: string): PlataformaApiClient | undefined {
-    const id = this.byKey.get(apiKey.trim());
-    return id ? this.clientsById.get(id) : undefined;
+  async obterPorApiKey(apiKey: string): Promise<PlataformaApiClient | undefined> {
+    return this.loadByApiKey(apiKey);
   }
 
   validarSecret(client: PlataformaApiClient, secret: string): boolean {
@@ -90,12 +164,18 @@ export class PlataformaApiClientStore implements OnModuleInit {
   }
 
   /** Atualiza serviços habilitados (marketplace). */
-  atualizarServicos(id: string, servicos: PlataformaServicoId[]): PlataformaApiClient | undefined {
-    const c = this.clientsById.get(id);
+  async atualizarServicos(
+    id: string,
+    servicos: PlataformaServicoId[],
+  ): Promise<PlataformaApiClient | undefined> {
     const uniq = [...new Set(servicos)] as PlataformaServicoId[];
-    if (!c) return undefined;
-    c.servicosHabilitados = uniq;
-    return c;
+    const row = await this.prisma.plataformaApiClientRecord.update({
+      where: { id },
+      data: { servicosHabilitados: uniq },
+    });
+    const mapped = this.mapRow(row);
+    await this.cache.invalidate(this.cache.key(this.prefix, row.apiKey));
+    return mapped;
   }
 
   temServico(client: PlataformaApiClient, servico: PlataformaServicoId): boolean {

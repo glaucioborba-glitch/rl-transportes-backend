@@ -17,6 +17,8 @@ const NAV = [
   { href: "/admin/documentos", label: "Documentos" },
   { href: "/admin/penalidades", label: "Penalidades" },
   { href: "/admin/servicos", label: "Serviços" },
+  { href: "/admin/config/regua-cobranca", label: "Régua cobrança" },
+  { href: "/admin/auditoria", label: "Auditoria" },
   { href: "/admin/slainterno", label: "SLA interno" },
 ];
 

@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { SolicitacaoRow } from "@/lib/api/portal-client";
 import { formatDateTime } from "@/lib/portal-tracking";
 import { formatContainerISO } from "@/utils/containerFormatter";
+import { PreFaturaCustosCard } from "@/components/portal/pre-fatura-custos-card";
 
 function PhotoStrip({ title, urls }: { title: string; urls: unknown }) {
   const list = Array.isArray(urls) ? urls.filter((u) => typeof u === "string") : [];
@@ -59,6 +60,7 @@ export function SolicitacaoDetailPanel({ row }: { row: SolicitacaoRow }) {
         {isCorporativa ? <TabsTrigger value="corporativa">Dados da solicitação</TabsTrigger> : null}
         <TabsTrigger value="unidades">Unidades</TabsTrigger>
         <TabsTrigger value="eventos">Eventos</TabsTrigger>
+        <TabsTrigger value="custos">Custos</TabsTrigger>
         <TabsTrigger value="documentos">Documentos</TabsTrigger>
       </TabsList>
 
@@ -202,6 +204,25 @@ export function SolicitacaoDetailPanel({ row }: { row: SolicitacaoRow }) {
             <Step label="Saída" done={!!row.saida} detail={phaseDetail(row.saida)} />
           </CardContent>
         </Card>
+      </TabsContent>
+
+      <TabsContent value="custos" className="mt-4 space-y-4">
+        {[
+          ...(row.containersSolicitacao ?? []).map((c) => c.unidade),
+          ...(row.unidades ?? []).map((u) => u.numeroIso),
+        ]
+          .filter(Boolean)
+          .filter((v, i, a) => a.indexOf(v) === i)
+          .map((iso) => (
+            <PreFaturaCustosCard key={iso} iso={iso} />
+          ))}
+        {!(row.containersSolicitacao?.length || row.unidades?.length) ? (
+          <Card className="border-white/10 bg-black/20">
+            <CardContent className="py-8 text-center text-sm text-slate-500">
+              Nenhum contêiner vinculado para exibir custos.
+            </CardContent>
+          </Card>
+        ) : null}
       </TabsContent>
 
       <TabsContent value="documentos" className="mt-4">

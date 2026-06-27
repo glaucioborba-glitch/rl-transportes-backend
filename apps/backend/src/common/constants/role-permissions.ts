@@ -30,6 +30,15 @@ export function isGerenteDatahubTi(
 
 /** Permissões granulares mapeadas por papel (RBAC estendido). */
 export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
+  [Role.SUPER_ADMIN]: [
+    'auth:sessao',
+    'superadmin:tenants',
+    'superadmin:feature-flags',
+    'plataforma:tenant:write',
+    'plataforma:tenant:read',
+    'bi:torre:read',
+    'bi:operacional:read',
+  ],
   [Role.ADMIN]: [
     'auth:sessao',
     'clientes:criar',
@@ -44,6 +53,11 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'solicitacoes:gate',
     'solicitacoes:patio',
     'solicitacoes:saida',
+    'agendamentos:ler',
+    'agendamentos:criar',
+    'agendamentos:admin',
+    'dispatch:ler',
+    'dispatch:operar',
     'faturamento:ler',
     'faturamento:criar',
     'nfse:emitir',
@@ -69,6 +83,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'datahub:quality:verify',
     'datahub:export:read',
     'datahub:obs:read',
+    'bi:torre:read',
+    'bi:operacional:read',
     'plataforma:tenant:write',
     'plataforma:tenant:read',
     'plataforma:api:write',
@@ -96,6 +112,11 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'solicitacoes:gate',
     'solicitacoes:patio',
     'solicitacoes:saida',
+    'agendamentos:ler',
+    'agendamentos:criar',
+    'agendamentos:admin',
+    'dispatch:ler',
+    'dispatch:operar',
     'faturamento:ler',
     'faturamento:criar',
     'nfse:emitir',
@@ -114,6 +135,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     /* Datahub Fase 17: gerente de negócio só consome BI + catálogo DW; pipeline via DATAHUB_TI_EMAILS. */
     'datahub:dw:read',
     'datahub:bi:read',
+    'bi:operacional:read',
     'plataforma:tenant:read',
     'plataforma:consumo:read',
     'plataforma:estatisticas:read',
@@ -130,6 +152,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'solicitacoes:ler',
     'solicitacoes:atualizar',
     'solicitacoes:portaria',
+    'agendamentos:ler',
+    'agendamentos:criar',
     'dashboard:operacional',
     'dashboard:performance',
     'automacao:read',
@@ -141,6 +165,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'solicitacoes:atualizar',
     'solicitacoes:gate',
     'solicitacoes:saida',
+    'agendamentos:ler',
     'dashboard:operacional',
     'dashboard:performance',
     'automacao:read',
@@ -150,6 +175,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'clientes:ler',
     'solicitacoes:ler',
     'solicitacoes:patio',
+    'agendamentos:ler',
     'dashboard:operacional',
     'dashboard:performance',
     'automacao:read',
@@ -161,6 +187,15 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'faturamento:ler',
     'portal:solicitacao:aprovar',
   ],
+  [Role.ADMIN_CLIENTE]: [
+    'auth:sessao',
+    'clientes:ler',
+    'solicitacoes:ler',
+    'faturamento:ler',
+    'portal:solicitacao:aprovar',
+  ],
+  [Role.OPERADOR_INTERNO]: ['auth:sessao', 'solicitacoes:ler'],
+  [Role.TRANSPORTADORA_TERCEIRA]: ['auth:sessao', 'solicitacoes:ler', 'solicitacoes:criar'],
 };
 
 export type PermissionsForRoleOptions = {

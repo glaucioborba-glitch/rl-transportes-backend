@@ -1,3 +1,4 @@
+import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
@@ -6,6 +7,7 @@ import { Role, TipoCliente } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
+import { clienteE2eDefaults } from './helpers/e2e-cliente.factory';
 
 describe('Tesouraria (e2e)', () => {
   function cnpjUnico() {
@@ -46,24 +48,23 @@ describe('Tesouraria (e2e)', () => {
     const hash = await bcrypt.hash(password, 10);
 
     const [g, o] = await Promise.all([
-      prisma.user.create({ data: { email: emailGer, password: hash, role: Role.GERENTE } }),
-      prisma.user.create({ data: { email: emailOp, password: hash, role: Role.OPERADOR_GATE } }),
+      prisma.user.create({ data: { cpfCnpj: cpfCnpjForTestUser(emailGer), email: emailGer, password: hash, role: Role.GERENTE } }),
+      prisma.user.create({ data: { cpfCnpj: cpfCnpjForTestUser(emailOp), email: emailOp, password: hash, role: Role.OPERADOR_GATE } }),
     ]);
 
     const cli = await prisma.cliente.create({
-      data: {
-        nome: `E2E Teso Cli ${suffix}`,
+      data: clienteE2eDefaults({
+        razaoSocial: `E2E Teso Cli ${suffix}`,
+        nomeFantasia: `Teso Fan ${suffix}`,
         tipo: TipoCliente.PJ,
         cpfCnpj: cnpjUnico(),
         email: `c-teso-${suffix}@local.test`,
-        telefone: '',
-        endereco: '',
-      },
+        emailNfse: `nfse-teso-${suffix}@local.test`,
+      }),
     });
     clienteId = cli.id;
     const uCli = await prisma.user.create({
-      data: {
-        email: emailCli,
+      data: { cpfCnpj: cpfCnpjForTestUser(emailCli), email: emailCli,
         password: hash,
         role: Role.CLIENTE,
         clienteId,
@@ -76,7 +77,7 @@ describe('Tesouraria (e2e)', () => {
   });
 
   afterAll(async () => {
-    await prisma.user.deleteMany({ where: { email: { in: [emailGer, emailOp, emailCli] } } });
+    await prisma.user.deleteMany({ where: { cpfCnpj: { in: [cpfCnpjForTestUser(emailGer), cpfCnpjForTestUser(emailOp), cpfCnpjForTestUser(emailCli)] } } });
     await prisma.cliente.deleteMany({ where: { id: clienteId } });
     await app.close();
   });

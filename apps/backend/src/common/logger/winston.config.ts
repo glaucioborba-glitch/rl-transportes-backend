@@ -1,32 +1,43 @@
-import { WinstonModule } from 'nest-winston';
 import type { WinstonModuleOptions } from 'nest-winston';
+import { ClsServiceManager } from 'nestjs-cls';
 import * as winston from 'winston';
-import { utilities as nestWinstonModuleUtilities } from 'nest-winston';
+import { TRACE_ID_KEY } from '../observability/trace.constants';
+
+function injectTraceIdFormat() {
+  return winston.format((info) => {
+    try {
+      const cls = ClsServiceManager.getClsService();
+      if (cls?.isActive()) {
+        const traceId = cls.get<string>(TRACE_ID_KEY);
+        if (traceId) info.traceId = traceId;
+      }
+    } catch {
+      /* CLS indisponível fora de contexto HTTP/worker */
+    }
+    return info;
+  })();
+}
+
+const jsonFormat = winston.format.combine(
+  winston.format.timestamp(),
+  injectTraceIdFormat(),
+  winston.format.errors({ stack: true }),
+  winston.format.json(),
+);
 
 export const winstonModuleOptions: WinstonModuleOptions = {
   transports: [
     new winston.transports.Console({
-      format: winston.format.combine(
-        winston.format.timestamp(),
-        winston.format.ms(),
-        nestWinstonModuleUtilities.format.nestLike('RLTransportes', {
-          prettyPrint: true,
-          colors: true,
-        }),
-      ),
+      format: jsonFormat,
     }),
     new winston.transports.File({
       filename: 'logs/error.log',
       level: 'error',
-      format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
+      format: jsonFormat,
     }),
     new winston.transports.File({
       filename: 'logs/combined.log',
-      format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
+      format: jsonFormat,
     }),
   ],
 };
-
-export function buildWinstonLogger() {
-  return WinstonModule.createLogger(winstonModuleOptions);
-}

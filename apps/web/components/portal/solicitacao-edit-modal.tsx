@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { OperationDialogHeader } from "@/components/shared/operation-identity";
-import { collectSolicitacaoContainerISOs } from "@/lib/container-display";
 import {
   ContainerIsoInput,
   ContainerTamanhoSelect,
@@ -58,8 +57,8 @@ export function SolicitacaoEditModal({
   const [originalDataRef, setOriginalDataRef] = useState("");
   const [originalTurno, setOriginalTurno] = useState<"MANHA" | "TARDE">("MANHA");
 
-  const [localOrigem, setLocalOrigem] = useState("");
-  const [localDestino, setLocalDestino] = useState("");
+  const [localOrigem] = useState("");
+  const [localDestino] = useState("");
   const [containers, setContainers] = useState<ContainerDraft[]>([]);
   const [dataRef, setDataRef] = useState("");
   const [turno, setTurno] = useState<"MANHA" | "TARDE">("MANHA");

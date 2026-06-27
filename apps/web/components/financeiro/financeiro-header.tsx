@@ -12,6 +12,7 @@ import { clearStaffSessionCookie } from "@/lib/auth-staff-cookie";
 const NAV = [
   { href: "/financeiro/apagar", label: "Contas a pagar" },
   { href: "/financeiro/areceber", label: "A receber" },
+  { href: "/financeiro/conciliacao", label: "Conciliação bancária" },
   { href: "/financeiro/tesouraria", label: "Tesouraria" },
   { href: "/financeiro/bancos", label: "Bancos" },
 ];
@@ -35,7 +36,7 @@ export function FinanceiroHeader() {
   function logout() {
     clear();
     clearStaffSessionCookie();
-    router.replace("/operador/login");
+    router.replace("/login/staff");
   }
 
   return (

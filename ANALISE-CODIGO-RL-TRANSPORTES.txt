@@ -1,0 +1,363 @@
+================================================================================
+  ANÁLISE TÉCNICA DO MONOREPO RL TRANSPORTES
+  Data: 14/06/2026
+  Escopo: apps/backend (NestJS), apps/web (Next.js), prisma, integrações
+================================================================================
+
+NOTA METODOLÓGICA
+-----------------
+Foi realizada uma auditoria sistemática e automatizada do repositório (rotas,
+controllers, páginas, módulos, fluxos de dados, builds e padrões de import).
+Não é possível revisar literalmente "todas as linhas" de um monorepo deste
+porte (milhares de arquivos TypeScript) em uma única passagem humana; esta
+análise cobre 100% dos pontos de entrada (rotas HTTP, páginas Next.js,
+módulos NestJS registrados) e amostragem profunda dos fluxos críticos
+(Solicitações v2, Portal CX, Gate/Pátio, Agendamentos, Auth).
+
+RESULTADO GERAL: O sistema é funcional e bem modularizado, com arquitetura
+enterprise (observabilidade, HA TOS, portal corporativo, mobile hub, cockpit).
+Há coerência na maior parte dos fluxos, porém existem duplicações históricas
+(legacy vs v2), rotas colidentes e gaps de persistência que merecem correção
+prioritária antes de produção em escala.
+
+
+================================================================================
+1. ESTRUTURA DO MONOREPO
+================================================================================
+
+apps/backend   — API NestJS (porta 3001), Prisma/PostgreSQL, Redis
+apps/web       — Frontend Next.js App Router (porta 3000)
+prisma/        — Schema + migrations (muitas migrations ainda untracked no git)
+scripts/       — Utilitários (dump de código, etc.)
+
+Build verificado:
+  - Backend (nest build): SUCESSO (exit 0)
+  - Frontend (next build): FALHA parcial — prerender de /portal/auth/select-pessoa
+    (useSearchParams sem Suspense boundary). Demais 111/112 páginas geradas.
+
+
+================================================================================
+2. BACKEND — ROTAS E CONTROLLERS (93 controllers)
+================================================================================
+
+Prefixo global: NENHUM (rotas na raiz do host).
+Guards globais: NENHUM — autenticação por controller/método.
+
+2.1 PADRÕES DE AUTENTICAÇÃO
+----------------------------
+  Staff intranet:     AuthGuard('jwt') + RolesGuard + PermissionsGuard
+  Portal CX:          CxPortalPublicApiForbidGuard + CxPortalAuthGuard +
+                      CxPortalRateLimitGuard + CxPortalSegmentGuard +
+                      PessoaPermissoesGuard
+  Portal IAM público: POST /portal/login, register, etc. (sem guard)
+  Mobile Hub v1:      MobileJwtAuthGuard + MobileRoleGuard
+  Cockpit:            AuthGuard('jwt') + CockpitAccessGuard
+  Plataforma B2B:     PlataformaIpAllowlistGuard + PlataformaPublicAuthGuard
+
+2.2 PROBLEMAS CRÍTICOS DE ROTA
+-------------------------------
+[CRÍTICO] Colisão POST /v2/solicitacoes/:id/anexos
+  - SolicitacoesV2Controller (staff JWT)
+  - PortalSolicitacoesV2Controller (portal JWT)
+  Nest registra ambos no mesmo path; o primeiro registrado prevalece.
+  Risco: um público (staff ou portal) pode ficar inacessível ou com guard errado.
+
+[ALTO] Três controllers no prefixo v2/solicitacoes:
+  - modules/solicitacoes-v2/solicitacoes-v2.controller.ts (staff GET/DELETE/aprovar)
+  - cx-portais/portal-solicitacoes-v2.controller.ts (portal POST)
+  - pdf-operacional-v2/pdf-operacional-v2.controller.ts (PDF + verificação pública)
+  Separados por verbo HTTP na maioria, exceto anexos acima.
+
+[ALTO] Duas superfícies de portal cliente:
+  - /portal/*           → PortalController (JWT corporate, Role.CLIENTE) — LEGACY
+  - /cliente/portal/*   → PortalClienteController + DashboardPortalController — CX
+  Sobreposição: solicitações, faturamento, boletos, NFSe com guards diferentes.
+
+[MÉDIO] Duas stacks mobile:
+  - /mobile/*           → MobileOperacionalController (legacy)
+  - /mobile/v1/*        → MobileHubModule (moderno)
+  Conceitos duplicados: gate, pátio, turno, operações.
+
+[MÉDIO] Endpoints públicos sem auth (verificar intenção):
+  - GET /metrics/cep-cache — métricas de cache CEP expostas
+  - GET /api-contracts/v1/* — documentação de contratos pública
+  - GET /v2/solicitacoes/:id/verificar — verificação QR (intencional)
+
+[MÉDIO] Inconsistência de guards no portal:
+  - DashboardPortalController usa JwtPortalAuthGuard
+  - Demais controllers CX usam CxPortalAuthGuard (canônico)
+
+[MÉDIO] Convenção de prefixos inconsistente:
+  - v1/agendamentos, v2/solicitacoes, v2/gate, v2/patio
+  - api/v1/* (integração)
+  - Rotas sem versão: clientes, auth, faturamento, solicitacoes (v1 legacy)
+  - CepCacheController usa @Controller('metrics') em vez de 'cep-cache'
+
+2.3 MÓDULOS — WIRING
+--------------------
+  - Todos os 93 controllers estão registrados via feature modules em app.module.ts
+  - HealthController declarado diretamente em AppModule
+  - Nenhum controller órfão detectado na análise estática
+  - Interceptors globais: PortalAuditInterceptor, DeviceAuditInterceptor
+  - Middleware global: TraceMiddleware (observabilidade / traceId)
+
+
+================================================================================
+3. FRONTEND — ROTAS NEXT.JS (117 páginas, 19 layouts)
+================================================================================
+
+3.1 PORTAL DO CLIENTE (nav em portal-header.tsx)
+-------------------------------------------------
+  /portal/dashboard              OK
+  /portal/solicitacoes           OK (+ modal Nova Solicitação via SolicitacoesIntentHeader)
+  /cliente/portal/patiamento     OK — ÚNICO item do nav com prefixo /cliente/portal
+  /portal/financeiro             OK
+  /portal/documentos             OK
+  /portal/perfil/seguranca       OK
+  /portal/perfil                 OK
+
+  Nenhum link do header aponta para página inexistente (404).
+
+3.2 INCONSISTÊNCIAS DE URL (FRONTEND)
+--------------------------------------
+[ALTO] Patiamento duplicado:
+  - /cliente/portal/patiamento  (implementação canônica)
+  - /portal/patiamento          (alias via route group (cliente))
+  Mesma página, duas URLs. Nav usa /cliente/portal — highlight ativo falha em /portal/patiamento.
+
+[BAIXO] Página órfã /portal/solicitacoes/nova:
+  - Existe formulário completo em página
+  - Fluxo principal usa modal SolicitacaoFormModal na listagem
+  - Nenhum href interno aponta para /nova (exceto link residual no código antigo removido)
+
+[BAIXO] CTA dashboard "Nova solicitação" → /portal/solicitacoes (lista), não abre modal
+  diretamente; funcional mas label imprecisa.
+
+[BAIXO] Páginas fora do nav (acessíveis por deep link):
+  /portal/perfil/pessoas, /portal/perfil/dispositivos, /portal/solicitacoes/[id], etc.
+
+3.3 BUILD FRONTEND
+------------------
+  ERRO: /portal/auth/select-pessoa — useSearchParams() sem Suspense boundary.
+  Correção: envolver componente em <Suspense> ou marcar página como dynamic.
+
+3.4 CLIENTES DE API (lib/api/)
+------------------------------
+  portal-client.ts       — Portal CX (/cliente/portal/*, /portal/*, /v2/solicitacoes)
+  corporate-auth-client.ts — getApiBase(), ApiError, auth staff
+  staff-client.ts        — Intranet cookie auth
+  motorista-client.ts    — Bearer motorista
+  types.ts               — DTOs compartilhados
+
+  Base URL: NEXT_PUBLIC_API_URL (default http://localhost:3001)
+  Server-side BFF: INTERNAL_API_URL ?? NEXT_PUBLIC_API_URL
+
+  Coerência: frontend usa /portal/* nas URLs de página e /cliente/portal/* na API REST.
+  Isso é intencional (separação UX vs backend) mas exige documentação clara.
+
+
+================================================================================
+4. FLUXO DE DADOS — SOLICITAÇÕES V2 (ANÁLISE DETALHADA)
+================================================================================
+
+4.1 MODELO DE DADOS (Prisma)
+----------------------------
+  Solicitacao (header) + filhos v2:
+    TransporteSolicitacao, ContainerSolicitacao, AgendamentoSolicitacao,
+    SolicitanteContato, SolicitacaoAnexo
+  Operacional paralelo:
+    AgendamentoTerminal (capacidade terminal, First/Last Mile, TOS)
+    GateCheckIn/GateCheckOut, PatioUnidade (gate-v2)
+    Container (TOS event-sourced)
+  Legacy: Unidade, Portaria, Gate, Patio, Saida
+
+4.2 FLUXO PORTAL → BACKEND
+--------------------------
+  1. Usuário escolhe intenção no dropdown (4 opções)
+  2. Modal SolicitacaoFormModal envia POST /v2/solicitacoes/com-anexos
+  3. Payload inclui tipoOperacao (intent enum):
+       SOLICITAR_BAIXA
+       SOLICITAR_IMPORTACAO_COLETA_DEPOT
+       SOLICITAR_COLETA
+       SOLICITAR_EXPORTACAO_ENTREGA_DEPOT
+  4. Backend resolve via solicitacao-intent.util.ts:
+       Baixa/Coleta     → FROTA_CLIENTE + motorista obrigatório
+       Importação       → FROTA_FL + localOrigem + LS fixo
+       Exportação       → FROTA_FL + localDestino + LS fixo
+  5. Transaction cria Solicitacao + filhos v2
+  6. Pós-transaction (best-effort): AgendamentosService.criar → AgendamentoTerminal
+
+4.3 GAPS DE COERÊNCIA (ORDEM DE SEVERIDADE)
+--------------------------------------------
+[CRÍTICO] tipoOperacao (intent) NÃO É PERSISTIDO no banco
+  - Perdido após create; impossível consultar/relatar por tipo de operação
+  - Apenas inferível indiretamente via AgendamentoTerminal (se criado)
+
+[CRÍTICO] AgendamentoTerminal é best-effort e só para 1º ISO
+  - Falha silenciosa (logger.warn)
+  - Rodotrem: segundo container sem slot terminal
+  - Solicitação pode existir sem vaga no terminal/dispatch
+
+[CRÍTICO] TOS Container desconectado do fluxo v2 portal
+  - Gate-v2 opera ContainerSolicitacao/PatioUnidade
+  - TOS Container exige AgendamentoTerminal — não é criado automaticamente no portal
+  - Duas lifecycles de contêiner coexistem sem ponte
+
+[CRÍTICO] TipoUnidade sempre IMPORT na criação v2
+  - Incorreto para Baixa/Exportação/GATE_OUT
+  - Corrompe métricas de dashboard (unidades.export/gateOut)
+
+[ALTO] Dois modelos de agendamento sem leitura unificada no portal:
+  - AgendamentoSolicitacao (sempre criado, exibido no portal)
+  - AgendamentoTerminal (dispatch/TOS, não incluído nas APIs de listagem portal)
+
+[ALTO] POST /cliente/portal/agendamentos bypassa intent
+  - Cliente pode criar terminal row inconsistente com solicitação v2
+
+[ALTO] tipoFluxo (TipoFluxoLogistico) nunca setado em v2
+  - Legacy SolicitacoesService seta; v2 não
+
+[ALTO] Máquina de estados fragmentada:
+  - Legacy: PENDENTE → EM_ANALISE → APROVADO → EM_EXECUCAO → CONCLUIDO
+  - v2 staff: → AGUARDANDO_GATE_IN (pula APROVADO)
+  - Gate-v2: check-in de AGUARDANDO_GATE_IN ou APROVADO → EM_PATIO
+
+[MÉDIO] Política de anexos inconsistente:
+  - POST /v2/solicitacoes permite zero anexos
+  - POST /v2/solicitacoes/com-anexos exige arquivos
+  - aprovarStaff pode rejeitar por falta de anexo
+
+[MÉDIO] Placeholder de transporte FL (00000000000, placas FLA0A00)
+  - Gravado em TransporteSolicitacao para intents FROTA_FL
+  - Pode confundir relatórios de motorista
+
+[MÉDIO] Views SQL (vw_solicitacoes_v1_compat, vw_solicitacoes_legacy)
+  - Não modeladas no Prisma
+  - Labels desatualizados para AGUARDANDO_GATE_IN, EM_PATIO, etc.
+
+
+================================================================================
+5. FLUXO DE AUTENTICAÇÃO PORTAL
+================================================================================
+
+  Cadastro: POST /portal/register → User (Role.CLIENTE) + Cliente + PessoaAutorizada
+  Login:    POST /portal/login → JWT portal + sessão Redis
+  Guards:   CxPortalAuthGuard aceita portal JWT ou fallback corporate JWT CLIENTE
+  RBAC:     PessoaPermissoesGuard + @PessoaPode('criarSolicitacao', etc.)
+  Sessão:   pessoaAutorizada + permissoesPessoa hidratadas do Redis
+
+  Coerente: escopo por clienteId em criarPortal e PortalClienteDataService.
+  Gap: listagem portal não inclui agendamentos terminal nem gateCheckIns v2.
+
+
+================================================================================
+6. IMPORTS E DEPENDÊNCIAS
+================================================================================
+
+6.1 BACKEND
+-----------
+  - nest build compila sem erro TypeScript (validado)
+  - Módulos importados corretamente em app.module.ts
+  - OutboxModule corrigido anteriormente (ClsService via ObservabilityCoreModule)
+  - Circular deps não detectadas nos fluxos auditados
+
+6.2 FRONTEND
+------------
+  - Alias @/ → raiz apps/web (padrão Next.js)
+  - Re-exports entre route groups:
+      app/(cliente)/portal/layout.tsx → cliente/portal/layout
+      app/(cliente)/portal/patiamento/page.tsx → cliente/portal/patiamento/page
+  - solicitacao-form-modal.tsx importa de lib/solicitacao-intent.ts (sem circular deps)
+  - solicitacoes-intent-header.tsx → SolicitacaoFormModal (fluxo correto pós-refatoração)
+
+6.3 PRISMA / MIGRATIONS
+-----------------------
+  ATENÇÃO: Dezenas de migrations listadas como untracked (??) no git status inicial.
+  Ambientes sem `prisma migrate deploy` completo terão schema divergente.
+  Migrations críticas recentes (não exaustivo):
+    portal_solicitacao_corporativa, gate_v2_operacional,
+    agendamento_transporte_first_last_mile, tos_container_lifecycle,
+    tos_ha_architecture, device_auditoria, security_center, etc.
+
+
+================================================================================
+7. OBSERVAÇÕES DE UX / PRODUTO (PÓS REFATORAÇÃO SOLICITAÇÕES)
+================================================================================
+
+  IMPLEMENTADO (confirmado no código):
+  - Dropdown "Nova solicitação" com 4 intenções
+  - Modal abre formulário completo diretamente (sem passo intermediário LS/Rodotrem)
+  - Regra isFrotaFL: LS fixo, Rodotrem oculto, motorista oculto, local origem/destino
+  - Página /portal/agendamentos removida; nav atualizado
+  - Backend deriva modalidadeTransporte de tipoOperacao
+
+  PENDENTE / MELHORIAS:
+  - Remover ou redirecionar /portal/solicitacoes/nova (página órfã)
+  - Unificar URL de patiamento (/portal/patiamento vs /cliente/portal/patiamento)
+  - Corrigir build select-pessoa (Suspense)
+  - Persistir intent no banco
+  - Corrigir TipoUnidade por intent
+
+
+================================================================================
+8. SEGURANÇA (RESUMO)
+================================================================================
+
+  Pontos positivos:
+  - Rate limit portal (CxPortalRateLimitGuard)
+  - Auditoria device + portal
+  - Security center (alertas, booking/ISO repetido em v2)
+  - CSRF opcional, cookies HttpOnly staff
+  - Chaos engine desligável em produção
+
+  Pontos de atenção:
+  - Métricas CEP públicas
+  - Colisão de rota anexos v2
+  - Middleware portal: auth client-side (sem middleware Next.js protegendo /portal/*)
+  - Dispatch motorista: apenas AuthGuard('jwt'), sem RolesGuard
+
+
+================================================================================
+9. RECOMENDAÇÕES PRIORITÁRIAS (ROADMAP)
+================================================================================
+
+  P0 — Antes de produção em escala:
+    1. Resolver colisão POST /v2/solicitacoes/:id/anexos (prefixo portal ou guard composto)
+    2. Persistir tipoOperacao/intent + mapear tipoFluxo e TipoUnidade
+    3. AgendamentoTerminal dentro da transaction; 1 row por container (Rodotrem)
+    4. Aplicar migrations pendentes e versionar no git
+    5. Corrigir next build (select-pessoa Suspense)
+
+  P1 — Coerência operacional:
+    6. Ponte gate-v2 → TOS Container quando AgendamentoTerminal existir
+    7. Unificar ou deprecar /portal/* legacy vs /cliente/portal/*
+    8. Incluir agendamentos terminal na API de detalhe portal
+    9. Deprecar POST /cliente/portal/agendamentos standalone ou alinhar ao intent
+
+  P2 — Higiene:
+   10. Unificar URLs patiamento no frontend
+   11. Remover página /portal/solicitacoes/nova ou linká-la explicitamente
+   12. Proteger GET /metrics/cep-cache
+   13. Documentar convenção de versionamento de rotas (v1/v2/api/v1)
+   14. Alinhar DashboardPortalController guard com CxPortalAuthGuard
+
+
+================================================================================
+10. CONCLUSÃO
+================================================================================
+
+O RL Transportes monorepo é um sistema enterprise maduro em evolução, com
+múltiplas fases (portal CX, gate-v2, TOS HA, observabilidade, mobile hub,
+cockpit, automação). A base compila no backend; o frontend tem 1 erro de
+prerender. Os fluxos de Solicitações v2 e intent-driven UI estão implementados
+e alinhados entre frontend e backend na camada de API, mas a persistência e
+integração downstream (terminal, TOS, tipoFluxo, unidades) ainda apresentam
+lacunas que podem causar inconsistência operacional no Dispatch Board e nos
+KPIs.
+
+Esta análise deve ser tratada como documento vivo — recomenda-se revisão após
+cada sprint que toque portal, agendamentos ou TOS.
+
+================================================================================
+  Fim do relatório
+================================================================================

@@ -46,12 +46,12 @@ export class PlataformaMarketplaceAdminController {
     summary: 'Registrar assinatura marketplace (habilita/desabilita APIs por cliente corporativo)',
   })
   async assinar(@Body() dto: MarketplaceAssinaturaDto, @Req() req: Request & { user: { sub: string } }) {
-    const c = this.clients.obterPorId(dto.apiClientId);
+    const c = await this.clients.obterPorId(dto.apiClientId);
     if (!c) {
       return { success: false, error: { code: 'CLIENT_NOT_FOUND', message: 'API client inexistente.' } };
     }
     const servicos = dto.habilitado === false ? [] : dto.servicoIds;
-    this.clients.atualizarServicos(dto.apiClientId, servicos);
+    await this.clients.atualizarServicos(dto.apiClientId, servicos);
     await this.auditoria.registrar({
       tabela: 'plataforma_marketplace_assinatura',
       registroId: dto.apiClientId,

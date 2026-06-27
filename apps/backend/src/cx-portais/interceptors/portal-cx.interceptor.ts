@@ -20,7 +20,7 @@ export class PortalCxInterceptor implements NestInterceptor {
       tap(() => {
         const u = req.cxUser;
         if (!u) return;
-        this.analytics.registrar({
+        void this.analytics.registrar({
           path: `${req.method} ${req.path}`,
           sub: u.sub,
           portalPapel: u.portalPapel,
