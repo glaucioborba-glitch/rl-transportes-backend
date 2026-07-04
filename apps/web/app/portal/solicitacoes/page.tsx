@@ -3,18 +3,52 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SolicitacoesIntentHeader } from "@/components/portal/solicitacoes-intent-header";
+import { SolicitacoesEscopoTabs } from "@/components/portal/solicitacoes-escopo-tabs";
 import { SolicitacaoCompactCard } from "@/components/portal/solicitacao-compact-card";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SectionTitle } from "@/components/portal/portal-primitives";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ApiError, fetchSolicitacoesPaginated, type SolicitacaoRow } from "@/lib/api/portal-client";
+import { ApiError, fetchSolicitacoesPaginated, markPortalOnboardingConcluido, type SolicitacoesEscopo, type SolicitacaoRow } from "@/lib/api/portal-client";
+import { usePortalOnboardingTour } from "@/hooks/use-portal-onboarding-tour";
 import { toast } from "@/lib/toast";
 import { formatContainerISO, stripContainerISO } from "@/utils/containerFormatter";
+import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
 
 const STATUSES = ["", "PENDENTE", "APROVADO", "CONCLUIDO", "REJEITADO"];
 
+function hasFiltrosAvancados(input: {
+  status: string;
+  protocolo: string;
+  container: string;
+  booking: string;
+  processo: string;
+  from: string;
+  to: string;
+}): boolean {
+  return Boolean(
+    input.status ||
+      input.protocolo.trim() ||
+      input.container.trim() ||
+      input.booking.trim() ||
+      input.processo.trim() ||
+      input.from ||
+      input.to,
+  );
+}
+
+function mensagemListaVazia(escopo: SolicitacoesEscopo, filtrosAvancados: boolean): string {
+  if (filtrosAvancados) {
+    return "Nenhuma solicitação encontrada com os filtros atuais.";
+  }
+  if (escopo === "minhas") {
+    return "Você ainda não criou nenhum agendamento. Clique em \"Nova Solicitação\" para começar.";
+  }
+  return "Nenhum agendamento registrado para a sua empresa até o momento.";
+}
+
 export default function SolicitacoesPage() {
+  const [filtroAtivo, setFiltroAtivo] = useState<SolicitacoesEscopo>("minhas");
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState("");
   const [protocolo, setProtocolo] = useState("");
@@ -27,6 +61,12 @@ export default function SolicitacoesPage() {
   const [rows, setRows] = useState<SolicitacaoRow[]>([]);
   const [total, setTotal] = useState(0);
   const limit = 10;
+  const onboardingConcluido = usePortalClienteAuthStore((s) => s.user?.onboardingConcluido === true);
+
+  usePortalOnboardingTour({
+    enabled: !loading && !onboardingConcluido,
+    onComplete: markPortalOnboardingConcluido,
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -34,6 +74,7 @@ export default function SolicitacoesPage() {
       const res = await fetchSolicitacoesPaginated({
         page,
         limit,
+        escopo: filtroAtivo,
         status: status || undefined,
         protocolo: protocolo.trim() || undefined,
         container: stripContainerISO(container) || undefined,
@@ -53,13 +94,22 @@ export default function SolicitacoesPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, status, protocolo, container, booking, processo, from, to]);
+  }, [page, filtroAtivo, status, protocolo, container, booking, processo, from, to]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
+  const filtrosAvancados = hasFiltrosAvancados({
+    status,
+    protocolo,
+    container,
+    booking,
+    processo,
+    from,
+    to,
+  });
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8">
@@ -73,6 +123,16 @@ export default function SolicitacoesPage() {
           Escolha a intenção operacional — o sistema define automaticamente frota FL ou frota do cliente.
         </p>
         <SolicitacoesIntentHeader onCreated={() => void load()} />
+      </div>
+
+      <div className="mb-6">
+        <SolicitacoesEscopoTabs
+          value={filtroAtivo}
+          onChange={(escopo) => {
+            setFiltroAtivo(escopo);
+            setPage(1);
+          }}
+        />
       </div>
 
       <Card className="mb-6">
@@ -176,7 +236,7 @@ export default function SolicitacoesPage() {
       ) : rows.length === 0 ? (
         <Card className="border-white/10 bg-black/20">
           <CardContent className="py-12 text-center text-sm text-slate-500">
-            Nenhuma solicitação encontrada com os filtros atuais.
+            {mensagemListaVazia(filtroAtivo, filtrosAvancados)}
           </CardContent>
         </Card>
       ) : (

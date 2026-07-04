@@ -130,6 +130,25 @@ export class PortalClienteDataService {
       ];
     }
 
+    if (q.escopo === 'minhas') {
+      const email = (
+        cx.pessoaAutorizada?.email?.trim() ||
+        cx.email?.trim() ||
+        ''
+      ).toLowerCase();
+      if (!email) {
+        return { items: [], total: 0, page, limit, orderBy, order };
+      }
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+        {
+          solicitanteContato: {
+            is: { email: { equals: email, mode: 'insensitive' } },
+          },
+        },
+      ];
+    }
+
     const [items, total] = await Promise.all([
       this.prisma.solicitacao.findMany({
         where,

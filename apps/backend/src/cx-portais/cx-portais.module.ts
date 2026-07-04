@@ -35,6 +35,7 @@ import { JwtPortalAuthGuard } from './guards/jwt-portal.guard';
 import { CxPortalRateLimitGuard } from './guards/cx-portal-rate-limit.guard';
 import { CxPortalRateLimitService } from './security/cx-portal-rate-limit.service';
 import { CxPortalSecurityService } from './security/cx-portal-security.service';
+import { PortalCadastroAprovadoGuard } from './guards/portal-cadastro-aprovado.guard';
 import { PortalCxInterceptor } from './interceptors/portal-cx.interceptor';
 import { EmailModule } from '../common/email/email.module';
 import { SolicitacoesModule } from '../solicitacoes/solicitacoes.module';
@@ -53,6 +54,9 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
 import { VistoriaModule } from '../vistoria/vistoria.module';
 import { VistoriaPortalController } from '../vistoria/vistoria-portal.controller';
 import { HoldReleaseModule } from '../hold-release/hold-release.module';
+import { TermosUsoModule } from '../common/legal/termos-uso.module';
+import { DominioCorporativoModule } from '../common/validation/dominio-corporativo.module';
+import { TransportadorasAutorizadasModule } from '../transportadoras-autorizadas/transportadoras-autorizadas.module';
 
 /**
  * Fase 20 — Camada CX: portais cliente/fornecedor, IAM dedicado, branding, tickets e analytics.
@@ -78,6 +82,9 @@ import { HoldReleaseModule } from '../hold-release/hold-release.module';
     AuditLogModule,
     VistoriaModule,
     HoldReleaseModule,
+    TermosUsoModule,
+    DominioCorporativoModule,
+    TransportadorasAutorizadasModule,
     PlataformaCoreModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -124,6 +131,7 @@ import { HoldReleaseModule } from '../hold-release/hold-release.module';
     CxPortalRateLimitGuard,
     CxPortalSecurityService,
     PortalCxInterceptor,
+    PortalCadastroAprovadoGuard,
 
     /* Re-export guards for DI */
   ],

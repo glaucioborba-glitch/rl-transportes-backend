@@ -38,6 +38,7 @@ export function SolicitacoesIntentHeader({ onCreated }: { onCreated?: () => void
   return (
     <div className="relative" ref={menuRef}>
       <Button
+        data-tour="nova-solicitacao"
         onClick={() => !bloqueadoFin && setMenuOpen((o) => !o)}
         disabled={bloqueadoFin}
         className={`gap-2 ${PORTAL_SCHEDULING_DISABLED_CLASS}`}

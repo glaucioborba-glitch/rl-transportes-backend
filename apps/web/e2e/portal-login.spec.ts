@@ -3,7 +3,7 @@ import { E2E_CNPJ, E2E_PORTAL_PASSWORD } from "./fixtures/mock-data";
 import { setupPortalApiMocks } from "./fixtures/route-mocks";
 
 test.describe("Cenário 1 — Login unificado portal", () => {
-  test("CNPJ + senha redireciona para o dashboard", async ({ page }) => {
+  test("CNPJ + senha redireciona para solicitações", async ({ page }) => {
     await setupPortalApiMocks(page);
 
     await page.goto("/portal/login");
@@ -13,7 +13,7 @@ test.describe("Cenário 1 — Login unificado portal", () => {
     await page.getByLabel("Senha").fill(E2E_PORTAL_PASSWORD);
     await page.getByRole("button", { name: "Acessar portal" }).click();
 
-    await page.waitForURL("**/portal/dashboard**", { timeout: 15_000 });
-    await expect(page.getByRole("heading", { name: "Visão geral" })).toBeVisible({ timeout: 15_000 });
+    await page.waitForURL("**/portal/solicitacoes**", { timeout: 15_000 });
+    await expect(page.getByRole("heading", { name: "Solicitações" })).toBeVisible({ timeout: 15_000 });
   });
 });

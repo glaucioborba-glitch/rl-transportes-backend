@@ -4,6 +4,11 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, Prisma, Role, StatusSolicitacao, TipoCliente, TurnoAgendamento } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { Pool } from 'pg';
+import {
+  TERMOS_USO_CONTEUDO_HTML,
+  TERMOS_USO_DATA_PUBLICACAO,
+  TERMOS_USO_VERSAO_ATIVA,
+} from '../src/common/legal/termos-uso.constants';
 
 config({ path: path.resolve(__dirname, '../../../.env') });
 
@@ -95,6 +100,24 @@ async function upsertClientePortal() {
   });
 }
 
+async function upsertTermosUsoAtivo() {
+  await prisma.termosUso.updateMany({ where: { ativo: true }, data: { ativo: false } });
+  await prisma.termosUso.upsert({
+    where: { versao: TERMOS_USO_VERSAO_ATIVA },
+    create: {
+      versao: TERMOS_USO_VERSAO_ATIVA,
+      conteudoHtml: TERMOS_USO_CONTEUDO_HTML,
+      dataPublicacao: TERMOS_USO_DATA_PUBLICACAO,
+      ativo: true,
+    },
+    update: {
+      conteudoHtml: TERMOS_USO_CONTEUDO_HTML,
+      dataPublicacao: TERMOS_USO_DATA_PUBLICACAO,
+      ativo: true,
+    },
+  });
+}
+
 async function main() {
   const nodeEnv = process.env.NODE_ENV || 'development';
   const deploy = (process.env.DEPLOY_ENV || '').toLowerCase();
@@ -114,6 +137,7 @@ async function main() {
   const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
   await upsertDefaultTenant();
+  await upsertTermosUsoAtivo();
 
   await prisma.user.upsert({
     where: { tenantId_email: { tenantId: DEFAULT_TENANT, email } },

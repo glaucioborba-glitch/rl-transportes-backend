@@ -55,8 +55,43 @@ export function getCorsOrigins(): string[] {
   if (devCsv) {
     return devCsv.split(',').map((o) => o.trim()).filter(Boolean);
   }
-  /** Em dev: front em localhost e 127.0.0.1 (credentials + cookies cruzados para API em outra porta). */
-  return ['http://localhost:3000', 'http://127.0.0.1:3000'];
+  /** Em dev: front e API local (credentials + cookies entre portas 3000/3001). */
+  return [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3001',
+  ];
+}
+
+export type RateLimitTierConfig = {
+  windowMs: number;
+  max: number;
+};
+
+/** Limites globais express-rate-limit — janela de 1 minuto por IP. */
+export function getGlobalRateLimitTiers(): { read: RateLimitTierConfig; write: RateLimitTierConfig } {
+  const windowMs = 60_000;
+  const isDev = !isProductionDeploy();
+
+  const parseMax = (raw: string | undefined, fallback: number) => {
+    const n = parseInt(raw ?? '', 10);
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  };
+
+  if (isDev) {
+    const max = parseMax(process.env.RATE_LIMIT_MAX, 100);
+    return {
+      read: { windowMs, max: parseMax(process.env.RATE_LIMIT_GET_MAX, max) },
+      write: { windowMs, max: parseMax(process.env.RATE_LIMIT_WRITE_MAX, max) },
+    };
+  }
+
+  const writeMax = parseMax(process.env.RATE_LIMIT_WRITE_MAX ?? process.env.RATE_LIMIT_MAX, 20);
+  return {
+    read: { windowMs, max: parseMax(process.env.RATE_LIMIT_GET_MAX, 50) },
+    write: { windowMs, max: writeMax },
+  };
 }
 
 /** Swagger: desligado em produção salvo SWAGGER_ENABLED=1; em dev ativo salvo SWAGGER_ENABLED=0. */

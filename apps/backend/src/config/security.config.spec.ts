@@ -1,6 +1,7 @@
 import {
   assertJwtSecretForProduction,
   getCorsOrigins,
+  getGlobalRateLimitTiers,
   isCsrfExemptPath,
   JWT_SECRET_MIN_LENGTH,
   JWT_SECRET_PLACEHOLDER,
@@ -20,9 +21,14 @@ describe('security.config — CORS portal auth', () => {
     process.env = prev;
   });
 
-  it('dev inclui localhost:3000 para front portal', () => {
+  it('dev inclui localhost:3000 e :3001 para front e API local', () => {
     expect(getCorsOrigins()).toEqual(
-      expect.arrayContaining(['http://localhost:3000', 'http://127.0.0.1:3000']),
+      expect.arrayContaining([
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'http://localhost:3001',
+        'http://127.0.0.1:3001',
+      ]),
     );
   });
 
@@ -34,6 +40,36 @@ describe('security.config — CORS portal auth', () => {
 
   it('/auth/health isento de CSRF (heartbeat staff)', () => {
     expect(isCsrfExemptPath('/auth/health')).toBe(true);
+  });
+});
+
+describe('security.config — rate limit tiers', () => {
+  const prev = process.env;
+
+  beforeEach(() => {
+    process.env = { ...prev };
+    delete process.env.RATE_LIMIT_MAX;
+    delete process.env.RATE_LIMIT_GET_MAX;
+    delete process.env.RATE_LIMIT_WRITE_MAX;
+    delete process.env.DEPLOY_ENV;
+  });
+
+  afterAll(() => {
+    process.env = prev;
+  });
+
+  it('development: 100 req/min para GET e mutações', () => {
+    process.env.NODE_ENV = 'development';
+    const tiers = getGlobalRateLimitTiers();
+    expect(tiers.read).toEqual({ windowMs: 60_000, max: 100 });
+    expect(tiers.write).toEqual({ windowMs: 60_000, max: 100 });
+  });
+
+  it('production: GET mais permissivo, mutações mais restritas', () => {
+    process.env.NODE_ENV = 'production';
+    const tiers = getGlobalRateLimitTiers();
+    expect(tiers.read).toEqual({ windowMs: 60_000, max: 50 });
+    expect(tiers.write).toEqual({ windowMs: 60_000, max: 20 });
   });
 });
 

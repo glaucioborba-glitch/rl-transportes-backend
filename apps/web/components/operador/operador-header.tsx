@@ -6,7 +6,10 @@ import { cn } from "@/lib/utils";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { RlLogo } from "@/components/portal/rl-logo";
 import { Button } from "@/components/ui/button";
+import { NotificationBadge } from "@/components/ui/notification-badge";
 import { clearStaffSessionCookie } from "@/lib/auth-staff-cookie";
+import { canPollPendenciasCadastro } from "@/lib/financeiro/pendencias-cadastro-access";
+import { usePendenciasCadastroCount } from "@/stores/pendencias-cadastro-store";
 import { useRouter } from "next/navigation";
 
 const LINKS: { href: string; label: string; roles?: string[] }[] = [
@@ -35,6 +38,8 @@ export function OperadorHeader() {
   const user = useStaffAuthStore((s) => s.user);
   const clear = useStaffAuthStore((s) => s.clear);
   const role = user?.role ?? "";
+  const pendenciasCount = usePendenciasCadastroCount();
+  const showPendenciasBadge = canPollPendenciasCadastro(user);
 
   const visible = LINKS.filter((l) => !l.roles || l.roles.includes(role));
 
@@ -60,13 +65,16 @@ export function OperadorHeader() {
               key={href}
               href={href}
               className={cn(
-                "rounded-lg px-3 py-2 text-sm font-medium transition-colors min-h-11 flex items-center",
+                "flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 pathname === href || pathname.startsWith(href + "/")
                   ? "bg-white/15 text-white"
                   : "text-slate-400 hover:bg-white/5 hover:text-white",
               )}
             >
-              {label}
+              <span>{label}</span>
+              {href.startsWith("/financeiro") && showPendenciasBadge ? (
+                <NotificationBadge count={pendenciasCount} />
+              ) : null}
             </Link>
           ))}
           <Button type="button" variant="outline" size="sm" className="min-h-11" onClick={() => logout()}>

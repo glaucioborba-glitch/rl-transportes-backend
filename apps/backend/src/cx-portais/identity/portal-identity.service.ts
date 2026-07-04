@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
-import { Role, TipoCliente } from '@prisma/client';
+import { Role, StatusCadastroCliente, TipoCliente, ValidacaoDominio } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { EmailService } from '../../common/email/email.service';
 import { PasswordPolicyService } from '../../common/security/password-policy.service';
@@ -42,6 +42,10 @@ import { PessoasAutorizadasService } from '../../pessoas-autorizadas/pessoas-aut
 import type { CreatePessoaAutorizadaDto } from '../../pessoas-autorizadas/dto/create-pessoa-autorizada.dto';
 import type { PessoaAutorizadaSession } from '../../pessoas-autorizadas/pessoa-autorizada.types';
 import type { CxPortalRequestUser } from '../types/cx-portal.types';
+import { TermosUsoService } from '../../common/legal/termos-uso.service';
+import { extractRequestIp } from '../../common/utils/request-ip.util';
+import { DominioCorporativoValidatorService } from '../../common/validation/dominio-corporativo-validator.service';
+import { TransportadorasAutorizadasService } from '../../transportadoras-autorizadas/transportadoras-autorizadas.service';
 
 @Injectable()
 export class PortalIdentityService {
@@ -60,6 +64,9 @@ export class PortalIdentityService {
     private readonly device: DeviceService,
     private readonly loginTelemetry: LoginTelemetryService,
     private readonly pessoasAutorizadas: PessoasAutorizadasService,
+    private readonly termosUso: TermosUsoService,
+    private readonly dominioValidator: DominioCorporativoValidatorService,
+    private readonly transportadorasAutorizadas: TransportadorasAutorizadasService,
   ) {}
 
   /** Base pública do portal para montar links em e-mails e recuperação. */
@@ -89,9 +96,17 @@ export class PortalIdentityService {
     throw new BadRequestException('Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) válido.');
   }
 
+  /** Termos de Uso ativos para exibição no cadastro portal. */
+  getTermosUsoAtivo() {
+    return this.termosUso.getAtivo();
+  }
+
   /** Cadastro self-service: `User` CLIENTE + `Cliente` vinculado (dados fiscais NFS-e). */
-  async registrarClientePortal(input: PortalRegisterDto) {
-    const { password, pessoasAutorizadas, ...fiscal } = input;
+  async registrarClientePortal(input: PortalRegisterDto, req?: Request) {
+    const { password, pessoasAutorizadas, transportadorasAutorizadas, aceiteTermos, ...fiscal } = input;
+    if (!aceiteTermos) {
+      throw new BadRequestException('É necessário aceitar os Termos de Uso e Condições Gerais.');
+    }
     const email = fiscal.email.trim().toLowerCase();
     const nomeOk =
       fiscal.tipo === TipoCliente.PF
@@ -133,6 +148,21 @@ export class PortalIdentityService {
     const data = clienteCreateInputFromDto(fiscalDto);
     data.tipo = parsed.tipo;
     data.cpfCnpj = parsed.cpfCnpj;
+    data.termosAceitosEm = new Date();
+    data.termosAceitosIp = extractRequestIp(req);
+    data.termosVersao = await this.termosUso.resolveVersaoAtiva();
+
+    let validacaoDominio: ValidacaoDominio = ValidacaoDominio.INDISPONIVEL;
+    if (parsed.tipo === TipoCliente.PJ) {
+      validacaoDominio = await this.dominioValidator.validar(parsed.cpfCnpj, email);
+    }
+    data.validacaoDominio = validacaoDominio;
+    data.statusCadastro = StatusCadastroCliente.PENDENTE_ANALISE_FINANCEIRA;
+
+    const empresaNome =
+      parsed.tipo === TipoCliente.PF
+        ? fiscal.nomeCompleto?.trim() || email
+        : fiscal.razaoSocial?.trim() || email;
 
     await this.prisma.$transaction(async (tx) => {
       const cliente = await tx.cliente.create({ data });
@@ -160,7 +190,27 @@ export class PortalIdentityService {
         );
       }
       await this.pessoasAutorizadas.criarEmLote(clienteId, pessoas);
+      if (transportadorasAutorizadas?.length) {
+        await this.transportadorasAutorizadas.criarEmLoteNoCadastro(
+          clienteId,
+          transportadorasAutorizadas,
+          hash,
+        );
+      }
     });
+
+    void this.emailService
+      .sendFinanceiroNovoCadastro({
+        empresa: empresaNome,
+        cnpj: parsed.cpfCnpj,
+        email,
+        validacaoDominio,
+      })
+      .catch((e) =>
+        this.logger.warn(
+          `Notificação financeiro cadastro portal falhou: ${e instanceof Error ? e.message : e}`,
+        ),
+      );
 
     return {
       ok: true as const,
@@ -321,6 +371,9 @@ export class PortalIdentityService {
     cpfCnpj: string,
   ): Promise<{
     tipo: TipoCliente;
+    statusCadastro: StatusCadastroCliente | null;
+    validacaoDominio: ValidacaoDominio | null;
+    condicaoPagamento: string | null;
     cliente: {
       id: string;
       nomeFantasia: string | null;
@@ -330,8 +383,24 @@ export class PortalIdentityService {
   } | null> {
     if (!clienteId) {
       const docLen = cpfCnpj.replace(/\D/g, '').length;
-      if (docLen === 11) return { tipo: TipoCliente.PF, cliente: null };
-      if (docLen === 14) return { tipo: TipoCliente.PJ, cliente: null };
+      if (docLen === 11) {
+        return {
+          tipo: TipoCliente.PF,
+          statusCadastro: null,
+          validacaoDominio: null,
+          condicaoPagamento: null,
+          cliente: null,
+        };
+      }
+      if (docLen === 14) {
+        return {
+          tipo: TipoCliente.PJ,
+          statusCadastro: null,
+          validacaoDominio: null,
+          condicaoPagamento: null,
+          cliente: null,
+        };
+      }
       return null;
     }
     const cliente = await this.prisma.cliente.findUnique({
@@ -342,11 +411,17 @@ export class PortalIdentityService {
         razaoSocial: true,
         nomeFantasia: true,
         cpfCnpj: true,
+        statusCadastro: true,
+        validacaoDominio: true,
+        condicaoPagamento: true,
       },
     });
     if (!cliente) return null;
     return {
       tipo: cliente.tipo,
+      statusCadastro: cliente.statusCadastro,
+      validacaoDominio: cliente.validacaoDominio,
+      condicaoPagamento: cliente.condicaoPagamento,
       cliente: {
         id: cliente.id,
         nomeFantasia: cliente.nomeFantasia?.trim() || null,
@@ -463,7 +538,12 @@ export class PortalIdentityService {
           'Conta portal sem cadastro de cliente vinculado. Contate o suporte.',
         );
       }
-      const { tipo, cliente } = meta;
+      if (meta.statusCadastro === StatusCadastroCliente.REJEITADO) {
+        throw new UnauthorizedException(
+          'Cadastro rejeitado pela análise financeira. Contate o financeiro da RL Transportes.',
+        );
+      }
+      const { tipo, cliente, statusCadastro, validacaoDominio, condicaoPagamento } = meta;
 
       let pessoaAutorizada: PessoaAutorizadaSession | undefined;
       let permissoesTransportadora: typeof TRANSPORTADORA_PERMISSOES_FIXAS | undefined;
@@ -539,12 +619,16 @@ export class PortalIdentityService {
         tenantId,
         tipo,
         cliente,
+        statusCadastro,
+        validacaoDominio,
+        condicaoPagamento,
         usuario: {
           id: user.id,
           nome: this.resolveOperadorNome(tipo, cliente, pessoaAutorizada),
           tipo,
           email: user.email,
           cpfCnpj: user.cpfCnpj,
+          onboardingConcluido: user.onboardingConcluido,
         },
         ...(pessoaAutorizada ? { pessoaAutorizada } : {}),
         portalTenantRole,
@@ -665,12 +749,16 @@ export class PortalIdentityService {
           ? {
               tipo: meta.tipo,
               cliente: meta.cliente,
+              statusCadastro: meta.statusCadastro,
+              validacaoDominio: meta.validacaoDominio,
+              condicaoPagamento: meta.condicaoPagamento,
               usuario: {
                 id: user.id,
                 nome: this.resolveOperadorNome(meta.tipo, meta.cliente),
                 tipo: meta.tipo,
                 email: user.email,
                 cpfCnpj: user.cpfCnpj,
+                onboardingConcluido: user.onboardingConcluido,
               },
             }
           : {}),
@@ -725,6 +813,15 @@ export class PortalIdentityService {
     };
   }
 
+  /** Marca product tour do portal como concluído (não exibir novamente). */
+  async concluirOnboarding(userId: string): Promise<{ ok: true; onboardingConcluido: true }> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { onboardingConcluido: true },
+    });
+    return { ok: true, onboardingConcluido: true };
+  }
+
   /** Snapshot de sessão portal (GET /portal/me) — compatível com resposta de login. */
   async buildSessionView(cx: CxPortalRequestUser) {
     if (cx.portalPapel === 'CLIENTE') {
@@ -748,12 +845,16 @@ export class PortalIdentityService {
         tenantId: cx.tenantId,
         tipo: meta.tipo,
         cliente: meta.cliente,
+        statusCadastro: meta.statusCadastro,
+        validacaoDominio: meta.validacaoDominio,
+        condicaoPagamento: meta.condicaoPagamento,
         usuario: {
           id: user.id,
           nome: this.resolveOperadorNome(meta.tipo, meta.cliente, cx.pessoaAutorizada),
           tipo: meta.tipo,
           email: user.email,
           cpfCnpj: user.cpfCnpj,
+          onboardingConcluido: user.onboardingConcluido,
         },
       };
     }

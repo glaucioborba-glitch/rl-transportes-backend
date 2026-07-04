@@ -26,6 +26,7 @@ import Link from "next/link";
 import { useMemo, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { PORTAL_BLOQUEIO_FINANCEIRO_TOAST, PORTAL_SCHEDULING_DISABLED_CLASS } from "@/lib/portal-financeiro-block";
+import { labelCondicaoPagamento } from "@/lib/condicao-pagamento-portal";
 import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
 import { toast } from "@/lib/toast";
 
@@ -74,6 +75,7 @@ export function PortalDashboardClient() {
   const secOffline = health?.securityEngine === "offline";
   const secDegraded = health?.securityEngine === "degraded";
   const { data, loading, error, awaitingPessoa, reload } = usePortalDashboard({ recentPage, recentLimit });
+
   const [q, setQ] = useState("");
   const [timelineIso, setTimelineIso] = useState<string | null>(null);
   const [timelineOpen, setTimelineOpen] = useState(false);
@@ -252,6 +254,11 @@ export function PortalDashboardClient() {
               <CardDescription>
                 Contadores alinhados ao CX e ao KPI de faturamento em aberto.
               </CardDescription>
+              {data.condicaoPagamento ? (
+                <p className="text-xs text-muted-foreground">
+                  Condição contratual: {labelCondicaoPagamento(data.condicaoPagamento)}
+                </p>
+              ) : null}
             </CardHeader>
             <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
@@ -434,6 +441,7 @@ export function PortalDashboardClient() {
                 variant="outline"
                 disabled={bloqueadoFin}
                 asChild={!bloqueadoFin}
+                data-tour="nova-solicitacao"
               >
                 {bloqueadoFin ? (
                   <span>Nova solicitação</span>

@@ -44,6 +44,16 @@ function formatOptionalPercent(value: number | string | null | undefined): strin
   return Number.isFinite(n) ? String(n) : "";
 }
 
+function formatTermosAceite(iso: string): string {
+  return new Date(iso).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function financeFieldPayload(
   raw: string,
   editing: boolean,
@@ -80,6 +90,9 @@ type ClienteApi = {
   diasToleranciaBloqueio?: number | null;
   percentualMultaAtraso?: number | string | null;
   percentualJurosAoMes?: number | string | null;
+  termosAceitosEm?: string | null;
+  termosAceitosIp?: string | null;
+  termosVersao?: string | null;
 };
 
 export function ClienteAdminFiscalForm({ clienteId }: { clienteId?: string }) {
@@ -109,6 +122,9 @@ export function ClienteAdminFiscalForm({ clienteId }: { clienteId?: string }) {
   const [diasToleranciaBloqueio, setDiasToleranciaBloqueio] = useState("");
   const [percentualMultaAtraso, setPercentualMultaAtraso] = useState("");
   const [percentualJurosAoMes, setPercentualJurosAoMes] = useState("");
+  const [termosAceitosEm, setTermosAceitosEm] = useState<string | null>(null);
+  const [termosAceitosIp, setTermosAceitosIp] = useState<string | null>(null);
+  const [termosVersao, setTermosVersao] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [loading, setLoading] = useState(!!clienteId);
 
@@ -172,6 +188,9 @@ export function ClienteAdminFiscalForm({ clienteId }: { clienteId?: string }) {
         );
         setPercentualMultaAtraso(formatOptionalPercent(c.percentualMultaAtraso));
         setPercentualJurosAoMes(formatOptionalPercent(c.percentualJurosAoMes));
+        setTermosAceitosEm(c.termosAceitosEm ?? null);
+        setTermosAceitosIp(c.termosAceitosIp ?? null);
+        setTermosVersao(c.termosVersao ?? null);
       })
       .catch((err: unknown) => {
         toast.error(err instanceof ApiError ? err.message : "Erro ao carregar cliente");
@@ -657,6 +676,35 @@ export function ClienteAdminFiscalForm({ clienteId }: { clienteId?: string }) {
               </div>
             </div>
           </div>
+
+          {clienteId ? (
+            <div className="space-y-3 rounded-lg border border-zinc-700/80 bg-zinc-950/50 p-4">
+              <SectionTitle>Compliance Jurídico</SectionTitle>
+              {termosAceitosEm ? (
+                <p className="text-sm text-zinc-300">
+                  Termos aceitos em:{" "}
+                  <span className="font-medium text-zinc-100">{formatTermosAceite(termosAceitosEm)}</span>
+                  {termosAceitosIp ? (
+                    <>
+                      {" "}
+                      · IP: <span className="font-mono text-zinc-100">{termosAceitosIp}</span>
+                    </>
+                  ) : null}
+                  {termosVersao ? (
+                    <>
+                      {" "}
+                      · Versão: <span className="font-medium text-zinc-100">{termosVersao}</span>
+                    </>
+                  ) : null}
+                </p>
+              ) : (
+                <p className="text-sm text-zinc-500">
+                  Nenhum aceite de Termos de Uso registrado (cadastro intranet ou cliente anterior à
+                  exigência de aceite).
+                </p>
+              )}
+            </div>
+          ) : null}
 
           <button
             type="submit"

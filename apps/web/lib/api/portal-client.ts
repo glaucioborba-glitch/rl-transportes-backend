@@ -73,6 +73,38 @@ export async function portalLogoutCookies(): Promise<void> {
   }
 }
 
+/** Marca product tour concluído (fire-and-forget; atualiza store local). */
+export function markPortalOnboardingConcluido(): void {
+  const st = usePortalClienteAuthStore.getState();
+  if (st.user) {
+    st.setUser({ ...st.user, onboardingConcluido: true });
+  }
+
+  const headers = new Headers({
+    Accept: "application/json",
+    ...PORTAL_COOKIE_HEADERS,
+  });
+  applyCsrfHeaders(headers, "POST");
+
+  const url =
+    isPortalCookieAuthMode() && typeof window !== "undefined"
+      ? "/api/usuario/onboarding-concluido"
+      : `${getApiBase()}/portal/usuario/onboarding-concluido`;
+
+  const init: RequestInit = {
+    method: "POST",
+    credentials: "include",
+    headers,
+  };
+  if (!isPortalCookieAuthMode() && st.accessToken) {
+    headers.set("Authorization", `Bearer ${st.accessToken}`);
+  }
+
+  void fetch(url, init).catch(() => {
+    /* não bloqueia UX */
+  });
+}
+
 /** GET `/health` — sem autenticação; usado pelo modo degradado do portal. */
 export type PortalHealthResponse = {
   api: string;
@@ -648,6 +680,47 @@ export function portalCriarPessoaAutorizada(payload: {
   });
 }
 
+export function portalObterPermissoesPessoa(pessoaId: string) {
+  return portalJson<PermissoesPessoaRow>(
+    `/cliente/pessoas-autorizadas/${encodeURIComponent(pessoaId)}/permissoes`,
+  );
+}
+
+export function portalPatchPermissoesPessoa(
+  pessoaId: string,
+  permissoes: Partial<PermissoesPessoaRow>,
+) {
+  return portalJson<PermissoesPessoaRow>(
+    `/cliente/pessoas-autorizadas/${encodeURIComponent(pessoaId)}/permissoes`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(permissoes),
+    },
+  );
+}
+
+export function portalAtualizarPessoaAutorizada(
+  pessoaId: string,
+  payload: { ativo?: boolean; email?: string; telefone?: string },
+) {
+  return portalJson<PessoaAutorizadaRow>(
+    `/cliente/pessoas-autorizadas/${encodeURIComponent(pessoaId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...payload,
+        telefone: payload.telefone?.replace(/\D/g, ""),
+      }),
+    },
+  );
+}
+
+export function portalRevogarPessoaAutorizada(pessoaId: string) {
+  return portalAtualizarPessoaAutorizada(pessoaId, { ativo: false });
+}
+
 export type TransportadoraAutorizadaRow = {
   id: string;
   cnpj: string;
@@ -1006,6 +1079,8 @@ export type SolicitacaoRow = {
   saida?: unknown | null;
 };
 
+export type SolicitacoesEscopo = "minhas" | "todas";
+
 export async function fetchSolicitacoesPaginated(params: {
   page?: number;
   limit?: number;
@@ -1018,6 +1093,7 @@ export async function fetchSolicitacoesPaginated(params: {
   processo?: string;
   orderBy?: string;
   order?: string;
+  escopo?: SolicitacoesEscopo;
 }) {
   const sp = new URLSearchParams();
   if (params.page) sp.set("page", String(params.page));
@@ -1031,6 +1107,7 @@ export async function fetchSolicitacoesPaginated(params: {
   if (params.processo?.trim()) sp.set("processo", params.processo.trim());
   if (params.orderBy) sp.set("orderBy", params.orderBy);
   if (params.order) sp.set("order", params.order);
+  if (params.escopo) sp.set("escopo", params.escopo);
   const q = sp.toString();
   return portalJson<PaginatedResponse<SolicitacaoRow>>(`/cliente/portal/solicitacoes${q ? `?${q}` : ""}`);
 }
@@ -1382,6 +1459,10 @@ export type PortalDashboardConsolidatedResponse = {
     slaAmostraConcluidas?: number;
   };
   isBloqueadoFinanceiramente?: boolean;
+  statusCadastro?: "PENDENTE_ANALISE_FINANCEIRA" | "APROVADO" | "REJEITADO" | null;
+  validacaoDominio?: "APROVADO" | "DIVERGENTE" | "INDISPONIVEL" | null;
+  condicaoPagamento?: string | null;
+  cadastroOperacionalLiberado?: boolean;
 };
 
 /** @deprecated Use `PortalDashboardConsolidatedResponse` e `cliente.nome`. */
@@ -1483,6 +1564,7 @@ export type PortalClienteRegisterPayload =
       enderecoCep: string;
       codigoMunicipioIbge?: string;
       password: string;
+      aceiteTermos: boolean;
       pessoasAutorizadas?: Array<{
         nome: string;
         email: string;
@@ -1514,12 +1596,18 @@ export type PortalClienteRegisterPayload =
       responsavelTelefone: string;
       responsavelEmail: string;
       password: string;
+      aceiteTermos: boolean;
       pessoasAutorizadas?: Array<{
         nome: string;
         email: string;
         cpf: string;
         telefone?: string;
         permissoes?: PermissoesPessoaRow;
+      }>;
+      transportadorasAutorizadas?: Array<{
+        cnpj: string;
+        razaoSocial: string;
+        emailContato: string;
       }>;
     };
 

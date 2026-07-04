@@ -6,6 +6,7 @@ import { AuditTrailModule } from '../../audit-trail/audit-trail.module';
 import { AuditoriaModule } from '../../auditoria/auditoria.module';
 import { AuthModule } from '../../auth/auth.module';
 import { SessionModule } from '../../auth/session/session.module';
+import { CadastroFinanceiroModule } from '../../cadastro-financeiro/cadastro-financeiro.module';
 import { ClientesModule } from '../../clientes/clientes.module';
 import { AddressModule } from '../../common/address/address.module';
 import { ConfigCacheModule } from '../../common/cache/config-cache.module';
@@ -45,6 +46,7 @@ import { SolicitacoesV2Module } from '../solicitacoes-v2/solicitacoes-v2.module'
     AuthModule,
     SessionModule,
     ClientesModule,
+    CadastroFinanceiroModule,
     SolicitacoesModule,
     SolicitacoesV2Module,
     SecurityCenterModule,
@@ -65,6 +67,7 @@ import { SolicitacoesV2Module } from '../solicitacoes-v2/solicitacoes-v2.module'
     AuthModule,
     SessionModule,
     ClientesModule,
+    CadastroFinanceiroModule,
     SolicitacoesModule,
     SolicitacoesV2Module,
     SecurityCenterModule,

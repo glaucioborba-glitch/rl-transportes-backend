@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMemo, useState } from "react";
-import { Menu, X } from "lucide-react";
+import { CircleHelp, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { resolvePortalClienteDisplayName } from "@/lib/portal-cliente-display";
@@ -56,7 +56,7 @@ export function PortalHeader() {
     <header className="sticky top-0 z-50 border-b border-white/10 bg-[#080a0d]/80 backdrop-blur-xl">
       <div className="mx-auto grid max-w-7xl grid-cols-12 items-center gap-4 px-4 py-3">
         <div className="col-span-12 flex items-center justify-between gap-4 md:col-span-4">
-          <Link href="/portal/dashboard" className="flex min-w-0 items-center gap-3">
+          <Link href="/portal/solicitacoes" className="flex min-w-0 items-center gap-3">
             <RlLogo />
             <div className="hidden min-w-0 sm:block">
               <p className="truncate text-xs font-medium uppercase tracking-widest text-slate-500">
@@ -79,19 +79,50 @@ export function PortalHeader() {
         </div>
         <nav className="col-span-12 hidden flex-wrap items-center justify-end gap-1 md:col-span-8 md:flex">
           {NAV.map(({ href, label }) => (
-            <Link key={href} href={href} className={linkCls(href)}>
+            <Link
+              key={href}
+              href={href}
+              className={linkCls(href)}
+              {...(href === "/portal/financeiro" ? { "data-tour": "nav-financeiro" } : {})}
+            >
               {label}
             </Link>
           ))}
+          <Link
+            href="/portal/perfil"
+            data-tour="ajuda-perfil"
+            className={cn(
+              "inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-slate-400 transition-colors hover:bg-white/5 hover:text-white",
+              pathname.startsWith("/portal/perfil") && "bg-white/10 text-white",
+            )}
+            aria-label="Ajuda e perfil"
+          >
+            <CircleHelp className="h-4 w-4 shrink-0" aria-hidden />
+            <span className="hidden lg:inline">Ajuda</span>
+          </Link>
         </nav>
       </div>
       {mobileOpen && (
         <nav className="flex flex-col gap-1 border-t border-white/10 px-4 pb-4 md:hidden">
           {NAV.map(({ href, label }) => (
-            <Link key={href} href={href} className={linkCls(href)} onClick={() => setMobileOpen(false)}>
+            <Link
+              key={href}
+              href={href}
+              className={linkCls(href)}
+              onClick={() => setMobileOpen(false)}
+              {...(href === "/portal/financeiro" ? { "data-tour": "nav-financeiro" } : {})}
+            >
               {label}
             </Link>
           ))}
+          <Link
+            href="/portal/perfil"
+            data-tour="ajuda-perfil"
+            className={linkCls("/portal/perfil")}
+            onClick={() => setMobileOpen(false)}
+          >
+            Ajuda / Perfil
+          </Link>
         </nav>
       )}
       <div className="px-4 pb-3 text-center sm:hidden">{identityBlock}</div>

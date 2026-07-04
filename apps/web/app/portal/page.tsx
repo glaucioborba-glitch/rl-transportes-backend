@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-/** /portal sem segmento → dashboard (evita 404 e alinha com middleware). */
+/** /portal sem segmento → solicitações (home operacional pós-login). */
 export default function PortalRootPage() {
-  redirect("/portal/dashboard");
+  redirect("/portal/solicitacoes");
 }

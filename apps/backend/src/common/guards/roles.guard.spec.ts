@@ -20,6 +20,7 @@ describe('RolesGuard', () => {
     sub: 'u1',
     id: 'u1',
     email: 'a@a.com',
+    cpfCnpj: '11000000000108',
     role,
     permissions: [],
   });

@@ -21,11 +21,13 @@ describe('CX Portais Fase 20 (e2e)', () => {
   let clienteId: string;
   let userOpId: string;
   let userAdminId: string;
+  let clienteDoc: string;
+  let fornecedorDoc: string;
   const password = 'CxPortalE2E@1';
 
   beforeAll(async () => {
-    const clienteDoc = cpfCnpjForTestUser(cxClientEmail);
-    const fornecedorDoc = cpfCnpjForTestUser(fornecedorEmail);
+    clienteDoc = cpfCnpjForTestUser(cxClientEmail);
+    fornecedorDoc = cpfCnpjForTestUser(fornecedorEmail);
     process.env.CX_PORTAL_FORNECEDOR_SEED = `${fornecedorDoc}|${password}|default|FORNECEDOR`;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({

@@ -60,7 +60,7 @@ export default function PortalRedefinirSenhaPage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#080a0d] px-4 py-10">
-      <div className="mb-8 flex items-center gap-3">
+      <div className="mb-8 flex w-full max-w-[1100px] items-center gap-3">
         <RlLogo className="h-11 w-11 text-lg" />
         <div>
           <h1 className="text-xl font-bold text-white">Nova senha</h1>
@@ -68,13 +68,13 @@ export default function PortalRedefinirSenhaPage() {
         </div>
       </div>
 
-      <Card className="w-full max-w-md border-white/10">
+      <Card className="w-full max-w-[1100px] border-white/10">
         <CardHeader>
           <CardTitle>Redefinir senha</CardTitle>
           <CardDescription>Defina uma nova senha para sua conta.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={(e) => void onSubmit(e)} className="space-y-4">
+          <form onSubmit={(e) => void onSubmit(e)} className="mx-auto w-full max-w-md space-y-4">
             <div className="space-y-2">
               <label htmlFor="pwd" className="text-sm font-medium text-slate-300">
                 Nova senha
@@ -88,7 +88,7 @@ export default function PortalRedefinirSenhaPage() {
                 required
                 minLength={8}
               />
-              <PasswordStrengthPanel password={password} />
+              <PasswordStrengthPanel password={password} className="mx-auto w-full max-w-md" />
             </div>
             <div className="space-y-2">
               <label htmlFor="pwd2" className="text-sm font-medium text-slate-300">

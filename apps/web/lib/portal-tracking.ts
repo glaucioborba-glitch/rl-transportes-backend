@@ -51,3 +51,56 @@ export function operationTypeLabel(s: SolicitacaoRow): string {
   };
   return map[u.tipo] ?? u.tipo;
 }
+
+export function solicitacaoProtocoloDisplay(protocolo?: string | null): string {
+  const v = protocolo?.trim();
+  if (!v) return "—";
+  return v.startsWith("#") ? v : `#${v}`;
+}
+
+export function solicitacaoSolicitanteLabel(s: SolicitacaoRow): string {
+  return s.solicitanteContato?.nome?.trim() || "—";
+}
+
+export function solicitacaoBookingLabel(s: SolicitacaoRow): string {
+  const booking = (s.containersSolicitacao ?? [])
+    .map((c) => c.booking?.trim())
+    .find((v) => v);
+  return booking || "—";
+}
+
+function formatContainerTipoLabel(tipo: string): string {
+  const map: Record<string, string> = {
+    DRY: "Dry",
+    HC: "Dry",
+    REEFER: "Reefer",
+    TANK: "Tank",
+  };
+  const key = tipo.trim().toUpperCase();
+  return map[key] ?? tipo.trim();
+}
+
+function formatContainerTamanhoLabel(tamanho: string): string {
+  const digits = tamanho.replace(/\D/g, "");
+  if (digits) return `${digits}ft`;
+  return tamanho.trim() || "—";
+}
+
+export function solicitacaoEquipamentoLabel(s: SolicitacaoRow): string {
+  const c = s.containersSolicitacao?.[0];
+  if (!c) return "—";
+  const tipo = c.tipo?.trim();
+  const tamanho = c.tamanho?.trim();
+  if (tipo && tamanho) {
+    return `${formatContainerTipoLabel(tipo)} / ${formatContainerTamanhoLabel(tamanho)}`;
+  }
+  if (tipo) return formatContainerTipoLabel(tipo);
+  if (tamanho) return formatContainerTamanhoLabel(tamanho);
+  return "—";
+}
+
+export function solicitacaoTransporteLabel(s: SolicitacaoRow): string {
+  const placa = s.transporteSolicitacao?.placaCavalo?.trim();
+  if (placa) return placa.toUpperCase();
+  return "Pendente";
+}

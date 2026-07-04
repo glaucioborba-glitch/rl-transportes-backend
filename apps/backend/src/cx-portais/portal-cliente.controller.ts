@@ -31,6 +31,7 @@ import {
 } from './guards/cx-portal-auth.guard';
 import { CxPortalRateLimitGuard } from './guards/cx-portal-rate-limit.guard';
 import { CxPortalSegmentGuard } from './guards/cx-portal-segment.guard';
+import { PortalCadastroAprovadoGuard } from './guards/portal-cadastro-aprovado.guard';
 import { PortalCxInterceptor } from './interceptors/portal-cx.interceptor';
 import { PortalClienteSolicitacoesQueryDto } from './dto/portal-cliente-solicitacoes-query.dto';
 import { UpdatePortalSolicitacaoDto } from './dto/update-portal-solicitacao.dto';
@@ -356,6 +357,7 @@ export class PortalClienteController {
   }
 
   @Post('agendamentos')
+  @UseGuards(PortalCadastroAprovadoGuard)
   @PessoaPode('agendarTurno')
   @ApiOperation({
     summary: 'Criar agendamento terminal (Gate In/Out) com modalidade de transporte',

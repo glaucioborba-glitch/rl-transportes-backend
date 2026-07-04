@@ -35,6 +35,18 @@ enum TipoCliente {
   PF
 }
 
+enum ValidacaoDominio {
+  APROVADO
+  DIVERGENTE
+  INDISPONIVEL
+}
+
+enum StatusCadastroCliente {
+  PENDENTE_ANALISE_FINANCEIRA
+  APROVADO
+  REJEITADO
+}
+
 /// Estado da solicitação no fluxo operacional (ordem compatível com PostgreSQL: novos valores ao final).
 enum StatusSolicitacao {
   PENDENTE
@@ -351,6 +363,8 @@ model User {
   /// Vínculo opcional ao cadastro de cliente (portal do cliente).
   clienteId    String?  @unique
   cliente      Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  /// Product tour do portal — false exibe onboarding no primeiro acesso ao dashboard.
+  onboardingConcluido Boolean @default(false) @map("onboarding_concluido")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -429,6 +443,20 @@ model Cliente {
   percentualMultaAtraso  Decimal? @map("percentual_multa_atraso") @db.Decimal(5, 2)
   percentualJurosAoMes   Decimal? @map("percentual_juros_ao_mes") @db.Decimal(5, 2)
 
+  /// Aceite dos Termos de Uso no cadastro portal (non-repudiation).
+  termosAceitosEm DateTime? @map("termos_aceitos_em")
+  termosAceitosIp String?   @map("termos_aceitos_ip") @db.VarChar(64)
+  termosVersao    String?   @map("termos_versao") @db.VarChar(32)
+
+  /// Validação de domínio do e-mail vs. Receita Federal (cadastro portal PJ).
+  validacaoDominio ValidacaoDominio @default(INDISPONIVEL) @map("validacao_dominio")
+  /// Fluxo de liberação comercial/financeira pós-cadastro portal.
+  statusCadastro   StatusCadastroCliente @default(PENDENTE_ANALISE_FINANCEIRA) @map("status_cadastro")
+  condicaoPagamento String? @map("condicao_pagamento") @db.VarChar(64)
+  analisadoPor     String? @map("analisado_por") @db.VarChar(64)
+  analisadoEm      DateTime? @map("analisado_em")
+  motivoRejeicaoCadastro String? @map("motivo_rejeicao_cadastro") @db.VarChar(500)
+
   tabelaPrecoId String?      @map("tabela_preco_id")
   tabelaPreco   TabelaPreco? @relation(fields: [tabelaPrecoId], references: [id], onDelete: SetNull)
 
@@ -455,7 +483,22 @@ model Cliente {
   @@index([deletedAt])
   @@index([tenantId])
   @@index([tabelaPrecoId])
+  @@index([statusCadastro])
   @@map("clientes")
+}
+
+/// Versões publicadas dos Termos de Uso (cadastro portal).
+model TermosUso {
+  id             String   @id @default(uuid())
+  versao         String   @unique @db.VarChar(32)
+  conteudoHtml   String   @map("conteudo_html") @db.Text
+  dataPublicacao DateTime @map("data_publicacao")
+  ativo          Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("termos_uso")
 }
 
 /// Pessoas autorizadas a operar no portal com login corporativo (CNPJ/CPF único).
@@ -1405,7 +1448,24 @@ model TenantConfig {
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 
+  condicoesPagamentoPersonalizadas CondicaoPagamentoPersonalizada[]
+
   @@map("tenant_configs")
+}
+
+/// Opções de condição de pagamento customizáveis por tenant (fase 02 — UI dinâmica).
+model CondicaoPagamentoPersonalizada {
+  id           String       @id @default(cuid())
+  tenantId     String       @map("tenant_id")
+  label        String       @db.VarChar(120)
+  value        String       @db.VarChar(64)
+  ativo        Boolean      @default(true)
+  criadoEm     DateTime     @default(now()) @map("criado_em")
+  tenantConfig TenantConfig @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, value])
+  @@index([tenantId])
+  @@map("condicoes_pagamento_personalizadas")
 }
 
 model CxPortalFornecedorIdentity {

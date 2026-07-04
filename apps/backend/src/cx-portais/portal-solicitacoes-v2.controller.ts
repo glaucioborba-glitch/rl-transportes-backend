@@ -34,6 +34,7 @@ import { PortalCxInterceptor } from './interceptors/portal-cx.interceptor';
 import type { CxPortalRequestUser } from './types/cx-portal.types';
 import { PessoaPermissoesGuard } from '../common/guards/pessoa-permissoes.guard';
 import { PessoaPode } from '../common/decorators/pessoa-pode.decorator';
+import { PortalCadastroAprovadoGuard } from './guards/portal-cadastro-aprovado.guard';
 
 /**
  * `POST /portal/v2/solicitacoes` e anexos com JWT **portal** (Bearer IAM cliente).
@@ -42,7 +43,7 @@ import { PessoaPode } from '../common/decorators/pessoa-pode.decorator';
 @ApiTags('solicitacoes-v2-portal')
 @ApiBearerAuth('access-token')
 @Controller('portal/v2/solicitacoes')
-@UseGuards(CxPortalPublicApiForbidGuard, CxPortalAuthGuard, CxPortalRateLimitGuard, CxPortalSegmentGuard, PessoaPermissoesGuard)
+@UseGuards(CxPortalPublicApiForbidGuard, CxPortalAuthGuard, CxPortalRateLimitGuard, CxPortalSegmentGuard, PessoaPermissoesGuard, PortalCadastroAprovadoGuard)
 @CxPortalSegment('cliente')
 @UseInterceptors(PortalCxInterceptor)
 export class PortalSolicitacoesV2Controller {

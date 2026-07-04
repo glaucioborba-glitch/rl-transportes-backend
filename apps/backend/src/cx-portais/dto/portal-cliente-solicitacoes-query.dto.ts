@@ -74,4 +74,14 @@ export class PortalClienteSolicitacoesQueryDto {
   @IsOptional()
   @IsIn(['asc', 'desc'])
   order?: 'asc' | 'desc' = 'desc';
+
+  @ApiPropertyOptional({
+    enum: ['minhas', 'todas'],
+    default: 'todas',
+    description:
+      'minhas — solicitações criadas pela pessoa autorizada da sessão (e-mail do solicitante); todas — visão da empresa (tenant)',
+  })
+  @IsOptional()
+  @IsIn(['minhas', 'todas'])
+  escopo?: 'minhas' | 'todas' = 'todas';
 }

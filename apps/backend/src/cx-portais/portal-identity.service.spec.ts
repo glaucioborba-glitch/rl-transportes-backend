@@ -38,6 +38,16 @@ function makeSvc(
     criarEmLote: jest.fn(),
     validarPessoaPorCpf: jest.fn(),
   } as unknown as PessoasAutorizadasService;
+  const termosUso = {
+    resolveVersaoAtiva: jest.fn().mockResolvedValue('v1.0-2026'),
+    getAtivo: jest.fn(),
+  } as unknown as import('../common/legal/termos-uso.service').TermosUsoService;
+  const dominioValidator = {
+    validar: jest.fn().mockResolvedValue('INDISPONIVEL'),
+  } as unknown as import('../common/validation/dominio-corporativo-validator.service').DominioCorporativoValidatorService;
+  const transportadorasAutorizadas = {
+    criarEmLoteNoCadastro: jest.fn(),
+  } as unknown as import('../transportadoras-autorizadas/transportadoras-autorizadas.service').TransportadorasAutorizadasService;
   return new PortalIdentityService(
     prisma,
     fornecedores,
@@ -50,6 +60,9 @@ function makeSvc(
     device,
     loginTelemetry,
     pessoasAutorizadas,
+    termosUso,
+    dominioValidator,
+    transportadorasAutorizadas,
   );
 }
 

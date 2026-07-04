@@ -71,10 +71,20 @@ export class PortalIdentityController {
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Cadastro self-service (CLIENTE + Cliente Prisma)' })
-  async register(@Body(CpfCnpjValidationPipe) body: PortalRegisterDto, @Res({ passthrough: true }) res: Response) {
-    const out = await this.identity.registrarClientePortal(body);
+  async register(
+    @Body(CpfCnpjValidationPipe) body: PortalRegisterDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const out = await this.identity.registrarClientePortal(body, req);
     attachFreshCsrfCookie(res);
     return out;
+  }
+
+  @Get('termos-uso')
+  @ApiOperation({ summary: 'Versão ativa dos Termos de Uso (cadastro portal)' })
+  termosUsoAtivo() {
+    return this.identity.getTermosUsoAtivo();
   }
 
   @Post('esqueci-senha')
@@ -145,6 +155,18 @@ export class PortalIdentityController {
   @ApiOperation({ summary: 'Snapshot da sessão portal (cookie HttpOnly ou Bearer)' })
   async me(@CurrentCxUser() cx: CxPortalRequestUser) {
     return this.identity.buildSessionView(cx);
+  }
+
+  @Post('usuario/onboarding-concluido')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @UseGuards(CxPortalAuthGuard)
+  @ApiOperation({ summary: 'Marca product tour do portal como concluído' })
+  async concluirOnboarding(@CurrentCxUser() cx: CxPortalRequestUser) {
+    if (cx.portalPapel !== 'CLIENTE') {
+      throw new BadRequestException('Onboarding disponível apenas para clientes.');
+    }
+    return this.identity.concluirOnboarding(cx.sub);
   }
 
   @Post('logout')

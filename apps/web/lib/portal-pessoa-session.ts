@@ -38,6 +38,10 @@ export function mapPortalLoginToUser(r: PortalLoginResponse): AuthLoginResponse[
     clienteId: r.clienteId ?? null,
     ...(tipo ? { tipo } : {}),
     ...(r.usuario?.nome ? { nome: r.usuario.nome } : {}),
+    ...(r.usuario?.onboardingConcluido !== undefined
+      ? { onboardingConcluido: r.usuario.onboardingConcluido }
+      : {}),
+    ...(r.statusCadastro ? { statusCadastro: r.statusCadastro } : {}),
   };
 }
 
@@ -68,6 +72,11 @@ export function mergePortalUserAfterRefresh(
     clienteId: refresh.clienteId ?? base.clienteId ?? null,
     ...(tipo ? { tipo } : {}),
     ...(refresh.usuario?.nome ? { nome: refresh.usuario.nome } : base.nome ? { nome: base.nome } : {}),
+    ...(refresh.usuario?.onboardingConcluido !== undefined
+      ? { onboardingConcluido: refresh.usuario.onboardingConcluido }
+      : base.onboardingConcluido !== undefined
+        ? { onboardingConcluido: base.onboardingConcluido }
+        : {}),
   };
 }
 
@@ -78,6 +87,7 @@ export function applyPortalLoginResponse(raw: PortalLoginResponse): void {
   if (raw.cliente !== undefined) {
     st.setCliente(raw.cliente);
   }
+  st.setCadastroPendenteAnalise(raw.statusCadastro === "PENDENTE_ANALISE_FINANCEIRA");
 }
 
 type ValidarPessoaFn = (cpf: string) => Promise<PessoaAutorizadaRow>;

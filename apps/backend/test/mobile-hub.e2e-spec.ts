@@ -1,4 +1,4 @@
-import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
+import { cpfCnpjForTestUser, userWhereForTestEmail } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
@@ -239,7 +239,7 @@ describe('Mobile hub (e2e)', () => {
       .expect(201);
 
     const admin = await prisma.user.findUniqueOrThrow({
-      where: { cpfCnpj: cpfCnpjForTestUser(adminEmail) },
+      where: userWhereForTestEmail(adminEmail),
     });
     const staff = authService.issueTokens(admin);
     const agg = await request(app.getHttpServer())

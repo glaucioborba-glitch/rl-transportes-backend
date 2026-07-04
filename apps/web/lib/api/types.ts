@@ -13,6 +13,7 @@ export type AuthLoginResponse = {
     tipo?: "PF" | "PJ";
     nome?: string;
     createdAt?: string;
+    onboardingConcluido?: boolean;
   };
 };
 
@@ -56,12 +57,16 @@ export type PortalLoginResponse = {
     tipo: "PF" | "PJ";
     email: string;
     cpfCnpj: string;
+    onboardingConcluido?: boolean;
   };
   pessoaAutorizada?: PortalPessoaAutorizadaSnapshot;
   /** Role Prisma do tenant (ADMIN_CLIENTE, TRANSPORTADORA_TERCEIRA, …). */
   portalTenantRole?: string;
   /** Transportadora: pula seleção de CPF pós-login. */
   skipSelectPessoa?: boolean;
+  statusCadastro?: "PENDENTE_ANALISE_FINANCEIRA" | "APROVADO" | "REJEITADO";
+  validacaoDominio?: "APROVADO" | "DIVERGENTE" | "INDISPONIVEL";
+  condicaoPagamento?: string | null;
 };
 
 export type AuthMeResponse = {

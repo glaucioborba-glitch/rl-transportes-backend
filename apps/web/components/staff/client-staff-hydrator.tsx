@@ -6,6 +6,7 @@ import { staffJson } from "@/lib/api/staff-client";
 import type { AuthMeResponse } from "@/lib/api/types";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { useStaffSession } from "@/hooks/useStaffSession";
+import { usePendenciasCount } from "@/hooks/use-pendencias-count";
 
 const STAFF_PATH_PREFIXES = [
   "/operador",
@@ -43,6 +44,7 @@ export function ClientStaffHydrator() {
   const setUser = useStaffAuthStore((s) => s.setUser);
 
   useStaffSession();
+  usePendenciasCount();
 
   useEffect(() => {
     if (!isStaffArea(pathname) || user) return;

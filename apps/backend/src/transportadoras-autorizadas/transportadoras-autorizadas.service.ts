@@ -13,6 +13,7 @@ import { validateCnpjDigits } from '../common/utils/br-documents';
 import type { CxPortalRequestUser } from '../cx-portais/types/cx-portal.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateTransportadoraAutorizadaDto } from './dto/create-transportadora.dto';
+import { CreateTransportadoraCadastroPortalDto } from './dto/create-transportadora-cadastro-portal.dto';
 
 @Injectable()
 export class TransportadorasAutorizadasService {
@@ -52,6 +53,67 @@ export class TransportadorasAutorizadasService {
         createdAt: true,
       },
     });
+  }
+
+  /** Cadastro portal PJ — usa a mesma senha hash do titular. */
+  async criarEmLoteNoCadastro(
+    clienteId: string,
+    items: CreateTransportadoraCadastroPortalDto[],
+    passwordHash: string,
+  ): Promise<void> {
+    if (!items.length) return;
+    for (const dto of items) {
+      const cnpj = normalizeLoginDocumento(dto.cnpj);
+      if (cnpj.length !== 14 || !validateCnpjDigits(cnpj)) {
+        throw new ConflictException(`CNPJ inválido: ${dto.razaoSocial.trim() || cnpj}.`);
+      }
+
+      const dupUser = await this.prisma.user.findFirst({ where: { cpfCnpj: cnpj } });
+      if (dupUser) {
+        throw new ConflictException(`CNPJ já possui usuário cadastrado: ${dto.razaoSocial.trim()}.`);
+      }
+
+      const dupCliente = await this.prisma.cliente.findFirst({
+        where: { cpfCnpj: cnpj, deletedAt: null },
+      });
+      if (dupCliente) {
+        throw new ConflictException(`CNPJ já cadastrado como cliente: ${dto.razaoSocial.trim()}.`);
+      }
+
+      const existente = await this.prisma.transportadoraAutorizada.findFirst({
+        where: { clienteId, cnpj },
+      });
+      if (existente) {
+        throw new ConflictException(`Transportadora já autorizada: ${dto.razaoSocial.trim()}.`);
+      }
+
+      const email = dto.emailContato.trim().toLowerCase();
+      const dupMail = await this.prisma.user.findFirst({ where: { email } });
+      if (dupMail) {
+        throw new ConflictException(`E-mail de contato já cadastrado: ${email}.`);
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            cpfCnpj: cnpj,
+            email,
+            password: passwordHash,
+            role: Role.TRANSPORTADORA_TERCEIRA,
+            clienteId,
+          },
+        });
+        await tx.transportadoraAutorizada.create({
+          data: {
+            clienteId,
+            cnpj,
+            razaoSocial: dto.razaoSocial.trim(),
+            emailContato: email,
+            userId: user.id,
+          },
+        });
+      });
+    }
   }
 
   async criar(cx: CxPortalRequestUser, dto: CreateTransportadoraAutorizadaDto) {

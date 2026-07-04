@@ -1,4 +1,7 @@
-const DEFAULT_PORTAL = "/portal/dashboard";
+/** Landing pós-login do portal cliente (home operacional). */
+export const DEFAULT_PORTAL_HOME = "/portal/solicitacoes";
+
+const DEFAULT_PORTAL = DEFAULT_PORTAL_HOME;
 
 /** Evita open-redirect (ex.: ?next=//site.com) e garante path interno. */
 export function sanitizePortalNext(next: string | string[] | undefined): string {

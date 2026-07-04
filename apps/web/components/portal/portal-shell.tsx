@@ -14,8 +14,10 @@ import { isPortalCookieAuthMode, hasPortalClientSession } from "@/lib/portal-aut
 import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
 import { usePessoaAutorizadaStore } from "@/stores/pessoaAutorizadaStore";
 import { usePessoaPermissoesStore, DEFAULT_PERMISSOES } from "@/stores/pessoaPermissoesStore";
+import { DEFAULT_PORTAL_HOME } from "@/lib/portal-redirect";
 import { PortalHeader } from "./portal-header";
 import { PortalFinanceiroBlockBanner } from "./portal-financeiro-block-banner";
+import { PortalCadastroPendenteBanner } from "./portal-cadastro-pendente-banner";
 import { PortalSecurityBanner } from "./portal-security-banner";
 import { ResilienceCircuitBanner } from "@/components/resilience/resilience-circuit-banner";
 
@@ -85,9 +87,13 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
           cpfCnpj: typeof c.cpfCnpj === "string" ? c.cpfCnpj : "",
         });
         usePortalClienteAuthStore.getState().setBloqueioFinanceiro(Boolean(dash.isBloqueadoFinanceiramente));
+        usePortalClienteAuthStore.getState().setCadastroPendenteAnalise(
+          dash.statusCadastro === "PENDENTE_ANALISE_FINANCEIRA",
+        );
       })
       .catch(() => {
         usePortalClienteAuthStore.getState().setBloqueioFinanceiro(false);
+        usePortalClienteAuthStore.getState().setCadastroPendenteAnalise(false);
       });
   }, [hasSession]);
 
@@ -99,7 +105,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
       user: auth.user,
     });
     if (!sessionOk) {
-      router.replace(`/portal/login?next=${encodeURIComponent(pathname ?? "/portal/dashboard")}`);
+      router.replace(`/portal/login?next=${encodeURIComponent(pathname ?? DEFAULT_PORTAL_HOME)}`);
       return;
     }
 
@@ -119,7 +125,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
 
     if (tipo === "PJ" || (tipo === null && (cpfCnpj?.replace(/\D/g, "").length ?? 0) === 14)) {
       router.replace(
-        `/portal/auth/select-pessoa?next=${encodeURIComponent(pathname ?? "/portal/dashboard")}`,
+        `/portal/auth/select-pessoa?next=${encodeURIComponent(pathname ?? DEFAULT_PORTAL_HOME)}`,
       );
       return;
     }
@@ -133,7 +139,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
           if (r.status === "ok") return;
           if (r.status === "need-select") {
             router.replace(
-              `/portal/auth/select-pessoa?next=${encodeURIComponent(pathname ?? "/portal/dashboard")}`,
+              `/portal/auth/select-pessoa?next=${encodeURIComponent(pathname ?? DEFAULT_PORTAL_HOME)}`,
             );
             return;
           }
@@ -150,7 +156,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
 
     if (!pessoaAtual) {
       router.replace(
-        `/portal/auth/select-pessoa?next=${encodeURIComponent(pathname ?? "/portal/dashboard")}`,
+        `/portal/auth/select-pessoa?next=${encodeURIComponent(pathname ?? DEFAULT_PORTAL_HOME)}`,
       );
     }
   }, [hasSession, pessoaId, userTipo, userCpfCnpj, pathname, router]);
@@ -198,6 +204,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-[radial-gradient(ellipse_120%_80%_at_50%_-20%,rgba(56,189,248,0.12),transparent)]">
       <PortalHeader />
+      <PortalCadastroPendenteBanner />
       <PortalFinanceiroBlockBanner />
       <ResilienceCircuitBanner />
       <PortalSecurityBanner />

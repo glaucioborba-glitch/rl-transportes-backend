@@ -1,4 +1,4 @@
-import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
+import { cpfCnpjForTestUser, userWhereForTestEmail } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
@@ -37,9 +37,9 @@ describe('Cockpit operacoes (e2e)', () => {
     const hash = await bcrypt.hash(password, 10);
     await prisma.user.createMany({
       data: [
-        { email: adminEmail, password: hash, role: Role.ADMIN, clienteId: null },
-        { email: opEmail, password: hash, role: Role.OPERADOR_GATE, clienteId: null },
-        { email: cliEmail, password: hash, role: Role.CLIENTE, clienteId: null },
+        { cpfCnpj: cpfCnpjForTestUser(adminEmail), email: adminEmail, password: hash, role: Role.ADMIN, clienteId: null },
+        { cpfCnpj: cpfCnpjForTestUser(opEmail), email: opEmail, password: hash, role: Role.OPERADOR_GATE, clienteId: null },
+        { cpfCnpj: cpfCnpjForTestUser(cliEmail), email: cliEmail, password: hash, role: Role.CLIENTE, clienteId: null },
       ],
     });
   });
@@ -52,7 +52,7 @@ describe('Cockpit operacoes (e2e)', () => {
   });
 
   it('GET /cockpit/mapa/patio — ADMIN', async () => {
-    const admin = await prisma.user.findUniqueOrThrow({ where: { cpfCnpj: cpfCnpjForTestUser(adminEmail) } });
+    const admin = await prisma.user.findUniqueOrThrow({ where: userWhereForTestEmail(adminEmail) });
     const t = auth.issueTokens(admin);
     const res = await request(app.getHttpServer())
       .get('/cockpit/mapa/patio')
@@ -62,7 +62,7 @@ describe('Cockpit operacoes (e2e)', () => {
   });
 
   it('GET /cockpit/alertas — agregação', async () => {
-    const admin = await prisma.user.findUniqueOrThrow({ where: { cpfCnpj: cpfCnpjForTestUser(adminEmail) } });
+    const admin = await prisma.user.findUniqueOrThrow({ where: userWhereForTestEmail(adminEmail) });
     const t = auth.issueTokens(admin);
     const res = await request(app.getHttpServer())
       .get('/cockpit/alertas')
@@ -72,7 +72,7 @@ describe('Cockpit operacoes (e2e)', () => {
   });
 
   it('GET /cockpit/tenant/list — multi-terminal', async () => {
-    const admin = await prisma.user.findUniqueOrThrow({ where: { cpfCnpj: cpfCnpjForTestUser(adminEmail) } });
+    const admin = await prisma.user.findUniqueOrThrow({ where: userWhereForTestEmail(adminEmail) });
     const t = auth.issueTokens(admin);
     await request(app.getHttpServer())
       .get('/cockpit/tenant/list')
@@ -84,7 +84,7 @@ describe('Cockpit operacoes (e2e)', () => {
   });
 
   it('GET /cockpit/telemetria/mobile', async () => {
-    const admin = await prisma.user.findUniqueOrThrow({ where: { cpfCnpj: cpfCnpjForTestUser(adminEmail) } });
+    const admin = await prisma.user.findUniqueOrThrow({ where: userWhereForTestEmail(adminEmail) });
     const t = auth.issueTokens(admin);
     await request(app.getHttpServer())
       .get('/cockpit/telemetria/mobile')
@@ -93,7 +93,7 @@ describe('Cockpit operacoes (e2e)', () => {
   });
 
   it('CLIENTE — 403 no cockpit', async () => {
-    const cli = await prisma.user.findUniqueOrThrow({ where: { cpfCnpj: cpfCnpjForTestUser(cliEmail) } });
+    const cli = await prisma.user.findUniqueOrThrow({ where: userWhereForTestEmail(cliEmail) });
     const t = auth.issueTokens(cli);
     await request(app.getHttpServer())
       .get('/cockpit/mapa/patio')
@@ -102,7 +102,7 @@ describe('Cockpit operacoes (e2e)', () => {
   });
 
   it('OPERADOR — 403 fora do módulo turno', async () => {
-    const op = await prisma.user.findUniqueOrThrow({ where: { cpfCnpj: cpfCnpjForTestUser(opEmail) } });
+    const op = await prisma.user.findUniqueOrThrow({ where: userWhereForTestEmail(opEmail) });
     const t = auth.issueTokens(op);
     await request(app.getHttpServer())
       .get('/cockpit/mapa/patio')
@@ -111,7 +111,7 @@ describe('Cockpit operacoes (e2e)', () => {
   });
 
   it('OPERADOR — 200 indicadores/turno', async () => {
-    const op = await prisma.user.findUniqueOrThrow({ where: { cpfCnpj: cpfCnpjForTestUser(opEmail) } });
+    const op = await prisma.user.findUniqueOrThrow({ where: userWhereForTestEmail(opEmail) });
     const t = auth.issueTokens(op);
     await request(app.getHttpServer())
       .get('/cockpit/indicadores/turno')

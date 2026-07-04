@@ -1,4 +1,4 @@
-import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
+import { cpfCnpjForTestUser, userWhereForTestEmail } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
@@ -74,9 +74,9 @@ describe('IA preditiva (e2e)', () => {
       },
     });
 
-    const uGer = await prisma.user.findUniqueOrThrow({ where: { cpfCnpj: cpfCnpjForTestUser(emailGer) } });
-    const uCli = await prisma.user.findUniqueOrThrow({ where: { cpfCnpj: cpfCnpjForTestUser(emailCli) } });
-    const uOp = await prisma.user.findUniqueOrThrow({ where: { cpfCnpj: cpfCnpjForTestUser(emailOp) } });
+    const uGer = await prisma.user.findUniqueOrThrow({ where: userWhereForTestEmail(emailGer) });
+    const uCli = await prisma.user.findUniqueOrThrow({ where: userWhereForTestEmail(emailCli) });
+    const uOp = await prisma.user.findUniqueOrThrow({ where: userWhereForTestEmail(emailOp) });
     tokenGerente = authService.issueTokens(uGer).accessToken;
     tokenCliente = authService.issueTokens(uCli).accessToken;
     tokenOperador = authService.issueTokens(uOp).accessToken;

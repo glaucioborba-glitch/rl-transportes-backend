@@ -14,15 +14,20 @@ const ROWS: { key: keyof PasswordChecklist; label: string }[] = [
   { key: "notBlacklisted", label: "Não pode ser uma senha comum bloqueada" },
 ];
 
-type Props = { password: string };
+type Props = { password: string; className?: string };
 
-export function PasswordStrengthPanel({ password }: Props) {
+export function PasswordStrengthPanel({ password, className }: Props) {
   const { checklist, strength } = evaluatePassword(password);
   const labels = ["Fraca", "Regular", "Média", "Forte", "Muito forte"];
 
   return (
-    <div className="space-y-3 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-3">
-      <div className="flex items-center justify-between gap-2">
+    <div
+      className={cn(
+        "grid w-full grid-cols-12 gap-x-4 gap-y-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2",
+        className,
+      )}
+    >
+      <div className="col-span-12 flex items-center justify-between gap-x-4">
         <span className="text-xs font-medium text-slate-400">Força da senha</span>
         <span
           className={cn(
@@ -33,7 +38,7 @@ export function PasswordStrengthPanel({ password }: Props) {
           {password.length ? labels[strength] : "—"}
         </span>
       </div>
-      <div className="flex gap-1">
+      <div className="col-span-12 flex gap-1">
         {[0, 1, 2, 3].map((i) => (
           <div
             key={i}
@@ -44,7 +49,7 @@ export function PasswordStrengthPanel({ password }: Props) {
           />
         ))}
       </div>
-      <ul className="space-y-1.5 text-[11px] leading-snug text-slate-400">
+      <ul className="col-span-12 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs leading-snug text-slate-400">
         {ROWS.map(({ key, label }) => (
           <li key={key} className="flex items-start gap-2">
             <span

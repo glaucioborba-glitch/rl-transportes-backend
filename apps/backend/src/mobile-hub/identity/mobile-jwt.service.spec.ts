@@ -33,6 +33,7 @@ describe('MobileJwtService', () => {
     const tok = svc.signAccess({
       sub: 'u1',
       email: 'a@a.com',
+      cpfCnpj: '11000000000108',
       mobileRole: 'OPERADOR_MOBILE',
       deviceId: 'dev-1',
       tv: 0,

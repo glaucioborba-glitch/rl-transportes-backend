@@ -24,7 +24,7 @@ test.describe("Cenário 2 — Geração de credencial (Coleta + QR Code)", () =>
     await page.locator("#documento").fill(E2E_CNPJ);
     await page.locator("#password").fill(E2E_PORTAL_PASSWORD);
     await page.getByRole("button", { name: "Acessar portal" }).click();
-    await page.waitForURL("**/portal/dashboard**", { timeout: 30_000 });
+    await page.waitForURL("**/portal/solicitacoes**", { timeout: 30_000 });
     await saveE2ePortalSession(page);
   });
 
@@ -50,7 +50,7 @@ test.describe("Cenário 2 — Geração de credencial (Coleta + QR Code)", () =>
     await page.waitForURL(`**/portal/solicitacoes/${E2E_SOLICITACAO_ID}**`);
 
     await page.goto("/portal/solicitacoes");
-    await expect(page.getByText("E2E-COLETA-001")).toBeVisible();
+    await expect(page.getByText("#E2E-COLETA-001")).toBeVisible();
 
     await page.getByRole("button", { name: "Credencial (QR Code)" }).click();
     await expect(page.getByText("Credencial de acesso")).toBeVisible();

@@ -6,7 +6,7 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-import { AcaoAuditoria, Prisma, TipoCliente, Role } from '@prisma/client';
+import { AcaoAuditoria, Prisma, StatusCadastroCliente, TipoCliente, Role } from '@prisma/client';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { PRISMA_SERIALIZABLE_TX } from '../prisma/transaction-options';
@@ -193,7 +193,10 @@ export class ClientesService {
     try {
       const cliente = await this.prisma.$transaction(async (tx) => {
         const novoCliente = await tx.cliente.create({
-          data,
+          data: {
+            ...data,
+            statusCadastro: StatusCadastroCliente.APROVADO,
+          },
         });
 
         await this.auditoria.registrar(

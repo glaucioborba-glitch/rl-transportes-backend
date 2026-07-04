@@ -18,6 +18,11 @@ import {
 } from "@/lib/api/portal-client";
 import { toast } from "@/lib/toast";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  descricaoCondicaoPagamento,
+  labelCondicaoPagamento,
+} from "@/lib/condicao-pagamento-portal";
+import { fetchPortalDashboard } from "@/lib/api/portal-client";
 
 export default function FinanceiroPage() {
   const [loading, setLoading] = useState(true);
@@ -28,15 +33,17 @@ export default function FinanceiroPage() {
   const [vencidos, setVencidos] = useState(0);
   const [pendenteVal, setPendenteVal] = useState(0);
   const [faturamentoLista, setFaturamentoLista] = useState(0);
+  const [condicaoPagamento, setCondicaoPagamento] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [fat, bol, nf, arm] = await Promise.all([
+      const [fat, bol, nf, arm, dash] = await Promise.all([
         fetchFaturamentoPaginated({ page: 1, limit: 20 }),
         fetchBoletosPaginated({ page: 1, limit: 100 }),
         fetchNfsePaginated({ page: 1, limit: 50 }),
         fetchFaturasArmazenagemPaginated({ page: 1, limit: 50 }),
+        fetchPortalDashboard({ recentPage: 1, recentLimit: 1 }),
       ]);
       const fatItems = (fat as { items?: Record<string, unknown>[] }).items ?? [];
       setFats(fatItems);
@@ -58,6 +65,7 @@ export default function FinanceiroPage() {
       }
       setVencidos(v);
       setPendenteVal(pend);
+      setCondicaoPagamento(dash.condicaoPagamento ?? null);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Erro ao carregar financeiro");
     } finally {
@@ -78,6 +86,8 @@ export default function FinanceiroPage() {
   }
 
   const inad = boletos.length ? Math.round((vencidos / boletos.length) * 100) : 0;
+  const condicaoLabel = labelCondicaoPagamento(condicaoPagamento);
+  const condicaoDescricao = descricaoCondicaoPagamento(condicaoPagamento);
 
   return (
     <main className="mx-auto max-w-7xl space-y-8 px-4 py-8">
@@ -85,6 +95,21 @@ export default function FinanceiroPage() {
         title="Financeiro"
         description="Faturamento mensal, armazenagem Gate-Out (NFS-e + boleto/PIX), boletos e NFS-e."
       />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <span aria-hidden>💳</span>
+            Condição de Pagamento
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm font-medium text-white">{condicaoLabel}</p>
+          {condicaoDescricao ? (
+            <p className="mt-1 text-sm text-muted-foreground">{condicaoDescricao}</p>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard title="Inadimplência (proxy)" value={`${inad}%`} hint="Boletos pendentes vencidos / total listado" />

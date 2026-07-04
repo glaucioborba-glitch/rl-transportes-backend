@@ -20,7 +20,7 @@ import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
 import { usePessoaAutorizadaStore } from "@/stores/pessoaAutorizadaStore";
 import { usePessoaPermissoesStore } from "@/stores/pessoaPermissoesStore";
 import { RlLogo } from "@/components/portal/rl-logo";
-import { sanitizePortalPath } from "@/lib/portal-redirect";
+import { DEFAULT_PORTAL_HOME, sanitizePortalPath } from "@/lib/portal-redirect";
 import { formatCpfBr } from "@/lib/format-cpf-cnpj-br";
 import { validateCpfDigits } from "@/lib/br-documents";
 import { hasPortalClientSession } from "@/lib/portal-auth-mode";
@@ -28,7 +28,7 @@ import { hasPortalClientSession } from "@/lib/portal-auth-mode";
 export function SelectPessoaContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const safeNext = sanitizePortalPath(searchParams.get("next") ?? "/portal/dashboard");
+  const safeNext = sanitizePortalPath(searchParams.get("next") ?? DEFAULT_PORTAL_HOME);
   const accessToken = usePortalClienteAuthStore((s) => s.accessToken);
   const sessionHydrated = usePortalClienteAuthStore((s) => s.sessionHydrated);
   const user = usePortalClienteAuthStore((s) => s.user);

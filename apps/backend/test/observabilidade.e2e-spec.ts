@@ -1,4 +1,4 @@
-import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
+import { cpfCnpjForTestUser, userWhereForTestEmail } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
@@ -104,7 +104,7 @@ describe('Observabilidade (e2e)', () => {
   });
 
   it('OPERADOR GET /observabilidade/logs — 403', async () => {
-    const op = await prisma.user.findUnique({ where: { cpfCnpj: cpfCnpjForTestUser(emailOp) } });
+    const op = await prisma.user.findUnique({ where: userWhereForTestEmail(emailOp) });
     expect(op).toBeTruthy();
     const tOp = auth.issueTokens(op!).accessToken;
     await request(app.getHttpServer())

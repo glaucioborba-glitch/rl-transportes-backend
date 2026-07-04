@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import { StatusSolicitacao, type TipoCliente, TipoUnidade } from '@prisma/client';
+import { StatusCadastroCliente, StatusSolicitacao, type TipoCliente, TipoUnidade, ValidacaoDominio } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { PlataformaTenantStore } from '../../plataforma-integracao/stores/plataforma-tenant.store';
@@ -41,6 +41,7 @@ export type DashboardPortalConsolidated = {
   cliente: (DashboardPortalClientePublico & {
     tipo: TipoCliente;
     emailNfse: string | null;
+    inscricaoEstadual: string | null;
     endereco: {
       logradouro: string;
       numero: string;
@@ -119,6 +120,10 @@ export type DashboardPortalConsolidated = {
     slaAmostraConcluidas: number;
   };
   isBloqueadoFinanceiramente: boolean;
+  statusCadastro: StatusCadastroCliente | null;
+  validacaoDominio: ValidacaoDominio | null;
+  condicaoPagamento: string | null;
+  cadastroOperacionalLiberado: boolean;
 };
 
 const DASHBOARD_SOL_INC = {
@@ -426,6 +431,11 @@ export class DashboardPortalService {
           enderecoCidade: true,
           enderecoUf: true,
           codigoMunicipioIbge: true,
+          inscricaoEstadual: true,
+          isentoIE: true,
+          statusCadastro: true,
+          validacaoDominio: true,
+          condicaoPagamento: true,
         },
       });
       if (!c) return null;
@@ -438,6 +448,9 @@ export class DashboardPortalService {
         tipo: c.tipo,
         cpfCnpj: this.formatDoc(c.cpfCnpj),
         emailNfse,
+        inscricaoEstadual: c.isentoIE
+          ? 'Isento'
+          : (c.inscricaoEstadual ?? '').trim() || null,
         endereco: {
           cep: (c.enderecoCep ?? '').trim(),
           logradouro: (c.enderecoLogradouro ?? '').trim(),
@@ -581,6 +594,27 @@ export class DashboardPortalService {
         slaAmostraConcluidas: 0,
       },
       isBloqueadoFinanceiramente: false,
+      statusCadastro: null,
+      validacaoDominio: null,
+      condicaoPagamento: null,
+      cadastroOperacionalLiberado: false,
+    };
+  }
+
+  private async loadCadastroMeta(clienteId: string) {
+    const c = await this.prisma.cliente.findFirst({
+      where: { id: clienteId, deletedAt: null },
+      select: {
+        statusCadastro: true,
+        validacaoDominio: true,
+        condicaoPagamento: true,
+      },
+    });
+    return {
+      statusCadastro: c?.statusCadastro ?? null,
+      validacaoDominio: c?.validacaoDominio ?? null,
+      condicaoPagamento: c?.condicaoPagamento ?? null,
+      cadastroOperacionalLiberado: c?.statusCadastro === StatusCadastroCliente.APROVADO,
     };
   }
 
@@ -627,7 +661,7 @@ export class DashboardPortalService {
         this.loadKpisExtras(clienteId, resumoSol),
       ]);
 
-      const [solicitacoesRecentesPage, trackingSample, solicitacoesHoje, totalRecent, bloqueadoFin] =
+      const [solicitacoesRecentesPage, trackingSample, solicitacoesHoje, totalRecent, bloqueadoFin, cadastroMeta] =
         await Promise.all([
         this.safe(
           () =>
@@ -672,6 +706,7 @@ export class DashboardPortalService {
           0,
         ),
         this.holdRelease.isClienteBloqueadoFinanceiramente(clienteId, cx.tenantId),
+        this.loadCadastroMeta(clienteId),
       ]);
 
       const historicoProxy = [
@@ -736,6 +771,7 @@ export class DashboardPortalService {
           slaAmostraConcluidas: slaReal.amostraConcluidas,
         },
         isBloqueadoFinanceiramente: bloqueadoFin,
+        ...cadastroMeta,
       };
 
       try {

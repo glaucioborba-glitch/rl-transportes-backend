@@ -15,12 +15,15 @@ type PortalClienteAuthState = {
   sessionHydrated: boolean;
   isBloqueadoFinanceiramente: boolean;
   bloqueioFinanceiroHydrated: boolean;
+  cadastroPendenteAnalise: boolean;
+  cadastroHydrated: boolean;
   setSession: (access: string, refresh: string, user?: PortalUser | null) => void;
   setSessionHydrated: (hydrated: boolean) => void;
   setCliente: (cliente: PortalClienteSnapshot | null) => void;
   setClienteNome: (nome: string | null) => void;
   setUser: (user: PortalUser | null) => void;
   setBloqueioFinanceiro: (blocked: boolean) => void;
+  setCadastroPendenteAnalise: (pending: boolean) => void;
   bumpDashboard: () => void;
   clear: () => void;
 };
@@ -35,6 +38,8 @@ export const usePortalClienteAuthStore = create<PortalClienteAuthState>((set) =>
   sessionHydrated: false,
   isBloqueadoFinanceiramente: false,
   bloqueioFinanceiroHydrated: false,
+  cadastroPendenteAnalise: false,
+  cadastroHydrated: false,
   setSession: (access, refresh, user) =>
     set((s) => ({
       accessToken: access,
@@ -52,6 +57,8 @@ export const usePortalClienteAuthStore = create<PortalClienteAuthState>((set) =>
   setUser: (user) => set({ user }),
   setBloqueioFinanceiro: (isBloqueadoFinanceiramente) =>
     set({ isBloqueadoFinanceiramente, bloqueioFinanceiroHydrated: true }),
+  setCadastroPendenteAnalise: (cadastroPendenteAnalise) =>
+    set({ cadastroPendenteAnalise, cadastroHydrated: true }),
   bumpDashboard: () => set((s) => ({ dashboardRevision: s.dashboardRevision + 1 })),
   clear: () => {
     set({
@@ -64,6 +71,8 @@ export const usePortalClienteAuthStore = create<PortalClienteAuthState>((set) =>
       sessionHydrated: false,
       isBloqueadoFinanceiramente: false,
       bloqueioFinanceiroHydrated: false,
+      cadastroPendenteAnalise: false,
+      cadastroHydrated: false,
     });
     if (typeof window !== "undefined") {
       try {

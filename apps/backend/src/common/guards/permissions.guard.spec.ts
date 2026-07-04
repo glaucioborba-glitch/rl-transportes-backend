@@ -26,6 +26,7 @@ describe('PermissionsGuard', () => {
       sub: '1',
       id: '1',
       email: 'a@a.com',
+      cpfCnpj: '11000000000108',
       role: Role.ADMIN,
       permissions: [],
     };
@@ -38,6 +39,7 @@ describe('PermissionsGuard', () => {
       sub: '1',
       id: '1',
       email: 'a@a.com',
+      cpfCnpj: '11000000000108',
       role: Role.OPERADOR_PATIO,
       permissions: ['clientes:ler'],
     };

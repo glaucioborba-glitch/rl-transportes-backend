@@ -11,6 +11,7 @@ import {
   type SolicitacaoRow,
 } from "@/lib/api/portal-client";
 import type { KpisResponse, SlasResponse } from "@/lib/api/types";
+import { DEFAULT_PORTAL_HOME } from "@/lib/portal-redirect";
 import { hasPortalClientSession } from "@/lib/portal-auth-mode";
 import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
 import { usePortalAuthStore } from "@/stores/portal-store";
@@ -50,6 +51,7 @@ export type DashboardData = {
   solicitacoesHoje: SolicitacaoRow[];
   pendenciasFinanceiras: number;
   financeCounts: DashboardFinanceCounts;
+  condicaoPagamento: string | null;
 };
 
 export function usePortalDashboard(opts: { recentPage: number; recentLimit?: number }) {
@@ -97,7 +99,7 @@ export function usePortalDashboard(opts: { recentPage: number; recentLimit?: num
           setAwaitingPessoa(true);
           setLoading(false);
           router.replace(
-            `/portal/auth/select-pessoa?next=${encodeURIComponent("/portal/dashboard")}`,
+            `/portal/auth/select-pessoa?next=${encodeURIComponent(DEFAULT_PORTAL_HOME)}`,
           );
           return;
         }
@@ -108,7 +110,7 @@ export function usePortalDashboard(opts: { recentPage: number; recentLimit?: num
             setAwaitingPessoa(true);
             setLoading(false);
             router.replace(
-              `/portal/auth/select-pessoa?next=${encodeURIComponent("/portal/dashboard")}`,
+              `/portal/auth/select-pessoa?next=${encodeURIComponent(DEFAULT_PORTAL_HOME)}`,
             );
             return;
           }
@@ -116,7 +118,7 @@ export function usePortalDashboard(opts: { recentPage: number; recentLimit?: num
           setAwaitingPessoa(true);
           setLoading(false);
           router.replace(
-            `/portal/auth/select-pessoa?next=${encodeURIComponent("/portal/dashboard")}`,
+            `/portal/auth/select-pessoa?next=${encodeURIComponent(DEFAULT_PORTAL_HOME)}`,
           );
           return;
         }
@@ -195,6 +197,7 @@ export function usePortalDashboard(opts: { recentPage: number; recentLimit?: num
           nfseEmitidasAmostra: dash.financeiro.nfseEmitidas,
           faturadoMes: dash.financeiro.faturadoMes ?? 0,
         },
+        condicaoPagamento: dash.condicaoPagamento ?? null,
       });
     } catch (e) {
       const msg =

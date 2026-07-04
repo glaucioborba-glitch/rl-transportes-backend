@@ -20,7 +20,7 @@ import {
 import { toast } from "@/lib/toast";
 import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
 import { RlLogo } from "@/components/portal/rl-logo";
-import { sanitizePortalPath } from "@/lib/portal-redirect";
+import { DEFAULT_PORTAL_HOME, sanitizePortalPath } from "@/lib/portal-redirect";
 import { formatCpfCnpjBr } from "@/lib/format-cpf-cnpj-br";
 import { validateCnpjDigits, validateCpfDigits } from "@/lib/br-documents";
 
@@ -28,7 +28,7 @@ type LoginFormProps = {
   redirectAfterLogin?: string;
 };
 
-export default function PortalLoginForm({ redirectAfterLogin = "/portal/dashboard" }: LoginFormProps) {
+export default function PortalLoginForm({ redirectAfterLogin = DEFAULT_PORTAL_HOME }: LoginFormProps) {
   const router = useRouter();
   const safeNext = sanitizePortalPath(redirectAfterLogin);
   const [documento, setDocumento] = useState("");
@@ -98,7 +98,7 @@ export default function PortalLoginForm({ redirectAfterLogin = "/portal/dashboar
 
       const tipo = user.tipo ?? raw.tipo ?? raw.usuario?.tipo ?? inferPortalClienteTipo(user);
       const destino =
-        safeNext.startsWith("/portal/auth/select-pessoa") ? "/portal/dashboard" : safeNext;
+        safeNext.startsWith("/portal/auth/select-pessoa") ? DEFAULT_PORTAL_HOME : safeNext;
 
       if (raw.skipSelectPessoa && raw.pessoaAutorizada) {
         usePessoaAutorizadaStore.getState().setPessoa({
@@ -164,53 +164,57 @@ export default function PortalLoginForm({ redirectAfterLogin = "/portal/dashboar
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[#080a0d] px-4 py-12">
-      <div className="mb-8 flex items-center gap-3">
-        <RlLogo className="h-11 w-11 text-lg" />
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[#080a0d] px-4 py-8">
+      <div className="mb-6 flex items-center gap-3">
+        <RlLogo className="h-10 w-10 text-lg" />
         <div>
           <h1 className="text-xl font-bold text-white">Portal do cliente</h1>
-          <p className="text-sm text-slate-500">RL Transportes · POST /portal/login</p>
+          <p className="text-sm text-slate-500">RL Transportes</p>
         </div>
       </div>
-      <Card className="w-full max-w-md border-white/10">
-        <CardHeader>
-          <CardTitle>Entrar</CardTitle>
-          <CardDescription>Credenciais do usuário portal (Role CLIENTE)</CardDescription>
+      <Card className="w-full max-w-md border border-muted-foreground/20 bg-[#0c0f14] shadow-none ring-1 ring-muted-foreground/10">
+        <CardHeader className="space-y-1 px-6 pb-0 pt-6">
+          <CardTitle className="text-white">Entrar</CardTitle>
+          <CardDescription>Acesse sua conta para gerenciar suas operações.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-6 pb-6 pt-3">
           <form
             noValidate
             onSubmit={(e) => {
               e.preventDefault();
               void runLogin().catch(() => setSubmitting(false));
             }}
-            className="space-y-4"
+            className="flex flex-col gap-y-3"
           >
-            <div className="space-y-2">
-              <label htmlFor="documento" className="text-sm font-medium text-slate-300">
-                CPF ou CNPJ
-              </label>
-              <Input
-                id="documento"
-                type="text"
-                inputMode="numeric"
-                autoComplete="username"
-                placeholder="000.000.000-00 ou 00.000.000/0000-00"
-                value={documento}
-                onChange={(e) => setDocumento(formatCpfCnpjBr(e.target.value))}
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="password" className="text-sm font-medium text-slate-300">
-                Senha
-              </label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+            <div className="flex flex-col gap-y-2">
+              <div className="flex flex-col gap-1">
+                <label htmlFor="documento" className="text-sm font-medium text-slate-300">
+                  CPF ou CNPJ
+                </label>
+                <Input
+                  id="documento"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="username"
+                  placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                  value={documento}
+                  onChange={(e) => setDocumento(formatCpfCnpjBr(e.target.value))}
+                  className="h-9 border-white/15 bg-black/40 py-2 text-white"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label htmlFor="password" className="text-sm font-medium text-slate-300">
+                  Senha
+                </label>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="h-9 border-white/15 bg-black/40 py-2 text-white"
+                />
+              </div>
             </div>
             {status && !err ? (
               <p className="rounded-lg border border-cyan-500/30 bg-cyan-950/30 px-3 py-2 text-sm text-cyan-100">
@@ -226,33 +230,37 @@ export default function PortalLoginForm({ redirectAfterLogin = "/portal/dashboar
                 {err}
               </p>
             ) : null}
-            <p className="text-[11px] leading-snug text-slate-500">API: {getApiBase()}</p>
-            <button
-              type="submit"
-              disabled={submitting}
-              className={cn(buttonVariants({ variant: "default", size: "default" }), "w-full min-h-10")}
-            >
-              {submitting ? "Entrando…" : "Acessar portal"}
-            </button>
-            <div className="flex flex-col gap-2 pt-1">
-              <Link
-                href="/portal/cadastrar"
+            <div className="flex flex-col gap-y-4 pt-1">
+              <button
+                type="submit"
+                disabled={submitting}
                 className={cn(
-                  buttonVariants({ variant: "outline", size: "default" }),
-                  "w-full min-h-10 border-white/15 text-slate-100 hover:bg-white/5",
+                  buttonVariants({ variant: "default", size: "default" }),
+                  "h-auto w-full px-6 py-2.5",
                 )}
               >
-                Cadastrar-se
-              </Link>
-              <Link
-                href="/portal/recuperar"
-                className={cn(
-                  buttonVariants({ variant: "ghost", size: "default" }),
-                  "w-full min-h-10 text-slate-400 hover:text-slate-200",
-                )}
-              >
-                Esqueci minha senha
-              </Link>
+                {submitting ? "Entrando…" : "Acessar portal"}
+              </button>
+              <div className="flex flex-col gap-2">
+                <Link
+                  href="/portal/cadastrar"
+                  className={cn(
+                    buttonVariants({ variant: "outline", size: "default" }),
+                    "h-auto w-full border-white/15 px-6 py-2.5 text-slate-100 hover:bg-white/5",
+                  )}
+                >
+                  Cadastrar-se
+                </Link>
+                <Link
+                  href="/portal/recuperar"
+                  className={cn(
+                    buttonVariants({ variant: "ghost", size: "default" }),
+                    "h-auto w-full px-6 py-2.5 text-slate-400 hover:text-slate-200",
+                  )}
+                >
+                  Esqueci minha senha
+                </Link>
+              </div>
             </div>
           </form>
           <p className="mt-4 text-center text-xs text-slate-500">

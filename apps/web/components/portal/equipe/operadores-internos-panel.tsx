@@ -15,17 +15,9 @@ import { formatPhoneBr } from "@/lib/nfse/cliente-fiscal";
 import { toast } from "@/lib/toast";
 import { validateCpfDigits } from "@/lib/validate-cpf";
 import { DEFAULT_PERMISSOES, type PermissoesPessoa } from "@/stores/pessoaPermissoesStore";
-
-const PERM_LABELS: Array<{ key: keyof PermissoesPessoa; label: string }> = [
-  { key: "podeCriarSolicitacao", label: "Pode criar solicitações" },
-  { key: "podeAnexarDocumentos", label: "Pode anexar documentos" },
-  { key: "podeAgendarTurno", label: "Pode agendar turno" },
-  { key: "podeVisualizarFinanceiro", label: "Pode visualizar financeiro" },
-  { key: "podeAprovarOS", label: "Pode aprovar OS" },
-  { key: "podeAlterarDadosGate", label: "Pode alterar dados no gate" },
-  { key: "podeGerarPDF", label: "Pode gerar PDF" },
-  { key: "podeGerenciarPessoas", label: "Pode gerenciar pessoas" },
-];
+import { usePessoaAutorizadaStore } from "@/stores/pessoaAutorizadaStore";
+import { PermissoesOperacionaisFields } from "./permissoes-operacionais-fields";
+import { EquipeAutorizacoesTable } from "./equipe-autorizacoes-table";
 
 type OperadoresInternosPanelProps = {
   clienteId: string;
@@ -33,6 +25,7 @@ type OperadoresInternosPanelProps = {
 };
 
 export function OperadoresInternosPanel({ clienteId, podeGerenciar }: OperadoresInternosPanelProps) {
+  const pessoaSessaoId = usePessoaAutorizadaStore((s) => s.pessoa?.id ?? null);
   const [lista, setLista] = useState<PessoaAutorizadaRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -58,10 +51,6 @@ export function OperadoresInternosPanel({ clienteId, podeGerenciar }: Operadores
   useEffect(() => {
     void refresh();
   }, [refresh]);
-
-  function togglePerm(key: keyof PermissoesPessoa) {
-    setPermissoes((p) => ({ ...p, [key]: !p[key] }));
-  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -114,13 +103,16 @@ export function OperadoresInternosPanel({ clienteId, podeGerenciar }: Operadores
           Apenas administradores da empresa podem cadastrar operadores internos.
         </p>
       ) : (
-        <form onSubmit={(e) => void onSubmit(e)} className="grid gap-3 rounded-lg border border-white/10 bg-zinc-950/40 p-4 sm:grid-cols-2">
+        <form
+          onSubmit={(e) => void onSubmit(e)}
+          className="grid gap-3 rounded-lg border border-white/10 bg-zinc-950/40 p-4 sm:grid-cols-2"
+        >
           <div className="space-y-1 sm:col-span-2">
-            <label className="text-xs text-slate-400">Nome completo</label>
+            <label className="text-xs text-muted-foreground">Nome completo</label>
             <Input value={nome} onChange={(e) => setNome(e.target.value)} required />
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-slate-400">CPF</label>
+            <label className="text-xs text-muted-foreground">CPF</label>
             <Input
               value={cpf}
               onChange={(e) => setCpf(formatCpfBr(e.target.value))}
@@ -130,11 +122,11 @@ export function OperadoresInternosPanel({ clienteId, podeGerenciar }: Operadores
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-slate-400">E-mail</label>
+            <label className="text-xs text-muted-foreground">E-mail</label>
             <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </div>
           <div className="space-y-1 sm:col-span-2">
-            <label className="text-xs text-slate-400">Telefone (WhatsApp)</label>
+            <label className="text-xs text-muted-foreground">Telefone (WhatsApp)</label>
             <Input
               value={telefone}
               onChange={(e) => setTelefone(formatPhoneBr(e.target.value))}
@@ -143,21 +135,10 @@ export function OperadoresInternosPanel({ clienteId, podeGerenciar }: Operadores
             />
           </div>
           <div className="space-y-2 sm:col-span-2">
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Permissões operacionais
             </p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {PERM_LABELS.map(({ key, label }) => (
-                <label key={key} className="flex items-center gap-2 text-sm text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={permissoes[key]}
-                    onChange={() => togglePerm(key)}
-                  />
-                  {label}
-                </label>
-              ))}
-            </div>
+            <PermissoesOperacionaisFields value={permissoes} onChange={setPermissoes} />
           </div>
           <div className="sm:col-span-2">
             <Button type="submit" disabled={saving}>
@@ -167,30 +148,20 @@ export function OperadoresInternosPanel({ clienteId, podeGerenciar }: Operadores
         </form>
       )}
 
-      <div className="space-y-2 border-t border-white/10 pt-4">
-        <h3 className="text-sm font-medium text-slate-300">Cadastrados</h3>
+      <div className="space-y-3 border-t border-white/10 pt-4">
+        <h3 className="text-sm font-medium text-slate-300">Autorizações ativas</h3>
         {loading ? (
           <div className="flex items-center gap-2 text-slate-400">
             <Loader2 className="h-4 w-4 animate-spin" />
             Carregando…
           </div>
-        ) : lista.length === 0 ? (
-          <p className="text-sm text-slate-500">Nenhum operador cadastrado.</p>
         ) : (
-          <ul className="space-y-2 text-sm">
-            {lista.map((p) => (
-              <li
-                key={p.id}
-                className="rounded-md border border-white/10 bg-zinc-950/50 px-3 py-2"
-              >
-                <p className="font-medium text-white">{p.nome}</p>
-                <p className="text-slate-400">
-                  {p.cpf ? formatCpfBr(p.cpf) : "CPF pendente"} · {p.email}
-                </p>
-                {!p.ativo ? <p className="text-xs text-amber-400">Inativa</p> : null}
-              </li>
-            ))}
-          </ul>
+          <EquipeAutorizacoesTable
+            rows={lista}
+            podeGerenciar={podeGerenciar}
+            pessoaSessaoId={pessoaSessaoId}
+            onChanged={() => void refresh()}
+          />
         )}
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { ApiError, staffJson } from "@/lib/api/staff-client";
+import { staffJson } from "@/lib/api/staff-client";
 
 export type CategoriaAuditLog = "OPERACIONAL" | "FINANCEIRO" | "SEGURANCA" | "SISTEMA";
 

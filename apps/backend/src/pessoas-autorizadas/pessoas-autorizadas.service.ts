@@ -98,12 +98,21 @@ export class PessoasAutorizadasService {
     const row = await this.prisma.pessoaAutorizada.findUnique({ where: { id } });
     if (!row) throw new NotFoundException('Pessoa autorizada não encontrada');
     this.assertClienteAccess(cx, row.clienteId);
-    if (dto.ativo === undefined) {
-      throw new BadRequestException('Informe ativo=true ou ativo=false.');
+
+    const data: { ativo?: boolean; email?: string; telefone?: string | null } = {};
+    if (dto.ativo !== undefined) data.ativo = dto.ativo;
+    if (dto.email !== undefined) data.email = dto.email.trim().toLowerCase();
+    if (dto.telefone !== undefined) {
+      const tel = dto.telefone.replace(/\D/g, '');
+      data.telefone = tel || null;
     }
+    if (!Object.keys(data).length) {
+      throw new BadRequestException('Informe ao menos um campo para atualizar.');
+    }
+
     return this.prisma.pessoaAutorizada.update({
       where: { id },
-      data: { ativo: dto.ativo },
+      data,
     });
   }
 

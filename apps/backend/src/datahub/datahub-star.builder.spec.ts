@@ -6,7 +6,7 @@ describe('datahub-star.builder', () => {
     const raw: RawExtractBundle = {
       extraidoEm: new Date().toISOString(),
       duracaoMs: 12,
-      clientes: [{ id: 'c1', razaoSocial: 'Acme', tipo: 'PJ' }],
+      clientes: [{ id: 'c1', nome: 'Acme', tipo: 'PJ' }],
       solicitacoes: [
         {
           id: 's1',

@@ -7,9 +7,13 @@ import { cn } from "@/lib/utils";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { RlLogo } from "@/components/portal/rl-logo";
 import { Button } from "@/components/ui/button";
+import { NotificationBadge } from "@/components/ui/notification-badge";
 import { clearStaffSessionCookie } from "@/lib/auth-staff-cookie";
+import { canPollPendenciasCadastro } from "@/lib/financeiro/pendencias-cadastro-access";
+import { usePendenciasCadastroCount } from "@/stores/pendencias-cadastro-store";
 
-const NAV = [
+const NAV: { href: string; label: string; badge?: boolean }[] = [
+  { href: "/financeiro/cadastros-pendentes", label: "Novos cadastros", badge: true },
   { href: "/financeiro/apagar", label: "Contas a pagar" },
   { href: "/financeiro/areceber", label: "A receber" },
   { href: "/financeiro/conciliacao", label: "Conciliação bancária" },
@@ -22,8 +26,8 @@ export function FinanceiroHeader() {
   const router = useRouter();
   const user = useStaffAuthStore((s) => s.user);
   const clear = useStaffAuthStore((s) => s.clear);
-  const role = user?.role ?? "";
-  const allowed = role === "ADMIN" || role === "GERENTE";
+  const pendenciasCount = usePendenciasCadastroCount();
+  const allowed = canPollPendenciasCadastro(user);
 
   if (!allowed) {
     return (
@@ -45,28 +49,33 @@ export function FinanceiroHeader() {
         <Link href="/financeiro/apagar" className="flex items-center gap-3">
           <RlLogo />
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Financeiro</p>
+            <p className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
+              Financeiro
+              <NotificationBadge count={pendenciasCount} />
+            </p>
             <p className="text-sm font-semibold text-white">Tesouraria corporativa</p>
           </div>
         </Link>
         <nav className="flex flex-wrap items-center gap-1">
-          {NAV.map(({ href, label }) => (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "rounded-lg px-3 py-2 text-sm font-medium transition-colors min-h-11 flex items-center",
-                pathname === href || pathname.startsWith(href + "/")
-                  ? "bg-amber-500/20 text-amber-100"
-                  : "text-zinc-400 hover:bg-white/5 hover:text-white",
-              )}
-            >
-              {label}
-            </Link>
-          ))}
+          {NAV.map(({ href, label, badge }) => {
+            const active = pathname === href || pathname.startsWith(href + "/");
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  "flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  active ? "bg-amber-500/20 text-amber-100" : "text-zinc-400 hover:bg-white/5 hover:text-white",
+                )}
+              >
+                <span>{label}</span>
+                {badge ? <NotificationBadge count={pendenciasCount} /> : null}
+              </Link>
+            );
+          })}
           <Link
             href="/cockpit/executivo"
-            className="rounded-lg px-3 py-2 text-sm text-zinc-500 hover:text-zinc-300 min-h-11 flex items-center"
+            className="flex min-h-11 items-center rounded-lg px-3 py-2 text-sm text-zinc-500 hover:text-zinc-300"
           >
             Cockpit exec.
           </Link>
