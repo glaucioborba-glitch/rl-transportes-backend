@@ -26,11 +26,7 @@ npm run doctor:win       # diagnóstico de portas/.env/health
 - **Staff:** cookies HttpOnly `rl_at`/`rl_rt` — `AUTH_HTTP_ONLY_COOKIES=1` + BFF `/api/auth/*`
 - **Portal cliente:** cookies `rl_pat`/`rl_prt` — `PORTAL_HTTP_ONLY_COOKIES=1` + `NEXT_PUBLIC_PORTAL_COOKIE_AUTH=1` + BFF `/api/portal/*`
 
-Credenciais QA: `credenciais-teste-portais.txt`
-
-## Faturamento (Gate-v2 vs TOS)
-
-Ver matriz de decisão: [docs/BILLING-MATRIX.md](docs/BILLING-MATRIX.md)
+Credenciais QA: após `npm run db:seed`, use o usuário **ADMIN** e o cliente portal **Cliente QA · Portal Web** documentados no output do seed (`apps/backend/prisma/seed.ts`).
 
 ## Scripts úteis
 
@@ -40,6 +36,7 @@ Ver matriz de decisão: [docs/BILLING-MATRIX.md](docs/BILLING-MATRIX.md)
 | `npm run ci:test` | validate, build, test, e2e backend, build web |
 | `npm run build:all` | build backend + frontend |
 
-## Documentação de correções
+## Documentação
 
-Implementações de segurança/confiabilidade: `CORRECOES-APLICADAS.txt`
+- Matriz de faturamento: [docs/BILLING-MATRIX.md](docs/BILLING-MATRIX.md)
+- Compliance: [docs/RL_COMPLIANCE_INTERNAL_CONTROLS.md](docs/RL_COMPLIANCE_INTERNAL_CONTROLS.md)

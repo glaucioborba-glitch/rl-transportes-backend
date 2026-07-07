@@ -98,19 +98,3 @@ jobs:
           NEXT_PUBLIC_PORTAL_COOKIE_AUTH: "0"
           E2E_MOCK_AUTH: "1"
           NEXT_PUBLIC_E2E_MOCK_AUTH: "1"
-
-  code-export:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: Gerar PROJETO-CODIGO-COMPLETO.txt
-        run: node scripts/dump-sources.mjs > PROJETO-CODIGO-COMPLETO-ci.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: projeto-codigo-completo
-          path: PROJETO-CODIGO-COMPLETO-ci.txt
-          retention-days: 14

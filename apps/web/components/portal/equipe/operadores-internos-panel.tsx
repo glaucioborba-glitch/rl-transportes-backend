@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   ApiError,
   portalCriarPessoaAutorizada,
@@ -105,42 +106,59 @@ export function OperadoresInternosPanel({ clienteId, podeGerenciar }: Operadores
       ) : (
         <form
           onSubmit={(e) => void onSubmit(e)}
-          className="grid gap-3 rounded-lg border border-white/10 bg-zinc-950/40 p-4 sm:grid-cols-2"
+          className="space-y-3 rounded-lg border border-white/10 bg-zinc-950/40 p-4"
         >
-          <div className="space-y-1 sm:col-span-2">
-            <label className="text-xs text-muted-foreground">Nome completo</label>
-            <Input value={nome} onChange={(e) => setNome(e.target.value)} required />
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-x-4 gap-y-2">
+            {/* Linha 1: Nome (8) + CPF (4) */}
+            <div className="min-w-0 md:col-span-8">
+              <Label className="text-xs text-muted-foreground">Nome completo</Label>
+              <Input
+                placeholder="Nome do colaborador"
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                required
+              />
+            </div>
+            <div className="min-w-0 md:col-span-4">
+              <Label className="text-xs text-muted-foreground">CPF</Label>
+              <Input
+                value={cpf}
+                onChange={(e) => setCpf(formatCpfBr(e.target.value))}
+                inputMode="numeric"
+                placeholder="000.000.000-00"
+                required
+              />
+            </div>
+
+            {/* Linha 2: E-mail (6) + Telefone (6) */}
+            <div className="min-w-0 md:col-span-6">
+              <Label className="text-xs text-muted-foreground">E-mail</Label>
+              <Input
+                type="email"
+                placeholder="email@empresa.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="min-w-0 md:col-span-6">
+              <Label className="text-xs text-muted-foreground">Telefone (WhatsApp)</Label>
+              <Input
+                value={telefone}
+                onChange={(e) => setTelefone(formatPhoneBr(e.target.value))}
+                inputMode="tel"
+                placeholder="(00) 00000-0000"
+                required
+              />
+            </div>
           </div>
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">CPF</label>
-            <Input
-              value={cpf}
-              onChange={(e) => setCpf(formatCpfBr(e.target.value))}
-              inputMode="numeric"
-              placeholder="000.000.000-00"
-              required
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">E-mail</label>
-            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          </div>
-          <div className="space-y-1 sm:col-span-2">
-            <label className="text-xs text-muted-foreground">Telefone (WhatsApp)</label>
-            <Input
-              value={telefone}
-              onChange={(e) => setTelefone(formatPhoneBr(e.target.value))}
-              inputMode="tel"
-              required
-            />
-          </div>
-          <div className="space-y-2 sm:col-span-2">
+          <div className="space-y-2">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Permissões operacionais
             </p>
             <PermissoesOperacionaisFields value={permissoes} onChange={setPermissoes} />
           </div>
-          <div className="sm:col-span-2">
+          <div>
             <Button type="submit" disabled={saving}>
               {saving ? "Salvando…" : "Adicionar operador"}
             </Button>

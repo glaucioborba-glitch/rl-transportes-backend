@@ -335,7 +335,7 @@ async function main() {
     },
   });
 
-  console.log(`Seed OK: ADMIN ${email}; persona QA (CLIENTE portal, GERENTE, OPERADORES + solicitação). Ver credenciais-teste-portais.txt.`);
+  console.log(`Seed OK: ADMIN ${email}; persona QA (CLIENTE portal, GERENTE, OPERADORES + solicitação). Credenciais no topo de apps/backend/prisma/seed.ts.`);
 }
 
 main()

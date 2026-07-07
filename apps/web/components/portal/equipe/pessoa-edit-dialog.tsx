@@ -6,12 +6,12 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   ApiError,
   portalAtualizarPessoaAutorizada,
@@ -52,7 +52,7 @@ export function PessoaEditDialog({ pessoa, open, onClose, onSaved }: PessoaEditD
       .finally(() => setLoading(false));
   }, [open, pessoa]);
 
-  async function handleSave() {
+  async function salvarEdicao() {
     if (!pessoa) return;
     const tel = telefone.replace(/\D/g, "");
     if (!email.trim() || !/^\S+@\S+\.\S+$/.test(email.trim())) {
@@ -84,12 +84,9 @@ export function PessoaEditDialog({ pessoa, open, onClose, onSaved }: PessoaEditD
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Editar permissões</DialogTitle>
-          <DialogDescription>
-            {pessoa ? `${pessoa.nome} · ajuste contato e permissões operacionais.` : ""}
-          </DialogDescription>
+          <DialogTitle>Editar Permissões — {pessoa?.nome}</DialogTitle>
         </DialogHeader>
 
         {loading ? (
@@ -98,34 +95,42 @@ export function PessoaEditDialog({ pessoa, open, onClose, onSaved }: PessoaEditD
             Carregando…
           </div>
         ) : (
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">E-mail</label>
-              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>E-mail</Label>
+                <Input
+                  type="email"
+                  className="mt-1.5"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Telefone</Label>
+                <Input
+                  className="mt-1.5"
+                  value={telefone}
+                  onChange={(e) => setTelefone(formatPhoneBr(e.target.value))}
+                  inputMode="tel"
+                />
+              </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Telefone</label>
-              <Input
-                value={telefone}
-                onChange={(e) => setTelefone(formatPhoneBr(e.target.value))}
-                inputMode="tel"
-              />
+            <div className="mt-4">
+              <Label className="text-xs uppercase">Permissões Operacionais</Label>
+              <div className="mt-2">
+                <PermissoesOperacionaisFields value={permissoes} onChange={setPermissoes} />
+              </div>
             </div>
-            <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Permissões operacionais
-              </p>
-              <PermissoesOperacionaisFields value={permissoes} onChange={setPermissoes} />
-            </div>
-          </div>
+          </>
         )}
 
         <DialogFooter className="gap-2 sm:gap-0">
           <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
-          <Button type="button" onClick={() => void handleSave()} disabled={saving || loading}>
-            {saving ? "Salvando…" : "Salvar alterações"}
+          <Button type="button" onClick={() => void salvarEdicao()} disabled={saving || loading}>
+            {saving ? "Salvando…" : "Salvar Alterações"}
           </Button>
         </DialogFooter>
       </DialogContent>

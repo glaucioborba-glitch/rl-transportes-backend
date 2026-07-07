@@ -48,7 +48,7 @@ function mensagemListaVazia(escopo: SolicitacoesEscopo, filtrosAvancados: boolea
 }
 
 export default function SolicitacoesPage() {
-  const [filtroAtivo, setFiltroAtivo] = useState<SolicitacoesEscopo>("minhas");
+  const [filtroAtivo, setFiltroAtivo] = useState<SolicitacoesEscopo>("todas");
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState("");
   const [protocolo, setProtocolo] = useState("");
