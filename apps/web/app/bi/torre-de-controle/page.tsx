@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BiWorkspace } from "@/components/bi/bi-workspace";
 import { TorreControlePanel } from "@/components/bi/torre-controle-panel";
 import { fetchTorreControle } from "@/lib/api/bi-analytics-client";
 import type { TorreControleResponse } from "@/lib/api/bi-analytics-types";
@@ -38,19 +37,19 @@ export default function TorreControlePage() {
 
   if (role && role !== "ADMIN") {
     return (
-      <BiWorkspace>
+      <div>
         <p className="text-sm text-amber-400">Torre de Controle restrita a ADMIN.</p>
-      </BiWorkspace>
+      </div>
     );
   }
 
   return (
-    <BiWorkspace>
+    <div>
       {loading || !data ? (
         <p className="text-sm text-zinc-500">Carregando Torre de Controle…</p>
       ) : (
         <TorreControlePanel data={data} />
       )}
-    </BiWorkspace>
+    </div>
   );
 }

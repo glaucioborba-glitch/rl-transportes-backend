@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BiWorkspace } from "@/components/bi/bi-workspace";
 import { BiSection } from "@/components/bi/bi-section";
 import { ForecastLineChart, type ForecastSeries } from "@/components/bi/forecast-line-chart";
 import { SaturacaoProjectionChart } from "@/components/bi/saturacao-projection-chart";
@@ -277,14 +276,14 @@ export default function BiOperacionalPage() {
 
   if (!allowed) {
     return (
-      <BiWorkspace>
+      <div>
         <p className="text-center text-amber-400">Acesso restrito.</p>
-      </BiWorkspace>
+      </div>
     );
   }
 
   return (
-    <BiWorkspace>
+    <div>
       <div className="flex flex-col gap-6 lg:flex-row">
         <aside className="lg:w-44 lg:shrink-0">
           <div className="sticky top-24 rounded-xl border border-white/10 bg-[#0a1018] p-3 text-[11px]">
@@ -384,6 +383,6 @@ export default function BiOperacionalPage() {
           </BiSection>
         </div>
       </div>
-    </BiWorkspace>
+    </div>
   );
 }

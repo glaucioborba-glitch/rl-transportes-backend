@@ -344,6 +344,12 @@ model Tenant {
   tabelasPreco TabelaPreco[]
   bloqueiosContainer BloqueioContainer[]
   arquivosBancarios  ArquivoBancario[]
+  cadastrosColaboradores CadastroColaborador[]
+  cadastrosTransportadoras CadastroTransportadora[]
+  cadastrosMotoristas CadastroMotorista[]
+  cadastrosTiposContainer CadastroTipoContainer[]
+  cadastrosContainerCache CadastroContainerCache[]
+  cadastrosEquipamentos CadastroEquipamento[]
 
   @@index([status])
   @@map("tenants")
@@ -376,6 +382,7 @@ model User {
   containerEventsCriados ContainerEvent[] @relation("ContainerEventCriador")
   motoristaPerfil       Motorista?
   transportadoraAutorizada TransportadoraAutorizada?
+  equipamentoVinculos   CadastroEquipamentoVinculo[] @relation("EquipamentoVinculoOperador")
 
   @@unique([tenantId, cpfCnpj])
   @@unique([tenantId, email])
@@ -1570,6 +1577,191 @@ model FeatureFlag {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("feature_flags")
+}
+
+/// MDM — colaborador (fonte única para RH, Gate e Financeiro).
+model CadastroColaborador {
+  id        String   @id @default(uuid())
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  nome           String   @db.VarChar(255)
+  cpf            String   @db.VarChar(11)
+  matricula      String?  @db.VarChar(32)
+  cargo          String?  @db.VarChar(120)
+  departamento   String?  @db.VarChar(64)
+  vinculo        String   @default("CLT") @db.VarChar(32)
+  status         String   @default("ATIVO") @db.VarChar(32)
+  dataAdmissao   DateTime @map("data_admissao") @db.Date
+  gestorId       String?  @map("gestor_id") @db.VarChar(36)
+  gestor         CadastroColaborador?  @relation("ColaboradorGestor", fields: [gestorId], references: [id], onDelete: SetNull)
+  subordinados   CadastroColaborador[] @relation("ColaboradorGestor")
+
+  centroCustoCodigo String? @map("centro_custo_codigo") @db.VarChar(32)
+  centroCustoNome   String? @map("centro_custo_nome") @db.VarChar(120)
+
+  dados     Json     @default("{}")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, cpf])
+  @@index([tenantId, status])
+  @@index([tenantId, vinculo])
+  @@index([gestorId])
+  @@map("cadastros_colaboradores")
+}
+
+/// MDM — transportadora (fonte única para Gate CPO e Dispatch).
+model CadastroTransportadora {
+  id        String   @id @default(uuid())
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  razaoSocial    String    @map("razao_social") @db.VarChar(255)
+  nomeFantasia   String?   @map("nome_fantasia") @db.VarChar(255)
+  cnpj           String    @db.VarChar(14)
+  rntrc          String?   @db.VarChar(8)
+  rntrcValidade  DateTime? @map("rntrc_validade") @db.Date
+  ie             String?   @db.VarChar(32)
+  email          String?   @db.VarChar(255)
+  telefone       String?   @db.VarChar(20)
+  cidade         String?   @db.VarChar(120)
+  uf             String?   @db.VarChar(2)
+  ativo          Boolean   @default(true)
+
+  dados     Json     @default("{}")
+  motoristas CadastroMotorista[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, cnpj])
+  @@index([tenantId, ativo])
+  @@index([rntrc])
+  @@map("cadastros_transportadoras")
+}
+
+/// MDM — motorista vinculado a transportadora (fonte única para Gate CPO).
+model CadastroMotorista {
+  id        String   @id @default(uuid())
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  nome              String   @db.VarChar(255)
+  cpf               String   @db.VarChar(11)
+  transportadoraId  String   @map("transportadora_id") @db.VarChar(36)
+  transportadora    CadastroTransportadora @relation(fields: [transportadoraId], references: [id], onDelete: Restrict)
+
+  cnhNumero    String?   @map("cnh_numero") @db.VarChar(20)
+  cnhCategoria String?   @map("cnh_categoria") @db.VarChar(4)
+  cnhValidade  DateTime? @map("cnh_validade") @db.Date
+  cnhUfEmissao String?   @map("cnh_uf_emissao") @db.VarChar(2)
+  celular      String?   @db.VarChar(20)
+  ativo        Boolean   @default(true)
+
+  dados     Json     @default("{}")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, cpf])
+  @@index([tenantId, ativo])
+  @@index([transportadoraId])
+  @@map("cadastros_motoristas")
+}
+
+/// MDM — catálogo de tipos de contêiner aceitos pelo terminal.
+model CadastroTipoContainer {
+  id           String   @id @default(uuid())
+  tenantId     String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  codigo       String   @db.VarChar(32)
+  nome         String   @db.VarChar(120)
+  tamanhos     Json     @default("[]")
+  tomadaReefer Boolean  @default(false) @map("tomada_reefer")
+  ativo        Boolean  @default(true)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId, ativo])
+  @@map("cadastros_tipos_container")
+}
+
+/// Cache leve de contêiner (número ISO + tipo + tamanho imutáveis).
+model CadastroContainerCache {
+  id               String   @id @default(uuid())
+  tenantId         String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  numeroIso        String   @map("numero_iso") @db.VarChar(11)
+  tipo             String?  @db.VarChar(64)
+  tamanho          String?  @db.VarChar(32)
+  primeiraPassagem DateTime @default(now()) @map("primeira_passagem")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, numeroIso])
+  @@index([numeroIso])
+  @@map("cadastros_container_cache")
+}
+
+/// MDM — equipamento de pátio (empilhadeira, reach stacker, RTG).
+model CadastroEquipamento {
+  id        String   @id @default(uuid())
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  codigo            String   @db.VarChar(32)
+  tipo              String   @db.VarChar(64)
+  marca             String?  @db.VarChar(120)
+  modelo            String?  @db.VarChar(120)
+  capacidade        String?  @db.VarChar(32)
+  alturaMaxima      String?  @map("altura_maxima") @db.VarChar(32)
+  status            String   @default("DISPONIVEL") @db.VarChar(32)
+  horimetro         Int      @default(0)
+  ultimaManutencao  DateTime? @map("ultima_manutencao") @db.Date
+  proximaManutencao DateTime? @map("proxima_manutencao") @db.Date
+  centroCusto       String?  @map("centro_custo") @db.VarChar(32)
+  observacoes       String?  @db.Text
+  ativo             Boolean  @default(true)
+  dados             Json     @default("{}")
+
+  vinculos CadastroEquipamentoVinculo[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId, status])
+  @@map("cadastros_equipamentos")
+}
+
+/// Vínculo operador → equipamento (login operacional).
+model CadastroEquipamentoVinculo {
+  id             String   @id @default(uuid())
+  tenantId       String   @default("default") @map("tenant_id") @db.VarChar(64)
+
+  equipamentoId  String   @map("equipamento_id")
+  equipamento    CadastroEquipamento @relation(fields: [equipamentoId], references: [id], onDelete: Restrict)
+  operadorId     String   @map("operador_id")
+  operador       User     @relation("EquipamentoVinculoOperador", fields: [operadorId], references: [id], onDelete: Restrict)
+
+  vinculadoEm    DateTime  @default(now()) @map("vinculado_em")
+  desvinculadoEm DateTime? @map("desvinculado_em")
+  ativo          Boolean   @default(true)
+
+  @@index([operadorId, ativo])
+  @@index([equipamentoId, ativo])
+  @@map("cadastros_equipamentos_vinculos")
 }
 
 /// Colaborador operacional cadastrado no módulo RH (workforce planning).

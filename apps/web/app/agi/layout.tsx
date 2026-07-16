@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { AgiShell } from "@/components/agi/agi-shell";
+import { IntranetShell } from "@/components/intranet/intranet-shell";
 
 export default function AgiLayout({ children }: { children: ReactNode }) {
-  return <AgiShell>{children}</AgiShell>;
+  return <IntranetShell>{children}</IntranetShell>;
 }

@@ -53,6 +53,33 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
+  experimental: {
+    optimizePackageImports: [
+      "lucide-react",
+      "@radix-ui/react-dialog",
+      "@radix-ui/react-dropdown-menu",
+      "@radix-ui/react-tabs",
+      "@radix-ui/react-alert-dialog",
+      "@radix-ui/react-accordion",
+      "@radix-ui/react-switch",
+      "recharts",
+      "@tremor/react",
+    ],
+  },
+  typescript: {
+    ignoreBuildErrors: false,
+  },
+  webpack: (config, { dev }) => {
+    if (dev) {
+      config.devtool = "cheap-module-source-map";
+      config.ignoreWarnings = [
+        ...(config.ignoreWarnings ?? []),
+        { module: /node_modules\/.*\/\.test\./ },
+        /Failed to parse source file/,
+      ];
+    }
+    return config;
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "cdn.rltransportes.com", pathname: "/**" },

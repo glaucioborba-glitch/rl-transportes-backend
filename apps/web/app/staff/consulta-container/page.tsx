@@ -10,6 +10,7 @@ import { ApiError, staffContainerRic, staffContainerTimeline } from "@/lib/api/s
 import type { ContainerTimelineResponse } from "@/lib/container-timeline";
 import { openRicPrintWindow } from "@/lib/ric-print";
 import { toast } from "@/lib/toast";
+import { ContainerNumber } from "@/components/ui/container-number";
 import { formatContainerISO, stripContainerISO } from "@/utils/containerFormatter";
 
 export default function ConsultaContainerPage() {
@@ -101,7 +102,7 @@ export default function ConsultaContainerPage() {
       {data ? (
         <Card className="border-white/10 bg-[#0b101c]/80">
           <CardHeader>
-            <CardTitle className="font-mono text-xl text-[var(--accent)]">{data.isoFormatado}</CardTitle>
+            <ContainerNumber value={data.isoFormatado} size="lg" showLabel={false} />
             <CardDescription className="text-zinc-500">
               {data.eventos.length} evento(s) · gerado {new Date(data.geradoEm).toLocaleString("pt-BR")}
             </CardDescription>

@@ -25,6 +25,8 @@
         "prisma:generate": "cd apps/backend && npx prisma generate",
         "db:migrate": "cd apps/backend && npx prisma migrate deploy",
         "db:seed": "cd apps/backend && npx prisma db seed",
+        "seed:all": "cd apps/backend && npm run seed",
+        "seed:clean": "cd apps/backend && npm run seed:clean",
         "db:setup": "npm run prisma:generate && npm run db:migrate && npm run db:seed",
         "setup:dev": "npm run docker:up && npm run db:setup"
     }

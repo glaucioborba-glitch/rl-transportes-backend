@@ -14,6 +14,7 @@ const STAFF_PATH_PREFIXES = [
   "/financeiro",
   "/rh",
   "/admin",
+  "/cadastros",
   "/bi",
   "/ssma",
   "/grc",
@@ -23,6 +24,7 @@ const STAFF_PATH_PREFIXES = [
   "/aog",
   "/agi",
   "/staff",
+  "/intranet",
 ];
 
 function isStaffArea(path: string | null): boolean {

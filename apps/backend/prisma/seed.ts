@@ -299,6 +299,25 @@ async function main() {
     },
   });
 
+  const gateMail = process.env.SEED_QA_OPERADOR_GATE_EMAIL ?? 'operador.gate.qa@rl.local.test';
+  const gatePwd = process.env.SEED_QA_OPERADOR_GATE_PASSWORD ?? 'OpsGate@QA2026';
+  const gateDoc = process.env.SEED_QA_OPERADOR_GATE_CPF_CNPJ ?? '11000000000450';
+  await prisma.user.upsert({
+    where: { tenantId_email: { tenantId: DEFAULT_TENANT, email: gateMail } },
+    create: {
+      tenantId: DEFAULT_TENANT,
+      cpfCnpj: gateDoc,
+      email: gateMail,
+      password: await bcrypt.hash(gatePwd, BCRYPT_ROUNDS),
+      role: Role.OPERADOR_GATE,
+    },
+    update: {
+      cpfCnpj: gateDoc,
+      password: await bcrypt.hash(gatePwd, BCRYPT_ROUNDS),
+      role: Role.OPERADOR_GATE,
+    },
+  });
+
   await prisma.capacidadeTurnoTerminal.upsert({
     where: { turno: TurnoAgendamento.MANHA },
     create: { turno: TurnoAgendamento.MANHA, limiteContainers: 40 },

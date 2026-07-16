@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
-import { IsOptional, IsString, IsUUID, MaxLength, MinLength, Matches } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsArray, IsISO8601, IsOptional, IsString, IsUUID, MaxLength, MinLength, Matches } from 'class-validator';
 import { normalizeCpfDigits } from '../../common/utils/data-sanitize';
 
 export class CreatePortariaDto {
@@ -36,4 +36,27 @@ export class CreatePortariaDto {
   @IsString()
   @MaxLength(20)
   motoristaTelefone?: string;
+
+  @ApiPropertyOptional({ description: 'Evidências fotográficas (data URL ou metadados JSON)' })
+  @IsOptional()
+  @IsArray()
+  @Type(() => String)
+  fotosCaminhao?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsArray()
+  @Type(() => String)
+  fotosContainer?: string[];
+
+  @ApiPropertyOptional({ description: 'CT-e / documento de transporte' })
+  @IsOptional()
+  @IsArray()
+  @Type(() => String)
+  fotosDocumento?: string[];
+
+  @ApiPropertyOptional({ description: 'Instante do check-in na portaria (ISO 8601)' })
+  @IsOptional()
+  @IsISO8601()
+  timestamp?: string;
 }

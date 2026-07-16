@@ -166,6 +166,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly string[]> = {
     'solicitacoes:ler',
     'solicitacoes:atualizar',
     'solicitacoes:gate',
+    'solicitacoes:patio',
     'solicitacoes:saida',
     'agendamentos:ler',
     'dashboard:operacional',

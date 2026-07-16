@@ -1,6 +1,6 @@
 "use client";
 
-import { CockpitKpisPanel } from "@/components/cockpit/cockpit-kpis-panel";
+import { LazyCockpitKpisPanel as CockpitKpisPanel } from "@/components/lazy/heavy-charts";
 
 /** Dashboard executivo BI logístico — intranet operador (spec PR Cockpit Executivo). */
 export default function OperadorDashboardPage() {

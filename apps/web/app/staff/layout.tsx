@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { AdminWorkspace } from "@/components/admin/admin-workspace";
+import { IntranetShell } from "@/components/intranet/intranet-shell";
 
 export default function StaffLayout({ children }: { children: ReactNode }) {
-  return <AdminWorkspace>{children}</AdminWorkspace>;
+  return <IntranetShell>{children}</IntranetShell>;
 }

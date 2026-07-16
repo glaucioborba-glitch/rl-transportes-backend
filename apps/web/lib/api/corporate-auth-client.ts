@@ -6,6 +6,8 @@ export class ApiError extends Error {
     message: string,
     public status: number,
     public detail?: string,
+    public code?: string,
+    public url?: string,
   ) {
     super(message);
     this.name = "ApiError";

@@ -10,6 +10,9 @@ export default function OperadorLoginRedirect({
   const dest =
     typeof raw === "string" && raw.startsWith("/") && !raw.startsWith("//")
       ? raw
-      : "/operador/portaria";
+      : "/login/staff";
+  if (dest === "/login/staff") {
+    redirect("/login/staff");
+  }
   redirect(`/login/staff?next=${encodeURIComponent(dest)}`);
 }

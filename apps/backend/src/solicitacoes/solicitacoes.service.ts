@@ -256,6 +256,11 @@ export class SolicitacoesService {
         const existing = await tx.portaria.findUnique({
           where: { solicitacaoId: dto.solicitacaoId },
         });
+        const fotoData = {
+          ...(dto.fotosCaminhao?.length ? { fotosCaminhao: dto.fotosCaminhao } : {}),
+          ...(dto.fotosContainer?.length ? { fotosContainer: dto.fotosContainer } : {}),
+          ...(dto.fotosDocumento?.length ? { fotosLacre: dto.fotosDocumento } : {}),
+        };
         const row = existing
           ? await tx.portaria.update({
               where: { solicitacaoId: dto.solicitacaoId },
@@ -265,6 +270,7 @@ export class SolicitacoesService {
                 motoristaCpf: dto.motoristaCpf ?? null,
                 transportadoraNome: dto.transportadoraNome ?? null,
                 motoristaTelefone: dto.motoristaTelefone ?? null,
+                ...fotoData,
               },
             })
           : await tx.portaria.create({
@@ -275,6 +281,7 @@ export class SolicitacoesService {
                 motoristaCpf: dto.motoristaCpf ?? null,
                 transportadoraNome: dto.transportadoraNome ?? null,
                 motoristaTelefone: dto.motoristaTelefone ?? null,
+                ...fotoData,
               },
             });
 
@@ -303,7 +310,10 @@ export class SolicitacoesService {
             acao: existing ? AcaoAuditoria.UPDATE : AcaoAuditoria.INSERT,
             usuario: actorUserId,
             dadosAntes: existing !== null ? existing : undefined,
-            dadosDepois: row,
+            dadosDepois: {
+              ...row,
+              ...(dto.timestamp ? { checkinTimestamp: dto.timestamp } : {}),
+            },
           },
           tx,
         );

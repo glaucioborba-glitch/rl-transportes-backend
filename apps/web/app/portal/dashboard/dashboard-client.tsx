@@ -18,7 +18,8 @@ import { usePortalDashboard } from "@/hooks/use-portal-dashboard";
 import { usePortalHealth } from "@/hooks/use-portal-health";
 import { deriveTrackingLabel, formatDateTime, operationTypeLabel } from "@/lib/portal-tracking";
 import { collectSolicitacaoContainerISOs } from "@/lib/container-display";
-import { OperationCardIdentity } from "@/components/shared/operation-identity";
+import { ContainerNumber } from "@/components/ui/container-number";
+import { ProtocolRefLabel } from "@/components/shared/operation-identity";
 import { PortalContainerTimelineSlideOver } from "@/components/portal/container-timeline-slideover";
 import type { SolicitacaoRow } from "@/lib/api/portal-client";
 import { CalendarClock, Container, Gauge, LayoutGrid, TrendingDown, TrendingUp, WalletCards } from "lucide-react";
@@ -381,20 +382,28 @@ export function PortalDashboardClient() {
                       className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div className="min-w-0 flex-1">
-                        <OperationCardIdentity
-                          isos={collectSolicitacaoContainerISOs(s)}
-                          protocolo={s.protocolo}
-                          size="md"
-                          onContainerClick={openContainerTimeline}
+                        <button
+                          type="button"
+                          className="text-left"
+                          onClick={() => {
+                            const iso = collectSolicitacaoContainerISOs(s)[0];
+                            if (iso) openContainerTimeline(iso);
+                          }}
                         >
-                          <div className="mt-1 flex flex-wrap items-center gap-2">
-                            <StatusBadge status={s.status} />
-                            <span className="text-xs text-slate-500">{label}</span>
-                          </div>
-                          <p className="text-xs text-slate-500">
-                            {formatDateTime(s.createdAt)} · {operationTypeLabel(s)}
-                          </p>
-                        </OperationCardIdentity>
+                          <ContainerNumber
+                            value={collectSolicitacaoContainerISOs(s)[0] ?? "—"}
+                            showLabel={false}
+                            size="md"
+                          />
+                        </button>
+                        <ProtocolRefLabel protocolo={s.protocolo} className="mt-1" />
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <StatusBadge status={s.status} />
+                          <span className="text-xs text-slate-500">{label}</span>
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          {formatDateTime(s.createdAt)} · {operationTypeLabel(s)}
+                        </p>
                       </div>
                       <Button variant="outline" size="sm" asChild>
                         <Link href={`/portal/solicitacoes/${s.id}`}>Ver detalhes</Link>
@@ -471,15 +480,21 @@ export function PortalDashboardClient() {
                 rows={data.recent.items}
                 getRowKey={(r) => r.id}
                 renderCell={(r, key) => {
-                  if (key === "container")
+                  if (key === "container") {
+                    const iso = collectSolicitacaoContainerISOs(r)[0] ?? "—";
                     return (
-                      <OperationCardIdentity
-                        isos={collectSolicitacaoContainerISOs(r)}
-                        protocolo={r.protocolo}
-                        size="sm"
-                        onContainerClick={openContainerTimeline}
-                      />
+                      <button
+                        type="button"
+                        className="text-left"
+                        onClick={() => {
+                          const raw = collectSolicitacaoContainerISOs(r)[0];
+                          if (raw) openContainerTimeline(raw);
+                        }}
+                      >
+                        <ContainerNumber value={iso} showLabel={false} size="sm" />
+                      </button>
                     );
+                  }
                   if (key === "status") return <StatusBadge status={r.status} />;
                   if (key === "tipo") return operationTypeLabel(r);
                   if (key === "createdAt") return formatDateTime(r.createdAt);

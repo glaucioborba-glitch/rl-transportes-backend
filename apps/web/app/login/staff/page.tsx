@@ -15,6 +15,7 @@ import { toast } from "@/lib/toast";
 import { isStaffRole, useStaffAuthStore } from "@/stores/staff-auth-store";
 import { RlLogo } from "@/components/portal/rl-logo";
 import { formatCpfCnpjBr } from "@/lib/format-cpf-cnpj-br";
+import { resolveStaffLoginDest } from "@/lib/staff-redirect";
 
 function StaffLoginInner() {
   const router = useRouter();
@@ -47,11 +48,7 @@ function StaffLoginInner() {
       }
       setSession(null, null, result.user);
       toast.success("Sessão operacional iniciada");
-      const next = searchParams.get("next");
-      const dest =
-        next && next.startsWith("/") && !next.startsWith("//")
-          ? next
-          : "/operador/portaria";
+      const dest = resolveStaffLoginDest(result.user.role, searchParams.get("next"));
       router.push(dest);
     } catch (error) {
       if (error instanceof ApiError && error.status === 400) {

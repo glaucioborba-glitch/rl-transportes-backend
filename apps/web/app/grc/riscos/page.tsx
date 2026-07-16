@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { GrcWorkspace } from "@/components/grc/grc-workspace";
 import { GrcSection } from "@/components/grc/grc-section";
 import { RiskRegisterTable } from "@/components/grc/risk-register-table";
 import { Iso31000RiskMatrix } from "@/components/grc/iso31000-risk-matrix";
@@ -87,7 +86,7 @@ export default function GrcRiscosPage() {
   }, [conflitos, estr, fat, comRec, regTick]);
 
   return (
-    <GrcWorkspace>
+    <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-white">Gestão de riscos — ISO 31000</h1>
@@ -139,7 +138,7 @@ export default function GrcRiscosPage() {
           <RiskTreatmentBoard />
         </GrcSection>
       </div>
-    </GrcWorkspace>
+    </div>
   );
 }
 

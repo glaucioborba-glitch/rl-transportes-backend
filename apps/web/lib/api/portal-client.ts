@@ -1401,6 +1401,7 @@ export type PortalDashboardConsolidatedResponse = {
     tipo: string;
     cpfCnpj: string;
     emailNfse: string | null;
+    inscricaoEstadual?: string | null;
     endereco: {
       cep: string;
       logradouro: string;

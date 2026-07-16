@@ -13,7 +13,23 @@ import { assertPortalClienteTokenPayload } from '../cx-portais/strategies/jwt-po
 import type { PortalAccessTokenPayload } from '../cx-portais/types/cx-portal.types';
 import { SessionService } from '../auth/session/session.service';
 import type { JwtPayload } from '../auth/strategies/jwt.strategy';
+import { AUTH_ACCESS_COOKIE } from '../auth/auth-cookie.constants';
 import { PdfOperacionalV2Service } from './pdf-operacional-v2.service';
+
+function extractAccessToken(req: Request): string | null {
+  const raw = (req.headers.authorization ?? '').trim();
+  const bearer = /^Bearer\s+(.+)$/i.exec(raw);
+  if (bearer?.[1]?.trim()) return bearer[1].trim();
+
+  if (process.env.AUTH_HTTP_ONLY_COOKIES === '1') {
+    const cookie = (req as Request & { cookies?: Record<string, string> }).cookies?.[
+      AUTH_ACCESS_COOKIE
+    ];
+    if (cookie?.trim()) return cookie.trim();
+  }
+
+  return null;
+}
 
 /** Portal (CLIENTE dono) ou staff com papéis operacionais. */
 @Injectable()
@@ -29,10 +45,8 @@ export class PdfSolicitacaoV2AccessGuard implements CanActivate {
     const solicitacaoId = req.params['id'];
     if (!solicitacaoId) throw new ForbiddenException();
 
-    const raw = (req.headers.authorization ?? '').trim();
-    const m = /^Bearer\s+(.+)$/i.exec(raw);
-    if (!m?.[1]?.trim()) throw new UnauthorizedException('Bearer obrigatório');
-    const token = m[1].trim();
+    const token = extractAccessToken(req);
+    if (!token) throw new UnauthorizedException('Bearer obrigatório');
 
     try {
       const pl = this.portalJwt.verifyAccess(token) as PortalAccessTokenPayload;

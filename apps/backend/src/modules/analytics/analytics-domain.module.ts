@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { BiAnalyticsModule } from '../../bi-analytics/bi-analytics.module';
 import { CockpitOperacoesModule } from '../../cockpit-operacoes/cockpit-operacoes.module';
 import { ComercialPricingModule } from '../../comercial-pricing/comercial-pricing.module';
-import { DashboardModule } from '../../dashboard/dashboard.module';
 import { DashboardFinanceiroModule } from '../../dashboard-financeiro/dashboard-financeiro.module';
 import { DashboardPerformanceModule } from '../../dashboard-performance/dashboard-performance.module';
 import { DatahubModule } from '../../datahub/datahub.module';
@@ -19,7 +18,6 @@ import { RelatoriosModule } from '../../relatorios/relatorios.module';
     BiAnalyticsModule,
     DatahubModule,
     RelatoriosModule,
-    DashboardModule,
     DashboardFinanceiroModule,
     DashboardPerformanceModule,
     CockpitOperacoesModule,

@@ -33,6 +33,7 @@ import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { GateCheckInDto } from './dto/gate-checkin.dto';
 import { GateCheckOutDto } from './dto/gate-checkout.dto';
+import { GateRetornarEntradaDto, GateRejeitarOsDto } from './dto/gate-cockpit-action.dto';
 import { GateV2Service } from './gate.service';
 import { VistoriaService } from '../vistoria/vistoria.service';
 
@@ -67,6 +68,54 @@ export class GateV2Controller {
   @Permissions('solicitacoes:ler')
   metricasResumo() {
     return this.gate.metricasResumo();
+  }
+
+  @Get('cockpit')
+  @ApiOperation({ summary: 'Cockpit CPO — fila, operação, pátio, despacho, OS e dashboard' })
+  @Roles(...GATE_ROLES)
+  @Permissions('solicitacoes:ler')
+  cockpit(@Query('dataRef') dataRef?: string) {
+    return this.gate.listarCockpit(dataRef);
+  }
+
+  @Post('solicitacoes/:id/direcionar-operacao')
+  @ApiOperation({ summary: 'Direcionar caminhão da fila de chegada para operação (empilhadeira)' })
+  @Roles(...GATE_ROLES)
+  @Permissions('solicitacoes:gate')
+  direcionarOperacao(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.gate.direcionarOperacao(id, user.id);
+  }
+
+  @Post('solicitacoes/:id/retornar-entrada')
+  @ApiOperation({ summary: 'Devolver caminhão — entrada negada no gate' })
+  @Roles(...GATE_ROLES)
+  @Permissions('solicitacoes:gate')
+  retornarEntrada(
+    @Param('id') id: string,
+    @Body() body: GateRetornarEntradaDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.gate.retornarEntrada(id, user.id, body.motivo);
+  }
+
+  @Post('check-ins/:gateInId/aprovar-os')
+  @ApiOperation({ summary: 'Aprovar ordem de serviço (ADMIN/GERENTE)' })
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('solicitacoes:gate')
+  aprovarOs(@Param('gateInId') gateInId: string, @CurrentUser() user: AuthUser) {
+    return this.gate.aprovarOs(gateInId, user.id, user.role);
+  }
+
+  @Post('check-ins/:gateInId/rejeitar-os')
+  @ApiOperation({ summary: 'Rejeitar ordem de serviço com motivo (ADMIN/GERENTE)' })
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('solicitacoes:gate')
+  rejeitarOs(
+    @Param('gateInId') gateInId: string,
+    @Body() body: GateRejeitarOsDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.gate.rejeitarOs(gateInId, user.id, user.role, body.motivo);
   }
 
   @Get('fila')

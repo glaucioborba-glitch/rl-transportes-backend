@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { BiWorkspace } from "@/components/bi/bi-workspace";
 import { BiSection } from "@/components/bi/bi-section";
 import { RoiCard } from "@/components/bi/roi-card";
 import { WhatIfConfigurator } from "@/components/bi/what-if-configurator";
@@ -162,14 +161,14 @@ export default function BiCorporativoPage() {
 
   if (!allowed) {
     return (
-      <BiWorkspace>
+      <div>
         <p className="text-center text-amber-400">Acesso restrito.</p>
-      </BiWorkspace>
+      </div>
     );
   }
 
   return (
-      <BiWorkspace>
+      <div>
         <div className="flex flex-col gap-6 lg:flex-row">
           <aside className="lg:w-44 lg:shrink-0">
             <div className="sticky top-24 rounded-xl border border-white/10 bg-[#0a1018] p-3 text-[11px]">
@@ -294,6 +293,6 @@ export default function BiCorporativoPage() {
             </BiSection>
           </div>
         </div>
-      </BiWorkspace>
+      </div>
     );
 }

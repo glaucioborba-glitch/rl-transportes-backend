@@ -6,7 +6,19 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { AcaoAuditoria, ModalidadeTransporte, Prisma, StatusSolicitacao, TipoCaminhao, TipoOperacaoSolicitacaoIntent } from '@prisma/client';
+import {
+  AcaoAuditoria,
+  ModalidadeTransporte,
+  PatioStatus,
+  Prisma,
+  Role,
+  StatusSolicitacao,
+  StatusContainer,
+  TipoCaminhao,
+  TipoOperacaoAgendamento,
+  TipoOperacaoSolicitacaoIntent,
+  TurnoAgendamento,
+} from '@prisma/client';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { normalizeContainerIso, normalizeCpfDigits, normalizePlate, stripContainerIsoCanonical } from '../common/utils/data-sanitize';
 import { isValidPlacaMercosulExtended } from '../common/utils/mercosul';
@@ -226,6 +238,7 @@ export class GateV2Service {
     const allowed: StatusSolicitacao[] = [
       StatusSolicitacao.AGUARDANDO_GATE_IN,
       StatusSolicitacao.APROVADO,
+      StatusSolicitacao.EM_EXECUCAO,
     ];
     if (!allowed.includes(sol.status)) {
       throw new BadRequestException(
@@ -825,5 +838,735 @@ export class GateV2Service {
         tipoOperacaoGate: agTerminal?.tipoOperacao ?? null,
       },
     };
+  }
+
+  private parseOsMeta(divergenciasJson: unknown): {
+    osStatus: 'PENDENTE' | 'EM_EXECUCAO' | 'APROVADA' | 'REJEITADA';
+    motivo?: string;
+  } {
+    const list = this.asDivList(divergenciasJson);
+    const meta = list.find((d) => d.tipo === 'OUTRA' && d.antes === 'OS_META');
+    if (meta?.depois) {
+      try {
+        const parsed = JSON.parse(meta.depois) as { osStatus?: string; motivo?: string };
+        const st = parsed.osStatus;
+        if (st === 'APROVADA' || st === 'REJEITADA' || st === 'EM_EXECUCAO') {
+          return { osStatus: st, motivo: parsed.motivo };
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    return { osStatus: 'PENDENTE' };
+  }
+
+  private mergeOsMeta(
+    divergenciasJson: unknown,
+    patch: { osStatus: string; motivo?: string },
+  ): GateDivergenciaItemDto[] {
+    const list = this.asDivList(divergenciasJson).filter(
+      (d) => !(d.tipo === 'OUTRA' && d.antes === 'OS_META'),
+    );
+    list.push({
+      tipo: 'OUTRA',
+      antes: 'OS_META',
+      depois: JSON.stringify({ osStatus: patch.osStatus, motivo: patch.motivo }),
+    });
+    return list;
+  }
+
+  private deriveOsStatusFromPatio(
+    patioUnits: { status: PatioStatus }[],
+    meta: { osStatus: string },
+  ): 'PENDENTE' | 'EM_EXECUCAO' | 'APROVADA' | 'REJEITADA' {
+    if (meta.osStatus === 'APROVADA') return 'APROVADA';
+    if (meta.osStatus === 'REJEITADA') return 'REJEITADA';
+    const moving = patioUnits.some((u) => u.status === PatioStatus.MOVIMENTANDO);
+    const stored = patioUnits.some((u) => u.status === PatioStatus.ESTOCADO);
+    if (moving) return 'EM_EXECUCAO';
+    if (stored && meta.osStatus === 'PENDENTE') return 'PENDENTE';
+    return meta.osStatus as 'PENDENTE' | 'EM_EXECUCAO';
+  }
+
+  async listarCockpit(dataRefRaw?: string) {
+    const dataRef = this.resolveDataRef(dataRefRaw);
+    const [filaChegadaRows, operacaoRows, despachoRows, osRows, patioInv, patioUnidadesRows] = await Promise.all([
+      this.prisma.solicitacao.findMany({
+        where: {
+          deletedAt: null,
+          transporteSolicitacao: { isNot: null },
+          portaria: { isNot: null },
+          status: StatusSolicitacao.EM_EXECUCAO,
+          gateCheckIns: { none: { checkOut: null } },
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 100,
+        include: {
+          cliente: { select: { id: true, razaoSocial: true } },
+          portaria: true,
+          transporteSolicitacao: { select: { tipoCaminhao: true } },
+          containersSolicitacao: {
+            orderBy: { ordem: 'asc' },
+            select: { unidade: true, tipo: true, tamanho: true, status: true },
+          },
+          unidades: { select: { numeroIso: true, tipo: true } },
+        },
+      }),
+      this.prisma.solicitacao.findMany({
+        where: {
+          deletedAt: null,
+          status: StatusSolicitacao.EM_PATIO,
+          gateCheckIns: { some: { checkOut: null } },
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 100,
+        include: {
+          cliente: { select: { id: true, razaoSocial: true } },
+          portaria: { select: { placaVeiculo: true, motoristaNome: true } },
+          transporteSolicitacao: { select: { tipoCaminhao: true } },
+          containersSolicitacao: {
+            orderBy: { ordem: 'asc' },
+            select: { unidade: true, tipo: true, tamanho: true, status: true },
+          },
+          unidades: { select: { numeroIso: true, tipo: true } },
+          gateCheckIns: {
+            where: { checkOut: null },
+            take: 1,
+            include: {
+              operador: { select: { id: true, email: true } },
+              patioUnidades: { select: { id: true, status: true, unidadeIso: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.solicitacao.findMany({
+        where: {
+          deletedAt: null,
+          status: StatusSolicitacao.AGUARDANDO_GATE_OUT,
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 100,
+        include: {
+          cliente: { select: { id: true, razaoSocial: true } },
+          portaria: true,
+          transporteSolicitacao: { select: { tipoCaminhao: true, placaCavalo: true } },
+          containersSolicitacao: { orderBy: { ordem: 'asc' }, select: { unidade: true, tipo: true, tamanho: true, status: true } },
+          unidades: { select: { numeroIso: true, tipo: true } },
+          gateCheckIns: {
+            where: { checkOut: null },
+            take: 1,
+            select: { id: true, dataHora: true, placaCavalo: true },
+          },
+        },
+      }),
+      this.prisma.gateCheckIn.findMany({
+        where: {
+          dataHora: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+        },
+        orderBy: { dataHora: 'desc' },
+        take: 200,
+        include: {
+          operador: { select: { id: true, email: true } },
+          solicitacao: {
+            select: {
+              id: true,
+              protocolo: true,
+              status: true,
+              cliente: { select: { razaoSocial: true } },
+              transporteSolicitacao: { select: { placaCavalo: true } },
+              containersSolicitacao: { orderBy: { ordem: 'asc' }, select: { unidade: true } },
+              unidades: { select: { numeroIso: true } },
+            },
+          },
+          checkOut: { select: { dataHora: true } },
+          patioUnidades: { select: { status: true } },
+        },
+      }),
+      this.patioV2.inventario(),
+      this.prisma.patioUnidade.findMany({
+        where: {
+          status: { notIn: [PatioStatus.AGUARDANDO_GATE_OUT] },
+          solicitacao: { status: { in: [StatusSolicitacao.EM_PATIO, StatusSolicitacao.AGUARDANDO_GATE_OUT] } },
+        },
+        include: {
+          posicaoAtual: { select: { codigoBaia: true } },
+          solicitacao: { select: { protocolo: true, cliente: { select: { razaoSocial: true } } } },
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
+
+    const mapContainers = (r: {
+      containersSolicitacao: { unidade: string }[];
+      unidades: { numeroIso: string }[];
+    }) =>
+      [
+        ...r.containersSolicitacao.map((c) => c.unidade),
+        ...r.unidades.map((u) => u.numeroIso),
+      ].filter(Boolean);
+
+    const filaChegada = filaChegadaRows.map((r) => {
+      const cs = r.containersSolicitacao[0];
+      const meta = this.containerDashboardMeta(cs, r.unidades[0]?.tipo ?? null);
+      return {
+      id: r.id,
+      protocolo: r.protocolo,
+      statusDb: r.status,
+      placa: r.portaria?.placaVeiculo ?? null,
+      motorista: r.portaria?.motoristaNome ?? null,
+      containersIso: mapContainers(r),
+      tipoCaminhao: r.transporteSolicitacao?.tipoCaminhao === TipoCaminhao.LS ? 'LS' : 'Rodotrem',
+      tipoContainer: r.unidades[0]?.tipo ?? null,
+      tipoTamanho: meta.tipoTamanho,
+      situacao: meta.situacao,
+      chegadaEm: r.portaria?.updatedAt?.toISOString() ?? r.updatedAt.toISOString(),
+      fotosPortaria: {
+        caminhao: (r.portaria?.fotosCaminhao as string[]) ?? [],
+        container: (r.portaria?.fotosContainer as string[]) ?? [],
+        documento: (r.portaria?.fotosLacre as string[]) ?? [],
+      },
+      cliente: r.cliente,
+    };
+    });
+
+    const operacaoAtiva = operacaoRows.map((r) => {
+      const gi = r.gateCheckIns[0];
+      const meta = this.containerDashboardMeta(
+        r.containersSolicitacao[0],
+        r.unidades[0]?.tipo ?? null,
+      );
+      const metaOs = this.parseOsMeta(gi?.divergenciasJson);
+      const osStatus = gi
+        ? this.deriveOsStatusFromPatio(gi.patioUnidades, metaOs)
+        : 'PENDENTE';
+      const empilhadeira = gi?.patioUnidades.find((u) => u.status === PatioStatus.MOVIMENTANDO);
+      return {
+        id: r.id,
+        protocolo: r.protocolo,
+        statusDb: r.status,
+        gateInId: gi?.id ?? null,
+        placa: gi?.placaCavalo ?? r.portaria?.placaVeiculo ?? null,
+        motorista: r.portaria?.motoristaNome ?? null,
+        containersIso: mapContainers(r),
+        tipoCaminhao: r.transporteSolicitacao?.tipoCaminhao === TipoCaminhao.LS ? 'LS' : 'Rodotrem',
+        tipoTamanho: meta.tipoTamanho,
+        situacao: meta.situacao,
+        empilhadeiraAtribuida: empilhadeira ? `Mov. ${empilhadeira.unidadeIso}` : null,
+        operador: gi?.operador?.email ?? null,
+        osStatus,
+        osMotivo: metaOs.motivo ?? null,
+        entradaEm: gi?.dataHora?.toISOString() ?? null,
+        liberadoEm: osStatus === 'APROVADA' ? r.updatedAt.toISOString() : null,
+        slotBaia: null,
+        cliente: r.cliente,
+      };
+    });
+
+    const despacho = despachoRows.map((r) => {
+      const gi = r.gateCheckIns[0];
+      const cs = r.containersSolicitacao[0];
+      const meta = this.containerDashboardMeta(cs, r.unidades[0]?.tipo ?? null);
+      return {
+        id: r.id,
+        protocolo: r.protocolo,
+        statusDb: r.status,
+        gateInId: gi?.id ?? null,
+        placa: gi?.placaCavalo ?? r.transporteSolicitacao?.placaCavalo ?? r.portaria?.placaVeiculo ?? null,
+        motorista: r.portaria?.motoristaNome ?? null,
+        containersIso: mapContainers(r),
+        tipoTamanho: meta.tipoTamanho,
+        situacao: meta.situacao,
+        prontoDesde: gi?.dataHora?.toISOString() ?? r.updatedAt.toISOString(),
+        cliente: r.cliente,
+      };
+    });
+
+    const ordensServico = osRows.map((gi) => {
+      const meta = this.parseOsMeta(gi.divergenciasJson);
+      const osStatus = this.deriveOsStatusFromPatio(gi.patioUnidades, meta);
+      const fim = gi.checkOut?.dataHora;
+      const durMin = fim
+        ? Math.round((fim.getTime() - gi.dataHora.getTime()) / 60000)
+        : Math.round((Date.now() - gi.dataHora.getTime()) / 60000);
+      const containersIso = [
+        ...gi.solicitacao.containersSolicitacao.map((c) => c.unidade),
+        ...gi.solicitacao.unidades.map((u) => u.numeroIso),
+      ].filter(Boolean);
+      return {
+        id: gi.id,
+        solicitacaoId: gi.solicitacao.id,
+        protocolo: gi.solicitacao.protocolo,
+        placa: gi.solicitacao.transporteSolicitacao?.placaCavalo ?? null,
+        containersIso,
+        operador: gi.operador?.email ?? null,
+        osStatus,
+        duracaoMin: durMin,
+        iniciadaEm: gi.dataHora.toISOString(),
+        turno: this.turnoFromDate(gi.dataHora),
+      };
+    });
+
+    const patioRows = patioUnidadesRows.map((u) => {
+      const diasNoPatio = Math.floor((Date.now() - u.createdAt.getTime()) / 86_400_000);
+      return {
+        stack: u.posicaoAtual?.codigoBaia ?? '—',
+        posicao: u.posicaoAtual?.codigoBaia ?? '—',
+        unidadeId: u.id,
+        container: u.unidadeIso,
+        tipo: u.refrigerado ? 'Reefer' : 'Dry',
+        status: u.status,
+        refrigerado: u.refrigerado,
+        protocolo: u.solicitacao.protocolo,
+        cliente: u.solicitacao.cliente?.razaoSocial ?? '—',
+        diasNoPatio,
+        entradaEm: u.createdAt.toISOString(),
+      };
+    });
+
+    return {
+      geradoEm: new Date().toISOString(),
+      dataRef: dataRef.toISOString().slice(0, 10),
+      patio: {
+        ocupados: patioInv.lotacaoTotal,
+        capacidade: patioInv.capacidadeTotal,
+        reefersLigados: patioInv.reefersLigados,
+        unidades: patioRows,
+        alertasDias: patioRows.filter((u) => u.diasNoPatio > 3).length,
+      },
+      filaChegada,
+      operacaoAtiva,
+      despacho,
+      ordensServico,
+      notificacoes: this.buildCockpitNotificacoes(filaChegada, patioRows),
+      dashboard: await this.buildCockpitDashboard(dataRef, filaChegada, operacaoAtiva, despacho),
+    };
+  }
+
+  private resolveDataRef(raw?: string): Date {
+    if (raw?.trim()) {
+      const d = new Date(`${raw.trim()}T12:00:00`);
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+
+  private turnoAgendamentoToGate(t: TurnoAgendamento): 'T1' | 'T2' | 'T3' {
+    if (t === TurnoAgendamento.MANHA) return 'T1';
+    if (t === TurnoAgendamento.TARDE) return 'T2';
+    return 'T3';
+  }
+
+  private horarioTurnoLabel(t: 'T1' | 'T2' | 'T3'): string {
+    if (t === 'T1') return '07:00';
+    if (t === 'T2') return '15:00';
+    return '23:00';
+  }
+
+  private mapContainersFromRow(r: {
+    containersSolicitacao: { unidade: string }[];
+    unidades: { numeroIso: string }[];
+  }) {
+    return [
+      ...r.containersSolicitacao.map((c) => c.unidade),
+      ...r.unidades.map((u) => u.numeroIso),
+    ].filter(Boolean);
+  }
+
+  private containerDashboardMeta(
+    cs?: { tipo: string; tamanho: string; status: StatusContainer } | null,
+    fallbackTipo?: string | null,
+  ): { tipoTamanho: string | null; situacao: 'CHEIO' | 'VAZIO' | null } {
+    if (!cs) {
+      return {
+        tipoTamanho: fallbackTipo ?? null,
+        situacao: null,
+      };
+    }
+    const situacao: 'CHEIO' | 'VAZIO' =
+      cs.status === StatusContainer.CHEIO ? 'CHEIO' : 'VAZIO';
+    return {
+      tipoTamanho: `${cs.tipo} / ${cs.tamanho}`,
+      situacao,
+    };
+  }
+
+  private async buildCockpitDashboard(
+    dataRef: Date,
+    filaChegada: {
+      id: string;
+      protocolo: string;
+      placa: string | null;
+      containersIso: string[];
+      cliente: { razaoSocial: string };
+      chegadaEm: string;
+      tipoTamanho: string | null;
+      situacao: 'CHEIO' | 'VAZIO' | null;
+    }[],
+    operacaoAtiva: {
+      id: string;
+      protocolo: string;
+      containersIso: string[];
+      empilhadeiraAtribuida: string | null;
+      osStatus: string;
+      tipoTamanho: string | null;
+      situacao: 'CHEIO' | 'VAZIO' | null;
+    }[],
+    despacho: {
+      id: string;
+      protocolo: string;
+      placa: string | null;
+      containersIso: string[];
+      statusDb: string;
+      prontoDesde: string;
+    }[],
+  ) {
+    const dayStart = new Date(dataRef);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+
+    const autorizacaoRows = await this.prisma.solicitacao.findMany({
+      where: {
+        deletedAt: null,
+        transporteSolicitacao: { isNot: null },
+        status: { in: [StatusSolicitacao.PENDENTE, StatusSolicitacao.EM_ANALISE] },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      include: {
+        cliente: { select: { razaoSocial: true } },
+        containersSolicitacao: { orderBy: { ordem: 'asc' }, select: { unidade: true, tamanho: true, tipo: true, status: true } },
+        unidades: { select: { numeroIso: true, tipo: true } },
+        agendamentoSolicitacao: { select: { turno: true } },
+      },
+    });
+
+    const chegadaRows = await this.prisma.solicitacao.findMany({
+      where: {
+        deletedAt: null,
+        transporteSolicitacao: { isNot: null },
+        agendamentoSolicitacao: { dataRef: { gte: dayStart, lt: dayEnd } },
+        status: {
+          in: [
+            StatusSolicitacao.APROVADO,
+            StatusSolicitacao.AGUARDANDO_GATE_IN,
+            StatusSolicitacao.EM_EXECUCAO,
+          ],
+        },
+      },
+      include: {
+        cliente: { select: { razaoSocial: true } },
+        transporteSolicitacao: { select: { placaCavalo: true, tipoCaminhao: true } },
+        containersSolicitacao: { orderBy: { ordem: 'asc' }, select: { unidade: true, tamanho: true, tipo: true, status: true } },
+        unidades: { select: { numeroIso: true } },
+        agendamentoSolicitacao: { select: { turno: true, dataRef: true } },
+        portaria: { select: { id: true } },
+      },
+    });
+
+    const saidaRows = await this.prisma.solicitacao.findMany({
+      where: {
+        deletedAt: null,
+        OR: [
+          { status: StatusSolicitacao.AGUARDANDO_GATE_OUT },
+          {
+            status: { in: [StatusSolicitacao.EM_PATIO, StatusSolicitacao.EM_EXECUCAO] },
+            agendamentoSolicitacao: { dataRef: { gte: dayStart, lt: dayEnd } },
+          },
+        ],
+      },
+      include: {
+        cliente: { select: { razaoSocial: true } },
+        transporteSolicitacao: { select: { placaCavalo: true } },
+        containersSolicitacao: {
+          orderBy: { ordem: 'asc' },
+          select: { unidade: true, tamanho: true, tipo: true, status: true },
+        },
+        unidades: { select: { numeroIso: true } },
+        agendamentoSolicitacao: { select: { turno: true } },
+      },
+    });
+
+    const now = new Date();
+    const turnoAtual = this.turnoFromDate(now);
+
+    const autorizacoesPendentes = autorizacaoRows.map((r) => {
+      const containersIso = this.mapContainersFromRow(r);
+      const cs = r.containersSolicitacao[0];
+      const meta = this.containerDashboardMeta(cs, r.unidades[0]?.tipo ?? null);
+      return {
+        id: r.id,
+        protocolo: r.protocolo,
+        empresa: r.cliente.razaoSocial,
+        containersIso,
+        tipoTamanho: meta.tipoTamanho,
+        situacao: meta.situacao,
+        solicitadoEm: r.createdAt.toISOString(),
+        turno: r.agendamentoSolicitacao
+          ? this.turnoAgendamentoToGate(r.agendamentoSolicitacao.turno)
+          : null,
+      };
+    });
+
+    const previsaoChegadas = chegadaRows
+      .map((r) => {
+        const cs = r.containersSolicitacao[0];
+        const meta = this.containerDashboardMeta(cs);
+        const turno = r.agendamentoSolicitacao
+          ? this.turnoAgendamentoToGate(r.agendamentoSolicitacao.turno)
+          : this.turnoFromDate(r.createdAt);
+        const horario = this.horarioTurnoLabel(turno);
+        const chegouPortaria = Boolean(r.portaria) || r.status === StatusSolicitacao.EM_EXECUCAO;
+        const turnoFim =
+          turno === 'T1' ? 14 : turno === 'T2' ? 22 : 6;
+        const atrasado =
+          !chegouPortaria &&
+          ((turno === 'T3' && now.getHours() >= 22) ||
+            (turno !== 'T3' && now.getHours() >= turnoFim));
+        return {
+          id: r.id,
+          horario,
+          placa: r.transporteSolicitacao?.placaCavalo ?? null,
+          containersIso: this.mapContainersFromRow(r),
+          empresa: r.cliente.razaoSocial,
+          tipoTamanho: meta.tipoTamanho,
+          situacao: meta.situacao,
+          turno,
+          statusDb: r.status,
+          chegouPortaria,
+          atrasado,
+        };
+      })
+      .sort((a, b) => a.horario.localeCompare(b.horario));
+
+    const previsaoSaidas = saidaRows
+      .map((r) => {
+        const cs = r.containersSolicitacao[0];
+        const meta = this.containerDashboardMeta(cs);
+        const turno = r.agendamentoSolicitacao
+          ? this.turnoAgendamentoToGate(r.agendamentoSolicitacao.turno)
+          : 'T2';
+        const pronto = r.status === StatusSolicitacao.AGUARDANDO_GATE_OUT;
+        let statusLabel = 'Em Operação';
+        if (pronto) statusLabel = 'Pronto Despacho';
+        else if (r.status === StatusSolicitacao.EM_PATIO) statusLabel = 'No Pátio';
+        return {
+          id: r.id,
+          horarioPrevisto: this.horarioTurnoLabel(turno),
+          placa: r.transporteSolicitacao?.placaCavalo ?? null,
+          containersIso: this.mapContainersFromRow(r),
+          tipoTamanho: meta.tipoTamanho,
+          situacao: meta.situacao,
+          statusLabel,
+          statusDb: r.status,
+          pronto,
+        };
+      })
+      .sort((a, b) => a.horarioPrevisto.localeCompare(b.horarioPrevisto));
+
+    const agendaBase = (['T1', 'T2', 'T3'] as const).map((t) => ({
+      turno: t,
+      chegadasPrevistas: 0,
+      chegadasRealizadas: 0,
+      saidasPrevistas: 0,
+      saidasRealizadas: 0,
+    }));
+
+    for (const r of chegadaRows) {
+      const t = r.agendamentoSolicitacao
+        ? this.turnoAgendamentoToGate(r.agendamentoSolicitacao.turno)
+        : 'T1';
+      const slot = agendaBase.find((a) => a.turno === t)!;
+      slot.chegadasPrevistas++;
+      if (r.portaria || r.status === StatusSolicitacao.EM_EXECUCAO) slot.chegadasRealizadas++;
+    }
+    for (const r of saidaRows) {
+      const t = r.agendamentoSolicitacao
+        ? this.turnoAgendamentoToGate(r.agendamentoSolicitacao.turno)
+        : 'T2';
+      const slot = agendaBase.find((a) => a.turno === t)!;
+      slot.saidasPrevistas++;
+      if (r.status === StatusSolicitacao.AGUARDANDO_GATE_OUT) slot.saidasRealizadas++;
+    }
+
+    return {
+      autorizacoesPendentes: {
+        total: autorizacoesPendentes.length,
+        itens: autorizacoesPendentes.slice(0, 5),
+      },
+      previsaoChegadas: {
+        total: previsaoChegadas.length,
+        itens: previsaoChegadas.slice(0, 12),
+      },
+      previsaoSaidas: {
+        total: previsaoSaidas.length,
+        itens: previsaoSaidas.slice(0, 12),
+      },
+      agendaTurnos: {
+        turnoAtual,
+        turnos: agendaBase.map((t) => ({
+          ...t,
+          progressoPct:
+            t.chegadasPrevistas > 0
+              ? Math.round((t.chegadasRealizadas / t.chegadasPrevistas) * 100)
+              : 0,
+        })),
+      },
+      resumoFila: {
+        total: filaChegada.length,
+        itens: filaChegada.slice(0, 3).map((f) => ({
+          id: f.id,
+          protocolo: f.protocolo,
+          placa: f.placa,
+          containersIso: f.containersIso,
+          empresa: f.cliente.razaoSocial,
+          chegadaEm: f.chegadaEm,
+          tipoTamanho: f.tipoTamanho,
+          situacao: f.situacao,
+        })),
+      },
+      resumoOperacao: {
+        total: operacaoAtiva.length,
+        itens: operacaoAtiva.slice(0, 3).map((o) => ({
+          id: o.id,
+          protocolo: o.protocolo,
+          containersIso: o.containersIso,
+          empilhadeira: o.empilhadeiraAtribuida,
+          osStatus: o.osStatus,
+          tipoTamanho: o.tipoTamanho,
+          situacao: o.situacao,
+        })),
+      },
+    };
+  }
+
+  private buildCockpitNotificacoes(
+    fila: { protocolo: string; placa: string | null }[],
+    patio: { container: string; diasNoPatio: number }[],
+  ) {
+    const notes: { id: string; tipo: string; mensagem: string; em: string }[] = [];
+    for (const f of fila.slice(0, 5)) {
+      notes.push({
+        id: `chegada-${f.protocolo}`,
+        tipo: 'CHEGADA_PORTARIA',
+        mensagem: `Caminhão ${f.placa ?? '—'} liberado na portaria (${f.protocolo})`,
+        em: new Date().toISOString(),
+      });
+    }
+    for (const p of patio.filter((u) => u.diasNoPatio > 3).slice(0, 5)) {
+      notes.push({
+        id: `patio-${p.container}`,
+        tipo: 'PATIO_LIMITE',
+        mensagem: `Contêiner ${p.container} com ${p.diasNoPatio} dias no pátio`,
+        em: new Date().toISOString(),
+      });
+    }
+    return notes;
+  }
+
+  private turnoFromDate(d: Date): 'T1' | 'T2' | 'T3' {
+    const h = d.getHours();
+    if (h >= 6 && h < 14) return 'T1';
+    if (h >= 14 && h < 22) return 'T2';
+    return 'T3';
+  }
+
+  async direcionarOperacao(solicitacaoId: string, operadorId: string) {
+    const sol = await this.prisma.solicitacao.findFirst({
+      where: { id: solicitacaoId, deletedAt: null },
+      include: { portaria: true },
+    });
+    if (!sol) throw new NotFoundException('Solicitação não encontrada');
+    if (!sol.portaria) {
+      throw new BadRequestException('Caminhão sem registro de portaria');
+    }
+    if (sol.status !== StatusSolicitacao.EM_EXECUCAO) {
+      throw new BadRequestException(`Status não permite direcionamento (${sol.status})`);
+    }
+    await this.prisma.solicitacao.update({
+      where: { id: solicitacaoId },
+      data: { status: StatusSolicitacao.AGUARDANDO_GATE_IN },
+    });
+    await this.auditoria.registrar({
+      tabela: 'solicitacoes',
+      registroId: solicitacaoId,
+      acao: AcaoAuditoria.UPDATE,
+      usuario: operadorId,
+      solicitacaoId,
+      dadosAntes: { status: StatusSolicitacao.EM_EXECUCAO },
+      dadosDepois: { status: StatusSolicitacao.AGUARDANDO_GATE_IN, motivo: 'gate_direcionar_operacao' },
+    });
+    return { ok: true, status: StatusSolicitacao.AGUARDANDO_GATE_IN };
+  }
+
+  async retornarEntrada(solicitacaoId: string, operadorId: string, motivo: string) {
+    const sol = await this.prisma.solicitacao.findFirst({
+      where: { id: solicitacaoId, deletedAt: null },
+    });
+    if (!sol) throw new NotFoundException('Solicitação não encontrada');
+    if (sol.status !== StatusSolicitacao.EM_EXECUCAO) {
+      throw new BadRequestException(`Status não permite retorno (${sol.status})`);
+    }
+    await this.prisma.solicitacao.update({
+      where: { id: solicitacaoId },
+      data: { status: StatusSolicitacao.APROVADO },
+    });
+    await this.auditoria.registrar({
+      tabela: 'solicitacoes',
+      registroId: solicitacaoId,
+      acao: AcaoAuditoria.UPDATE,
+      usuario: operadorId,
+      solicitacaoId,
+      dadosAntes: { status: StatusSolicitacao.EM_EXECUCAO },
+      dadosDepois: { status: StatusSolicitacao.APROVADO, motivo: 'gate_retorno_entrada', detalhe: motivo },
+    });
+    return { ok: true, status: StatusSolicitacao.APROVADO };
+  }
+
+  private assertPodeAprovarOs(role: Role) {
+    if (role !== Role.ADMIN && role !== Role.GERENTE) {
+      throw new ForbiddenException('Aprovação/rejeição de OS exige perfil ADMIN ou GERENTE');
+    }
+  }
+
+  async aprovarOs(gateInId: string, operadorId: string, role: Role) {
+    this.assertPodeAprovarOs(role);
+    const gi = await this.prisma.gateCheckIn.findUnique({ where: { id: gateInId } });
+    if (!gi) throw new NotFoundException('Check-in não encontrado');
+    const divergencias = this.mergeOsMeta(gi.divergenciasJson, { osStatus: 'APROVADA' });
+    await this.prisma.gateCheckIn.update({
+      where: { id: gateInId },
+      data: { divergenciasJson: divergencias as unknown as Prisma.InputJsonValue },
+    });
+    await this.auditoria.registrar({
+      tabela: 'gate_v2_check_ins',
+      registroId: gateInId,
+      acao: AcaoAuditoria.UPDATE,
+      usuario: operadorId,
+      solicitacaoId: gi.solicitacaoId,
+      dadosDepois: { osStatus: 'APROVADA' },
+    });
+    return { ok: true, osStatus: 'APROVADA' };
+  }
+
+  async rejeitarOs(gateInId: string, operadorId: string, role: Role, motivo: string) {
+    this.assertPodeAprovarOs(role);
+    const gi = await this.prisma.gateCheckIn.findUnique({ where: { id: gateInId } });
+    if (!gi) throw new NotFoundException('Check-in não encontrado');
+    const divergencias = this.mergeOsMeta(gi.divergenciasJson, { osStatus: 'REJEITADA', motivo });
+    await this.prisma.gateCheckIn.update({
+      where: { id: gateInId },
+      data: { divergenciasJson: divergencias as unknown as Prisma.InputJsonValue },
+    });
+    await this.auditoria.registrar({
+      tabela: 'gate_v2_check_ins',
+      registroId: gateInId,
+      acao: AcaoAuditoria.UPDATE,
+      usuario: operadorId,
+      solicitacaoId: gi.solicitacaoId,
+      dadosDepois: { osStatus: 'REJEITADA', motivo },
+    });
+    return { ok: true, osStatus: 'REJEITADA' };
   }
 }

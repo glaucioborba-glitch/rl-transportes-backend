@@ -5,6 +5,12 @@ import { ApiError, authRefresh, getApiBase } from "@/lib/api/corporate-auth-clie
 import { applyCsrfHeaders } from "@/lib/csrf-client";
 import { appendDeviceSecurityHeaders } from "@/lib/device-client-headers";
 import { maybeUnwrapCircuitJson } from "@/lib/resilience/circuit-open";
+import {
+  API_ERROR_BAD_GATEWAY,
+  API_ERROR_CONNECTION,
+  API_ERROR_UNAUTHORIZED,
+} from "@/hooks/use-api-health";
+import { toast } from "@/lib/toast";
 import type { VistoriaAngulo } from "@/lib/gate-vistoria";
 import { vistoriaFieldName } from "@/lib/image-compress-vistoria";
 
@@ -23,6 +29,31 @@ export { ApiError } from "@/lib/api/corporate-auth-client";
 
 const STAFF_EXT_HEADERS: Record<string, string> = { "X-RL-Auth-Cookie": "1" };
 
+function isNetworkFailure(error: unknown): boolean {
+  if (error instanceof TypeError) return true;
+  if (error instanceof DOMException && error.name === "AbortError") return false;
+  if (error instanceof Error) {
+    return /failed to fetch|networkerror|load failed|fetch failed|connection refused/i.test(
+      error.message,
+    );
+  }
+  return false;
+}
+
+function staffSessionExpired(path: string): never {
+  useStaffAuthStore.getState().clear();
+  if (typeof window !== "undefined") {
+    void import("@/lib/auth-staff-cookie").then(({ clearStaffSessionCookie }) => clearStaffSessionCookie());
+    if (!window.location.pathname.includes("/login")) {
+      toast.error("Sessão expirada. Redirecionando para login...");
+      window.setTimeout(() => {
+        window.location.href = "/login/staff";
+      }, 1500);
+    }
+  }
+  throw new ApiError("Sessão expirada. Faça login novamente.", 401, undefined, API_ERROR_UNAUTHORIZED, path);
+}
+
 /** Requisição intranet/staff: cookies HttpOnly + header para o Nest emitir/ler `rl_at` / `rl_rt`. */
 export async function staffRequest(path: string, init?: RequestInit): Promise<Response> {
   const base = getApiBase();
@@ -39,19 +70,53 @@ export async function staffRequest(path: string, init?: RequestInit): Promise<Re
     return fetch(url, { ...init, headers, credentials: "include" });
   };
 
-  let res = await doFetch();
+  let res: Response;
+  try {
+    res = await doFetch();
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      console.warn("[API] Connection refused:", path);
+      throw new ApiError(
+        "Não foi possível conectar ao servidor. Verifique se a API está rodando.",
+        0,
+        undefined,
+        API_ERROR_CONNECTION,
+        url,
+      );
+    }
+    throw error;
+  }
+
+  if (res.status === 502) {
+    console.warn("[API] 502 Bad Gateway:", path);
+    throw new ApiError(
+      "Servidor indisponível. Tente novamente em alguns instantes.",
+      502,
+      undefined,
+      API_ERROR_BAD_GATEWAY,
+      url,
+    );
+  }
+
+  if (res.status === 503) {
+    throw new ApiError(
+      "Servidor em manutenção.",
+      503,
+      undefined,
+      "SERVICE_UNAVAILABLE",
+      url,
+    );
+  }
 
   if (res.status === 401) {
     try {
       await authRefresh(null, { cookieMode: true });
       res = await doFetch();
     } catch {
-      useStaffAuthStore.getState().clear();
-      if (typeof window !== "undefined") {
-        const { clearStaffSessionCookie } = await import("@/lib/auth-staff-cookie");
-        clearStaffSessionCookie();
-      }
-      throw new ApiError("Sessão expirada", 401);
+      staffSessionExpired(path);
+    }
+    if (res.status === 401) {
+      staffSessionExpired(path);
     }
   }
 
@@ -69,7 +134,7 @@ export async function staffDownloadSolicitacaoV2Pdf(id: string): Promise<Blob> {
       const { clearStaffSessionCookie } = await import("@/lib/auth-staff-cookie");
       clearStaffSessionCookie();
     }
-    throw new ApiError("Não autorizado", 401);
+    throw new ApiError("Sessão expirada. Faça login novamente.", 401);
   }
   if (!res.ok) {
     const err = await res.text();
@@ -236,6 +301,70 @@ export type StaffGateFilaItem = {
 
 export function staffGateFila() {
   return staffJson<StaffGateFilaItem[]>("/v2/gate/fila");
+}
+
+export type { GateCockpitPayload } from "@/lib/gate/gate-cockpit-types";
+
+export function staffGateCockpit(dataRef?: string) {
+  const q = dataRef?.trim() ? `?dataRef=${encodeURIComponent(dataRef.trim())}` : "";
+  return staffJson<import("@/lib/gate/gate-cockpit-types").GateCockpitPayload>(`/v2/gate/cockpit${q}`);
+}
+
+export function staffGateDirecionarOperacao(solicitacaoId: string) {
+  return staffJson<{ ok: boolean; status: string }>(
+    `/v2/gate/solicitacoes/${encodeURIComponent(solicitacaoId)}/direcionar-operacao`,
+    { method: "POST" },
+  );
+}
+
+export function staffGateRetornarEntrada(solicitacaoId: string, motivo: string) {
+  return staffJson<{ ok: boolean; status: string }>(
+    `/v2/gate/solicitacoes/${encodeURIComponent(solicitacaoId)}/retornar-entrada`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ motivo }),
+    },
+  );
+}
+
+export function staffGateAprovarOs(gateInId: string) {
+  return staffJson<{ ok: boolean; osStatus: string }>(
+    `/v2/gate/check-ins/${encodeURIComponent(gateInId)}/aprovar-os`,
+    { method: "POST" },
+  );
+}
+
+export function staffGateRejeitarOs(gateInId: string, motivo: string) {
+  return staffJson<{ ok: boolean; osStatus: string }>(
+    `/v2/gate/check-ins/${encodeURIComponent(gateInId)}/rejeitar-os`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ motivo }),
+    },
+  );
+}
+
+export async function staffGateDownloadPdf(solicitacaoId: string) {
+  const blob = await staffDownloadSolicitacaoV2Pdf(solicitacaoId);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `liberacao-${solicitacaoId}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/** Redireciona para login staff quando a sessão expirou (401). */
+export function handleStaffUnauthorized(status: number): boolean {
+  if (status !== 401 || typeof window === "undefined") return false;
+  useStaffAuthStore.getState().clear();
+  void import("@/lib/auth-staff-cookie").then(({ clearStaffSessionCookie }) => clearStaffSessionCookie());
+  window.location.href = "/login/staff";
+  return true;
 }
 
 export function staffGatePreCheckIn(solicitacaoId: string, hash?: string) {

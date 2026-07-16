@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { SsmaWorkspace } from "@/components/ssma/ssma-workspace";
 import { SsmaSection } from "@/components/ssma/ssma-section";
 import { PtwForm } from "@/components/ssma/ptw-form";
 import { SafetyChecklist } from "@/components/ssma/safety-checklist";
@@ -27,14 +26,14 @@ export default function SsmaPtwPage() {
 
   if (!allowed) {
     return (
-      <SsmaWorkspace>
+      <div>
         <p className="text-center text-amber-400">Acesso restrito.</p>
-      </SsmaWorkspace>
+      </div>
     );
   }
 
   return (
-    <SsmaWorkspace>
+    <div>
       <div className="mb-6 flex flex-wrap gap-2 border-b border-white/10 pb-3">
         {TABS.map((t) => (
           <button
@@ -94,6 +93,6 @@ export default function SsmaPtwPage() {
           <ActionPlanBoard />
         </SsmaSection>
       ) : null}
-    </SsmaWorkspace>
+    </div>
   );
 }

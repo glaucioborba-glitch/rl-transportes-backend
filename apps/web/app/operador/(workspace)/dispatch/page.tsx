@@ -10,7 +10,7 @@ export default function OperadorDispatchPage() {
   const [key, setKey] = useState(0);
 
   return (
-    <main className="mx-auto max-w-[1600px] px-4 py-8">
+    <main className="mx-auto max-w-[1600px]">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <SectionTitle
           title="Dispatch Board"

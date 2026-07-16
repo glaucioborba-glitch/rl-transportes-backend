@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BiWorkspace } from "@/components/bi/bi-workspace";
-import { VisaoOperacionalPanel } from "@/components/bi/visao-operacional-panel";
+import { LazyVisaoOperacionalPanel as VisaoOperacionalPanel } from "@/components/lazy/heavy-charts";
 import { fetchVisaoOperacional } from "@/lib/api/bi-analytics-client";
 import type { VisaoOperacionalResponse } from "@/lib/api/bi-analytics-types";
 import { ApiError } from "@/lib/api/staff-client";
@@ -38,19 +37,19 @@ export default function VisaoOperacionalPage() {
 
   if (role && role !== "ADMIN" && role !== "GERENTE") {
     return (
-      <BiWorkspace>
+      <div>
         <p className="text-sm text-amber-400">Visão Operacional restrita a GERENTE / ADMIN.</p>
-      </BiWorkspace>
+      </div>
     );
   }
 
   return (
-    <BiWorkspace>
+    <div>
       {loading || !data ? (
         <p className="text-sm text-zinc-500">Carregando Visão Operacional…</p>
       ) : (
         <VisaoOperacionalPanel data={data} />
       )}
-    </BiWorkspace>
+    </div>
   );
 }

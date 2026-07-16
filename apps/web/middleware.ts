@@ -2,12 +2,34 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { isPortalAgendamentoPath } from "@/lib/portal-financeiro-block";
 
+/** Redireciona rotas legadas /staff (V1) para equivalentes V2 em /operador. */
+function staffLegacyRedirect(pathname: string): string | null {
+  if (pathname === "/staff/gate") return "/operador/gate/dashboard";
+  if (pathname.startsWith("/staff/gate/checkin/")) return "/operador/gate/fila";
+  if (pathname.startsWith("/staff/gate/checkout/")) return "/operador/gate/despacho";
+  if (pathname === "/staff/fila-operacional") return "/operador/gate/fila";
+  if (pathname === "/staff/triagem") return "/operador/gate/autorizacoes";
+  if (pathname === "/staff/patio") return "/operador/patio";
+  if (pathname === "/staff/consulta-container") return "/intranet/consulta-container";
+  if (pathname === "/staff/solicitacoes-v2") return "/operador/gate/autorizacoes";
+  if (pathname.startsWith("/staff/solicitacoes-v2/")) {
+    const id = pathname.slice("/staff/solicitacoes-v2/".length).split("/")[0];
+    return id ? `/operador/gate/autorizacoes/${id}` : "/operador/gate/autorizacoes";
+  }
+  if (pathname === "/staff/observabilidade") return "/admin/auditoria";
+  if (pathname === "/staff/security") return "/grc/governanca";
+  if (pathname === "/staff/perfil/dispositivos") return "/portal/perfil/dispositivos";
+  if (pathname === "/staff") return "/operador/dashboard";
+  return null;
+}
+
 const STAFF_PREFIXES = [
   "/operador",
   "/cockpit",
   "/financeiro",
   "/rh",
   "/admin",
+  "/cadastros",
   "/bi",
   "/ssma",
   "/grc",
@@ -48,6 +70,11 @@ function isPortalProtectedPath(pathname: string): boolean {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  const staffDest = staffLegacyRedirect(pathname);
+  if (staffDest) {
+    return NextResponse.redirect(new URL(staffDest, request.url));
+  }
 
   /** Playwright E2E: auth real via mock de rede (`page.route`); middleware não bloqueia rotas protegidas. */
   if (process.env.E2E_MOCK_AUTH === "1") {

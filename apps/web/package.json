@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000",
-    "dev:clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true});\" && next dev -p 3000",
+    "dev": "next dev --turbo -p 3000",
+    "dev:legacy": "next dev -p 3000",
+    "dev:clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true});\" && next dev --turbo -p 3000",
+    "check:api": "node scripts/check-api.js",
+    "predev": "node scripts/check-api.js",
     "build": "next build",
     "start": "next start",
+    "analyze": "next build",
     "lint": "next lint",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"

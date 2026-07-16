@@ -21,9 +21,9 @@ import { formatDateTime } from "@/lib/portal-tracking";
 import type { VistoriaPortalRow } from "@/lib/gate-vistoria";
 import { VistoriaGallery } from "@/components/portal/vistoria-gallery";
 import { collectSolicitacaoContainerISOs } from "@/lib/container-display";
-import { OperationPageHeader } from "@/components/shared/operation-identity";
+import { ContainerNumber } from "@/components/ui/container-number";
+import { ProtocolRefLabel } from "@/components/shared/operation-identity";
 import { toast } from "@/lib/toast";
-import { formatContainerISO } from "@/utils/containerFormatter";
 import { usePortalAuthStore } from "@/stores/portal-store";
 import { usePessoaPermissoesStore } from "@/stores/pessoaPermissoesStore";
 import { SolicitacaoHistoricoAlteracoes } from "@/components/solicitacao/solicitacao-historico-alteracoes";
@@ -158,35 +158,37 @@ export default function SolicitacaoDetailPage() {
   const isCorporativa = Boolean(row.transporteSolicitacao);
   const p = row.portaria;
 
+  const isos = collectSolicitacaoContainerISOs(row);
+
   return (
     <main className="mx-auto max-w-7xl space-y-6 px-4 py-8">
-      <OperationPageHeader
-        isos={collectSolicitacaoContainerISOs(row)}
-        protocolo={row.protocolo}
-        actions={
-          <>
-            <StatusBadge status={row.status} />
-            {isCorporativa && permissoes?.podeGerarPDF ? (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={pdfBusy}
-                onClick={() => void onBaixarPdfCorporativo()}
-              >
-                {pdfBusy ? "…" : "Baixar PDF"}
-              </Button>
-            ) : null}
-            {row.status === "PENDENTE" && !isCorporativa && permissoes?.podeAprovarOS ? (
-              <Button disabled={aproving} onClick={() => void onAprovar()}>
-                {aproving ? "…" : "Aprovar"}
-              </Button>
-            ) : null}
-            <Button variant="outline" asChild>
-              <Link href="/portal/solicitacoes">Voltar</Link>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-1 space-y-2">
+          <ContainerNumber value={isos[0] ?? "—"} size="lg" />
+          <ProtocolRefLabel protocolo={row.protocolo} prefix="Protocolo:" />
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <StatusBadge status={row.status} />
+          {isCorporativa && permissoes?.podeGerarPDF ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pdfBusy}
+              onClick={() => void onBaixarPdfCorporativo()}
+            >
+              {pdfBusy ? "…" : "Baixar PDF"}
             </Button>
-          </>
-        }
-      />
+          ) : null}
+          {row.status === "PENDENTE" && !isCorporativa && permissoes?.podeAprovarOS ? (
+            <Button disabled={aproving} onClick={() => void onAprovar()}>
+              {aproving ? "…" : "Aprovar"}
+            </Button>
+          ) : null}
+          <Button variant="outline" asChild>
+            <Link href="/portal/solicitacoes">Voltar</Link>
+          </Button>
+        </div>
+      </div>
       <p className="text-sm text-slate-400">
         Cliente · {row.cliente?.razaoSocial ?? "—"} · {formatDateTime(row.createdAt)}
       </p>
@@ -237,9 +239,7 @@ export default function SolicitacaoDetailPage() {
                 <CardContent className="space-y-4">
                   {(row.containersSolicitacao ?? []).map((c) => (
                     <div key={c.id} className="rounded-lg border border-white/10 bg-black/20 p-3 text-sm">
-                      <p className="font-mono text-base font-bold text-[var(--accent)]">
-                        {formatContainerISO(c.unidade) || c.unidade}
-                      </p>
+                      <ContainerNumber value={c.unidade} size="md" />
                       <p className="mt-1 text-xs text-slate-500">Unidade #{c.ordem}</p>
                       <p className="text-slate-400">
                         {c.booking} · {c.status}
@@ -332,9 +332,7 @@ export default function SolicitacaoDetailPage() {
                     className="flex flex-col gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div>
-                      <span className="font-mono text-base font-bold text-[var(--accent)]">
-                        {formatContainerISO(u.numeroIso) || u.numeroIso}
-                      </span>
+                      <ContainerNumber value={u.numeroIso} showLabel={false} size="sm" />
                       <p className="text-xs text-slate-500">{u.tipo}</p>
                     </div>
                     <Button variant="ghost" size="sm" asChild>
