@@ -7,7 +7,7 @@ import { DEFAULT_TENANT_PARAMETROS } from '../../tenant/tenant-config.types';
 import { DEFAULT_TENANT_ID } from '../../tenant/tenant.constants';
 
 const defaultConfig: PlataformaTenantConfig = {
-  slasHorasProxy: { gate: 4, patio: 72, saida: 24 },
+  slasMinutosMeta: { gate: 240, patio: 4320, saida: 1440 },
   horarioFuncionamento: '06:00–22:00 UTC',
   regrasOperacao: 'Padrão corporativo (simulado Fase 18).',
 };
@@ -40,7 +40,7 @@ export class PlataformaTenantStore implements OnModuleInit {
         nome: 'Terminal corporativo (default)',
         parametros: DEFAULT_TENANT_PARAMETROS as object,
         clienteIds: [],
-        slasHorasProxy: defaultConfig.slasHorasProxy,
+        slasMinutosMeta: defaultConfig.slasMinutosMeta,
         horarioFuncionamento: defaultConfig.horarioFuncionamento,
         regrasOperacao: 'Tenant default — sem segregação de clientes até configurar.',
       },
@@ -54,7 +54,7 @@ export class PlataformaTenantStore implements OnModuleInit {
     tenantKey: string;
     nome: string;
     clienteIds: unknown;
-    slasHorasProxy: unknown;
+    slasMinutosMeta: unknown;
     horarioFuncionamento: string;
     regrasOperacao: string;
     createdAt: Date;
@@ -64,7 +64,7 @@ export class PlataformaTenantStore implements OnModuleInit {
       nome: row.nome,
       clienteIds: (row.clienteIds as string[]) ?? [],
       config: {
-        slasHorasProxy: row.slasHorasProxy as Record<string, number>,
+        slasMinutosMeta: row.slasMinutosMeta as Record<string, number>,
         horarioFuncionamento: row.horarioFuncionamento,
         regrasOperacao: row.regrasOperacao,
       },
@@ -108,7 +108,7 @@ export class PlataformaTenantStore implements OnModuleInit {
           nome,
           parametros: DEFAULT_TENANT_PARAMETROS as object,
           clienteIds: [...new Set(clienteIds)],
-          slasHorasProxy: merged.slasHorasProxy,
+          slasMinutosMeta: merged.slasMinutosMeta,
           horarioFuncionamento: merged.horarioFuncionamento,
           regrasOperacao: merged.regrasOperacao,
         },

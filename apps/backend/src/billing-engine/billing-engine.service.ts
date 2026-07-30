@@ -14,13 +14,13 @@ export class BillingEngineService {
     const pricing = await this.rules.resolvePricingForCliente(clienteId);
     const gateInAt = new Date();
     gateInAt.setUTCDate(gateInAt.getUTCDate() - diasArmazenados);
-    const evaluation = this.rules.evaluateForContainerCycle({
+    const evaluation = await this.rules.evaluateForContainerCycle({
       gateInAt,
       asOf: new Date(),
       regras: pricing.regras,
       container: { tamanho: '40', tipo: 'DRY', refrigerado: false },
       fase: 'GATE_OUT',
-      legado: pricing.legado,
+      clienteId,
     });
     return { total: evaluation.valorTotal, source: pricing.source, items: evaluation.items };
   }

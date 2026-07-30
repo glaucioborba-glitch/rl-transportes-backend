@@ -46,10 +46,10 @@ function writeCredentialsFile(portalClientes: SeedPortalIds['clientes']) {
     '  Gate CPO:     http://localhost:3000/operador/gate/dashboard',
     '  Histórico:    http://localhost:3000/operador/gate/historico-container',
     '',
-    'STAFF (intranet)',
-    '  ADMIN:         04252011000110 / Admin@123',
-    '  GERENTE:       11000000000108 / Gerente@OpsQA2026',
-    '  OPERADOR GATE: 11000000000450 / OpsGate@QA2026',
+    'STAFF (intranet — login com CPF 11 dígitos)',
+    '  ADMIN:         39053344705 / Admin@123',
+    '  GERENTE:       98765432100 / Gerente@OpsQA2026',
+    '  OPERADOR GATE: 15350946056 / OpsGate@QA2026',
     '',
     `PORTAL — senha comum: ${SEED_CLIENT_PASSWORD}`,
     '  Login com CNPJ → 2º passo com CPF da pessoa autorizada.',
@@ -148,7 +148,7 @@ async function main() {
 
   console.log('🎉 Seed completo!');
   console.log('\n📋 Dados de acesso para teste:');
-  console.log('   Staff ADMIN:  04252011000110 / Admin@123');
+  console.log('   Staff ADMIN:  39053344705 / Admin@123');
   console.log(`   Portal:       CNPJ dos clientes seed / ${SEED_CLIENT_PASSWORD}`);
   console.log(`   Credenciais:  ${credsFile}`);
 }

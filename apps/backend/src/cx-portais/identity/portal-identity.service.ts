@@ -26,6 +26,7 @@ import { canPortalClienteLogin, isTransportadoraTerceiraRole } from '../../commo
 import { TRANSPORTADORA_PERMISSOES_FIXAS } from '../../common/constants/transportadora-permissoes.constants';
 import { AddressService } from '../../common/address/address.service';
 import { DEFAULT_TENANT_ID } from '../../tenant/tenant.constants';
+import { TenantConfigService } from '../../tenant/tenant-config.service';
 import { userWhereByDocumento } from '../../tenant/tenant-prisma.util';
 import {
   applyNormalizedToCreateDto,
@@ -67,7 +68,17 @@ export class PortalIdentityService {
     private readonly termosUso: TermosUsoService,
     private readonly dominioValidator: DominioCorporativoValidatorService,
     private readonly transportadorasAutorizadas: TransportadorasAutorizadasService,
+    private readonly tenantConfig: TenantConfigService,
   ) {}
+
+  private resolvePortalTenantId(req?: Request): string {
+    return (req as (Request & { tenantId?: string }) | undefined)?.tenantId?.trim() || DEFAULT_TENANT_ID;
+  }
+
+  private async shouldValidarDominioCorporativo(tenantId: string): Promise<boolean> {
+    const sec = await this.tenantConfig.getParametrosSeguranca(tenantId);
+    return sec.validarDominioCorporativo;
+  }
 
   /** Base pública do portal para montar links em e-mails e recuperação. */
   private portalPublicBase(): string {
@@ -153,7 +164,8 @@ export class PortalIdentityService {
     data.termosVersao = await this.termosUso.resolveVersaoAtiva();
 
     let validacaoDominio: ValidacaoDominio = ValidacaoDominio.INDISPONIVEL;
-    if (parsed.tipo === TipoCliente.PJ) {
+    const tenantId = this.resolvePortalTenantId(req);
+    if (parsed.tipo === TipoCliente.PJ && (await this.shouldValidarDominioCorporativo(tenantId))) {
       validacaoDominio = await this.dominioValidator.validar(parsed.cpfCnpj, email);
     }
     data.validacaoDominio = validacaoDominio;

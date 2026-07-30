@@ -1455,7 +1455,7 @@ export type PortalDashboardConsolidatedResponse = {
   };
   meta: {
     tenantId: string;
-    slasHorasProxy: Record<string, number> | null;
+    slasMinutosMeta: Record<string, number> | null;
     cacheHit?: boolean;
     slaAmostraConcluidas?: number;
   };

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -21,8 +22,10 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { CadastrosColaboradoresService } from './cadastros-colaboradores.service';
+import { AniversariosService } from './aniversarios.service';
 import { CadastrosColaboradorFormDto } from './dto/cadastros-colaborador-form.dto';
 import { CadastrosColaboradorQueryDto } from './dto/cadastros-colaborador-query.dto';
+import { CreateFamiliarDto, UpdateFamiliarDto } from './dto/colaborador-familiar.dto';
 
 const CADASTROS_ROLES = [Role.ADMIN, Role.GERENTE] as const;
 
@@ -32,12 +35,22 @@ const CADASTROS_ROLES = [Role.ADMIN, Role.GERENTE] as const;
 @UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
 @Roles(...CADASTROS_ROLES)
 export class CadastrosColaboradoresController {
-  constructor(private readonly service: CadastrosColaboradoresService) {}
+  constructor(
+    private readonly service: CadastrosColaboradoresService,
+    private readonly aniversarios: AniversariosService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Listar colaboradores (cadastros MDM)' })
   list(@Query() query: CadastrosColaboradorQueryDto, @CurrentUser() user: AuthUser) {
     return this.service.list(query, user);
+  }
+
+  @Get('aniversarios/proximos')
+  @ApiOperation({ summary: 'Próximos aniversários de familiares (agenda RH)' })
+  proximosAniversarios(@Query('dias') dias?: string) {
+    const n = dias ? parseInt(dias, 10) : 30;
+    return this.aniversarios.getProximosAniversarios(Number.isFinite(n) && n > 0 ? n : 30);
   }
 
   @Get('check-cpf/:cpf')
@@ -63,6 +76,38 @@ export class CadastrosColaboradoresController {
   @ApiOperation({ summary: 'Histórico de alterações' })
   auditoria(@Param('id') id: string) {
     return this.service.listAuditoria(id);
+  }
+
+  @Get(':id/familiares')
+  @ApiOperation({ summary: 'Listar familiares do colaborador' })
+  listFamiliares(@Param('id') id: string) {
+    return this.service.listFamiliares(id);
+  }
+
+  @Post(':id/familiares')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Adicionar familiar' })
+  addFamiliar(@Param('id') id: string, @Body() dto: CreateFamiliarDto) {
+    return this.service.addFamiliar(id, dto);
+  }
+
+  @Patch(':id/familiares/:familiarId')
+  @ApiOperation({ summary: 'Atualizar familiar' })
+  updateFamiliar(@Param('familiarId') familiarId: string, @Body() dto: UpdateFamiliarDto) {
+    return this.service.updateFamiliar(familiarId, dto);
+  }
+
+  @Patch(':id/familiares/:familiarId/remover')
+  @ApiOperation({ summary: 'Remover familiar (soft delete)' })
+  removeFamiliar(@Param('familiarId') familiarId: string) {
+    return this.service.removeFamiliar(familiarId);
+  }
+
+  @Delete(':id/familiares/:familiarId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Excluir familiar permanentemente' })
+  deleteFamiliar(@Param('familiarId') familiarId: string) {
+    return this.service.deleteFamiliar(familiarId);
   }
 
   @Get(':id')

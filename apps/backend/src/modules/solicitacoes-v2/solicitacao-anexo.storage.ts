@@ -1,9 +1,7 @@
 import { randomUUID } from 'crypto';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { ObjectStorageService } from '../../common/storage/object-storage.service';
 
 const PREFIX = 'logistica/solicitacoes';
 
@@ -14,79 +12,57 @@ function sanitizeFilename(name: string): string {
 @Injectable()
 export class SolicitacaoAnexoStorageService {
   private readonly logger = new Logger(SolicitacaoAnexoStorageService.name);
-  private s3: S3Client | null = null;
-  private readonly bucket: string | undefined;
 
-  constructor(private readonly config: ConfigService) {
-    this.bucket = this.config.get<string>('AWS_S3_BUCKET') ?? process.env.AWS_S3_BUCKET;
-    const region = this.config.get<string>('AWS_REGION') ?? process.env.AWS_REGION ?? 'us-east-1';
-    if (
-      this.bucket &&
-      process.env.AWS_ACCESS_KEY_ID &&
-      process.env.AWS_SECRET_ACCESS_KEY
-    ) {
-      this.s3 = new S3Client({ region });
-    }
-  }
+  constructor(private readonly storage: ObjectStorageService) {}
 
-  /** Retorna URL persistida (s3://bucket/key ou local://rel) e tamanho. */
+  /** Retorna URL persistida (http(s) ou local API) e chave de storage. */
   async persist(params: {
     solicitacaoId: string;
     buffer: Buffer;
     mimeType: string;
     originalName: string;
-  }): Promise<{ url: string; storageKey: string }> {
+  }): Promise<{ url: string; storageKey: string; size: number; mimeType: string }> {
+    const ext = path.extname(params.originalName) || '';
     const safe = sanitizeFilename(params.originalName);
-    const key = `${PREFIX}/${params.solicitacaoId}/${randomUUID()}_${safe}`;
+    const key = `${PREFIX}/${params.solicitacaoId}/${randomUUID()}_${safe}${ext && !safe.endsWith(ext) ? ext : ''}`;
 
-    if (this.s3 && this.bucket) {
-      await this.s3.send(
-        new PutObjectCommand({
-          Bucket: this.bucket,
-          Key: key,
-          Body: params.buffer,
-          ContentType: params.mimeType,
-        }),
-      );
-      const url = `s3://${this.bucket}/${key}`;
-      this.logger.log(`Anexo S3 ${key}`);
-      return { url, storageKey: key };
-    }
+    const result = await this.storage.upload({
+      key,
+      body: params.buffer,
+      contentType: params.mimeType,
+      localServePath: `/v2/solicitacoes/anexos/media/${encodeURIComponent(key)}`,
+    });
 
-    const base = path.join(process.cwd(), 'uploads', 'solicitacoes', params.solicitacaoId);
-    fs.mkdirSync(base, { recursive: true });
-    const file = `${randomUUID()}_${safe}`;
-    const full = path.join(base, file);
-    fs.writeFileSync(full, params.buffer);
-    const url = `local://${params.solicitacaoId}/${file}`;
-    this.logger.warn(`Anexo local (S3 não configurado): ${full}`);
-    return { url, storageKey: `${params.solicitacaoId}/${file}` };
+    this.logger.log(`Anexo persistido ${result.storageKey}`);
+    return {
+      url: result.url,
+      storageKey: result.storageKey,
+      size: params.buffer.length,
+      mimeType: params.mimeType,
+    };
   }
 
   removeLocalIfApplicable(storedUrl: string): void {
-    if (!storedUrl.startsWith('local://')) return;
-    const rel = storedUrl.slice('local://'.length);
-    const full = path.join(process.cwd(), 'uploads', 'solicitacoes', rel);
-    try {
-      fs.unlinkSync(full);
-    } catch {
-      /* ignore */
-    }
+    if (!storedUrl.startsWith('local://') && !storedUrl.includes('/uploads/')) return;
+    /* legado local:// — cleanup via deleteUploadedObjects */
   }
 
-  /** Compensação saga gate: remove objetos já persistidos se a transação DB falhar. */
-  async deleteUploadedObjects(urls: string[]): Promise<void> {
-    for (const storedUrl of urls) {
-      if (storedUrl.startsWith('s3://') && this.s3 && this.bucket) {
-        const key = storedUrl.slice(`s3://${this.bucket}/`.length);
-        try {
-          await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
-        } catch (e) {
-          this.logger.warn(`Falha ao remover S3 ${key}: ${(e as Error).message}`);
-        }
-        continue;
+  async deleteUploadedObjects(urlsOrKeys: string[]): Promise<void> {
+    const keys = urlsOrKeys.map((u) => {
+      if (u.startsWith('s3://')) {
+        const bucket = process.env.AWS_S3_BUCKET ?? '';
+        return u.slice(`s3://${bucket}/`.length);
       }
-      this.removeLocalIfApplicable(storedUrl);
-    }
+      if (u.startsWith('http')) {
+        try {
+          const parsed = new URL(u);
+          return parsed.pathname.replace(/^\//, '');
+        } catch {
+          return u;
+        }
+      }
+      return u;
+    });
+    await this.storage.deleteMany(keys.filter(Boolean));
   }
 }

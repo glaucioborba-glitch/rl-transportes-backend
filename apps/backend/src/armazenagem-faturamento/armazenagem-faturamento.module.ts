@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { AlertModule } from '../alert/alert.module';
 import { AuditoriaModule } from '../auditoria/auditoria.module';
 import { BillingEngineModule } from '../billing-engine/billing-engine.module';
 import { OutboxModule } from '../outbox/outbox.module';
@@ -14,6 +15,7 @@ import { FaturamentoMoraService } from './faturamento-mora.service';
     forwardRef(() => OutboxModule),
     AuditoriaModule,
     TenantModule,
+    AlertModule,
   ],
   providers: [ArmazenagemBillingService, FaturamentoMoraService],
   exports: [ArmazenagemBillingService, FaturamentoMoraService],

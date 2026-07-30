@@ -114,7 +114,7 @@ export class PlataformaPublicDataService {
     });
     return {
       janelaDias: 30,
-      slaConfigUsuario: t?.config.slasHorasProxy ?? {},
+      slaConfigUsuario: t?.config.slasMinutosMeta ?? {},
       taxaConclusaoProxy: total ? Math.round((concl / total) * 1000) / 1000 : 0,
       observacao: 'SLA-as-a-service — métricas agregadas read-only (Fase 18).',
     };

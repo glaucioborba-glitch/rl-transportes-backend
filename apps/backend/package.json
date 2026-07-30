@@ -18,7 +18,11 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:validate": "prisma validate",
+    "validate:migrations": "ts-node scripts/validate-migrations.ts",
+    "db:validate-schema": "ts-node scripts/validate-schema-drift.ts",
+    "db:migrate-and-validate": "prisma migrate deploy && npm run db:validate-schema",
     "prisma:seed": "prisma db seed",
+    "seed:prod": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed-prod.ts",
     "seed": "ts-node scripts/seed-all.ts",
     "seed:clean": "ts-node scripts/seed-all.ts --clean",
     "seed:cadastros": "ts-node scripts/seed-all.ts --cadastros",
@@ -27,6 +31,8 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1047.0",
+    "@aws-sdk/s3-request-presigner": "^3.1090.0",
+    "@google-cloud/vision": "^5.3.7",
     "@nestjs/cache-manager": "^3.1.0",
     "@nestjs/common": "^11.0.12",
     "@nestjs/config": "^4.0.0",
@@ -45,6 +51,7 @@
     "@sentry/node": "^10.57.0",
     "@sentry/tracing": "^7.120.4",
     "@sparticuz/chromium": "^148.0.0",
+    "@types/pdfkit": "^0.17.6",
     "bcrypt": "^6.0.0",
     "cache-manager": "^7.2.8",
     "class-transformer": "^0.5.1",
@@ -63,12 +70,14 @@
     "nodemailer": "^8.0.7",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
+    "pdfkit": "^0.19.1",
     "pg": "^8.20.0",
     "puppeteer-core": "^25.0.2",
     "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.3",
+    "tesseract.js": "^7.0.0",
     "uuid": "^14.0.0",
     "winston": "^3.19.0"
   },
@@ -110,11 +119,26 @@
       "json",
       "ts"
     ],
-    "rootDir": "src",
-    "testRegex": ".*\\.spec\\.ts$",
-    "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
-    },
+    "projects": [
+      {
+        "displayName": "unit",
+        "rootDir": "src",
+        "testRegex": ".*\\.spec\\.ts$",
+        "transform": {
+          "^.+\\.(t|j)s$": "ts-jest"
+        },
+        "testEnvironment": "node"
+      },
+      {
+        "displayName": "smoke",
+        "rootDir": "test",
+        "testRegex": "pdfkit-smoke\\.spec\\.ts$",
+        "transform": {
+          "^.+\\.(t|j)s$": "ts-jest"
+        },
+        "testEnvironment": "node"
+      }
+    ],
     "collectCoverageFrom": [
       "**/*.(t|j)s",
       "!**/*.module.ts",

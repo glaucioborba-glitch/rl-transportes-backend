@@ -1,13 +1,18 @@
 import type {
   EventoGatilhoTarifa,
   RegraTarifaria,
+  StatusContainerTarifa,
   TipoContainerTarifa,
 } from '@prisma/client';
+import type { FaixaDiaria } from './faixa-diaria.types';
 
 export type ContainerBillingContext = {
   tamanho?: string | null;
   tipo?: string | null;
+  capacidade?: string | null;
   refrigerado?: boolean;
+  setPoint?: number | null;
+  statusContainer?: StatusContainerTarifa | null;
 };
 
 export type BillingRuleEngineInput = {
@@ -15,12 +20,17 @@ export type BillingRuleEngineInput = {
   asOf: Date;
   regras: RegraTarifaria[];
   container: ContainerBillingContext;
-  /** Cobrar taxa de gate-in (uma vez por ciclo). */
   incluirGateIn?: boolean;
-  /** Cobrar taxa de gate-out (fechamento). */
   incluirGateOut?: boolean;
-  /** Quantidade de shifting extras no período. */
   shiftingExtras?: number;
+  pricingOverrides?: {
+    diasFreeTime?: number;
+    valorDiaria?: number;
+    valorEnergiaReefer?: number;
+    faixasDiaria?: FaixaDiaria[];
+  };
+  operacaoFimSemana?: boolean;
+  feriadosDatas?: string[];
 };
 
 export type ItemFaturaCalculado = {
@@ -46,14 +56,22 @@ export type RegraTarifariaLike = Pick<
   | 'id'
   | 'eventoGatilho'
   | 'tipoContainer'
+  | 'statusContainer'
   | 'valor'
   | 'diasFreeTime'
   | 'ativa'
   | 'nome'
->;
+> &
+  Partial<Pick<RegraTarifaria, 'tipoContainerCodigo' | 'capacidadeCodigo' | 'containerTamanho' | 'faixasDiaria'>>;
 
 export type LegacyTarifaLike = {
   freeTimeDias: number;
   valorDiaria: number;
   valorServicosExtras?: number;
+};
+
+export type ContainerMdmKeys = {
+  tipoCodigo?: string | null;
+  capacidadeCodigo?: string | null;
+  containerTamanho?: string | null;
 };

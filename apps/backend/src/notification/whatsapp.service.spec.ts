@@ -1,28 +1,17 @@
 import { ConfigService } from '@nestjs/config';
 import { WhatsappService } from './whatsapp.service';
 
-describe('WhatsappService', () => {
-  it('modo sandbox quando WHATSAPP_ENABLED=false', async () => {
+describe('WhatsappService.checkTemplateStatus', () => {
+  it('retorna approved em sandbox quando desabilitado', async () => {
     const config = {
-      get: (key: string) => {
-        const map: Record<string, unknown> = {
-          'whatsapp.enabled': false,
-          'whatsapp.accessToken': '',
-          'whatsapp.phoneNumberId': '',
-          'whatsapp.provider': 'meta',
-        };
-        return map[key];
-      },
+      get: jest.fn((key: string) => {
+        if (key === 'whatsapp.enabled') return false;
+        return undefined;
+      }),
     } as unknown as ConfigService;
-
     const svc = new WhatsappService(config);
-    const res = await svc.sendTemplate({
-      toE164: '+5511999990000',
-      templateName: 'rl_test',
-      bodyParameters: ['A', 'B'],
-    });
-
-    expect(res.mode).toBe('sandbox');
-    expect(res.messageId).toMatch(/^sandbox-/);
+    const r = await svc.checkTemplateStatus('dunning_pre_vencimento');
+    expect(r.approved).toBe(true);
+    expect(r.status).toBe('sandbox');
   });
 });

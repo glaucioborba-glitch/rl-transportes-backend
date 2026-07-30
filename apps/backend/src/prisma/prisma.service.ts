@@ -8,6 +8,8 @@ import { TenantContextService } from '../tenant/tenant-context.service';
 import { AuditContextService } from '../audit-trail/audit-context.service';
 import { createAuditTrailExtension } from '../audit-trail/audit-trail.prisma-extension';
 import { DEFAULT_TENANT_ID, TENANT_SCOPED_MODELS } from '../tenant/tenant.constants';
+import { buildPgPoolConfig } from './prisma-pool.config';
+import { createPrismaRetryExtension } from './prisma-retry.extension';
 
 type PoolHolder = { __pool?: Pool };
 
@@ -22,15 +24,16 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     @Optional() auditContext?: AuditContextService,
   ) {
     const url = config.getOrThrow<string>('DATABASE_URL');
-    const pool = new Pool({ connectionString: url });
+    const pool = new Pool(buildPgPoolConfig(url));
     super({ adapter: new PrismaPg(pool) });
     this.pool = pool;
     (this as unknown as PoolHolder).__pool = pool;
 
-    let client: PrismaService = this;
+    let client: PrismaService = this.$extends(createPrismaRetryExtension()) as unknown as PrismaService;
+    (client as unknown as PoolHolder).__pool = pool;
 
     if (tenantContext) {
-      client = this.$extends({
+      client = client.$extends({
         query: {
           $allModels: {
             async $allOperations({ model, operation, args, query }) {

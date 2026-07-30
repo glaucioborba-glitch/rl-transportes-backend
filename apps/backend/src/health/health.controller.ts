@@ -7,9 +7,11 @@ import {
   HealthCheckError,
 } from '@nestjs/terminus';
 import { probeSecurityEngineStatus } from './security-engine-probe.util';
+import { CronAlertService } from '../common/cron/cron-alert.service';
 import { RedisService } from '../redis/redis.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { UnifiedHealthResponse } from './health-response.types';
+import { DbHealthService } from './db-health.service';
 import { PrismaHealthIndicator } from './indicators/prisma.health';
 import { RedisHealthIndicator } from './indicators/redis.health';
 import { IpmHealthIndicator } from './indicators/ipm.health';
@@ -24,6 +26,8 @@ export class HealthController {
     private readonly ipm: IpmHealthIndicator,
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
+    private readonly cronAlert: CronAlertService,
+    private readonly dbHealth: DbHealthService,
   ) {}
 
   /**
@@ -39,6 +43,15 @@ export class HealthController {
       () => this.redisIndicator.ping('redis'),
       () => this.ipm.ping('fiscal_ipm'),
     ]);
+  }
+
+  /** Health check proativo PostgreSQL (latência + conexões ativas). */
+  @Get('db')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Saúde do pool PostgreSQL (latência e conexões)' })
+  async dbPoolHealth() {
+    const result = await this.dbHealth.checkConnection();
+    return { timestamp: new Date().toISOString(), ...result };
   }
 
   /** Payload legado + security engine — sempre 200 (diagnóstico operacional). */
@@ -93,6 +106,15 @@ export class HealthController {
       securityEngine,
       timestamp,
       terminus,
+      crons: await this.cronAlert.getStatuses(),
     };
+  }
+
+  /** Status dos CRONs monitorados (última execução por jobId). */
+  @Get('crons')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Última execução dos CRONs (Redis-backed)' })
+  async crons() {
+    return { timestamp: new Date().toISOString(), jobs: await this.cronAlert.getStatuses() };
   }
 }

@@ -29,6 +29,7 @@ import { SolicitacaoAnexoStorageService } from '../modules/solicitacoes-v2/solic
 import { SolicitacoesV2Service } from '../modules/solicitacoes-v2/solicitacoes-v2.service';
 import { PatioV2Service } from '../patio-v2/patio.service';
 import { ArmazenagemBillingService } from '../armazenagem-faturamento/armazenagem-billing.service';
+import { isBillingEligibleIntent } from '../billing-engine/billing-eligible-intents.util';
 import { YardAllocationService } from '../yard-allocation/yard-allocation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { VistoriaService, type VistoriaPhotoUpload } from '../vistoria/vistoria.service';
@@ -311,7 +312,14 @@ export class GateV2Service {
 
         await tx.gateCheckIn.update({
           where: { id: gi.id },
-          data: { fotosEntrada: vist.publicUrls as unknown as Prisma.InputJsonValue },
+          data: {
+            fotosEntrada: Object.fromEntries(
+              vist.fotos.map((f) => [f.angulo, f.url]),
+            ) as unknown as Prisma.InputJsonValue,
+            fotosEntradaKeys: Object.fromEntries(
+              vist.fotos.map((f) => [f.angulo, f.storageKey]),
+            ) as unknown as Prisma.InputJsonValue,
+          },
         });
 
         await tx.solicitacao.update({
@@ -340,12 +348,14 @@ export class GateV2Service {
           referenceAt: gi.dataHora,
           tx,
         });
-        await this.armazenagemBilling.openPreFaturasForGateIn(
-          gi.id,
-          sol.clienteId,
-          gi.dataHora,
-          tx,
-        );
+        if (isBillingEligibleIntent(sol.tipoOperacao)) {
+          await this.armazenagemBilling.openPreFaturasForGateIn(
+            gi.id,
+            sol.clienteId,
+            gi.dataHora,
+            tx,
+          );
+        }
         return gi;
       });
     } catch (err) {
@@ -432,6 +442,13 @@ export class GateV2Service {
 
     const pessoaResponsavel = await this.resolvePessoaResponsavelSolicitacao(gi.solicitacaoId);
 
+    await this.holdRelease.resolveFinancialHoldForGateOut({
+      solicitacaoId: gi.solicitacaoId,
+      clienteId: gi.solicitacao.clienteId,
+      tenantId: gi.solicitacao.tenantId,
+      operadorId,
+    });
+
     const divergencias = this.mergeDivergencias([], dto.divergenciasOperador);
 
     const now = new Date();
@@ -461,7 +478,14 @@ export class GateV2Service {
 
         await tx.gateCheckOut.update({
           where: { id: co.id },
-          data: { fotosSaida: vist.publicUrls as unknown as Prisma.InputJsonValue },
+          data: {
+            fotosSaida: Object.fromEntries(
+              vist.fotos.map((f) => [f.angulo, f.url]),
+            ) as unknown as Prisma.InputJsonValue,
+            fotosSaidaKeys: Object.fromEntries(
+              vist.fotos.map((f) => [f.angulo, f.storageKey]),
+            ) as unknown as Prisma.InputJsonValue,
+          },
         });
 
         await tx.solicitacao.update({
@@ -492,7 +516,9 @@ export class GateV2Service {
           tx,
         );
         await this.patioV2.finalizeFromGateOut(gateInId, operadorId, tx);
-        await this.armazenagemBilling.consolidateOnGateOut(gateInId, now, tx);
+        if (isBillingEligibleIntent(gi.solicitacao.tipoOperacao)) {
+          await this.armazenagemBilling.consolidateOnGateOut(gateInId, now, tx);
+        }
       });
     } catch (err) {
       if (vistoriaStorageKeys.length) {

@@ -54,7 +54,7 @@ export class MobileOperacionalController {
   }
 
   @Get('minhas-operacoes')
-  @ApiOperation({ summary: 'Ultimas operacoes aceitas pelo terminal (memoria)' })
+  @ApiOperation({ summary: 'Ultimas operacoes aceitas pelo terminal (PostgreSQL mobile_hub_ops + legado)' })
   minhas(@CurrentUser() user: AuthUser) {
     return this.mobile.listOps(user.id);
   }

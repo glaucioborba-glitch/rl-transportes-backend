@@ -102,9 +102,11 @@ export function isSwaggerEnabled(): boolean {
   );
 }
 
-/** Anti-CSRF double-submit; defina CSRF_ENABLED=1 em ambientes com front em navegador. */
+/** Anti-CSRF double-submit; ligado por default em produção (CSRF_ENABLED=0 para desligar). */
 export function isCsrfEnabled(): boolean {
-  return process.env.CSRF_ENABLED === '1';
+  if (process.env.CSRF_ENABLED === '0') return false;
+  if (process.env.CSRF_ENABLED === '1') return true;
+  return isProductionDeploy();
 }
 
 /**

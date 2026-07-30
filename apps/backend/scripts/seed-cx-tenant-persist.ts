@@ -40,7 +40,7 @@ async function seedTenantDefault() {
       nome: 'Terminal corporativo (default)',
       parametros: {},
       clienteIds: [],
-      slasHorasProxy: { gate: 4, patio: 72, saida: 24 },
+      slasMinutosMeta: { gate: 240, patio: 4320, saida: 1440 },
       horarioFuncionamento: '06:00–22:00 UTC',
       regrasOperacao: 'Tenant default — sem segregação de clientes até configurar.',
     },

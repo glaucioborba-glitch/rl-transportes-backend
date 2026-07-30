@@ -22,10 +22,12 @@ export default defineConfig({
     { name: "Mobile Safari", use: { ...devices["iPhone 13"] } },
   ],
   webServer: {
-    command: `npm run start -- -p ${port}`,
+    command: process.env.CI
+      ? `npm run build && npm run start -- -p ${port}`
+      : `npm run start -- -p ${port}`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    timeout: process.env.CI ? 300_000 : 120_000,
     env: {
       E2E_MOCK_AUTH: "1",
       NEXT_PUBLIC_E2E_MOCK_AUTH: "1",

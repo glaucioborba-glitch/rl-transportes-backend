@@ -1,18 +1,20 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { EventoGatilhoTarifa, Prisma, StatusPreFatura, StatusPagamentoFatura } from '@prisma/client';
+import { AlertService } from '../alert/alert.service';
 import { BillingRuleEngineService } from '../billing-engine/billing-rule-engine.service';
+import { assertTabelaPrecoConfigurada, inferTipoContainer } from '../billing-engine/billing-rule-engine.util';
 import { normalizeContainerIso } from '../common/utils/data-sanitize';
 import { OutboxService } from '../outbox/outbox.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   DEFAULT_FREE_TIME_DIAS,
   DEFAULT_VALOR_DIARIA,
-  DEFAULT_VALOR_SERVICOS_EXTRAS,
   toDecimal,
 } from './armazenagem-billing.util';
 import { assertNoConflictingBilling } from './billing-coexistence.util';
@@ -46,21 +48,8 @@ export class ArmazenagemBillingService {
     private readonly prisma: PrismaService,
     private readonly outbox: OutboxService,
     private readonly ruleEngine: BillingRuleEngineService,
+    private readonly alerts: AlertService,
   ) {}
-
-  async ensureTarifa(clienteId: string, tx?: Prisma.TransactionClient) {
-    const db = tx ?? this.prisma;
-    const existing = await db.tabelaTarifaria.findUnique({ where: { clienteId } });
-    if (existing) return existing;
-    return db.tabelaTarifaria.create({
-      data: {
-        clienteId,
-        freeTimeDias: DEFAULT_FREE_TIME_DIAS,
-        valorDiaria: toDecimal(DEFAULT_VALOR_DIARIA),
-        valorServicosExtras: toDecimal(DEFAULT_VALOR_SERVICOS_EXTRAS),
-      },
-    });
-  }
 
   /** Abre pré-faturas ABERTAS para cada ISO provisionado no gate-in. */
   async openPreFaturasForGateIn(
@@ -69,8 +58,12 @@ export class ArmazenagemBillingService {
     gateInAt: Date,
     tx: Prisma.TransactionClient,
   ) {
-    await this.ensureTarifa(clienteId, tx);
     const pricing = await this.ruleEngine.resolvePricingForCliente(clienteId);
+    const clienteRow = await tx.cliente.findUnique({
+      where: { id: clienteId },
+      select: { tenantId: true },
+    });
+    const tenantId = clienteRow?.tenantId ?? 'default';
     const units = await tx.patioUnidade.findMany({
       where: { gateInId },
       select: { unidadeIso: true },
@@ -94,13 +87,14 @@ export class ArmazenagemBillingService {
       });
 
       const container = await this.ruleEngine.loadContainerContext(gateInId, containerIso);
-      const evaluation = this.ruleEngine.evaluateForContainerCycle({
+      const evaluation = await this.ruleEngine.evaluateForContainerCycleWithTenant(tenantId, {
         gateInAt,
         asOf: gateInAt,
         regras: pricing.regras,
         container,
         fase: 'GATE_IN',
-        legado: pricing.legado,
+        clienteId,
+        tabelaPrecoId: pricing.tabelaPrecoId,
       });
 
       await this.ruleEngine.persistItens(
@@ -130,27 +124,63 @@ export class ArmazenagemBillingService {
       },
       include: {
         gateIn: { select: { dataHora: true } },
+        cliente: { select: { id: true, tenantId: true } },
       },
     });
 
+    const skippedTenants = new Set<string>();
     let updated = 0;
+
     for (const pf of open) {
-      await this.ensureTarifa(pf.clienteId);
+      const tenantId = pf.cliente.tenantId;
+
+      if (!skippedTenants.has(tenantId)) {
+        const padrao = await this.prisma.tabelaPreco.findFirst({
+          where: { tenantId, OR: [{ padrao: true }, { ativa: true }] },
+          include: { regras: { where: { ativa: true } } },
+        });
+
+        if (!padrao?.regras.length) {
+          this.logger.warn(`Tenant ${tenantId} sem tabela de preço — pulando provisão`);
+          await this.alerts.fiscalIpmDown({
+            reason: `Tenant ${tenantId} sem tabela de preço configurada`,
+          });
+          skippedTenants.add(tenantId);
+        }
+      }
+
+      if (skippedTenants.has(tenantId)) continue;
+
       const pricing = await this.ruleEngine.resolvePricingForCliente(pf.clienteId);
       const container = await this.ruleEngine.loadContainerContext(pf.gateInId, pf.containerIso);
 
-      const diariaEval = this.ruleEngine.evaluateForContainerCycle({
+      if (pricing.source === 'TABELA_PRECO') {
+        const tabela = await this.prisma.tabelaPreco.findFirst({
+          where: { id: pricing.tabelaPrecoId },
+          include: { regras: { where: { ativa: true } } },
+        });
+        try {
+          assertTabelaPrecoConfigurada(tabela, inferTipoContainer(container));
+        } catch (err) {
+          this.logger.error(`Erro provisionando ${pf.id}: ${(err as Error).message}`);
+          continue;
+        }
+      }
+
+      const diariaEval = await this.ruleEngine.evaluateForContainerCycleWithTenant(tenantId, {
         gateInAt: pf.gateIn.dataHora,
         asOf,
         regras: pricing.regras,
         container,
         fase: 'PROVISAO_DIARIA',
-        legado: pricing.legado,
+        clienteId: pf.clienteId,
+        tabelaPrecoId: pricing.tabelaPrecoId,
       });
 
       await this.ruleEngine.persistItens(pf.id, diariaEval, undefined, [
         EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
         EventoGatilhoTarifa.SHIFTING_EXTRA,
+        EventoGatilhoTarifa.ENERGIA_REEFER,
       ]);
 
       const total = await this.ruleEngine.sumItensTotal(pf.id);
@@ -169,7 +199,7 @@ export class ArmazenagemBillingService {
     }
 
     this.logger.log(`CRON rule engine: ${updated} pré-fatura(s) provisionadas`);
-    return { updated, asOf: asOf.toISOString(), engine: 'BillingRuleEngine' };
+    return { updated, asOf: asOf.toISOString(), engine: 'BillingRuleEngine', skippedTenants: [...skippedTenants] };
   }
 
   /** Visão portal — tenant isolation + cálculo ao vivo se ABERTA. */
@@ -177,8 +207,12 @@ export class ArmazenagemBillingService {
     const containerIso = normalizeContainerIso(isoRaw).replace(/\s/g, '').toUpperCase();
     if (!containerIso) throw new NotFoundException('Contêiner não encontrado');
 
-    await this.ensureTarifa(clienteId);
     const pricing = await this.ruleEngine.resolvePricingForCliente(clienteId);
+    const clienteRow = await this.prisma.cliente.findUnique({
+      where: { id: clienteId },
+      select: { tenantId: true },
+    });
+    const tenantId = clienteRow?.tenantId ?? 'default';
     const diariaRegra = pricing.regras.find(
       (r) => r.eventoGatilho === EventoGatilhoTarifa.DIARIA_ARMAZENAGEM && r.ativa,
     );
@@ -265,13 +299,14 @@ export class ArmazenagemBillingService {
           containerIso,
         );
 
-    const live = this.ruleEngine.evaluateForContainerCycle({
+    const live = await this.ruleEngine.evaluateForContainerCycleWithTenant(tenantId, {
       gateInAt,
       asOf: new Date(),
       regras: pricing.regras,
       container,
       fase: 'PROVISAO_DIARIA',
-      legado: pricing.legado,
+      clienteId,
+      tabelaPrecoId: pricing.tabelaPrecoId,
     });
 
     const gateInItems =
@@ -336,23 +371,38 @@ export class ArmazenagemBillingService {
 
   /** Gate-Out: congela pré-faturas, emite fatura (PROCESSANDO) + outbox NFS-e/boleto. */
   async consolidateOnGateOut(gateInId: string, gateOutAt: Date, tx: Prisma.TransactionClient) {
+    const existingFatura = await tx.fatura.findFirst({
+      where: { preFatura: { gateInId } },
+      include: { preFatura: { select: { containerIso: true } } },
+    });
+    if (existingFatura) {
+      throw new ConflictException(
+        `Fatura ${existingFatura.id} já consolidada para gate-in ${gateInId} (ISO ${existingFatura.preFatura.containerIso})`,
+      );
+    }
+
     const preFaturas = await tx.preFatura.findMany({
       where: { gateInId, status: StatusPreFatura.ABERTA },
       include: { gateIn: { select: { dataHora: true } } },
     });
 
     for (const pf of preFaturas) {
-      await this.ensureTarifa(pf.clienteId, tx);
       const pricing = await this.ruleEngine.resolvePricingForCliente(pf.clienteId);
       const container = await this.ruleEngine.loadContainerContext(gateInId, pf.containerIso);
+      const clientePf = await tx.cliente.findUnique({
+        where: { id: pf.clienteId },
+        select: { tenantId: true },
+      });
+      const tenantIdPf = clientePf?.tenantId ?? 'default';
 
-      const evaluation = this.ruleEngine.evaluateForContainerCycle({
+      const evaluation = await this.ruleEngine.evaluateForContainerCycleWithTenant(tenantIdPf, {
         gateInAt: pf.gateIn.dataHora,
         asOf: gateOutAt,
         regras: pricing.regras,
         container,
         fase: 'GATE_OUT',
-        legado: pricing.legado,
+        clienteId: pf.clienteId,
+        tabelaPrecoId: pricing.tabelaPrecoId,
       });
 
       await this.ruleEngine.persistItens(pf.id, evaluation, tx);

@@ -1,11 +1,14 @@
 import { StatusSolicitacao, TipoUnidade } from '@prisma/client';
 
-/** Limites operacionais por etapa (proxy BR-AG / tenant — horas entre marcos). */
-export type SlaHorasOperacionais = {
+/** Limites operacionais por etapa (proxy BR-AG / tenant — minutos entre marcos). */
+export type SlaMinutosOperacionais = {
   gate: number;
   patio: number;
   saida: number;
 };
+
+/** @deprecated use SlaMinutosOperacionais */
+export type SlaHorasOperacionais = SlaMinutosOperacionais;
 
 export function monthBoundsUtc(ref = new Date()): { start: Date; end: Date } {
   const y = ref.getUTCFullYear();
@@ -50,6 +53,10 @@ export function hoursBetween(a: Date, b: Date): number {
   return Math.max(0, (b.getTime() - a.getTime()) / 3_600_000);
 }
 
+export function minutesBetween(a: Date, b: Date): number {
+  return Math.max(0, (b.getTime() - a.getTime()) / 60_000);
+}
+
 export type MarcoOperacional = {
   portaria?: { createdAt: Date } | null;
   gate?: { createdAt: Date } | null;
@@ -64,7 +71,7 @@ export type MarcoOperacional = {
 export function avaliarSlaOperacional(
   createdAt: Date,
   marcos: MarcoOperacional,
-  limites: SlaHorasOperacionais,
+  limites: SlaMinutosOperacionais,
 ): boolean | null {
   const p = marcos.portaria?.createdAt;
   const g = marcos.gate?.createdAt;
@@ -74,17 +81,17 @@ export function avaliarSlaOperacional(
   const violacoes: boolean[] = [];
 
   if (p && g) {
-    violacoes.push(hoursBetween(p, g) > limites.gate);
+    violacoes.push(minutesBetween(p, g) > limites.gate);
   } else if (!p && g) {
-    violacoes.push(hoursBetween(createdAt, g) > limites.gate);
+    violacoes.push(minutesBetween(createdAt, g) > limites.gate);
   }
 
   if (g && pt) {
-    violacoes.push(hoursBetween(g, pt) > limites.patio);
+    violacoes.push(minutesBetween(g, pt) > limites.patio);
   }
 
   if (pt && sd) {
-    violacoes.push(hoursBetween(pt, sd) > limites.saida);
+    violacoes.push(minutesBetween(pt, sd) > limites.saida);
   }
 
   if (violacoes.length === 0) return null;

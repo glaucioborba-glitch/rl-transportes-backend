@@ -58,7 +58,7 @@ const BLOCOS: BlocoCardDef[] = [
     title: "Parâmetros do Sistema",
     href: "/cadastros/parametros",
     icon: Settings,
-    desc: "Parâmetros, Feriados, SLA, Configurações de Pátio",
+    desc: "Configuração centralizada do terminal — operacional, financeiro e régua de cobrança",
   },
   {
     id: "permissoes",

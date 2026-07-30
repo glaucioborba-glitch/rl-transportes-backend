@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { GiroEstimado, Prisma, TipoOperacaoSolicitacaoIntent } from '@prisma/client';
+import { EventoGatilhoTarifa, GiroEstimado, Prisma, TipoOperacaoSolicitacaoIntent } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 const MS_PER_DAY = 86_400_000;
@@ -52,11 +52,37 @@ export class YardAllocationService {
 
   async resolveFreeTimeDias(clienteId: string, tx?: Prisma.TransactionClient): Promise<number> {
     const db = tx ?? this.prisma;
-    const tarif = await db.tabelaTarifaria.findUnique({
-      where: { clienteId },
-      select: { freeTimeDias: true },
+
+    const cliente = await db.cliente.findUnique({
+      where: { id: clienteId },
+      select: {
+        tenantId: true,
+        tabelaPreco: {
+          include: {
+            regras: {
+              where: { ativa: true, eventoGatilho: EventoGatilhoTarifa.DIARIA_ARMAZENAGEM },
+              take: 1,
+            },
+          },
+        },
+      },
     });
-    return tarif?.freeTimeDias ?? DEFAULT_FREE_TIME_DIAS;
+
+    if (cliente?.tabelaPreco?.regras[0]) {
+      return cliente.tabelaPreco.regras[0].diasFreeTime;
+    }
+
+    const padrao = await db.tabelaPreco.findFirst({
+      where: { tenantId: cliente?.tenantId ?? 'default', padrao: true, ativa: true },
+      include: {
+        regras: {
+          where: { ativa: true, eventoGatilho: EventoGatilhoTarifa.DIARIA_ARMAZENAGEM },
+          take: 1,
+        },
+      },
+    });
+
+    return padrao?.regras[0]?.diasFreeTime ?? DEFAULT_FREE_TIME_DIAS;
   }
 
   async applyGiroEstimado(

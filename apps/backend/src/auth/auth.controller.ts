@@ -32,7 +32,7 @@ import { RefreshDto } from './dto/refresh.dto';
 import { AuthRegisterDto } from './dto/auth-register.dto';
 import { AuthResetPasswordDto } from './dto/auth-reset-password.dto';
 import { CpfCnpjValidationPipe } from '../common/pipes/cpf-cnpj-validation.pipe';
-import { CorporateCpfCnpjPipe } from '../corporate-auth/validators/corporate-cpf-cnpj.pipe';
+import { StaffLoginCpfPipe } from '../corporate-auth/validators/staff-login-cpf.pipe';
 import { resolveLoginTenantId } from '../tenant/resolve-login-tenant.util';
 
 function wantsCookieAuth(req: ExpressRequest): boolean {
@@ -66,7 +66,7 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(
-    @Body(CorporateCpfCnpjPipe) dto: LoginDto,
+    @Body(StaffLoginCpfPipe) dto: LoginDto,
     @Request() req: ExpressRequest,
     @Res({ passthrough: true }) res: Response,
   ) {

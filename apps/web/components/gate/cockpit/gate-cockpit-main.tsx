@@ -64,6 +64,9 @@ function resolveSection(pathname: string): string {
 export function GateCockpitMain() {
   const pathname = usePathname();
   const detalheId = parseAutorizacaoDetalheId(pathname);
+  const { data, loading, refresh, fila, operacao, despacho, patioUnidades, ordens } =
+    useGateFilteredData();
+  const { filters, setFiltroOsStatus } = useGateCockpitContext();
 
   if (detalheId) {
     return <GateAutorizacaoDetalhePanel id={detalheId} />;
@@ -71,9 +74,6 @@ export function GateCockpitMain() {
 
   const section = resolveSection(pathname);
   const meta = SECTIONS[section] ?? SECTIONS.dashboard;
-  const { data, loading, refresh, fila, operacao, despacho, patioUnidades, ordens } =
-    useGateFilteredData();
-  const { filters, setFiltroOsStatus } = useGateCockpitContext();
 
   return (
     <>

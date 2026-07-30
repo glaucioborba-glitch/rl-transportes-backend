@@ -9,4 +9,6 @@ logs/
 # Ambiente local (nunca versionar segredos)
 .env
 .env.local
-.env.*.local
+# Uploads locais (dev) — produção usa S3
+uploads/
+apps/backend/uploads/

@@ -1,5 +1,6 @@
 import { Module, OnModuleInit } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
+import { CronAlertModule } from '../common/cron/cron-alert.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { WorkforcePlanningModule } from '../workforce-planning/workforce-planning.module';
 import { BiAnalyticsCronService } from './bi-analytics-cron.service';
@@ -7,7 +8,7 @@ import { BiAnalyticsController } from './bi-analytics.controller';
 import { BiAnalyticsRefreshService, BiAnalyticsService } from './bi-analytics.service';
 
 @Module({
-  imports: [PrismaModule, ScheduleModule, WorkforcePlanningModule],
+  imports: [PrismaModule, ScheduleModule, WorkforcePlanningModule, CronAlertModule],
   controllers: [BiAnalyticsController],
   providers: [BiAnalyticsService, BiAnalyticsRefreshService, BiAnalyticsCronService],
   exports: [BiAnalyticsService, BiAnalyticsRefreshService],

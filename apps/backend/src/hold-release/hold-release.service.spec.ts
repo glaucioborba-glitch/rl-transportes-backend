@@ -12,6 +12,7 @@ describe('HoldReleaseService', () => {
     bloqueioContainer: {
       findFirst: jest.Mock;
       findMany: jest.Mock;
+      findUnique: jest.Mock;
       create: jest.Mock;
       update: jest.Mock;
       updateMany: jest.Mock;
@@ -24,13 +25,14 @@ describe('HoldReleaseService', () => {
 
   beforeEach(async () => {
     prisma = {
-      bloqueioContainer: {
-        findFirst: jest.fn(),
-        findMany: jest.fn(),
-        create: jest.fn(),
-        update: jest.fn(),
-        updateMany: jest.fn(),
-      },
+    bloqueioContainer: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+    },
       solicitacao: { findFirst: jest.fn(), findMany: jest.fn() },
       unidade: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       boleto: { findMany: jest.fn().mockResolvedValue([]) },
@@ -114,5 +116,60 @@ describe('HoldReleaseService', () => {
     const r = await service.liberarBloqueioFinanceiro('cli-1');
     expect(r.liberados).toBe(0);
     expect(releaseSpy).not.toHaveBeenCalled();
+  });
+
+  it('resolveFinancialHoldForGateOut lança ForbiddenException se financeiro + inadimplente', async () => {
+    prisma.bloqueioContainer.findFirst.mockResolvedValue({
+      id: 'b-fin',
+      tipo: TipoBloqueioContainer.FINANCEIRO,
+      motivo: 'Boleto vencido',
+    });
+    jest.spyOn(service, 'clientePossuiInadimplenciaAtiva').mockResolvedValue(true);
+
+    await expect(
+      service.resolveFinancialHoldForGateOut({
+        solicitacaoId: 's1',
+        clienteId: 'cli-1',
+        tenantId: 'default',
+        operadorId: 'op-1',
+      }),
+    ).rejects.toThrow(/Bloqueio ID: b-fin/);
+  });
+
+  it('resolveFinancialHoldForGateOut libera bloqueio financeiro quando pagamento regularizado', async () => {
+    prisma.bloqueioContainer.findFirst.mockResolvedValue({
+      id: 'b-fin',
+      tipo: TipoBloqueioContainer.FINANCEIRO,
+      motivo: 'Boleto vencido',
+      solicitacaoId: 's1',
+      status: 'ATIVO',
+    });
+    jest.spyOn(service, 'clientePossuiInadimplenciaAtiva').mockResolvedValue(false);
+    prisma.bloqueioContainer.findUnique.mockResolvedValue({
+      id: 'b-fin',
+      tipo: TipoBloqueioContainer.FINANCEIRO,
+      motivo: 'Boleto vencido',
+      solicitacaoId: 's1',
+      status: 'ATIVO',
+    });
+    prisma.bloqueioContainer.update.mockResolvedValue({
+      id: 'b-fin',
+      tipo: TipoBloqueioContainer.FINANCEIRO,
+      motivo: 'Boleto vencido',
+      status: 'LIBERADO',
+      bloqueadoPorId: 'SISTEMA',
+      dataBloqueio: new Date(),
+      liberadoPorId: 'op-1',
+      dataLiberacao: new Date(),
+    });
+
+    await service.resolveFinancialHoldForGateOut({
+      solicitacaoId: 's1',
+      clienteId: 'cli-1',
+      tenantId: 'default',
+      operadorId: 'op-1',
+    });
+
+    expect(prisma.bloqueioContainer.update).toHaveBeenCalled();
   });
 });

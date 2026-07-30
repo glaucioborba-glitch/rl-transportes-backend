@@ -1,13 +1,18 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import type { AuditContextService } from './audit-context.service';
 import { captureModelMutation } from './audit-trail-capture.util';
+import {
+  AUDITED_MODEL_DELEGATES,
+  AUDITED_PRISMA_MODELS,
+  type AuditedPrismaModel,
+} from './audit-trail.models';
 
 type Db = PrismaClient;
 
 async function safeCapture(
   client: Db,
   auditContext: AuditContextService,
-  model: 'Fatura' | 'Solicitacao' | 'BloqueioContainer',
+  model: AuditedPrismaModel,
   operation: 'update' | 'delete',
   before: Record<string, unknown> | null,
   after: Record<string, unknown> | null,
@@ -19,86 +24,48 @@ async function safeCapture(
   }
 }
 
+type QueryHookArgs = {
+  args: { where: unknown };
+  query: (args: unknown) => Promise<unknown>;
+};
+
+function buildModelHooks(
+  client: Db,
+  auditContext: AuditContextService,
+  model: AuditedPrismaModel,
+  delegateKey: string,
+) {
+  const delegate = (client as unknown as Record<string, { findUnique: (a: unknown) => Promise<unknown> }>)[
+    delegateKey
+  ];
+
+  return {
+    async update({ args, query }: QueryHookArgs) {
+      const before = delegate
+        ? ((await delegate.findUnique({ where: args.where })) as Record<string, unknown> | null)
+        : null;
+      const result = await query(args);
+      void safeCapture(client, auditContext, model, 'update', before, result as Record<string, unknown> | null);
+      return result;
+    },
+    async delete({ args, query }: QueryHookArgs) {
+      const before = delegate
+        ? ((await delegate.findUnique({ where: args.where })) as Record<string, unknown> | null)
+        : null;
+      const result = await query(args);
+      void safeCapture(client, auditContext, model, 'delete', before, null);
+      return result;
+    },
+  };
+}
+
 export function createAuditTrailExtension(auditContext: AuditContextService) {
-  return Prisma.defineExtension((client) =>
-    client.$extends({
-      query: {
-        fatura: {
-          async update({ args, query }) {
-            const before = (await client.fatura.findUnique({
-              where: args.where as Prisma.FaturaWhereUniqueInput,
-            })) as Record<string, unknown> | null;
-            const result = await query(args);
-            void safeCapture(
-              client as unknown as Db,
-              auditContext,
-              'Fatura',
-              'update',
-              before,
-              result as Record<string, unknown> | null,
-            );
-            return result;
-          },
-          async delete({ args, query }) {
-            const before = (await client.fatura.findUnique({
-              where: args.where as Prisma.FaturaWhereUniqueInput,
-            })) as Record<string, unknown> | null;
-            const result = await query(args);
-            void safeCapture(client as unknown as Db, auditContext, 'Fatura', 'delete', before, null);
-            return result;
-          },
-        },
-        solicitacao: {
-          async update({ args, query }) {
-            const before = (await client.solicitacao.findUnique({
-              where: args.where as Prisma.SolicitacaoWhereUniqueInput,
-            })) as Record<string, unknown> | null;
-            const result = await query(args);
-            void safeCapture(
-              client as unknown as Db,
-              auditContext,
-              'Solicitacao',
-              'update',
-              before,
-              result as Record<string, unknown> | null,
-            );
-            return result;
-          },
-          async delete({ args, query }) {
-            const before = (await client.solicitacao.findUnique({
-              where: args.where as Prisma.SolicitacaoWhereUniqueInput,
-            })) as Record<string, unknown> | null;
-            const result = await query(args);
-            void safeCapture(client as unknown as Db, auditContext, 'Solicitacao', 'delete', before, null);
-            return result;
-          },
-        },
-        bloqueioContainer: {
-          async update({ args, query }) {
-            const before = (await client.bloqueioContainer.findUnique({
-              where: args.where as Prisma.BloqueioContainerWhereUniqueInput,
-            })) as Record<string, unknown> | null;
-            const result = await query(args);
-            void safeCapture(
-              client as unknown as Db,
-              auditContext,
-              'BloqueioContainer',
-              'update',
-              before,
-              result as Record<string, unknown> | null,
-            );
-            return result;
-          },
-          async delete({ args, query }) {
-            const before = (await client.bloqueioContainer.findUnique({
-              where: args.where as Prisma.BloqueioContainerWhereUniqueInput,
-            })) as Record<string, unknown> | null;
-            const result = await query(args);
-            void safeCapture(client as unknown as Db, auditContext, 'BloqueioContainer', 'delete', before, null);
-            return result;
-          },
-        },
-      },
-    }),
-  );
+  return Prisma.defineExtension((client) => {
+    const query: Record<string, ReturnType<typeof buildModelHooks>> = {};
+    for (const model of AUDITED_PRISMA_MODELS) {
+      const delegateKey = AUDITED_MODEL_DELEGATES[model];
+      query[delegateKey] = buildModelHooks(client as unknown as Db, auditContext, model, delegateKey);
+    }
+    return client.$extends({ query: query as never });
+  });
 }

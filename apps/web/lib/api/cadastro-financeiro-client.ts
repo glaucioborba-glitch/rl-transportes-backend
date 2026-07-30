@@ -33,7 +33,7 @@ export type CondicaoPagamentoAprovacao = CondicaoPagamentoCadastroValue;
 
 export { CONDICAO_PAGAMENTO_PADRAO_VALUE as CONDICAO_PAGAMENTO_PADRAO };
 
-// TODO FASE 02: Substituir opções fixas por tabela CondicaoPagamentoPersonalizada
+// Condições de pagamento carregadas da API do tenant (dinâmico)
 
 export async function listarCadastrosPendentes(): Promise<CadastroPendenteRow[]> {
   return staffJson<CadastroPendenteRow[]>("/financeiro/cadastros-pendentes");
@@ -42,6 +42,10 @@ export async function listarCadastrosPendentes(): Promise<CadastroPendenteRow[]>
 export async function fetchPendenciasCadastroCount(): Promise<number> {
   const res = await staffJson<{ count: number }>("/financeiro/pendencias-count");
   return typeof res.count === "number" ? res.count : 0;
+}
+
+export async function listarCondicoesPagamento(): Promise<Array<{ label: string; value: string }>> {
+  return staffJson("/financeiro/cadastros-pendentes/condicoes-pagamento");
 }
 
 export async function aprovarCadastroFinanceiro(id: string, condicaoPagamento: string) {

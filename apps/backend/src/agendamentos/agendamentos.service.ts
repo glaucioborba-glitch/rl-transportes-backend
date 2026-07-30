@@ -8,17 +8,22 @@ import {
 import {
   AcaoAuditoria,
   AgendamentoTerminal,
+  CategoriaAuditLog,
   ModalidadeTransporte,
   Prisma,
   StatusAgendamentoTerminal,
   TurnoAgendamento,
 } from '@prisma/client';
+import { appendAuditTrailEntry } from '../audit-trail/audit-trail-capture.util';
+import { AuditContextService } from '../audit-trail/audit-context.service';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { FEATURE_FLAG_KEYS } from '../feature-flags/feature-flag.keys';
 import { FeatureFlagService } from '../feature-flags/feature-flag.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PRISMA_SERIALIZABLE_TX } from '../prisma/transaction-options';
 import { ServicosLogisticosService } from '../servicos-logisticos/servicos-logisticos.service';
+import { TenantConfigService } from '../tenant/tenant-config.service';
+import { DEFAULT_TENANT_ID } from '../tenant/tenant.constants';
 import { normalizeContainerIso } from '../common/utils/data-sanitize';
 import { TosEventEmitter } from '../tos/tos-event-emitter';
 import {
@@ -27,7 +32,7 @@ import {
   TRANSPORTE_SOLICITADO_EVENT,
   type TransporteSolicitadoPayload,
 } from './agendamento-transporte.util';
-import { turnoAtual } from './agendamentos-turno.util';
+import { diaSemanaCodigo, isFimDeSemana, parseHoraMinutos, resolveTurnoConfig, turnoAtual, turnoAtualFromConfig } from './agendamentos-turno.util';
 import { CreateAgendamentoDto } from './dto/create-agendamento.dto';
 import { UpdateCapacidadeTurnoDto } from './dto/update-capacidade-turno.dto';
 
@@ -41,6 +46,8 @@ export class AgendamentosService {
     private readonly servicosLogisticos: ServicosLogisticosService,
     private readonly eventEmitter: TosEventEmitter,
     private readonly flags: FeatureFlagService,
+    private readonly tenantConfig: TenantConfigService,
+    private readonly auditContext: AuditContextService,
   ) {}
 
   private parseDataRef(isoDate: string): Date {
@@ -57,23 +64,99 @@ export class AgendamentosService {
     turno: TurnoAgendamento,
     reservas = 1,
     tx?: Prisma.TransactionClient,
+    tenantId = DEFAULT_TENANT_ID,
   ): Promise<void> {
     const dataParsed = this.parseDataRef(dataRef);
     const db = tx ?? this.prisma;
-    const cap = await db.capacidadeTurnoTerminal.findUnique({ where: { turno } });
-    const limite = cap?.limiteContainers ?? 30;
+
+    const config = await this.tenantConfig.getParametrosGerais(tenantId);
+    const turnoConfig = resolveTurnoConfig(config.operacional.turnos, dataParsed, turno);
+
+    if (!turnoConfig) {
+      throw new BadRequestException(
+        `Turno ${turno} inválido ou inativo para ${dataRef} (${diaSemanaCodigo(dataParsed)}).`,
+      );
+    }
+
+    const limite = turnoConfig.capacidadeMaxima;
     const ocupados = await db.agendamentoTerminal.count({
       where: {
+        tenantId,
         dataRef: dataParsed,
         turno,
-        status: { not: StatusAgendamentoTerminal.CANCELADO },
+        status: {
+          notIn: [
+            StatusAgendamentoTerminal.CANCELADO,
+            StatusAgendamentoTerminal.CANCELADO_CLIENTE,
+          ],
+        },
       },
     });
     if (ocupados + reservas > limite) {
       throw new ConflictException(
-        `Capacidade do turno ${turno} esgotada para a data (${ocupados + reservas}/${limite}).`,
+        `Capacidade do turno ${turnoConfig.nome} (${limite}) excedida para ${dataRef} (${ocupados + reservas}/${limite}).`,
       );
     }
+  }
+
+  private async assertAntecedenciaMinima(dataRef: string, tenantId = DEFAULT_TENANT_ID): Promise<void> {
+    const config = await this.tenantConfig.getParametrosGerais(tenantId);
+    if (!config.operacional.validarAntecedenciaAgendamento) return;
+
+    const antecedenciaMin = config.operacional.antecedenciaMinimaMin ?? 60;
+    const dataAgendamento = this.parseDataRef(dataRef);
+    const agora = new Date();
+    const diffMin = (dataAgendamento.getTime() - agora.getTime()) / (1000 * 60);
+
+    if (diffMin < antecedenciaMin) {
+      throw new BadRequestException(
+        `Agendamento requer ${antecedenciaMin} min de antecedência. ` +
+          `Solicitado para ${dataRef} — faltam apenas ${Math.max(0, Math.round(diffMin))} min.`,
+      );
+    }
+  }
+
+  private async assertCalendarioOperacional(dataRef: string, tenantId = DEFAULT_TENANT_ID): Promise<void> {
+    const config = await this.tenantConfig.getParametrosGerais(tenantId);
+    const dataParsed = this.parseDataRef(dataRef);
+
+    if (!config.operacional.operacaoFimSemana && isFimDeSemana(dataParsed)) {
+      throw new BadRequestException(
+        'Terminal não opera em finais de semana. Ative "Operação aos finais de semana" ou escolha dia útil.',
+      );
+    }
+
+    const inicio = parseHoraMinutos(config.operacional.horarioFuncionamentoInicio);
+    const fim = parseHoraMinutos(config.operacional.horarioFuncionamentoFim);
+    if (inicio >= fim) {
+      throw new BadRequestException('Horário de funcionamento do terminal está mal configurado.');
+    }
+  }
+
+  private async assertTurnoValido(
+    turno: TurnoAgendamento,
+    dataRef: string,
+    tenantId = DEFAULT_TENANT_ID,
+  ): Promise<void> {
+    const config = await this.tenantConfig.getParametrosGerais(tenantId);
+    const dataParsed = this.parseDataRef(dataRef);
+    const turnoConfig = resolveTurnoConfig(config.operacional.turnos, dataParsed, turno);
+    if (!turnoConfig) {
+      throw new BadRequestException(`Turno ${turno} inválido ou inativo para ${dataRef}.`);
+    }
+  }
+
+  /** Validações completas antes de reservar slot (portal + intranet). */
+  async validarReservaAgendamento(
+    dataRef: string,
+    turno: TurnoAgendamento,
+    reservas = 1,
+    tenantId = DEFAULT_TENANT_ID,
+  ): Promise<void> {
+    await this.assertCalendarioOperacional(dataRef, tenantId);
+    await this.assertTurnoValido(turno, dataRef, tenantId);
+    await this.assertAntecedenciaMinima(dataRef, tenantId);
+    await this.assertCapacidadeTurno(dataRef, turno, reservas, undefined, tenantId);
   }
 
   /** Persiste agendamento terminal dentro de transação já aberta (solicitação v2). */
@@ -350,6 +433,9 @@ export class AgendamentosService {
       }
     }
 
+    await this.assertCalendarioOperacional(dto.dataRef);
+    await this.assertTurnoValido(dto.turno, dto.dataRef);
+    await this.assertAntecedenciaMinima(dto.dataRef);
     await this.assertCapacidadeTurno(dto.dataRef, dto.turno, 1);
 
     try {
@@ -384,11 +470,58 @@ export class AgendamentosService {
     );
   }
 
-  async filaDoDia(opts?: { dataRef?: string; turno?: TurnoAgendamento }) {
+  async cancelar(id: string, actorUserId: string, tenantId = DEFAULT_TENANT_ID) {
+    const agendamento = await this.prisma.agendamentoTerminal.findUnique({ where: { id } });
+    if (!agendamento) throw new NotFoundException('Agendamento não encontrado');
+    if (
+      agendamento.status === StatusAgendamentoTerminal.CANCELADO ||
+      agendamento.status === StatusAgendamentoTerminal.CANCELADO_CLIENTE
+    ) {
+      throw new ConflictException('Agendamento já está cancelado.');
+    }
+
+    const config = await this.tenantConfig.getParametrosGerais(tenantId);
+    const limiteCancelamentoMin = config.operacional.cancelamentoSemPenalidadeMin ?? 120;
+    const agora = new Date();
+    const diffMin =
+      (agendamento.dataRef.getTime() - agora.getTime()) / (1000 * 60);
+
+    if (
+      config.operacional.validarCancelamentoSemPenalidade &&
+      diffMin < limiteCancelamentoMin
+    ) {
+      const actor = this.auditContext.resolveActor();
+      await appendAuditTrailEntry(this.prisma, actor, {
+        entidadeId: agendamento.id,
+        entidadeTipo: 'AgendamentoTerminal',
+        categoria: CategoriaAuditLog.OPERACIONAL,
+        acao: 'CANCELAMENTO_TARDIO',
+        dadosAnteriores: { status: agendamento.status },
+        dadosNovos: {
+          status: StatusAgendamentoTerminal.CANCELADO,
+          tardio: true,
+          minutosAntecedencia: Math.max(0, diffMin),
+          limiteMinutos: limiteCancelamentoMin,
+        },
+      });
+
+      await this.prisma.cliente.update({
+        where: { id: agendamento.clienteId },
+        data: { cancelamentosTardios: { increment: 1 } },
+      });
+    }
+
+    return this.atualizarStatus(id, StatusAgendamentoTerminal.CANCELADO, actorUserId);
+  }
+
+  async filaDoDia(opts?: { dataRef?: string; turno?: TurnoAgendamento; tenantId?: string }) {
     const now = new Date();
     const dataIso = opts?.dataRef ?? now.toISOString().slice(0, 10);
     const dataParsed = this.parseDataRef(dataIso);
-    const turno = opts?.turno ?? turnoAtual(now);
+    const tenantId = opts?.tenantId ?? DEFAULT_TENANT_ID;
+    const config = await this.tenantConfig.getParametrosGerais(tenantId);
+    const turno =
+      opts?.turno ?? turnoAtualFromConfig(config.operacional.turnos, now);
 
     const items = await this.prisma.agendamentoTerminal.findMany({
       where: {

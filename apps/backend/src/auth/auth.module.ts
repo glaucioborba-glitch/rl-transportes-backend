@@ -6,6 +6,7 @@ import { PassportModule } from '@nestjs/passport';
 import { AuditoriaModule } from '../auditoria/auditoria.module';
 import { CxPortaisModule } from '../cx-portais/cx-portais.module';
 import { SecurityCenterModule } from '../security-center/security-center.module';
+import { TenantModule } from '../tenant/tenant.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -18,6 +19,7 @@ import { SessionController } from './session/session.controller';
     AuditoriaModule,
     SessionModule,
     SecurityCenterModule,
+    TenantModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

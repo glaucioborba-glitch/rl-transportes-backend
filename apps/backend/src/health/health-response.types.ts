@@ -9,4 +9,5 @@ export type UnifiedHealthResponse = {
   securityEngine: HealthSecurityEngineStatus;
   timestamp: string;
   terminus?: unknown;
+  crons?: Record<string, { ok: boolean; at: string; error?: string }>;
 };

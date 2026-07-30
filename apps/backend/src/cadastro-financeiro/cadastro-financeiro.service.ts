@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, StatusCadastroCliente, ValidacaoDominio } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import type { CondicaoPagamentoCadastro } from './dto/cadastro-financeiro.dto';
+import { CondicaoPagamentoService } from './condicao-pagamento.service';
 
 export type CadastroPendenteRow = {
   id: string;
@@ -30,7 +30,10 @@ export type CadastroPendenteRow = {
 
 @Injectable()
 export class CadastroFinanceiroService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly condicoes: CondicaoPagamentoService,
+  ) {}
 
   async contarPendentes(): Promise<{ count: number }> {
     const count = await this.prisma.cliente.count({
@@ -73,11 +76,8 @@ export class CadastroFinanceiroService {
     return rows;
   }
 
-  async aprovar(
-    clienteId: string,
-    condicaoPagamento: CondicaoPagamentoCadastro,
-    analistaId: string,
-  ) {
+  async aprovar(clienteId: string, condicaoPagamento: string, analistaId: string) {
+    await this.condicoes.assertValorPermitido(condicaoPagamento);
     const cliente = await this.prisma.cliente.findFirst({
       where: { id: clienteId, deletedAt: null },
     });

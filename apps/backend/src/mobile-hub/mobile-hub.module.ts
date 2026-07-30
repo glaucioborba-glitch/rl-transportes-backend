@@ -1,11 +1,14 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { JwtModule, type JwtModuleOptions } from '@nestjs/jwt';
 import type { StringValue } from 'ms';
+import { CronAlertModule } from '../common/cron/cron-alert.module';
 import { SessionModule } from '../auth/session/session.module';
 import { AuditoriaModule } from '../auditoria/auditoria.module';
 import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { TenantModule } from '../tenant/tenant.module';
 import { PlataformaCoreModule } from '../plataforma-integracao/plataforma-core.module';
 import { MobileAuthController } from './controllers/mobile-auth.controller';
 import { MobileV1OperadorController } from './controllers/mobile-v1-operador.controller';
@@ -31,6 +34,7 @@ import { MobileOfflineSyncStore } from './stores/mobile-offline-sync.store';
 import { MobilePinLockoutStore } from './stores/mobile-pin-lockout.store';
 import { MobilePushStore } from './stores/mobile-push.store';
 import { MobileTelemetryStore } from './stores/mobile-telemetry.store';
+import { MobileTelemetryCleanupService } from './stores/mobile-telemetry-cleanup.service';
 
 /**
  * Fase 21 — mobile-hub: API `/mobile/v1`, telemetria, sync offline (LWW), push em memória, JWT dedicado.
@@ -39,7 +43,10 @@ import { MobileTelemetryStore } from './stores/mobile-telemetry.store';
 @Module({
   imports: [
     ConfigModule,
+    ScheduleModule,
+    CronAlertModule,
     PrismaModule,
+    TenantModule,
     AuditoriaModule,
     PlataformaCoreModule,
     AuthModule,
@@ -79,6 +86,7 @@ import { MobileTelemetryStore } from './stores/mobile-telemetry.store';
     MobileOfflineSyncStore,
     MobilePushStore,
     MobileTelemetryStore,
+    MobileTelemetryCleanupService,
     MobileHubOpsStore,
     MobilePinLockoutStore,
     MobileHubOperadorService,

@@ -67,6 +67,40 @@ export class HoldReleaseService {
     }
   }
 
+  /**
+   * Gate-out: bloqueio financeiro impede saída se ainda inadimplente;
+   * se pagamento regularizado, libera automaticamente.
+   */
+  async resolveFinancialHoldForGateOut(params: {
+    solicitacaoId: string;
+    clienteId: string;
+    tenantId: string;
+    operadorId: string;
+  }): Promise<void> {
+    const bloqueio = await this.findBloqueioAtivo(params.solicitacaoId);
+    if (!bloqueio) return;
+
+    if (bloqueio.tipo === TipoBloqueioContainer.FINANCEIRO) {
+      const inadimplente = await this.clientePossuiInadimplenciaAtiva(
+        params.clienteId,
+        params.tenantId,
+      );
+      if (inadimplente) {
+        throw new ForbiddenException(
+          `Contêiner bloqueado financeiramente. Bloqueio ID: ${bloqueio.id}. ` +
+            `Regularize o pagamento ou solicite liberação manual.`,
+        );
+      }
+      await this.liberarBloqueio(bloqueio.id, params.operadorId);
+      this.logger.log(
+        `Hold financeiro ${bloqueio.id} liberado automaticamente no gate-out (solicitação ${params.solicitacaoId})`,
+      );
+      return;
+    }
+
+    throw new ForbiddenException(this.formatBloqueioMessage(bloqueio.tipo, bloqueio.motivo));
+  }
+
   async listAtivosBySolicitacao(solicitacaoId: string): Promise<BloqueioContainerRow[]> {
     const rows = await this.prisma.bloqueioContainer.findMany({
       where: { solicitacaoId, status: StatusBloqueioContainer.ATIVO },

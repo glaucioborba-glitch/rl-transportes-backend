@@ -52,7 +52,9 @@ describe('CorporateCpfCnpjPipe', () => {
     try {
       pipe.transform({ documento: '11111111111', password: 'x' });
     } catch (e) {
-      expect((e as BadRequestException).message).toBe('CPF/CNPJ inválido');
+      expect((e as BadRequestException).message).toBe(
+        'CPF inválido — dígitos verificadores não conferem',
+      );
     }
   });
 

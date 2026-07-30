@@ -106,7 +106,7 @@ export class MobileIdentityService {
       }
       const ok = await bcrypt.compare(password, user.password);
       if (!ok) throw new UnauthorizedException('Credenciais inválidas para operador mobile');
-      this.devices.registrar(user.id, dev);
+      await this.devices.registrar(user.id, dev);
       const sess = await this.registerMobileSession(user.id, req, dev);
       const access = this.mobileJwt.signAccess({
         sub: user.id,
@@ -136,7 +136,7 @@ export class MobileIdentityService {
       }
       const ok = await bcrypt.compare(password, user.password);
       if (!ok) throw new UnauthorizedException('Credenciais inválidas para app cliente');
-      this.devices.registrar(user.id, dev);
+      await this.devices.registrar(user.id, dev);
       const sess = await this.registerMobileSession(user.id, req, dev);
       const access = this.mobileJwt.signAccess({
         sub: user.id,
@@ -160,7 +160,7 @@ export class MobileIdentityService {
 
     const m = await this.motoristas.validar(documentoRaw, password);
     if (!m) throw new UnauthorizedException('Credenciais inválidas para motorista');
-    this.devices.registrar(m.id, dev);
+    await this.devices.registrar(m.id, dev);
     const sess = await this.registerMobileSession(m.id, req, dev);
     const access = this.mobileJwt.signAccess({
       sub: m.id,
@@ -191,9 +191,9 @@ export class MobileIdentityService {
       throw new UnauthorizedException('Refresh mobile inválido');
     }
     if (pl.mobileRole === 'MOTORISTA') {
-      const m = this.motoristas.obterPorId(pl.sub);
+      const m = await this.motoristas.obterPorId(pl.sub);
       if (!m || m.tokenVersion !== pl.tv) throw new UnauthorizedException('Sessão revogada');
-      if (!this.devices.dispositivoLiberado(pl.deviceId, pl.sub)) {
+      if (!(await this.devices.dispositivoLiberado(pl.deviceId, pl.sub))) {
         throw new UnauthorizedException('Dispositivo não vinculado');
       }
       const vr = await this.validateMobileRefresh(m.id, pl, req);
@@ -220,7 +220,7 @@ export class MobileIdentityService {
 
     const user = await this.prisma.user.findUnique({ where: { id: pl.sub } });
     if (!user || user.tokenVersion !== pl.tv) throw new UnauthorizedException('Sessão revogada');
-    if (!this.devices.dispositivoLiberado(pl.deviceId, user.id)) {
+    if (!(await this.devices.dispositivoLiberado(pl.deviceId, user.id))) {
       throw new UnauthorizedException('Dispositivo não vinculado');
     }
     const vr = await this.validateMobileRefresh(user.id, pl, req);

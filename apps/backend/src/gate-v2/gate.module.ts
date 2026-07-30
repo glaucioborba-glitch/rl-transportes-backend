@@ -10,10 +10,13 @@ import { ArmazenagemFaturamentoModule } from '../armazenagem-faturamento/armazen
 import { YardAllocationModule } from '../yard-allocation/yard-allocation.module';
 import { GateV2Controller } from './gate.controller';
 import { GateQrController } from './gate-qr.controller';
+import { GateOperacaoFlowController } from './gate-operacao-flow.controller';
+import { GateOperacaoFlowService } from './gate-operacao-flow.service';
 import { GateV2Service } from './gate.service';
 import { VistoriaModule } from '../vistoria/vistoria.module';
 import { VistoriaGateController } from '../vistoria/vistoria-gate.controller';
 import { HoldReleaseModule } from '../hold-release/hold-release.module';
+import { OCRModule } from '../modules/ocr/ocr.module';
 
 @Module({
   imports: [
@@ -27,9 +30,10 @@ import { HoldReleaseModule } from '../hold-release/hold-release.module';
     YardAllocationModule,
     VistoriaModule,
     HoldReleaseModule,
+    OCRModule,
   ],
-  controllers: [GateV2Controller, GateQrController, VistoriaGateController],
-  providers: [GateV2Service],
-  exports: [GateV2Service],
+  controllers: [GateV2Controller, GateQrController, VistoriaGateController, GateOperacaoFlowController],
+  providers: [GateV2Service, GateOperacaoFlowService],
+  exports: [GateV2Service, GateOperacaoFlowService],
 })
 export class GateV2Module {}

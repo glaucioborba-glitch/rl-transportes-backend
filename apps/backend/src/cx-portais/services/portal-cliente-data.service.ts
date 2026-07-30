@@ -277,7 +277,7 @@ export class PortalClienteDataService {
     const t = (await this.tenants.obter(cx.tenantId)) ?? (await this.tenants.obter('default'));
     return {
       tenantId: cx.tenantId,
-      contratadosProxy: t?.config.slasHorasProxy ?? { gate: 4, patio: 72, saida: 24 },
+      contratadosProxy: t?.config.slasMinutosMeta ?? { gate: 240, patio: 4320, saida: 1440 },
       historicoProxy: [
         { periodo: '30d', cumprimentoPctProxy: 94 },
         { periodo: '90d', cumprimentoPctProxy: 91 },

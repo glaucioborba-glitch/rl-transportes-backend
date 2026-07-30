@@ -221,6 +221,12 @@ async function cleanupDemo() {
   await prisma.user.deleteMany({ where: { OR: [{ clienteId: { in: clientIds } }, { email: { endsWith: DEMO_EMAIL_DOMAIN } }] } });
   await prisma.solicitacao.deleteMany({ where: { clienteId: { in: clientIds } } });
   await prisma.tabelaTarifaria.deleteMany({ where: { clienteId: { in: clientIds } } });
+  await prisma.regraTarifaria.deleteMany({
+    where: { tabelaPreco: { clientes: { some: { id: { in: clientIds } } } } },
+  });
+  await prisma.tabelaPreco.deleteMany({
+    where: { clientes: { some: { id: { in: clientIds } } } },
+  });
   await prisma.cliente.deleteMany({ where: { id: { in: clientIds } } });
 }
 
@@ -302,15 +308,6 @@ async function createClienteDemo(emp: EmpresaDemo, passwordHash: string, aceiteE
           podeGerenciarPessoas: true,
         },
       },
-    },
-  });
-
-  await prisma.tabelaTarifaria.create({
-    data: {
-      clienteId: cliente.id,
-      freeTimeDias: 5 + (emp.idx % 3),
-      valorDiaria: new Prisma.Decimal(String(75 + emp.idx * 2)),
-      valorServicosExtras: new Prisma.Decimal(String(100 + emp.idx * 5)),
     },
   });
 

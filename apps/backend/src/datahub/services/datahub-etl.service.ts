@@ -6,6 +6,7 @@ import type { RawExtractBundle } from '../datahub-extract.types';
 import type { DwBuildResult } from '../datahub-star.builder';
 import { DatahubDwStore } from '../datahub-dw.store';
 import { DatahubEtlStore } from '../datahub-etl.store';
+import { DatahubMvRefreshService } from './datahub-mv-refresh.service';
 
 @Injectable()
 export class DatahubEtlService {
@@ -16,6 +17,7 @@ export class DatahubEtlService {
     private readonly prisma: PrismaService,
     private readonly dw: DatahubDwStore,
     private readonly etl: DatahubEtlStore,
+    private readonly mvRefresh: DatahubMvRefreshService,
   ) {}
 
   async extrair() {
@@ -30,7 +32,7 @@ export class DatahubEtlService {
         bundle.faturamentos.length +
         bundle.boletos.length +
         bundle.nfs.length;
-      const exec = this.etl.registrar({
+      const exec = await this.etl.registrar({
         fase: 'extrair',
         status: 'SUCESSO',
         iniciadoEm: started,
@@ -54,7 +56,7 @@ export class DatahubEtlService {
       };
     } catch (e) {
       const err = e instanceof Error ? e.message : String(e);
-      this.etl.registrar({
+      await this.etl.registrar({
         fase: 'extrair',
         status: 'FALHA',
         iniciadoEm: started,
@@ -66,7 +68,7 @@ export class DatahubEtlService {
     }
   }
 
-  transformar() {
+  async transformar() {
     const inicio = Date.now();
     const started = new Date(inicio).toISOString();
     if (!this.ultimoExtract) {
@@ -75,7 +77,7 @@ export class DatahubEtlService {
     try {
       const built = construirStarSchema(this.ultimoExtract);
       this.ultimoBuild = built;
-      const exec = this.etl.registrar({
+      const exec = await this.etl.registrar({
         fase: 'transformar',
         status: 'SUCESSO',
         iniciadoEm: started,
@@ -91,7 +93,7 @@ export class DatahubEtlService {
       };
     } catch (e) {
       const err = e instanceof Error ? e.message : String(e);
-      this.etl.registrar({
+      await this.etl.registrar({
         fase: 'transformar',
         status: 'FALHA',
         iniciadoEm: started,
@@ -103,15 +105,17 @@ export class DatahubEtlService {
     }
   }
 
-  carregar() {
+  async carregar() {
     const inicio = Date.now();
     const started = new Date(inicio).toISOString();
     if (!this.ultimoBuild) {
       throw new BadRequestException('Execute transformar antes do carregar.');
     }
     try {
+      const mv = await this.mvRefresh.refreshAll();
       this.dw.substituir(this.ultimoBuild.fatos, this.ultimoBuild.dimensoes);
-      const exec = this.etl.registrar({
+      await this.dw.reloadFatosFromMv(true);
+      const exec = await this.etl.registrar({
         fase: 'carregar',
         status: 'SUCESSO',
         iniciadoEm: started,
@@ -121,13 +125,15 @@ export class DatahubEtlService {
         linhasSaida: this.ultimoBuild.linhasTotal,
       });
       return {
-        mensagem: 'DW em memória atualizado.',
+        mensagem: 'Materialized views atualizadas; dimensões persistidas; fatos no cache L1.',
         execucao: exec,
         linhas: this.ultimoBuild.linhasTotal,
+        materializedViews: mv.views,
+        mvRefreshEm: this.mvRefresh.getLastRefreshAt(),
       };
     } catch (e) {
       const err = e instanceof Error ? e.message : String(e);
-      this.etl.registrar({
+      await this.etl.registrar({
         fase: 'carregar',
         status: 'FALHA',
         iniciadoEm: started,

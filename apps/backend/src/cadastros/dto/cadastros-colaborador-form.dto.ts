@@ -1,17 +1,19 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsDateString,
   IsEmail,
   IsIn,
   IsInt,
-  IsNumber,
+  IsArray,
   IsOptional,
   IsString,
   Matches,
   MaxLength,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
+import { ColaboradorFamiliarFormDto } from './colaborador-familiar.dto';
 
 export class CadastrosColaboradorFormDto {
   @ApiProperty()
@@ -202,4 +204,11 @@ export class CadastrosColaboradorFormDto {
   @IsOptional()
   @IsString()
   observacoes?: string;
+
+  @ApiPropertyOptional({ type: [ColaboradorFamiliarFormDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ColaboradorFamiliarFormDto)
+  familiares?: ColaboradorFamiliarFormDto[];
 }

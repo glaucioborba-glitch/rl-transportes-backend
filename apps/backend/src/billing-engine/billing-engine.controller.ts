@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { EventoGatilhoTarifa, Role, TipoContainerTarifa } from '@prisma/client';
+import { EventoGatilhoTarifa, Role, StatusContainerTarifa, TipoContainerTarifa } from '@prisma/client';
 import { IsEnum, IsNumber, IsOptional, IsString, MinLength } from 'class-validator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -29,6 +29,10 @@ class CreateRegraDto {
   @IsOptional()
   @IsEnum(TipoContainerTarifa)
   tipoContainer?: TipoContainerTarifa;
+
+  @IsOptional()
+  @IsEnum(StatusContainerTarifa)
+  statusContainer?: StatusContainerTarifa;
 
   @IsNumber()
   valor!: number;
@@ -92,6 +96,7 @@ export class BillingEngineController {
         nome: dto.nome?.trim() || null,
         eventoGatilho: dto.eventoGatilho,
         tipoContainer: dto.tipoContainer ?? TipoContainerTarifa.TODOS,
+        statusContainer: dto.statusContainer ?? StatusContainerTarifa.AMBOS,
         valor: dto.valor,
         diasFreeTime: dto.diasFreeTime ?? 0,
       },
@@ -104,7 +109,7 @@ export class BillingEngineController {
     const pricing = await this.ruleEngine.resolvePricingForCliente(clienteId);
     const gateInAt = new Date();
     gateInAt.setUTCDate(gateInAt.getUTCDate() - dto.diasArmazenados);
-    const evaluation = this.ruleEngine.evaluateForContainerCycle({
+    const evaluation = await this.ruleEngine.evaluateForContainerCycle({
       gateInAt,
       asOf: new Date(),
       regras: pricing.regras,
@@ -114,7 +119,7 @@ export class BillingEngineController {
         refrigerado: dto.refrigerado ?? false,
       },
       fase: 'GATE_OUT',
-      legado: pricing.legado,
+      clienteId,
     });
     return {
       total: evaluation.valorTotal,

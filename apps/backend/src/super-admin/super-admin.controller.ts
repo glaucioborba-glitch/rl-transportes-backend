@@ -97,7 +97,7 @@ export class SuperAdminController {
           tenantKey: id,
           nome: dto.nome.trim(),
           parametros: DEFAULT_TENANT_PARAMETROS as object,
-          slasHorasProxy: { gate: 4, patio: 72, saida: 24 },
+          slasMinutosMeta: { gate: 240, patio: 4320, saida: 1440 },
           horarioFuncionamento: '06:00–22:00',
           regrasOperacao: 'Configuração inicial SaaS',
         },

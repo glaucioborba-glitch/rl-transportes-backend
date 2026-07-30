@@ -90,8 +90,10 @@ describe('AutomacaoProcessos Fase 19 (e2e)', () => {
   });
 
   it('ADMIN cria workflow, ORQUESTRADOR dispara via WebhookDeliveryService.dispatch', async () => {
-    const subs = new WebhookSubscriptionStore();
-    const log = new IntegracaoEventLogStore();
+    const subs = {
+      matching: jest.fn().mockResolvedValue([]),
+    } as unknown as WebhookSubscriptionStore;
+    const log = app.get(IntegracaoEventLogStore);
     const auditoria = { registrar: jest.fn() } as unknown as import('../src/auditoria/auditoria.service').AuditoriaService;
     const config = { get: () => undefined } as unknown as ConfigService;
     const delivery = new WebhookDeliveryService(subs, log, auditoria, config);

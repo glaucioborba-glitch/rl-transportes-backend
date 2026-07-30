@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, PipeTransform } from '@nestjs/common';
 import { validateCnpjDigits, validateCpfDigits } from '../../common/utils/br-documents';
 
-const MSG_INVALIDO = 'CPF/CNPJ inválido';
+const MSG_CPF_INVALIDO = 'CPF inválido — dígitos verificadores não conferem';
+const MSG_CNPJ_INVALIDO = 'CPF/CNPJ inválido';
 const MSG_TAMANHO = 'Documento deve ter 11 (CPF) ou 14 (CNPJ) dígitos';
 
 /**
@@ -19,10 +20,10 @@ export class CorporateCpfCnpjPipe implements PipeTransform {
     }
     if (sanitized.length === 11) {
       if (!validateCpfDigits(sanitized)) {
-        throw new BadRequestException(MSG_INVALIDO);
+        throw new BadRequestException(MSG_CPF_INVALIDO);
       }
     } else if (!validateCnpjDigits(sanitized)) {
-      throw new BadRequestException(MSG_INVALIDO);
+      throw new BadRequestException(MSG_CNPJ_INVALIDO);
     }
     body['documento'] = sanitized;
     return body;

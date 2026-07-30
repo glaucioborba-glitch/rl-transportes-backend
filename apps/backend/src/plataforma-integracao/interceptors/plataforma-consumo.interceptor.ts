@@ -23,27 +23,27 @@ export class PlataformaConsumoInterceptor implements NestInterceptor {
       tap(() => {
         const cliente = req.plataformaCliente;
         if (!cliente) return;
-        this.consumo.registrar({
+        void this.consumo.registrar({
           apiClientId: cliente.id,
           rota: path,
           metodo: (req as { method?: string }).method ?? 'GET',
           statusHttp: res.statusCode ?? 200,
           latencyMs: Date.now() - t0,
           tenantId: req.plataformaTenantId ?? cliente.tenantId,
-        });
+        }).catch(() => {});
       }),
       catchError((err) => {
         const cliente = req.plataformaCliente;
         if (cliente) {
           const status = err instanceof HttpException ? err.getStatus() : (err?.status ?? 500);
-          this.consumo.registrar({
+          void this.consumo.registrar({
             apiClientId: cliente.id,
             rota: path,
             metodo: (req as { method?: string }).method ?? 'GET',
             statusHttp: status,
             latencyMs: Date.now() - t0,
             tenantId: req.plataformaTenantId ?? null,
-          });
+          }).catch(() => {});
         }
         return throwError(() => err);
       }),

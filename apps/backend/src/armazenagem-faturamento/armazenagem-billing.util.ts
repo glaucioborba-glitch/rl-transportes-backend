@@ -18,6 +18,18 @@ export function diffCalendarDays(from: Date, to: Date): number {
   return Math.max(0, Math.floor((end - start) / 86_400_000));
 }
 
+/**
+ * PR-02: Dias corridos reais — não pula fins de semana nem feriados.
+ * Alias semântico para uso no billing engine.
+ */
+export function diffDiasCalendario(inicio: Date, fim: Date): number {
+  if (inicio >= fim) return 0;
+  const ms = fim.getTime() - inicio.getTime();
+  const dias = Math.floor(ms / 86_400_000);
+  const restoHoras = (ms % 86_400_000) / 3_600_000;
+  return Math.max(restoHoras > 0 ? dias + 1 : dias, 0);
+}
+
 export function addCalendarDays(date: Date, days: number): Date {
   const d = new Date(date);
   d.setUTCDate(d.getUTCDate() + days);

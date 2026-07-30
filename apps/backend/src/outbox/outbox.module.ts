@@ -10,6 +10,7 @@ import { OutboxService } from './outbox.service';
 import { OutboxWorker } from './outbox.worker';
 import { NfseBoletoOutboxProcessor } from './nfse-boleto-outbox.processor';
 import { NotificationModule } from '../notification/notification.module';
+import { TenantModule } from '../tenant/tenant.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { NotificationModule } from '../notification/notification.module';
     RealtimeModule,
     FiscalIntegracaoModule,
     NotificationModule,
+    TenantModule,
   ],
   providers: [OutboxService, BillingOutboxProcessor, NfseBoletoOutboxProcessor, OutboxWorker],
   exports: [OutboxService, BillingOutboxProcessor, NfseBoletoOutboxProcessor],

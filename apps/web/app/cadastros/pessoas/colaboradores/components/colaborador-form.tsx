@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { FormField, FormSection } from "@/components/cadastros/form-field";
+import { FamiliaresSection } from "@/components/cadastros/familiares-section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/staff-client";
@@ -27,6 +28,7 @@ import {
   getCadastrosColaborador,
   updateCadastrosColaborador,
   type CadastrosColaboradorFormData,
+  type ColaboradorFamiliarForm,
   type CentroCustoRef,
   type GestorRef,
 } from "@/lib/api/cadastros-colaboradores-client";
@@ -55,6 +57,31 @@ export function ColaboradorForm({ colaboradorId }: Props) {
   const [gestores, setGestores] = useState<GestorRef[]>([]);
   const [centrosCusto, setCentrosCusto] = useState<CentroCustoRef[]>([]);
   const [formData, setFormData] = useState<CadastrosColaboradorFormData>(EMPTY_COLABORADOR_FORM);
+  const [familiares, setFamiliares] = useState<ColaboradorFamiliarForm[]>([]);
+
+  const addFamiliar = () => {
+    if (familiares.length >= 10) return;
+    setFamiliares((prev) => [
+      ...prev,
+      { nome: "", cpf: "", dataAniversario: "", parentesco: "" },
+    ]);
+  };
+
+  const updateFamiliar = (
+    index: number,
+    field: keyof ColaboradorFamiliarForm,
+    value: string,
+  ) => {
+    setFamiliares((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+
+  const removeFamiliar = (index: number) => {
+    setFamiliares((prev) => prev.filter((_, i) => i !== index));
+  };
 
   useEffect(() => {
     void (async () => {
@@ -80,6 +107,15 @@ export function ColaboradorForm({ colaboradorId }: Props) {
             ...data,
             jornadaSemanal: Number(data.jornadaSemanal) || 44,
           });
+          setFamiliares(
+            data.familiares?.map((f) => ({
+              id: f.id,
+              nome: f.nome,
+              cpf: f.cpf ?? "",
+              dataAniversario: f.dataAniversario ?? "",
+              parentesco: f.parentesco ?? "",
+            })) ?? [],
+          );
         }
       } catch {
         toast.error("Erro ao carregar colaborador.");
@@ -135,13 +171,38 @@ export function ColaboradorForm({ colaboradorId }: Props) {
       return;
     }
 
+    const familiaresPayload = familiares
+      .filter((f) => f.nome.trim().length > 0)
+      .map((f) => ({
+        ...(f.id ? { id: f.id } : {}),
+        nome: f.nome.trim(),
+        cpf: f.cpf?.replace(/\D/g, "") || undefined,
+        dataAniversario: f.dataAniversario || undefined,
+        parentesco: f.parentesco || undefined,
+      }));
+    for (const f of familiaresPayload) {
+      if (f.cpf && !isValidCPF(f.cpf)) {
+        toast.error(`CPF inválido para o familiar "${f.nome.trim()}".`);
+        return;
+      }
+    }
+    if (familiaresPayload.length > 10) {
+      toast.error("Máximo de 10 familiares por colaborador.");
+      return;
+    }
+
+    const payload = {
+      ...formData,
+      familiares: familiaresPayload,
+    };
+
     setSaving(true);
     try {
       if (colaboradorId) {
-        await updateCadastrosColaborador(colaboradorId, formData);
+        await updateCadastrosColaborador(colaboradorId, payload);
         toast.success("Colaborador atualizado com sucesso!");
       } else {
-        await createCadastrosColaborador(formData);
+        await createCadastrosColaborador(payload);
         toast.success("Colaborador cadastrado com sucesso!");
       }
       router.push("/cadastros/pessoas/colaboradores");
@@ -162,7 +223,9 @@ export function ColaboradorForm({ colaboradorId }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-4xl space-y-8">
+    <form onSubmit={handleSubmit} className="mx-auto max-w-7xl space-y-6 px-4 py-6 pb-20">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="space-y-6">
       <FormSection title="Dados Pessoais" icon={User}>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <FormField label="Nome Completo" required className="md:col-span-2">
@@ -332,7 +395,9 @@ export function ColaboradorForm({ colaboradorId }: Props) {
           </FormField>
         </div>
       </FormSection>
+        </div>
 
+        <div className="space-y-6">
       <FormSection title="Dados Admissionais" icon={Briefcase}>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <FormField label="Matrícula">
@@ -568,8 +633,17 @@ export function ColaboradorForm({ colaboradorId }: Props) {
           />
         </FormField>
       </FormSection>
+        </div>
+      </div>
 
-      <div className="sticky bottom-0 -mx-4 flex gap-3 border-t border-border bg-[#080a0d]/95 p-4 backdrop-blur lg:-mx-6">
+      <FamiliaresSection
+        familiares={familiares}
+        onAdd={addFamiliar}
+        onChange={updateFamiliar}
+        onRemove={removeFamiliar}
+      />
+
+      <div className="sticky bottom-0 -mx-4 flex justify-end gap-2 border-t border-white/10 bg-black/80 px-4 pb-4 pt-4 backdrop-blur-sm">
         <Button type="button" variant="outline" onClick={() => router.back()}>
           <X className="mr-2 h-4 w-4" />
           Cancelar

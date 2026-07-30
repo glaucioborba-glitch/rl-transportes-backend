@@ -9,6 +9,8 @@ import { CepCacheService } from './cep-cache.service';
 describe('CepCacheService', () => {
   let service: CepCacheService;
   let redis: {
+    safeGet: jest.Mock;
+    safeSet: jest.Mock;
     get: jest.Mock;
     setex: jest.Mock;
     del: jest.Mock;
@@ -21,6 +23,8 @@ describe('CepCacheService', () => {
 
   beforeEach(async () => {
     redis = {
+      safeGet: jest.fn().mockResolvedValue(null),
+      safeSet: jest.fn().mockResolvedValue(undefined),
       get: jest.fn().mockResolvedValue(null),
       setex: jest.fn().mockResolvedValue(undefined),
       del: jest.fn(),
@@ -78,9 +82,18 @@ describe('CepCacheService', () => {
     expect(first.cepValido).toBe(true);
     expect(first.fromCache).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(redis.setex).toHaveBeenCalledWith('cep:88010000', 86400, expect.any(String));
+    expect(redis.safeSet).toHaveBeenCalledWith('cep:88010000', expect.any(Object), 86400);
 
-    redis.get.mockResolvedValueOnce(JSON.stringify({ ...first, fromCache: undefined }));
+    redis.safeGet.mockResolvedValueOnce({
+      cepValido: true,
+      cep: '88010000',
+      logradouro: 'Rua Teste',
+      bairro: 'Centro',
+      cidade: 'Florianópolis',
+      uf: 'SC',
+      ibge: '4205407',
+      aviso: null,
+    });
     const second = await service.getCep('88010000');
     expect(second.fromCache).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -96,6 +109,27 @@ describe('CepCacheService', () => {
     const r = await service.getCep('99999999');
     expect(r.cepValido).toBe(false);
     expect(r.ibge).toBeNull();
+  });
+
+  it('com Redis offline ainda consulta ViaCEP', async () => {
+    redis.safeGet.mockResolvedValue(null);
+    redis.safeSet.mockResolvedValue(undefined);
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        logradouro: 'Rua Offline',
+        bairro: 'Centro',
+        localidade: 'Florianópolis',
+        uf: 'SC',
+        ibge: '4205407',
+      }),
+    });
+
+    const r = await service.getCep('88010000');
+    expect(r.cepValido).toBe(true);
+    expect(r.fromCache).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(redis.safeSet).toHaveBeenCalled();
   });
 
   it('ViaCEP indisponível retorna fallback sem erro', async () => {

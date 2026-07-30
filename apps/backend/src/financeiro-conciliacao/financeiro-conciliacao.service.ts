@@ -70,7 +70,7 @@ export class FinanceiroConciliacaoService {
         ? parseOfxExtrato(dto.conteudo, batchId)
         : parseCsvExtrato(dto.conteudo, batchId);
 
-    this.extratoStore.salvarLote(batchId, linhas, dto.formato, dto.nomeOrigem);
+    await this.extratoStore.salvarLote(batchId, linhas, dto.formato, dto.nomeOrigem);
 
     return {
       batchId,
@@ -80,8 +80,8 @@ export class FinanceiroConciliacaoService {
     };
   }
 
-  listarExtratos(batchId?: string): ExtratoLoteListaDto[] {
-    const lotes = this.extratoStore.listarLotes();
+  async listarExtratos(batchId?: string): Promise<ExtratoLoteListaDto[]> {
+    const lotes = await this.extratoStore.listarLotes();
     const filtro = batchId ? lotes.filter((l) => l.batchId === batchId) : lotes;
     return filtro.map((l) => ({
       batchId: l.batchId,
@@ -114,9 +114,9 @@ export class FinanceiroConciliacaoService {
   }
 
   async getConciliacaoAutomatica(batchId?: string): Promise<ConciliacaoAutomaticaRespostaDto> {
-    const linhas = this.extratoStore.todasLinhas(batchId);
+    const linhas = await this.extratoStore.todasLinhas(batchId);
     const boletos = await this.carregarBoletosConciliacao();
-    const manual = this.extratoStore.getManualMap();
+    const manual = await this.extratoStore.getManualMap();
     const r = motorConciliacaoAutomatica(linhas, boletos, manual);
 
     return {
@@ -133,7 +133,7 @@ export class FinanceiroConciliacaoService {
     dto: { extratoLinhaId: string; boletoId: string; faturamentoId: string },
     usuarioId: string,
   ): Promise<ConciliacaoManualRespostaDto> {
-    this.extratoStore.registrarManual(dto.extratoLinhaId, dto.boletoId, dto.faturamentoId);
+    await this.extratoStore.registrarManual(dto.extratoLinhaId, dto.boletoId, dto.faturamentoId);
 
     await this.prisma.auditoria.create({
       data: {
@@ -293,7 +293,7 @@ export class FinanceiroConciliacaoService {
 
   async getDashboard(): Promise<DashboardFinanceiroRespostaDto> {
     const hojeStr = hojeIsoBr();
-    const linhas = this.extratoStore.todasLinhas();
+    const linhas = await this.extratoStore.todasLinhas();
     let rec = 0;
     let pag = 0;
     for (const l of linhas) {
@@ -330,7 +330,7 @@ export class FinanceiroConciliacaoService {
       divergenciasBancarias: divergencias,
       indiceSaudeFinanceira: Math.round(saude * 10) / 10,
       observacaoExtratos:
-        'Extratos normalizados ficam em memória no processo até existir tabela dedicada (sem migration nesta fase).',
+        'Extratos normalizados persistidos em PostgreSQL (financeiro_extrato_lotes).',
     };
   }
 }

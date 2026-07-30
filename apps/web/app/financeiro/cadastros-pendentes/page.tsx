@@ -11,6 +11,7 @@ import {
   fetchPendenciasCadastroCount,
   formatEnderecoLinha,
   listarCadastrosPendentes,
+  listarCondicoesPagamento,
   rejeitarCadastroFinanceiro,
   validacaoDominioBadge,
   type CadastroPendenteRow,
@@ -21,6 +22,7 @@ import {
   labelCondicaoPagamento,
   OPCOES_CONDICAO_PAGAMENTO,
   toCondicaoPagamentoApiValue,
+  type CondicaoPagamentoOption,
 } from "@/lib/condicao-pagamento-portal";
 import { cn } from "@/lib/utils";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
@@ -101,6 +103,9 @@ export default function CadastrosPendentesPage() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [condicaoSelecionada, setCondicaoSelecionada] =
     useState<CondicaoPagamentoAprovacao>(CONDICAO_PAGAMENTO_PADRAO);
+  const [opcoesCondicao, setOpcoesCondicao] = useState<CondicaoPagamentoOption[]>([
+    ...OPCOES_CONDICAO_PAGAMENTO,
+  ]);
   const decrementPendencias = usePendenciasCadastroStore((s) => s.decrement);
   const setPendenciasCount = usePendenciasCadastroStore((s) => s.setCount);
 
@@ -119,6 +124,22 @@ export default function CadastrosPendentesPage() {
   }, [ok, setPendenciasCount]);
 
   useEffect(() => {
+    if (!ok) return;
+    void listarCondicoesPagamento()
+      .then((opcoes) => {
+        if (opcoes.length) {
+          setOpcoesCondicao(opcoes);
+          setCondicaoSelecionada((prev) =>
+            isCondicaoPagamentoApiValue(prev, opcoes) ? prev : toCondicaoPagamentoApiValue(prev, opcoes),
+          );
+        }
+      })
+      .catch(() => {
+        /* fallback estático */
+      });
+  }, [ok]);
+
+  useEffect(() => {
     void load();
   }, [load]);
 
@@ -132,13 +153,13 @@ export default function CadastrosPendentesPage() {
   }
 
   async function onAprovar(row: CadastroPendenteRow) {
-    const condicaoApi = toCondicaoPagamentoApiValue(condicaoSelecionada);
+    const condicaoApi = toCondicaoPagamentoApiValue(condicaoSelecionada, opcoesCondicao);
     setActionId(row.id);
     try {
       await aprovarCadastroFinanceiro(row.id, condicaoApi);
       decrementPendencias();
       toast.success(
-        `Cliente ${row.razaoSocial} aprovado. Condição: ${labelCondicaoPagamento(condicaoApi)}.`,
+        `Cliente ${row.razaoSocial} aprovado. Condição: ${labelCondicaoPagamento(condicaoApi, opcoesCondicao)}.`,
       );
       await load();
     } catch (e) {
@@ -251,14 +272,14 @@ export default function CadastrosPendentesPage() {
                               onChange={(e) => {
                                 const next = e.target.value;
                                 setCondicaoSelecionada(
-                                  isCondicaoPagamentoApiValue(next)
+                                  isCondicaoPagamentoApiValue(next, opcoesCondicao)
                                     ? next
-                                    : toCondicaoPagamentoApiValue(next),
+                                    : toCondicaoPagamentoApiValue(next, opcoesCondicao),
                                 );
                               }}
                               aria-label="Condição de pagamento"
                             >
-                              {OPCOES_CONDICAO_PAGAMENTO.map((item) => (
+                              {opcoesCondicao.map((item) => (
                                 <option key={item.value} value={item.value}>
                                   {item.label}
                                 </option>

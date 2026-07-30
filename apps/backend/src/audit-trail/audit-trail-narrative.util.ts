@@ -1,4 +1,5 @@
 import { CategoriaAuditLog, StatusBloqueioContainer, StatusPagamentoFatura, StatusSolicitacao, TipoBloqueioContainer } from '@prisma/client';
+import type { AuditedPrismaModel } from './audit-trail.models';
 
 export type AuditCaptureInput = {
   entidadeTipo: string;
@@ -73,19 +74,41 @@ export function buildAuditNarrative(input: AuditCaptureInput): string {
     }
     case 'SOLICITACAO_EXCLUIDA':
       return `${actor} removeu solicitação ${before.protocolo ?? input.entidadeId.slice(0, 8)}${containerSuffix(iso)}.`;
+    case 'PARAMETROS_ATUALIZADOS':
+      return `${actor} atualizou os parâmetros gerais do terminal (operacional/financeiro).`;
+    case 'CANCELAMENTO_TARDIO': {
+      const minutos = Number(after.minutosAntecedencia ?? 0);
+      const limite = Number(after.limiteMinutos ?? 120);
+      return `${actor} cancelou agendamento com ${Math.round(minutos)} min de antecedência (limite sem penalidade: ${limite} min).`;
+    }
     default:
       return `${actor} registrou ${input.acao.replace(/_/g, ' ').toLowerCase()}${containerSuffix(iso)}.`;
   }
 }
 
 export function resolveAuditAcao(
-  model: 'Fatura' | 'Solicitacao' | 'BloqueioContainer',
+  model: AuditedPrismaModel,
   operation: 'update' | 'delete',
   before: Record<string, unknown> | null,
   after: Record<string, unknown> | null,
 ): string {
   if (model === 'Fatura') {
     return operation === 'delete' ? 'FATURA_EXCLUIDA' : 'FATURA_ALTERADA';
+  }
+  if (model === 'Boleto') {
+    return operation === 'delete' ? 'BOLETO_EXCLUIDO' : 'BOLETO_ALTERADO';
+  }
+  if (model === 'NfsEmitida') {
+    return operation === 'delete' ? 'NFSE_EXCLUIDA' : 'NFSE_ALTERADA';
+  }
+  if (model === 'PreFatura') {
+    return operation === 'delete' ? 'PRE_FATURA_EXCLUIDA' : 'PRE_FATURA_ALTERADA';
+  }
+  if (model === 'Cliente') {
+    return operation === 'delete' ? 'CLIENTE_EXCLUIDO' : 'CLIENTE_ALTERADO';
+  }
+  if (model.startsWith('Cadastro')) {
+    return operation === 'delete' ? 'CADASTRO_EXCLUIDO' : 'CADASTRO_ALTERADO';
   }
   if (model === 'BloqueioContainer') {
     if (operation === 'delete') return 'BLOQUEIO_EXCLUIDO';
@@ -109,11 +132,19 @@ export function resolveAuditAcao(
 }
 
 export function resolveAuditCategoria(
-  model: 'Fatura' | 'Solicitacao' | 'BloqueioContainer',
+  model: AuditedPrismaModel,
   acao: string,
   record?: Record<string, unknown> | null,
 ): CategoriaAuditLog {
-  if (model === 'Fatura') return CategoriaAuditLog.FINANCEIRO;
+  if (
+    model === 'Fatura' ||
+    model === 'Boleto' ||
+    model === 'NfsEmitida' ||
+    model === 'PreFatura' ||
+    model === 'Cliente'
+  ) {
+    return CategoriaAuditLog.FINANCEIRO;
+  }
   if (model === 'BloqueioContainer') {
     const tipo = String(record?.tipo ?? '');
     if (tipo === TipoBloqueioContainer.FINANCEIRO || tipo === TipoBloqueioContainer.FISCAL) {

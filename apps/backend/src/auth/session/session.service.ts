@@ -1,5 +1,7 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { DEFAULT_TENANT_ID } from '../../tenant/tenant.constants';
+import { TenantConfigService } from '../../tenant/tenant-config.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { parseUserAgentParts, deviceLabelFromChannel } from './user-agent.parse';
@@ -9,8 +11,6 @@ import type {
   PessoaAutorizadaSessionPayload,
   PermissoesPessoaSessionPayload,
 } from './session.types';
-
-const MAX_SESSIONS = 10;
 
 export type ActiveSessionEnrichedDto = {
   sessionId: string;
@@ -60,7 +60,12 @@ export class SessionService {
   constructor(
     private readonly redis: RedisService,
     private readonly prisma: PrismaService,
+    private readonly tenantConfig: TenantConfigService,
   ) {}
+
+  private maxSessions(tenantId = DEFAULT_TENANT_ID): number {
+    return this.tenantConfig.getParametrosSegurancaSync(tenantId).sessoesMaximasConcorrentes;
+  }
 
   private keySession(userId: string, sessionId: string): string {
     return `sess:${userId}:${sessionId}`;
@@ -78,6 +83,7 @@ export class SessionService {
     userId: string,
     data: Omit<SessionRedisPayload, 'createdAt' | 'lastSeenAt'>,
     ttlSeconds: number,
+    tenantId = DEFAULT_TENANT_ID,
   ): Promise<{ sessionId: string }> {
     const sessionId = randomUUID();
     const now = new Date().toISOString();
@@ -90,7 +96,7 @@ export class SessionService {
     const sessKey = this.keySession(userId, sessionId);
 
     try {
-      while ((await this.redis.llen(listKey)) >= MAX_SESSIONS) {
+      while ((await this.redis.llen(listKey)) >= this.maxSessions(tenantId)) {
         const victim = await this.redis.lpop(listKey);
         if (victim) {
           await this.redis.del(this.keySession(userId, victim));

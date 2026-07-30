@@ -53,6 +53,7 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
+  output: "standalone",
   experimental: {
     optimizePackageImports: [
       "lucide-react",
@@ -96,6 +97,17 @@ const nextConfig = {
       {
         source: "/(.*)",
         headers: securityHeaders,
+      },
+    ];
+  },
+  async redirects() {
+    return [
+      { source: "/cliente/portal", destination: "/portal", permanent: true },
+      { source: "/cliente/portal/:path*", destination: "/portal/:path*", permanent: true },
+      {
+        source: "/admin/config/regua-cobranca",
+        destination: "/cadastros/parametros/financeiro",
+        permanent: false,
       },
     ];
   },

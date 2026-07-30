@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError, authLogin, sanitizeCorporateDocumento } from "@/lib/api/corporate-auth-client";
+import { validarCPF } from "@/lib/br-documents";
 import { toast } from "@/lib/toast";
 import { isStaffRole, useStaffAuthStore } from "@/stores/staff-auth-store";
 
@@ -22,8 +23,14 @@ export function useCorporateLogin(opts?: UseCorporateLoginOpts) {
     async (documento: string, password: string, next?: string | null) => {
       setError(null);
       const digits = sanitizeCorporateDocumento(documento);
-      if (digits.length !== 11 && digits.length !== 14) {
-        const msg = "Documento inválido. Use apenas números.";
+      if (digits.length !== 11) {
+        const msg = "CPF deve conter 11 dígitos";
+        setError(msg);
+        toast.error(msg);
+        return false;
+      }
+      if (!validarCPF(digits)) {
+        const msg = "CPF inválido";
         setError(msg);
         toast.error(msg);
         return false;
@@ -31,7 +38,7 @@ export function useCorporateLogin(opts?: UseCorporateLoginOpts) {
 
       setSubmitting(true);
       try {
-        const res = await authLogin(documento, password, {
+        const res = await authLogin(digits, password, {
           cookieMode: opts?.cookieMode ?? true,
         });
         if (!isStaffRole(res.user.role)) {
@@ -50,12 +57,6 @@ export function useCorporateLogin(opts?: UseCorporateLoginOpts) {
         router.push(dest);
         return true;
       } catch (e) {
-        if (e instanceof ApiError && e.status === 400) {
-          const msg = "Documento inválido — use apenas números.";
-          setError(msg);
-          toast.error(msg);
-          return false;
-        }
         const msg = e instanceof ApiError ? e.message : "Erro inesperado";
         setError(msg);
         toast.error(msg);

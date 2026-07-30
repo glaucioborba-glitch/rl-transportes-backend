@@ -14,11 +14,20 @@ Sistema de gestão logística: portal cliente, intranet staff, Gate-v2, pátio, 
 ## Subir ambiente
 
 ```bash
-docker compose up -d postgres redis
+docker compose up -d postgres redis minio
 npm run db:migrate
 npm run dev:all          # Linux/macOS
 npm run dev:all:win      # Windows PowerShell
 npm run doctor:win       # diagnóstico de portas/.env/health
+```
+
+**MinIO (S3 local):** console em http://localhost:9001 — credenciais `minioadmin` / `minioadmin`, bucket `rl-transportes`. Para uploads reais em dev:
+
+```bash
+AWS_S3_BUCKET=rl-transportes
+AWS_ACCESS_KEY_ID=minioadmin
+AWS_SECRET_ACCESS_KEY=minioadmin
+STORAGE_ENDPOINT=http://localhost:9000
 ```
 
 ## Autenticação

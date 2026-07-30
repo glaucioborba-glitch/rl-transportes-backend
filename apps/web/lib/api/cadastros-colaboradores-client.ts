@@ -34,6 +34,14 @@ export type CadastrosColaboradorListItem = {
   gestor: GestorRef | null;
 };
 
+export type ColaboradorFamiliarForm = {
+  id?: string;
+  nome: string;
+  cpf?: string;
+  dataAniversario?: string;
+  parentesco?: string;
+};
+
 export type CadastrosColaboradorFormData = {
   id?: string;
   nome: string;
@@ -73,6 +81,11 @@ export type CadastrosColaboradorFormData = {
   dataDemissao: string;
   motivoDemissao: string;
   observacoes: string;
+  familiares?: ColaboradorFamiliarForm[];
+};
+
+export type CadastrosColaboradorPayload = CadastrosColaboradorFormData & {
+  familiares?: ColaboradorFamiliarForm[];
 };
 
 export type CadastrosColaboradorListResponse = {
@@ -170,7 +183,7 @@ export async function getCadastrosColaborador(id: string): Promise<CadastrosCola
 }
 
 export async function createCadastrosColaborador(
-  data: CadastrosColaboradorFormData,
+  data: CadastrosColaboradorPayload,
 ): Promise<CadastrosColaboradorFormData> {
   return staffJson<CadastrosColaboradorFormData>("/v2/cadastros/colaboradores", {
     method: "POST",
@@ -181,7 +194,7 @@ export async function createCadastrosColaborador(
 
 export async function updateCadastrosColaborador(
   id: string,
-  data: CadastrosColaboradorFormData,
+  data: CadastrosColaboradorPayload,
 ): Promise<CadastrosColaboradorFormData> {
   return staffJson<CadastrosColaboradorFormData>(
     `/v2/cadastros/colaboradores/${encodeURIComponent(id)}`,

@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Optional } from '@nestjs/common';
+import { DEFAULT_TENANT_ID } from '../../tenant/tenant.constants';
+import { TenantConfigService } from '../../tenant/tenant-config.service';
+import type { TenantParametrosSeguranca } from '../../tenant/tenant-config.types';
 
-const MIN_LEN = 8;
 const SPECIAL_RE = /[!@#$%*?]/;
-/** Senhas triviais (minúsculas para comparação). */
 const BLACKLIST = new Set([
   'password',
   'qwerty',
@@ -19,23 +20,44 @@ export type PasswordPolicyResult =
 
 @Injectable()
 export class PasswordPolicyService {
-  validate(password: string): PasswordPolicyResult {
+  constructor(@Optional() private readonly tenantConfig?: TenantConfigService) {}
+
+  private policy(tenantId = DEFAULT_TENANT_ID): TenantParametrosSeguranca {
+    return this.tenantConfig?.getParametrosSegurancaSync(tenantId) ?? {
+      tentativasLoginAntesBloqueio: 5,
+      duracaoBloqueioMin: 15,
+      sessoesMaximasConcorrentes: 10,
+      ttlSessaoHoras: 168,
+      senhaMinLength: 8,
+      senhaExigirMaiuscula: true,
+      senhaExigirNumero: true,
+      senhaExigirEspecial: true,
+      senhaBloquearSequencias: true,
+      validarDominioCorporativo: true,
+    };
+  }
+
+  validate(password: string, tenantId = DEFAULT_TENANT_ID): PasswordPolicyResult {
+    const p = this.policy(tenantId);
     if (!password || typeof password !== 'string') {
       return { ok: false, message: 'Senha obrigatória.' };
     }
-    if (password.length < MIN_LEN) {
-      return { ok: false, message: `A senha deve ter pelo menos ${MIN_LEN} caracteres.` };
+    if (password.length < p.senhaMinLength) {
+      return {
+        ok: false,
+        message: `A senha deve ter pelo menos ${p.senhaMinLength} caracteres.`,
+      };
     }
-    if (!/[A-Z]/.test(password)) {
+    if (p.senhaExigirMaiuscula && !/[A-Z]/.test(password)) {
       return { ok: false, message: 'Inclua pelo menos uma letra maiúscula.' };
     }
     if (!/[a-z]/.test(password)) {
       return { ok: false, message: 'Inclua pelo menos uma letra minúscula.' };
     }
-    if (!/\d/.test(password)) {
+    if (p.senhaExigirNumero && !/\d/.test(password)) {
       return { ok: false, message: 'Inclua pelo menos um número.' };
     }
-    if (!SPECIAL_RE.test(password)) {
+    if (p.senhaExigirEspecial && !SPECIAL_RE.test(password)) {
       return { ok: false, message: 'Inclua pelo menos um caractere especial (!@#$%*?).' };
     }
     if (/(.)\1{5,}/.test(password)) {
@@ -44,13 +66,12 @@ export class PasswordPolicyService {
     if (BLACKLIST.has(password.toLowerCase())) {
       return { ok: false, message: 'Esta senha não é permitida por política de segurança.' };
     }
-    if (this.hasAscendingSequence(password, 5)) {
+    if (p.senhaBloquearSequencias && this.hasAscendingSequence(password, 5)) {
       return { ok: false, message: 'Evite sequências previsíveis (ex.: 12345 ou abcde).' };
     }
     return { ok: true };
   }
 
-  /** Sequências ascendentes de letras minúsculas ou dígitos (comprimento `len`). */
   private hasAscendingSequence(password: string, len: number): boolean {
     const lower = password.toLowerCase();
     for (let i = 0; i <= lower.length - len; i++) {
@@ -68,9 +89,8 @@ export class PasswordPolicyService {
     return true;
   }
 
-  /** Lança `BadRequestException` com envelope corporativo `{ ok, field, message }`. */
-  assertStrong(password: string): void {
-    const r = this.validate(password);
+  assertStrong(password: string, tenantId = DEFAULT_TENANT_ID): void {
+    const r = this.validate(password, tenantId);
     if (r.ok) return;
     throw new BadRequestException({
       ok: false,

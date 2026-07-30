@@ -17,6 +17,7 @@ import {
   TipoCaminhao,
   TipoUnidade,
 } from '@prisma/client';
+import { buildQrOnApproval } from '../../gate-v2/operacao-fluxo-qr.util';
 import { randomBytes } from 'crypto';
 import { Request } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -419,7 +420,7 @@ export class SolicitacoesV2Service {
       .filter((row) => isValidIso6346(row.iso));
 
     if (containersComIso.length) {
-      await this.agendamentos.assertCapacidadeTurno(
+      await this.agendamentos.validarReservaAgendamento(
         dto.agendamento.dataRef,
         dto.agendamento.turno,
         containersComIso.length,
@@ -1052,7 +1053,11 @@ export class SolicitacoesV2Service {
   async aprovarStaff(id: string, user: AuthUser) {
     const s = await this.prisma.solicitacao.findFirst({
       where: { id, deletedAt: null },
-      include: { anexosSolicitacao: true, transporteSolicitacao: true },
+      include: {
+        anexosSolicitacao: true,
+        transporteSolicitacao: true,
+        containersSolicitacao: true,
+      },
     });
     if (!s?.transporteSolicitacao) throw new NotFoundException('Solicitação v2 não encontrada');
     if (s.status !== StatusSolicitacao.PENDENTE && s.status !== StatusSolicitacao.EM_ANALISE) {
@@ -1061,10 +1066,16 @@ export class SolicitacoesV2Service {
     if (!s.anexosSolicitacao.length) {
       throw new BadRequestException('Anexos obrigatórios — nenhum arquivo registrado');
     }
+    const container = s.containersSolicitacao?.[0]?.unidade?.trim() ?? '';
+    const qr = buildQrOnApproval({}, s.protocolo, s.clienteId, container);
     const updated = await this.prisma.$transaction(async (tx) => {
       const u = await tx.solicitacao.update({
         where: { id },
-        data: { status: StatusSolicitacao.AGUARDANDO_GATE_IN },
+        data: {
+          status: StatusSolicitacao.AGUARDANDO_GATE_IN,
+          operacaoFluxoEstado: qr.operacaoFluxoEstado,
+          operacaoFluxoJson: qr.operacaoFluxoJson as Prisma.InputJsonValue,
+        },
         include: {
           transporteSolicitacao: true,
           containersSolicitacao: true,
@@ -1093,7 +1104,7 @@ export class SolicitacoesV2Service {
       tipo: 'SOLICITACAO_V2_APROVADA',
       solicitacaoId: id,
     });
-    return updated;
+    return { ...updated, qrToken: qr.qrToken, qrPayload: qr.qrPayload, qrValidade: qr.qrValidade };
   }
 
   async rejeitarStaff(id: string, user: AuthUser, motivo?: string) {

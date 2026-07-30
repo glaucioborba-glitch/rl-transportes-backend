@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { isPortalAgendamentoPath } from "@/lib/portal-financeiro-block";
+import { demoModulesBlockedRedirect } from "@/lib/demo-modules";
 
 /** Redireciona rotas legadas /staff (V1) para equivalentes V2 em /operador. */
 function staffLegacyRedirect(pathname: string): string | null {
@@ -71,14 +72,19 @@ function isPortalProtectedPath(pathname: string): boolean {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  /** Playwright E2E: auth real via mock de rede; não redireciona rotas legadas staff→operador. */
+  if (process.env.E2E_MOCK_AUTH === "1") {
+    return NextResponse.next();
+  }
+
+  const demoDest = demoModulesBlockedRedirect(pathname);
+  if (demoDest) {
+    return NextResponse.redirect(new URL(demoDest, request.url));
+  }
+
   const staffDest = staffLegacyRedirect(pathname);
   if (staffDest) {
     return NextResponse.redirect(new URL(staffDest, request.url));
-  }
-
-  /** Playwright E2E: auth real via mock de rede (`page.route`); middleware não bloqueia rotas protegidas. */
-  if (process.env.E2E_MOCK_AUTH === "1") {
-    return NextResponse.next();
   }
 
   if (isStaffProtectedPath(pathname)) {

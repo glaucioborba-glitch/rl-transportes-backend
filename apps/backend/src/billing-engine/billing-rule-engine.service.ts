@@ -1,34 +1,54 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   EventoGatilhoTarifa,
   Prisma,
+  StatusContainer,
+  StatusContainerTarifa,
   type RegraTarifaria,
   type TabelaPreco,
+  TipoContainerTarifa,
 } from '@prisma/client';
 import { addCalendarDays } from '../armazenagem-faturamento/armazenagem-billing.util';
+import { DEFAULT_FREE_TIME_DIAS, DEFAULT_VALOR_DIARIA } from '../armazenagem-faturamento/armazenagem-billing.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantConfigService } from '../tenant/tenant-config.service';
+import { resolveOperacional } from '../tenant/tenant-config.types';
 import type {
   BillingRuleEngineInput,
   BillingRuleEngineResult,
   ContainerBillingContext,
-  LegacyTarifaLike,
 } from './billing-rule-engine.types';
 import {
-  applyLegacyShiftingOnFirstBillableDay,
+  DEFAULT_TARIFA_ENERGIA_REEFER_DIA,
   evaluateBillingRules,
-  legacyTarifaToRegras,
+  extractContainerMdmKeys,
+  inferTipoContainer,
+  pickRegra,
 } from './billing-rule-engine.util';
+import { parseFaixasDiaria } from './faixa-diaria.types';
+import { resolveFaixasFromCadastroItem } from './faixa-diaria-calculator';
 
 export type ResolvedPricingTable = {
-  source: 'TABELA_PRECO' | 'LEGADO' | 'DEFAULT';
+  source: 'TABELA_PRECO' | 'DEFAULT';
   tabelaPrecoId?: string;
   regras: RegraTarifaria[];
-  legado?: LegacyTarifaLike;
+};
+
+export type ContainerPricingOverrides = {
+  diasFreeTime: number;
+  valorDiaria: number;
+  valorEnergiaReefer: number;
+  faixasDiaria?: import('./faixa-diaria.types').FaixaDiaria[];
 };
 
 @Injectable()
 export class BillingRuleEngineService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(BillingRuleEngineService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenantConfig: TenantConfigService,
+  ) {}
 
   async resolvePricingForCliente(clienteId: string): Promise<ResolvedPricingTable> {
     const cliente = await this.prisma.cliente.findFirst({
@@ -37,11 +57,10 @@ export class BillingRuleEngineService {
         tabelaPreco: {
           include: { regras: { where: { ativa: true }, orderBy: { createdAt: 'asc' } } },
         },
-        tabelaTarifaria: true,
       },
     });
     if (!cliente) {
-      return { source: 'DEFAULT', regras: this.defaultRegras() };
+      return this.resolveDefaultTable();
     }
 
     if (cliente.tabelaPreco?.ativa && cliente.tabelaPreco.regras.length) {
@@ -52,56 +71,234 @@ export class BillingRuleEngineService {
       };
     }
 
-    if (cliente.tabelaTarifaria) {
-      const legado: LegacyTarifaLike = {
-        freeTimeDias: cliente.tabelaTarifaria.freeTimeDias,
-        valorDiaria: Number(cliente.tabelaTarifaria.valorDiaria),
-        valorServicosExtras: Number(cliente.tabelaTarifaria.valorServicosExtras),
-      };
+    const padrao = await this.prisma.tabelaPreco.findFirst({
+      where: { tenantId: cliente.tenantId, padrao: true, ativa: true },
+      include: { regras: { where: { ativa: true }, orderBy: { createdAt: 'asc' } } },
+    });
+    if (padrao?.regras.length) {
       return {
-        source: 'LEGADO',
-        regras: legacyTarifaToRegras(legado) as RegraTarifaria[],
-        legado,
+        source: 'TABELA_PRECO',
+        tabelaPrecoId: padrao.id,
+        regras: padrao.regras,
       };
     }
 
+    this.logger.warn(
+      `Cliente ${clienteId} sem tabela comercial nem padrão — usando regras DEFAULT. Configure em /cadastros/financeiro/tabelas-precos.`,
+    );
+    return this.resolveDefaultTable();
+  }
+
+  private async resolveDefaultTable(): Promise<ResolvedPricingTable> {
+    const padrao = await this.prisma.tabelaPreco.findFirst({
+      where: { tenantId: 'default', padrao: true, ativa: true },
+      include: { regras: { where: { ativa: true }, orderBy: { createdAt: 'asc' } } },
+    });
+    if (padrao?.regras.length) {
+      return {
+        source: 'TABELA_PRECO',
+        tabelaPrecoId: padrao.id,
+        regras: padrao.regras,
+      };
+    }
     return { source: 'DEFAULT', regras: this.defaultRegras() };
   }
 
-  evaluate(input: BillingRuleEngineInput, legado?: LegacyTarifaLike): BillingRuleEngineResult {
-    let result = evaluateBillingRules(input);
-    if (legado) {
-      result = applyLegacyShiftingOnFirstBillableDay(result, legado);
-    }
-    return result;
+  /**
+   * PR-03: Hierarquia de regra tarifária (específica > tipo/AMBOS > global).
+   */
+  resolveBillingRule(
+    regras: RegraTarifaria[],
+    tipoContainer: TipoContainerTarifa,
+    evento: EventoGatilhoTarifa,
+    statusContainer: StatusContainerTarifa | null,
+  ): RegraTarifaria | undefined {
+    return pickRegra(regras, tipoContainer, evento, statusContainer) as RegraTarifaria | undefined;
   }
 
-  evaluateForContainerCycle(params: {
+  /** PR-03: Free time — item cadastral > regra tarifária > tenant default. */
+  async resolveFreeTime(
+    tenantId: string,
+    clienteId: string,
+    tabelaPrecoId: string | undefined,
+    container: ContainerBillingContext,
+    regras: RegraTarifaria[],
+  ): Promise<number> {
+    const tipo = inferTipoContainer(container);
+    const status = this.normalizeStatus(container.statusContainer);
+    const mdm = extractContainerMdmKeys(container);
+
+    const cadastroItem = await this.findCadastroBillingItem(clienteId, mdm, status);
+    if (cadastroItem?.freeTimeDias != null) {
+      return cadastroItem.freeTimeDias;
+    }
+
+    const regra = this.resolveBillingRule(
+      regras,
+      tipo,
+      EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
+      status,
+    );
+    if (regra) return regra.diasFreeTime;
+
+    const params = await this.tenantConfig.getParametros(tenantId);
+    return resolveOperacional(params.parametros).freeTimePadraoDias ?? DEFAULT_FREE_TIME_DIAS;
+  }
+
+  /** PR-03: Tarifa diária — item cadastral > regra > default. */
+  async resolveTarifaDiaria(
+    tenantId: string,
+    clienteId: string,
+    container: ContainerBillingContext,
+    regras: RegraTarifaria[],
+  ): Promise<number> {
+    const tipo = inferTipoContainer(container);
+    const status = this.normalizeStatus(container.statusContainer);
+    const mdm = extractContainerMdmKeys(container);
+
+    const cadastroItem = await this.findCadastroBillingItem(clienteId, mdm, status);
+    if (cadastroItem?.tarifaDiariaArmazenagem != null) {
+      return Number(cadastroItem.tarifaDiariaArmazenagem);
+    }
+
+    const regra = this.resolveBillingRule(
+      regras,
+      tipo,
+      EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
+      status,
+    );
+    if (regra) return Number(regra.valor);
+
+    return DEFAULT_VALOR_DIARIA;
+  }
+
+  /** PR-03: Tarifa energia reefer — item cadastral > regra > default. */
+  async resolveTarifaEnergiaReefer(
+    clienteId: string,
+    container: ContainerBillingContext,
+    regras: RegraTarifaria[],
+  ): Promise<number> {
+    const tipo = inferTipoContainer(container);
+    const status = this.normalizeStatus(container.statusContainer);
+    const mdm = extractContainerMdmKeys(container);
+
+    const cadastroItem = await this.findCadastroBillingItem(clienteId, mdm, status);
+    if (cadastroItem?.tarifaEnergiaReeferDiaria != null) {
+      return Number(cadastroItem.tarifaEnergiaReeferDiaria);
+    }
+
+    const regra = this.resolveBillingRule(
+      regras,
+      tipo,
+      EventoGatilhoTarifa.ENERGIA_REEFER,
+      status,
+    );
+    if (regra) return Number(regra.valor);
+
+    return DEFAULT_TARIFA_ENERGIA_REEFER_DIA;
+  }
+
+  /** Resolve overrides completos para evaluateBillingRules. */
+  async resolveContainerPricingOverrides(
+    tenantId: string,
+    clienteId: string,
+    tabelaPrecoId: string | undefined,
+    container: ContainerBillingContext,
+    regras: RegraTarifaria[],
+  ): Promise<ContainerPricingOverrides> {
+    const [diasFreeTime, valorDiaria, valorEnergiaReefer, faixasDiaria] = await Promise.all([
+      this.resolveFreeTime(tenantId, clienteId, tabelaPrecoId, container, regras),
+      this.resolveTarifaDiaria(tenantId, clienteId, container, regras),
+      this.resolveTarifaEnergiaReefer(clienteId, container, regras),
+      this.resolveFaixasDiaria(clienteId, container, regras),
+    ]);
+    return { diasFreeTime, valorDiaria, valorEnergiaReefer, faixasDiaria };
+  }
+
+  async resolveFaixasDiaria(
+    clienteId: string,
+    container: ContainerBillingContext,
+    regras: RegraTarifaria[],
+  ) {
+    const tipo = inferTipoContainer(container);
+    const status = this.normalizeStatus(container.statusContainer);
+    const mdm = extractContainerMdmKeys(container);
+
+    const cadastroItem = await this.findCadastroBillingItem(clienteId, mdm, status);
+    if (cadastroItem) {
+      return resolveFaixasFromCadastroItem({
+        faixasDiaria: cadastroItem.faixasDiaria,
+        tarifaDiariaArmazenagem:
+          cadastroItem.tarifaDiariaArmazenagem != null
+            ? Number(cadastroItem.tarifaDiariaArmazenagem)
+            : null,
+        freeTimeDias: cadastroItem.freeTimeDias,
+      });
+    }
+
+    const regra = pickRegra(
+      regras as never,
+      tipo,
+      EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
+      status,
+      mdm,
+    );
+    const parsed = regra ? parseFaixasDiaria(regra.faixasDiaria) : [];
+    return parsed.length ? parsed : undefined;
+  }
+
+  evaluate(input: BillingRuleEngineInput): BillingRuleEngineResult {
+    return evaluateBillingRules(input);
+  }
+
+  async evaluateForContainerCycle(params: {
     gateInAt: Date;
     asOf: Date;
     regras: RegraTarifaria[];
     container: ContainerBillingContext;
     fase: 'GATE_IN' | 'PROVISAO_DIARIA' | 'GATE_OUT';
-    legado?: LegacyTarifaLike;
     shiftingExtras?: number;
-  }): BillingRuleEngineResult {
+    tenantId?: string;
+    clienteId?: string;
+    tabelaPrecoId?: string;
+  }): Promise<BillingRuleEngineResult> {
     const incluirGateIn = params.fase === 'GATE_IN' || params.fase === 'GATE_OUT';
     const incluirGateOut = params.fase === 'GATE_OUT';
     const shiftingExtras =
       params.fase === 'GATE_OUT' ? params.shiftingExtras : params.fase === 'PROVISAO_DIARIA' ? 0 : 0;
 
-    return this.evaluate(
-      {
-        gateInAt: params.gateInAt,
-        asOf: params.asOf,
-        regras: params.regras,
-        container: params.container,
-        incluirGateIn,
-        incluirGateOut,
-        shiftingExtras,
-      },
-      params.legado,
-    );
+    let pricingOverrides: ContainerPricingOverrides | undefined;
+    if (params.tenantId && params.clienteId) {
+      pricingOverrides = await this.resolveContainerPricingOverrides(
+        params.tenantId,
+        params.clienteId,
+        params.tabelaPrecoId,
+        params.container,
+        params.regras,
+      );
+    }
+
+    return this.evaluate({
+      gateInAt: params.gateInAt,
+      asOf: params.asOf,
+      regras: params.regras,
+      container: params.container,
+      incluirGateIn,
+      incluirGateOut,
+      shiftingExtras,
+      pricingOverrides,
+    });
+  }
+
+  /** Carrega pricing e aplica dias corridos (PR-02 — fim de semana não afeta diárias). */
+  async evaluateForContainerCycleWithTenant(
+    tenantId: string,
+    params: Omit<
+      Parameters<BillingRuleEngineService['evaluateForContainerCycle']>[0],
+      'tenantId'
+    > & { clienteId?: string },
+  ): Promise<BillingRuleEngineResult> {
+    return this.evaluateForContainerCycle({ ...params, tenantId });
   }
 
   cobrancaInicioEm(gateInAt: Date, diasFreeTime: number): Date | null {
@@ -130,10 +327,15 @@ export class BillingRuleEngineService {
       (c) => c.unidade.replace(/\s/g, '').toUpperCase() === isoNorm,
     );
 
+    const statusFromPatio = unit.statusContainer;
+    const statusFromForm = fromForm?.status;
+
     return {
       tamanho: fromForm?.tamanho ?? '40',
       tipo: fromForm?.tipo ?? 'DRY',
       refrigerado: fromForm?.refrigerado ?? unit.refrigerado,
+      setPoint: fromForm?.setPoint ?? null,
+      statusContainer: this.mapContainerStatus(statusFromForm ?? statusFromPatio),
     };
   }
 
@@ -149,8 +351,10 @@ export class BillingRuleEngineService {
       ([
         EventoGatilhoTarifa.GATE_IN,
         EventoGatilhoTarifa.GATE_OUT,
+        EventoGatilhoTarifa.HANDLING,
         EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
         EventoGatilhoTarifa.SHIFTING_EXTRA,
+        EventoGatilhoTarifa.ENERGIA_REEFER,
       ] as EventoGatilhoTarifa[]);
 
     await db.itemFaturaArmazenagem.deleteMany({
@@ -185,6 +389,118 @@ export class BillingRuleEngineService {
     return Number(agg._sum.valorTotal ?? 0);
   }
 
+  private mapContainerStatus(
+    status?: StatusContainer | StatusContainerTarifa | null,
+  ): StatusContainerTarifa | null {
+    if (!status || status === StatusContainerTarifa.AMBOS) return null;
+    const s = String(status);
+    if (s === 'CHEIO') return StatusContainerTarifa.CHEIO;
+    if (s === 'VAZIO') return StatusContainerTarifa.VAZIO;
+    return null;
+  }
+
+  private normalizeStatus(
+    status?: StatusContainerTarifa | null,
+  ): StatusContainerTarifa | null {
+    if (!status || status === StatusContainerTarifa.AMBOS) return null;
+    return status;
+  }
+
+  private mapContainerToCadastroKeys(
+    container: ContainerBillingContext,
+    tipo: TipoContainerTarifa,
+  ): { tipoCodigo: string; tamanho: string } {
+    const tamanhoRaw = (container.tamanho ?? '40').replace(/\D/g, '');
+    const tamanho = tamanhoRaw ? `${tamanhoRaw}'` : "40'";
+    let tipoCodigo = (container.tipo ?? 'DRY').toUpperCase();
+    if (tipo === TipoContainerTarifa.REEFER) tipoCodigo = 'REEFER';
+    if (tipo === TipoContainerTarifa.IMO_PERIGOSA) tipoCodigo = 'IMO';
+    return { tipoCodigo, tamanho };
+  }
+
+  private async findCadastroBillingItem(
+    clienteId: string,
+    mdm: { tipoCodigo?: string | null; capacidadeCodigo?: string | null; containerTamanho?: string | null },
+    status: StatusContainerTarifa | null,
+  ) {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+
+    const tabelas = await this.prisma.cadastroTabelaPreco.findMany({
+      where: {
+        deletedAt: null,
+        ativo: true,
+        dataInicio: { lte: hoje },
+        AND: [
+          { OR: [{ dataFim: null }, { dataFim: { gte: hoje } }] },
+          { OR: [{ clienteId }, { clienteId: null }] },
+        ],
+      },
+      include: { itens: true },
+      orderBy: [{ clienteId: 'desc' }, { dataInicio: 'desc' }],
+    });
+
+    const statusesToTry: StatusContainerTarifa[] = status
+      ? [status, StatusContainerTarifa.AMBOS]
+      : [StatusContainerTarifa.AMBOS];
+
+    for (const tabela of tabelas) {
+      for (const st of statusesToTry) {
+        const item = tabela.itens.find((i) =>
+          this.cadastroItemMatches(i, mdm, st),
+        );
+        if (item) return item;
+      }
+    }
+    return null;
+  }
+
+  private cadastroItemMatches(
+    item: {
+      categoriaItem?: string;
+      tipoOperacaoCodigo?: string;
+      tipoContainerCodigo: string | null;
+      capacidadeCodigo?: string | null;
+      containerTamanho: string | null;
+      statusContainer: StatusContainerTarifa;
+      freeTimeDias: number | null;
+      faixasDiaria?: unknown;
+      tarifaDiariaArmazenagem: Prisma.Decimal | null;
+      tarifaEnergiaReeferDiaria: Prisma.Decimal | null;
+      valorHandling?: Prisma.Decimal | null;
+    },
+    mdm: { tipoCodigo?: string | null; capacidadeCodigo?: string | null; containerTamanho?: string | null },
+    status: StatusContainerTarifa,
+  ): boolean {
+    const isArmazenagem =
+      item.categoriaItem === 'ARMAZENAGEM' ||
+      item.tipoOperacaoCodigo?.toUpperCase() === 'ARMAZENAGEM';
+    if (!isArmazenagem) return false;
+
+    const tipoKey = mdm.tipoCodigo?.toUpperCase();
+    const tc = item.tipoContainerCodigo?.toUpperCase();
+    if (tc && tc !== '*' && tc !== tipoKey) return false;
+
+    const cap = item.capacidadeCodigo?.toUpperCase();
+    const capKey = mdm.capacidadeCodigo?.toUpperCase();
+    if (cap && cap !== '*' && cap !== capKey) return false;
+
+    const tam = item.containerTamanho;
+    if (tam && tam !== '*' && tam !== mdm.containerTamanho) return false;
+
+    if (item.statusContainer !== StatusContainerTarifa.AMBOS && item.statusContainer !== status) {
+      return false;
+    }
+
+    return (
+      item.freeTimeDias != null ||
+      item.faixasDiaria != null ||
+      item.tarifaDiariaArmazenagem != null ||
+      item.tarifaEnergiaReeferDiaria != null ||
+      item.valorHandling != null
+    );
+  }
+
   private defaultRegras(): RegraTarifaria[] {
     const now = new Date();
     const mk = (
@@ -198,6 +514,7 @@ export class BillingRuleEngineService {
         nome: eventoGatilho,
         eventoGatilho,
         tipoContainer: 'TODOS',
+        statusContainer: StatusContainerTarifa.AMBOS,
         valor: new Prisma.Decimal(valor.toFixed(2)),
         diasFreeTime,
         ativa: true,

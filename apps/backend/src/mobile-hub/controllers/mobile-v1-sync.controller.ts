@@ -48,9 +48,11 @@ export class MobileV1SyncController {
 
   @Post('enqueue')
   @ApiOperation({ summary: 'Enfileirar lote offline' })
-  enqueue(@Req() req: Request & { mobileUser?: MobileRequestUser }, @Body() body: EnqueueDto) {
+  async enqueue(@Req() req: Request & { mobileUser?: MobileRequestUser }, @Body() body: EnqueueDto) {
     const cx = req.mobileUser!;
-    return body.events.map((e) => this.sync.enfileirar(cx, e.op, e.body as Record<string, unknown>, e.clientTs));
+    return Promise.all(
+      body.events.map((e) => this.sync.enfileirar(cx, e.op, e.body as Record<string, unknown>, e.clientTs)),
+    );
   }
 
   @Post('flush')

@@ -57,6 +57,7 @@ import { HoldReleaseModule } from '../hold-release/hold-release.module';
 import { TermosUsoModule } from '../common/legal/termos-uso.module';
 import { DominioCorporativoModule } from '../common/validation/dominio-corporativo.module';
 import { TransportadorasAutorizadasModule } from '../transportadoras-autorizadas/transportadoras-autorizadas.module';
+import { TenantModule } from '../tenant/tenant.module';
 
 /**
  * Fase 20 — Camada CX: portais cliente/fornecedor, IAM dedicado, branding, tickets e analytics.
@@ -85,6 +86,7 @@ import { TransportadorasAutorizadasModule } from '../transportadoras-autorizadas
     TermosUsoModule,
     DominioCorporativoModule,
     TransportadorasAutorizadasModule,
+    TenantModule,
     PlataformaCoreModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

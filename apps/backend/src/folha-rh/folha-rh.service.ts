@@ -78,9 +78,9 @@ export class FolhaRhService {
     return Number.isFinite(v) && v >= 1 ? v : 4;
   }
 
-  private linhasMes(mes: string): LinhaColaboradorCalculo[] {
+  private async linhasMes(mes: string): Promise<LinhaColaboradorCalculo[]> {
     const fer = this.feriadosMes();
-    const catalogo = this.store.listBeneficios();
+    const catalogo = await this.store.listBeneficios();
     const opts = {
       feriadosMes: fer,
       encargosPatronaisPct: this.encargosPatronaisPct(),
@@ -88,16 +88,16 @@ export class FolhaRhService {
     };
 
     const linhas: LinhaColaboradorCalculo[] = [];
-    for (const c of this.store.listColaboradores()) {
+    for (const c of await this.store.listColaboradores()) {
       if (!colaboradorAtivoNoMes(c, mes)) continue;
-      const pres = this.store.presencasDoMes(c.id, mes);
+      const pres = await this.store.presencasDoMes(c.id, mes);
       linhas.push(calcularLinhaColaborador(c, mes, pres, catalogo, opts));
     }
     return linhas;
   }
 
-  createColaborador(dto: CreateColaboradorRhDto): ColaboradorRhRespostaDto {
-    const e = this.store.createColaborador({
+  async createColaborador(dto: CreateColaboradorRhDto): Promise<ColaboradorRhRespostaDto> {
+    const e = await this.store.createColaborador({
       nome: dto.nome.trim(),
       cpf: dto.cpf.replace(/\D/g, ''),
       cargo: dto.cargo.trim(),
@@ -111,12 +111,13 @@ export class FolhaRhService {
     return { ...e };
   }
 
-  listColaboradores(): ColaboradorRhRespostaDto[] {
-    return this.store.listColaboradores().map((c) => ({ ...c }));
+  async listColaboradores(): Promise<ColaboradorRhRespostaDto[]> {
+    const rows = await this.store.listColaboradores();
+    return rows.map((c) => ({ ...c }));
   }
 
-  createBeneficio(dto: CreateBeneficioRhDto): BeneficioRhRespostaDto {
-    const e = this.store.createBeneficio({
+  async createBeneficio(dto: CreateBeneficioRhDto): Promise<BeneficioRhRespostaDto> {
+    const e = await this.store.createBeneficio({
       nomeBeneficio: dto.nomeBeneficio.trim(),
       valorMensal: dto.valorMensal,
       tipoBeneficio: dto.tipoBeneficio,
@@ -124,14 +125,15 @@ export class FolhaRhService {
     return { ...e };
   }
 
-  listBeneficios(): BeneficioRhRespostaDto[] {
-    return this.store.listBeneficios().map((b) => ({ ...b }));
+  async listBeneficios(): Promise<BeneficioRhRespostaDto[]> {
+    const rows = await this.store.listBeneficios();
+    return rows.map((b) => ({ ...b }));
   }
 
-  createPresenca(dto: CreatePresencaRhDto): PresencaRhRespostaDto {
-    const c = this.store.getColaborador(dto.colaboradorId);
+  async createPresenca(dto: CreatePresencaRhDto): Promise<PresencaRhRespostaDto> {
+    const c = await this.store.getColaborador(dto.colaboradorId);
     if (!c) throw new BadRequestException('colaboradorId não encontrado.');
-    const e = this.store.createPresenca({
+    const e = await this.store.createPresenca({
       colaboradorId: dto.colaboradorId,
       data: dto.data.slice(0, 10),
       horasTrabalhadas: dto.horasTrabalhadas,
@@ -142,12 +144,13 @@ export class FolhaRhService {
     return { ...e };
   }
 
-  listPresencas(): PresencaRhRespostaDto[] {
-    return this.store.listPresencas().map((p) => ({ ...p }));
+  async listPresencas(): Promise<PresencaRhRespostaDto[]> {
+    const rows = await this.store.listPresencas();
+    return rows.map((p) => ({ ...p }));
   }
 
-  getCalculo(mes: string): CalculoFolhaRespostaDto {
-    const linhas = this.linhasMes(mes);
+  async getCalculo(mes: string): Promise<CalculoFolhaRespostaDto> {
+    const linhas = await this.linhasMes(mes);
     let salarioLiquidoTotal = 0;
     let custoTotalEmpresa = 0;
     let encargosTotal = 0;
@@ -176,8 +179,8 @@ export class FolhaRhService {
     };
   }
 
-  getCustosTurno(mes: string): CustosTurnoRespostaDto {
-    const linhas = this.linhasMes(mes);
+  async getCustosTurno(mes: string): Promise<CustosTurnoRespostaDto> {
+    const linhas = await this.linhasMes(mes);
     const porTurnoBruto = custoPorTurno(linhas);
     const custoTotalTurno: CustosTurnoRespostaDto['custoTotalTurno'] = {};
     for (const [k, v] of Object.entries(porTurnoBruto)) {
@@ -217,7 +220,7 @@ export class FolhaRhService {
     };
   }
 
-  getProjecaoAnual(): ProjecaoAnualRhRespostaDto {
+  async getProjecaoAnual(): Promise<ProjecaoAnualRhRespostaDto> {
     const inicio = mesAtualIso();
     const custoFolha12Meses: MesValorRhDto[] = [];
     const custoBeneficios12Meses: MesValorRhDto[] = [];
@@ -226,7 +229,7 @@ export class FolhaRhService {
     let somaAnual = 0;
     for (let i = 0; i < 12; i++) {
       const mes = addMeses(inicio, i);
-      const calc = this.getCalculo(mes);
+      const calc = await this.getCalculo(mes);
       custoFolha12Meses.push({ mes, valor: calc.custoTotalEmpresa });
       custoBeneficios12Meses.push({ mes, valor: calc.beneficiosEmpresaTotal });
       custoProvisoes12Meses.push({ mes, valor: calc.provisoesTotal });
@@ -234,7 +237,7 @@ export class FolhaRhService {
     }
 
     const prevCont = this.previsaoAdmissoesAno();
-    const calcRef = this.getCalculo(inicio);
+    const calcRef = await this.getCalculo(inicio);
     const hc = calcRef.porColaborador.length || 1;
     const custoMedio = calcRef.custoTotalEmpresa / hc;
     const extraAnualPorContratacao = prevCont * custoMedio;
@@ -251,30 +254,31 @@ export class FolhaRhService {
     };
   }
 
-  headcountAtivo(): number {
+  async headcountAtivo(): Promise<number> {
     const mes = mesAtualIso();
-    return this.store.listColaboradores().filter((c) => colaboradorAtivoNoMes(c, mes)).length;
+    const colaboradores = await this.store.listColaboradores();
+    return colaboradores.filter((c) => colaboradorAtivoNoMes(c, mes)).length;
   }
 
-  getDashboard(): DashboardFolhaRhDto {
+  async getDashboard(): Promise<DashboardFolhaRhDto> {
     const mes = mesAtualIso();
-    const calc = this.getCalculo(mes);
-    const hc = this.headcountAtivo();
+    const calc = await this.getCalculo(mes);
+    const hc = await this.headcountAtivo();
     const custoMedioPorColaborador =
       hc > 0 ? Math.round((calc.custoTotalEmpresa / hc) * 100) / 100 : 0;
 
     const fer = this.feriadosMes();
     const du = diasUteisAproximados(mes, fer) * Math.max(1, hc);
     let faltas = 0;
-    for (const c of this.store.listColaboradores()) {
+    for (const c of await this.store.listColaboradores()) {
       if (!colaboradorAtivoNoMes(c, mes)) continue;
-      for (const p of this.store.presencasDoMes(c.id, mes)) {
+      for (const p of await this.store.presencasDoMes(c.id, mes)) {
         if (p.falta) faltas += 1;
       }
     }
     const absentismoPct = du > 0 ? Math.round((faltas / du) * 10000) / 100 : 0;
 
-    const linhas = this.linhasMes(mes);
+    const linhas = await this.linhasMes(mes);
     const ctMap = custoPorTurno(linhas);
     let somaMed = 0;
     let cnt = 0;

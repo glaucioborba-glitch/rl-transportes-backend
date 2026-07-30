@@ -123,4 +123,24 @@ export class AlertService {
       meta: { ms: input.ms },
     });
   }
+
+  async dbUnavailable(input: { latencyMs: number; activeConnections?: number }): Promise<void> {
+    await this.notify({
+      key: 'db_unavailable',
+      severity: 'critical',
+      title: '🚨 PostgreSQL Indisponível',
+      message: `Banco de dados inacessível. Latência: ${input.latencyMs}ms.`,
+      meta: input,
+    });
+  }
+
+  async poolDegraded(input: { latencyMs: number; activeConnections: number }): Promise<void> {
+    await this.notify({
+      key: 'db_pool_degraded',
+      severity: 'warning',
+      title: '⚠️ Pool de Conexões Degradado',
+      message: `${input.activeConnections} conexões ativas, latência ${input.latencyMs}ms.`,
+      meta: input,
+    });
+  }
 }

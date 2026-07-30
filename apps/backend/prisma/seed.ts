@@ -36,6 +36,27 @@ const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
 const BCRYPT_ROUNDS = 12;
 
+/** CPFs QA intranet — login em /login/staff usa 11 dígitos; User.cpfCnpj = zeros à esquerda (14). */
+const STAFF_CPF = {
+  SUPER_ADMIN: '11144477735',
+  ADMIN: '39053344705',
+  GERENTE: '98765432100',
+  OPERADOR_PORTARIA: '12345678909',
+  OPERADOR_SUPERVISOR: '74682489070',
+  OPERADOR_GATE: '15350946056',
+} as const;
+
+function staffCpfStorage(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 11) return digits.padStart(14, '0');
+  if (digits.length === 14) return digits;
+  throw new Error(`Documento staff inválido (use CPF 11 dígitos): ${raw}`);
+}
+
+function staffDoc(envValue: string | undefined, fallbackCpf11: string): string {
+  return staffCpfStorage(envValue ?? fallbackCpf11);
+}
+
 async function upsertDefaultTenant() {
   await prisma.tenant.upsert({
     where: { id: DEFAULT_TENANT },
@@ -54,7 +75,7 @@ async function upsertDefaultTenant() {
       nome: 'Terminal corporativo (default)',
       parametros: DEFAULT_TENANT_PARAMETROS,
       clienteIds: [],
-      slasHorasProxy: { gate: 4, patio: 72, saida: 24 },
+      slasMinutosMeta: { gate: 240, patio: 4320, saida: 1440 },
       horarioFuncionamento: '06:00–22:00',
       regrasOperacao: 'Tenant default',
     },
@@ -132,7 +153,10 @@ async function main() {
   }
 
   const email = process.env.SEED_ADMIN_EMAIL ?? 'admin@rltransportes.com';
-  const adminDoc = process.env.SEED_ADMIN_CPF_CNPJ ?? '04252011000110';
+  const adminDoc = staffDoc(
+    process.env.SEED_ADMIN_CPF ?? process.env.SEED_ADMIN_CPF_CNPJ,
+    STAFF_CPF.ADMIN,
+  );
   const password = process.env.SEED_ADMIN_PASSWORD ?? 'Admin@123';
   const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
@@ -156,7 +180,10 @@ async function main() {
   });
 
   const superEmail = process.env.SEED_SUPER_ADMIN_EMAIL ?? 'superadmin@rltransportes.com';
-  const superDoc = process.env.SEED_SUPER_ADMIN_CPF_CNPJ ?? '00000000000191';
+  const superDoc = staffDoc(
+    process.env.SEED_SUPER_ADMIN_CPF ?? process.env.SEED_SUPER_ADMIN_CPF_CNPJ,
+    STAFF_CPF.SUPER_ADMIN,
+  );
   const superPwd = process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'SuperAdmin@123';
   await prisma.user.upsert({
     where: { tenantId_email: { tenantId: DEFAULT_TENANT, email: superEmail } },
@@ -243,7 +270,10 @@ async function main() {
 
   const gEmail = process.env.SEED_QA_GERENTE_EMAIL ?? 'gerente.ops.qa@rl.local.test';
   const gPwd = process.env.SEED_QA_GERENTE_PASSWORD ?? 'Gerente@OpsQA2026';
-  const gDoc = process.env.SEED_QA_GERENTE_CPF_CNPJ ?? '11000000000108';
+  const gDoc = staffDoc(
+    process.env.SEED_QA_GERENTE_CPF ?? process.env.SEED_QA_GERENTE_CPF_CNPJ,
+    STAFF_CPF.GERENTE,
+  );
   await prisma.user.upsert({
     where: { tenantId_email: { tenantId: DEFAULT_TENANT, email: gEmail } },
     create: {
@@ -262,7 +292,10 @@ async function main() {
 
   const opMail = process.env.SEED_QA_OPERADOR_EMAIL ?? 'operador.portaria.qa@rl.local.test';
   const opPwd = process.env.SEED_QA_OPERADOR_PASSWORD ?? 'OpsPrt@QA2026';
-  const opDoc = process.env.SEED_QA_OPERADOR_CPF_CNPJ ?? '11000000000299';
+  const opDoc = staffDoc(
+    process.env.SEED_QA_OPERADOR_CPF ?? process.env.SEED_QA_OPERADOR_CPF_CNPJ,
+    STAFF_CPF.OPERADOR_PORTARIA,
+  );
   await prisma.user.upsert({
     where: { tenantId_email: { tenantId: DEFAULT_TENANT, email: opMail } },
     create: {
@@ -282,7 +315,10 @@ async function main() {
   const supMail =
     process.env.SEED_QA_OPERADOR_SUPERVISOR_EMAIL ?? 'operador.supervisor.qa@rl.local.test';
   const supPwd = process.env.SEED_QA_OPERADOR_SUPERVISOR_PASSWORD ?? 'OpsSup@QA2026';
-  const supDoc = process.env.SEED_QA_OPERADOR_SUPERVISOR_CPF_CNPJ ?? '11000000000370';
+  const supDoc = staffDoc(
+    process.env.SEED_QA_OPERADOR_SUPERVISOR_CPF ?? process.env.SEED_QA_OPERADOR_SUPERVISOR_CPF_CNPJ,
+    STAFF_CPF.OPERADOR_SUPERVISOR,
+  );
   await prisma.user.upsert({
     where: { tenantId_email: { tenantId: DEFAULT_TENANT, email: supMail } },
     create: {
@@ -301,7 +337,10 @@ async function main() {
 
   const gateMail = process.env.SEED_QA_OPERADOR_GATE_EMAIL ?? 'operador.gate.qa@rl.local.test';
   const gatePwd = process.env.SEED_QA_OPERADOR_GATE_PASSWORD ?? 'OpsGate@QA2026';
-  const gateDoc = process.env.SEED_QA_OPERADOR_GATE_CPF_CNPJ ?? '11000000000450';
+  const gateDoc = staffDoc(
+    process.env.SEED_QA_OPERADOR_GATE_CPF ?? process.env.SEED_QA_OPERADOR_GATE_CPF_CNPJ,
+    STAFF_CPF.OPERADOR_GATE,
+  );
   await prisma.user.upsert({
     where: { tenantId_email: { tenantId: DEFAULT_TENANT, email: gateMail } },
     create: {
@@ -337,21 +376,6 @@ async function main() {
       status: StatusSolicitacao.PENDENTE,
     },
     update: { status: StatusSolicitacao.PENDENTE },
-  });
-
-  await prisma.tabelaTarifaria.upsert({
-    where: { clienteId: clientePortal.id },
-    create: {
-      clienteId: clientePortal.id,
-      freeTimeDias: 5,
-      valorDiaria: new Prisma.Decimal('85.00'),
-      valorServicosExtras: new Prisma.Decimal('120.00'),
-    },
-    update: {
-      freeTimeDias: 5,
-      valorDiaria: new Prisma.Decimal('85.00'),
-      valorServicosExtras: new Prisma.Decimal('120.00'),
-    },
   });
 
   console.log(`Seed OK: ADMIN ${email}; persona QA (CLIENTE portal, GERENTE, OPERADORES + solicitação). Credenciais no topo de apps/backend/prisma/seed.ts.`);

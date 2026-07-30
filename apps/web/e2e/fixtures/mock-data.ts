@@ -3,11 +3,14 @@ import type { PermissoesPessoaRow, SolicitacaoRow } from "@/lib/api/portal-clien
 
 export const E2E_CNPJ = "19131243000197";
 export const E2E_PORTAL_PASSWORD = "Cliente@PortalQA2026";
-export const E2E_STAFF_CNPJ = "04252011000110";
+export const E2E_STAFF_CPF = "52998224725";
+/** @deprecated Use E2E_STAFF_CPF — login intranet aceita apenas CPF. */
+export const E2E_STAFF_CNPJ = E2E_STAFF_CPF;
 export const E2E_STAFF_PASSWORD = "Admin@123";
 
 export const E2E_SOLICITACAO_ID = "e2e-solicitacao-coleta-1";
 export const E2E_TRIAGEM_ID = "e2e-triagem-agendamento-1";
+export const E2E_CADASTRO_PENDENTE_ID = "e2e-cadastro-pendente-1";
 
 export const E2E_PERMISSOES: PermissoesPessoaRow = {
   podeCriarSolicitacao: true,
@@ -117,6 +120,7 @@ export function buildPortalDashboardResponse() {
       faturadoMes: 0,
       totalFaturadoPeriodo: 0,
     },
+    condicaoPagamento: "FATURAMENTO",
     slas: { cumpridos: 0, violados: 0, desempenho: 100 },
     slasCx: {
       tenantId: "default",
@@ -128,7 +132,7 @@ export function buildPortalDashboardResponse() {
     trackingSample: [],
     solicitacoesHoje: [],
     recent: { items: [], total: 0, page: 1, limit: 8, orderBy: "createdAt", order: "desc" },
-    meta: { tenantId: "default", slasHorasProxy: null },
+    meta: { tenantId: "default", slasMinutosMeta: null },
     isBloqueadoFinanceiramente: false,
   };
 }
@@ -193,7 +197,7 @@ export function buildStaffLoginResponse(): AuthLoginResponse {
     refreshToken: "e2e-staff-refresh-token",
     user: {
       id: "e2e-admin-id",
-      cpfCnpj: E2E_STAFF_CNPJ,
+      cpfCnpj: E2E_STAFF_CPF,
       email: "admin.qa@rl-transportes.test",
       role: "ADMIN",
       permissions: ["*"],
@@ -217,6 +221,29 @@ export function buildTriagemPendente() {
     clienteNome: "Cliente QA E2E",
     localOrigem: "Terminal A",
     localDestino: "Pátio RL",
+  };
+}
+
+export function buildCadastroPendenteRow() {
+  return {
+    id: E2E_CADASTRO_PENDENTE_ID,
+    razaoSocial: "Nova Empresa E2E LTDA",
+    nomeFantasia: "Nova Empresa",
+    cpfCnpj: "11222333000181",
+    email: "financeiro@nova-empresa.test",
+    validacaoDominio: "APROVADO" as const,
+    statusCadastro: "PENDENTE_ANALISE_FINANCEIRA" as const,
+    createdAt: new Date().toISOString(),
+    inscricaoEstadual: "123456789",
+    inscricaoMunicipal: null,
+    isentoIE: false,
+    enderecoLogradouro: "Rua Teste",
+    enderecoNumero: "100",
+    enderecoComplemento: null,
+    enderecoBairro: "Centro",
+    enderecoCidade: "São Paulo",
+    enderecoUf: "SP",
+    enderecoCep: "01310100",
   };
 }
 

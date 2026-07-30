@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AcaoAuditoria, ModalidadeTransporte, Prisma, TipoOperacaoAgendamento } from '@prisma/client';
+import { AcaoAuditoria, ModalidadeTransporte, Prisma, StatusPreFatura, TipoOperacaoAgendamento } from '@prisma/client';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { isBillingEligibleIntent } from '../billing-engine/billing-eligible-intents.util';
+import { calculateReeferSurcharge, DEFAULT_TARIFA_ENERGIA_REEFER_DIA } from '../billing-engine/billing-rule-engine.util';
 import { normalizeContainerIso } from '../common/utils/data-sanitize';
 import { PrismaService } from '../prisma/prisma.service';
 import { hasConsolidatedPreFaturaForIso } from '../armazenagem-faturamento/billing-coexistence.util';
@@ -33,6 +35,33 @@ export class BillingOutboxProcessor {
     };
     if (!payload?.containerId || !payload?.clienteId) {
       throw new Error('Payload BILLING_TRIGGERED inválido');
+    }
+
+    if (payload.solicitacaoId) {
+      const sol = await this.prisma.solicitacao.findUnique({
+        where: { id: payload.solicitacaoId },
+        select: { tipoOperacao: true },
+      });
+      if (sol?.tipoOperacao && !isBillingEligibleIntent(sol.tipoOperacao)) {
+        this.logger.log(
+          `Outbox ${outboxId}: intent ${sol.tipoOperacao} não elegível para billing — skip`,
+        );
+        return;
+      }
+
+      const existingPreFatura = await this.prisma.preFatura.findFirst({
+        where: {
+          status: { in: [StatusPreFatura.ABERTA, StatusPreFatura.CONSOLIDADA] },
+          gateIn: { solicitacaoId: payload.solicitacaoId },
+        },
+        select: { id: true, status: true },
+      });
+      if (existingPreFatura) {
+        this.logger.log(
+          `Pre-fatura ${existingPreFatura.id} já existe para solicitação ${payload.solicitacaoId} — skip (ALREADY_BILLED)`,
+        );
+        return;
+      }
     }
 
     const numeroIso = normalizeContainerIso(payload.numero);
@@ -124,9 +153,15 @@ export class BillingOutboxProcessor {
     }
 
     if (payload.tipo === 'REEFER' && reeferPlugged > 0) {
+      const setPoint = await this.resolveReeferSetPoint(payload);
+      const energia = calculateReeferSurcharge(
+        payload.diasEstadia,
+        setPoint,
+        TARIFA_REEFER_ENERGIA_DIA || DEFAULT_TARIFA_ENERGIA_REEFER_DIA,
+      );
       itens.push({
-        descricao: `Energia reefer — ${payload.numero} (${payload.diasEstadia} dia(s))`,
-        valor: roundMoney(payload.diasEstadia * TARIFA_REEFER_ENERGIA_DIA),
+        descricao: `Energia reefer — ${payload.numero} (${payload.diasEstadia} dia(s), set point ${setPoint}°C)`,
+        valor: roundMoney(energia),
       });
     }
 
@@ -201,6 +236,18 @@ export class BillingOutboxProcessor {
     });
 
     this.logger.log(`Fatura ${faturamento.id} — R$ ${valorTotal.toFixed(2)} (outbox ${outboxId})`);
+  }
+
+  private async resolveReeferSetPoint(payload: ContainerDispatchedPayload): Promise<number> {
+    if (!payload.solicitacaoId) return 0;
+    const cs = await this.prisma.containerSolicitacao.findFirst({
+      where: {
+        solicitacaoId: payload.solicitacaoId,
+        unidade: { equals: normalizeContainerIso(payload.numero), mode: 'insensitive' },
+      },
+      select: { setPoint: true },
+    });
+    return cs?.setPoint ?? 0;
   }
 }
 

@@ -6,11 +6,12 @@ type FormSectionProps = {
   title: string;
   icon: LucideIcon;
   children: ReactNode;
+  className?: string;
 };
 
-export function FormSection({ title, icon: Icon, children }: FormSectionProps) {
+export function FormSection({ title, icon: Icon, children, className }: FormSectionProps) {
   return (
-    <div className="rounded-lg border border-border bg-card p-5">
+    <div className={cn("rounded-lg border border-border bg-card p-5", className)}>
       <div className="mb-4 flex items-center gap-2">
         <Icon className="h-5 w-5 text-[var(--accent)]" />
         <h2 className="text-lg font-bold">{title}</h2>

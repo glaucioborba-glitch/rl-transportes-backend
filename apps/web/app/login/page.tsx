@@ -1,16 +1,17 @@
 import { redirect } from "next/navigation";
-import { sanitizePortalNext } from "@/lib/portal-redirect";
 
 export const metadata = {
-  title: "Redirecionando… | RL Transportes",
+  title: "Intranet | RL Transportes",
 };
 
-/** Compat: `/login` → `/portal/login`. */
-export default function LegacyLoginRedirect({
+/** `/login` → intranet staff (CPF-only). Portal do cliente: `/portal/login`. */
+export default function IntranetLoginRedirect({
   searchParams,
 }: {
   searchParams: Record<string, string | string[] | undefined>;
 }) {
-  const next = encodeURIComponent(sanitizePortalNext(searchParams.next));
-  redirect(`/portal/login?next=${next}`);
+  const raw = searchParams.next;
+  const next =
+    typeof raw === "string" && raw.startsWith("/") && !raw.startsWith("//") ? raw : null;
+  redirect(next ? `/login/staff?next=${encodeURIComponent(next)}` : "/login/staff");
 }

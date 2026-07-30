@@ -9,6 +9,7 @@ import {
   OBS_THROUGHPUT_MIN_PREFIX,
   OBS_USER_RANK_Z,
   TTL_METRICS_SEC,
+  OBS_WS_CHANNEL,
 } from './observability.constants';
 import { ObservabilityBridgeService } from './observability-bridge.service';
 
@@ -77,6 +78,13 @@ export class ObservabilityMetricsService {
       await this.redis.lpush(OBS_LIVE_LOGS, line);
       await this.redis.ltrim(OBS_LIVE_LOGS, 0, 99);
       await this.redis.expire(OBS_LIVE_LOGS, TTL_METRICS_SEC);
+
+      if (this.isProd) {
+        await this.redis.publish(
+          OBS_WS_CHANNEL,
+          JSON.stringify({ type: 'LOG_EVENT', payload: { route, method: input.method, ms: input.durationMs, status: input.statusCode, at: sample.at, service: inferServiceFromRoute(route) } }),
+        );
+      }
     } catch (e) {
       if (!this.isProd) this.logger.warn(`metrics redis: ${(e as Error).message}`);
     }

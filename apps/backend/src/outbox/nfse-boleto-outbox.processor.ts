@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AcaoAuditoria, StatusPagamentoFatura } from '@prisma/client';
 import { toDecimal } from '../armazenagem-faturamento/armazenagem-billing.util';
+import { AlertService } from '../alert/alert.service';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { BankingBoletoService } from '../fiscal-integracao/banking-boleto.service';
 import { FiscalIpmService } from '../fiscal-integracao/fiscal-ipm.service';
@@ -8,6 +10,7 @@ import { FEATURE_FLAG_KEYS } from '../feature-flags/feature-flag.keys';
 import { FeatureFlagService } from '../feature-flags/feature-flag.service';
 import { NotificationEnqueueService } from '../notification/notification-enqueue.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantConfigService } from '../tenant/tenant-config.service';
 
 export type EmitirNfseBoletoPayload = {
   faturaId: string;
@@ -31,6 +34,9 @@ export class NfseBoletoOutboxProcessor {
     private readonly banking: BankingBoletoService,
     private readonly flags: FeatureFlagService,
     private readonly notificationEnqueue: NotificationEnqueueService,
+    private readonly tenantConfig: TenantConfigService,
+    private readonly config: ConfigService,
+    private readonly alerts: AlertService,
   ) {}
 
   async processEmitirNfseBoleto(outboxId: string, raw: unknown): Promise<void> {
@@ -64,6 +70,7 @@ export class NfseBoletoOutboxProcessor {
 
     const fiscalEnabled = await this.flags.isEnabled(FEATURE_FLAG_KEYS.FISCAL_INTEGRATION_ENABLED, {
       cnpj: fatura.cliente.cpfCnpj,
+      tenantId: fatura.tenantId,
     });
     if (!fiscalEnabled) {
       await this.prisma.fatura.update({
@@ -89,6 +96,16 @@ export class NfseBoletoOutboxProcessor {
         `FISCAL_INTEGRATION_ENABLED off — fatura ${fatura.id} persistida, emissão IPM ignorada (graceful degradation)`,
       );
       return;
+    }
+
+    const certOk = await this.assertCertificadoA1(fatura.tenantId);
+    if (!certOk && this.fiscal.usesRealIpm()) {
+      this.logger.warn(
+        `Certificado A1 não configurado para tenant ${fatura.tenantId} — sandbox fallback`,
+      );
+      await this.alerts.fiscalIpmDown({
+        reason: `Tenant ${fatura.tenantId} sem certificado A1 (staging/produção)`,
+      });
     }
 
     await this.prisma.fatura.update({
@@ -250,5 +267,13 @@ export class NfseBoletoOutboxProcessor {
         dedupeKey: `financeiro:${outboxId}`,
       });
     }
+  }
+
+  /** Valida certificado A1 no tenant ou variável NFSE_IPM_CERT_PATH (staging/produção). */
+  private async assertCertificadoA1(tenantId: string): Promise<boolean> {
+    const { parametros } = await this.tenantConfig.getParametros(tenantId);
+    if (parametros.nfse?.certificadoBase64?.trim()) return true;
+    const certPath = this.config.get<string>('nfse.ipm.certPath', { infer: true })?.trim();
+    return Boolean(certPath);
   }
 }

@@ -6,6 +6,7 @@ import {
   buildPortalLoginResponse,
   buildStaffLoginResponse,
   buildTriagemPendente,
+  buildCadastroPendenteRow,
   buildE2ePortalSessionPayload,
   E2E_SOLICITACAO_ID,
   E2E_TRIAGEM_ID,
@@ -213,6 +214,44 @@ export async function setupStaffTriagemMocks(page: Page) {
   });
 }
 
+const CONDICOES_PAGAMENTO_MOCK = [
+  { label: "Faturamento", value: "FATURAMENTO" },
+  { label: "À Vista PIX", value: "AVISTA_PIX" },
+];
+
+/** Cadastros financeiros pendentes — fila + aprovação mockada. */
+export async function setupStaffCadastrosPendentesMocks(page: Page) {
+  let aprovado = false;
+
+  await page.route((url) => url.href.includes(":3001/") || url.href.includes("/api/"), async (route) => {
+    const path = apiPath(route.request().url());
+    const method = route.request().method();
+
+    if (path === "/financeiro/cadastros-pendentes/condicoes-pagamento" && method === "GET") {
+      await fulfillJson(route, CONDICOES_PAGAMENTO_MOCK);
+      return;
+    }
+
+    if (path === "/financeiro/cadastros-pendentes" && method === "GET") {
+      await fulfillJson(route, aprovado ? [] : [buildCadastroPendenteRow()]);
+      return;
+    }
+
+    if (path === "/financeiro/pendencias-count" && method === "GET") {
+      await fulfillJson(route, { count: aprovado ? 0 : 1 });
+      return;
+    }
+
+    if (path.includes("/financeiro/cadastros-pendentes/") && path.endsWith("/aprovar") && method === "POST") {
+      aprovado = true;
+      await fulfillJson(route, { ok: true });
+      return;
+    }
+
+    await route.continue();
+  });
+}
+
 export async function seedPortalPessoaStorage(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem(
@@ -238,4 +277,200 @@ export async function saveE2ePortalSession(page: Page) {
   await page.evaluate((data) => {
     sessionStorage.setItem("e2e-portal-session", JSON.stringify(data));
   }, payload);
+}
+
+export const E2E_GATE_PROTOCOL = "RL-2026-001";
+export const E2E_GATE_IN_ID = "e2e-gate-in-001";
+
+type OperacaoState =
+  | "AGUARDANDO_CHEGADA"
+  | "CHECKIN_PORTARIA"
+  | "VISTORIA_FOTOGRAFICA"
+  | "AGUARDANDO_RECONFIRMACAO"
+  | "RECONFIRMADA"
+  | "RIC_GERADO"
+  | "LIBERADA_OPERACAO"
+  | "EM_OPERACAO"
+  | "CONCLUIDA";
+
+function buildOperacaoMock(state: OperacaoState) {
+  return {
+    id: "op-e2e-1",
+    protocolo: E2E_GATE_PROTOCOL,
+    state,
+    stateLabel: state,
+    containerNumero: "MSCU1234567",
+    containerTipo: "DRY",
+    containerTamanho: "20'",
+    containerSituacao: "CHEIO",
+    placa: "ABC-1234",
+    motoristaNome: "João Silva",
+    transportadoraNome: "Transportes Demo",
+    clienteNome: "Cliente Demo LTDA",
+    tipoOperacao: "GATE_IN",
+    tatInicio: state === "EM_OPERACAO" ? new Date().toISOString() : null,
+    tatFim: null,
+  };
+}
+
+/** Mocks do fluxo operacional portaria/gate (`/v2/gate/*`). */
+export async function setupGateOperacaoMocks(page: Page) {
+  let operacaoState: OperacaoState = "AGUARDANDO_CHEGADA";
+
+  await page.route((url) => url.href.includes("/v2/gate") || url.href.includes("/v2/ocr"), async (route) => {
+    const path = apiPath(route.request().url());
+    const method = route.request().method();
+
+    if (path === "/v2/gate/portaria/stats" && method === "GET") {
+      await fulfillJson(route, {
+        aguardandoChegada: 1,
+        emVistoria: 0,
+        aguardandoGate: 0,
+        concluidasHoje: 0,
+      });
+      return;
+    }
+
+    if (path.startsWith("/v2/gate/aguardando-chegada") && method === "GET") {
+      await fulfillJson(route, {
+        items: [
+          {
+            protocolo: E2E_GATE_PROTOCOL,
+            containerNumero: "MSCU1234567",
+            containerTipo: "DRY",
+            placa: "ABC-1234",
+            clienteNome: "Cliente Demo LTDA",
+          },
+        ],
+      });
+      return;
+    }
+
+    const opGet = path.match(/^\/v2\/gate\/operacoes\/([^/]+)$/);
+    if (opGet && method === "GET") {
+      await fulfillJson(route, buildOperacaoMock(operacaoState));
+      return;
+    }
+
+    if (path.match(/\/v2\/gate\/operacoes\/[^/]+\/checkin$/) && method === "POST") {
+      operacaoState = "CHECKIN_PORTARIA";
+      await fulfillJson(route, buildOperacaoMock(operacaoState), 201);
+      return;
+    }
+
+    if (path.match(/\/v2\/gate\/operacoes\/[^/]+\/vistoria$/) && method === "POST") {
+      operacaoState = "VISTORIA_FOTOGRAFICA";
+      await fulfillJson(route, buildOperacaoMock(operacaoState), 201);
+      return;
+    }
+
+    if (path === "/v2/ocr/processar" && method === "POST") {
+      await fulfillJson(route, {
+        sucesso: true,
+        texto: "MSCU1234567",
+        confianca: 0.95,
+        provider: "e2e-mock",
+        ocrMatch: true,
+      });
+      return;
+    }
+
+    if (path.match(/\/v2\/gate\/operacoes\/[^/]+\/reconfirmar$/) && method === "POST") {
+      operacaoState = "RECONFIRMADA";
+      await fulfillJson(route, buildOperacaoMock(operacaoState));
+      return;
+    }
+
+    if (path.match(/\/v2\/gate\/operacoes\/[^/]+\/liberar-operacao$/) && method === "POST") {
+      operacaoState = "LIBERADA_OPERACAO";
+      await fulfillJson(route, buildOperacaoMock(operacaoState));
+      return;
+    }
+
+    if (path.match(/\/v2\/gate\/operacoes\/[^/]+\/iniciar$/) && method === "POST") {
+      operacaoState = "EM_OPERACAO";
+      await fulfillJson(route, buildOperacaoMock(operacaoState));
+      return;
+    }
+
+    if (path.match(/\/v2\/gate\/operacoes\/[^/]+\/concluir$/) && method === "POST") {
+      operacaoState = "CONCLUIDA";
+      await fulfillJson(route, buildOperacaoMock(operacaoState));
+      return;
+    }
+
+    if (path.match(/\/v2\/gate\/operacoes\/[^/]+\/ric-pdf$/) && method === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/pdf",
+        body: Buffer.from("%PDF-1.4 e2e mock ric"),
+      });
+      return;
+    }
+
+    if (path === "/v2/cadastros/operacional-vinculo/equipamento-atual" && method === "GET") {
+      await fulfillJson(route, { id: "eq-1", codigo: "RTG-01", marca: "Kalmar", modelo: "E2E" });
+      return;
+    }
+
+    await route.continue();
+  });
+}
+
+export type HoldReleaseMockOptions = {
+  bloqueioAtivo: boolean;
+  tipo?: "FINANCEIRO" | "OPERACIONAL";
+  pagamentoConfirmado?: boolean;
+};
+
+/** Mocks gate check-out com bloqueio hold/release. */
+export async function setupHoldReleaseMocks(page: Page, options: HoldReleaseMockOptions) {
+  await page.route((url) => url.href.includes("/v2/gate/check-ins"), async (route) => {
+    const path = apiPath(route.request().url());
+    const method = route.request().method();
+
+    if (path.match(/\/pre-checkout$/) && method === "GET") {
+      await fulfillJson(route, {
+        gateIn: { placaCavalo: "ABC-1234", placaCarreta01: "XYZ-9876", divergenciasJson: [] },
+        solicitacao: {
+          protocolo: E2E_GATE_PROTOCOL,
+          containersSolicitacao: [{ unidade: "MSCU1234567", ordem: 1 }],
+        },
+      });
+      return;
+    }
+
+    if (path.match(/\/check-out$/) && method === "POST") {
+      if (options.bloqueioAtivo && options.tipo === "OPERACIONAL") {
+        await fulfillJson(
+          route,
+          {
+            statusCode: 403,
+            message: "Contêiner com bloqueio operacional ativo. Solicite liberação ao supervisor.",
+            bloqueioId: "blk-123",
+            tipo: "OPERACIONAL",
+          },
+          403,
+        );
+        return;
+      }
+      if (options.bloqueioAtivo && !options.pagamentoConfirmado) {
+        await fulfillJson(
+          route,
+          {
+            statusCode: 403,
+            message: "Contêiner bloqueado financeiramente. Regularize o pagamento ou solicite liberação manual.",
+            bloqueioId: "blk-123",
+            tipo: options.tipo ?? "FINANCEIRO",
+          },
+          403,
+        );
+        return;
+      }
+      await fulfillJson(route, { status: "CONCLUIDA", autoReleased: Boolean(options.pagamentoConfirmado) }, 201);
+      return;
+    }
+
+    await route.continue();
+  });
 }

@@ -23,6 +23,9 @@ export default function StaffGateCheckOutPage() {
   const [divAntes, setDivAntes] = useState("");
   const [divDepois, setDivDepois] = useState("");
   const [divManual, setDivManual] = useState<{ tipo: string; antes?: string; depois?: string }[]>([]);
+  const [holdBlock, setHoldBlock] = useState<{ message: string; bloqueioId?: string } | null>(null);
+  const [checkoutSuccess, setCheckoutSuccess] = useState(false);
+  const [autoReleased, setAutoReleased] = useState(false);
 
   const load = useCallback(async () => {
     if (!gateInId) return;
@@ -53,8 +56,9 @@ export default function StaffGateCheckOutPage() {
   }) {
     if (!gateInId) return;
     setBusy(true);
+    setHoldBlock(null);
     try {
-      await staffGateCheckOut(
+      const result = await staffGateCheckOut(
         gateInId,
         {
           divergenciasOperador: divManual.length ? divManual : undefined,
@@ -62,9 +66,27 @@ export default function StaffGateCheckOutPage() {
         },
         fotos,
       );
-      toast.success("Check-out finalizado");
-      router.push("/staff/gate");
+      setCheckoutSuccess(true);
+      if (result && typeof result === "object" && "autoReleased" in result && result.autoReleased) {
+        setAutoReleased(true);
+        toast.success("Contêiner liberado automaticamente após confirmação de pagamento.");
+      } else {
+        toast.success("Check-out finalizado");
+      }
+      window.setTimeout(() => router.push("/staff/gate"), 800);
     } catch (e) {
+      if (e instanceof ApiError && e.status === 403) {
+        let bloqueioId: string | undefined;
+        let message = e.message;
+        try {
+          const parsed = JSON.parse(e.message) as { message?: string; bloqueioId?: string; tipo?: string };
+          message = parsed.message ?? e.message;
+          bloqueioId = parsed.bloqueioId;
+        } catch {
+          /* mensagem plain text */
+        }
+        setHoldBlock({ message, bloqueioId });
+      }
       toast.error(e instanceof ApiError ? e.message : "Falha no check-out");
     } finally {
       setBusy(false);
@@ -100,6 +122,34 @@ export default function StaffGateCheckOutPage() {
           }
         />
       </div>
+
+      {holdBlock ? (
+        <div
+          data-testid="hold-block-message"
+          className="mx-4 mb-4 rounded-lg border border-red-500/40 bg-red-950/50 p-4 text-red-100"
+        >
+          <p className="text-sm font-semibold">{holdBlock.message}</p>
+          {holdBlock.bloqueioId ? (
+            <p data-testid="hold-block-id" className="mt-1 font-mono text-xs text-red-300/80">
+              Bloqueio: {holdBlock.bloqueioId}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {checkoutSuccess ? (
+        <div
+          data-testid="checkout-success"
+          className="mx-4 mb-4 rounded-lg border border-emerald-500/40 bg-emerald-950/40 p-4 text-emerald-100"
+        >
+          Check-out concluído com sucesso.
+          {autoReleased ? (
+            <p data-testid="auto-release-toast" className="mt-1 text-sm">
+              Contêiner liberado automaticamente após confirmação de pagamento.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       <GateVistoriaWizard
         titulo="Vistoria de saída"

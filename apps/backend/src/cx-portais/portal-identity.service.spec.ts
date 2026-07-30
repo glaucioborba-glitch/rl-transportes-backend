@@ -48,6 +48,9 @@ function makeSvc(
   const transportadorasAutorizadas = {
     criarEmLoteNoCadastro: jest.fn(),
   } as unknown as import('../transportadoras-autorizadas/transportadoras-autorizadas.service').TransportadorasAutorizadasService;
+  const tenantConfig = {
+    getParametrosSeguranca: jest.fn().mockResolvedValue({ validarDominioCorporativo: true }),
+  } as unknown as import('../tenant/tenant-config.service').TenantConfigService;
   return new PortalIdentityService(
     prisma,
     fornecedores,
@@ -63,6 +66,7 @@ function makeSvc(
     termosUso,
     dominioValidator,
     transportadorasAutorizadas,
+    tenantConfig,
   );
 }
 

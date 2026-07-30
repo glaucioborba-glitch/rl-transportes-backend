@@ -71,6 +71,7 @@ export function GateVistoriaPhotoSlot({
         type="file"
         accept="image/*"
         capture="environment"
+        data-testid={`photo-${angulo}`}
         className="sr-only"
         id={`vistoria-${angulo}`}
         onChange={(e) => void onFileChange(e)}

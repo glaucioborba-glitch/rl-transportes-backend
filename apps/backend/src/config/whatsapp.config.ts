@@ -10,6 +10,8 @@ export default registerAs('whatsapp', () => ({
   /** Nomes dos templates aprovados na Meta (Message Templates). */
   templateOperacional: process.env.WHATSAPP_TEMPLATE_OPERACIONAL ?? 'rl_operacional_armazenamento',
   templateFinanceiro: process.env.WHATSAPP_TEMPLATE_FINANCEIRO ?? 'rl_financeiro_fatura_consolidada',
+  templateDunning: process.env.WHATSAPP_TEMPLATE_DUNNING ?? 'rl_financeiro_dunning',
+  businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ?? '',
   /** URL pública do portal para links em mensagens financeiras. */
   portalPublicBaseUrl:
     process.env.PORTAL_PUBLIC_BASE_URL ??

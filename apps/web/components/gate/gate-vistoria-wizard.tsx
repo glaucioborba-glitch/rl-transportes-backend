@@ -182,6 +182,7 @@ export function GateVistoriaWizard({
         ) : (
           <Button
             type="button"
+            data-testid="checkout-btn"
             className="min-h-14 flex-1 bg-emerald-500 text-lg font-bold text-black hover:bg-emerald-400"
             disabled={busy || !fotosCompletas || !canConfirmExtra}
             onClick={handleConfirm}

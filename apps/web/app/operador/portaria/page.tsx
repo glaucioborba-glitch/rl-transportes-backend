@@ -1,5 +1,5 @@
-import { PortariaMobileScreen } from "@/components/operador/portaria/portaria-mobile-screen";
+import { PortariaHomeScreen } from "@/components/operador/portaria/portaria-home-screen";
 
 export default function PortariaPage() {
-  return <PortariaMobileScreen />;
+  return <PortariaHomeScreen />;
 }

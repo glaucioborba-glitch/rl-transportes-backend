@@ -9,12 +9,13 @@ import { Input } from "@/components/ui/input";
 import {
   ApiError,
   authLogin,
-  buildStaffLoginBody,
+  sanitizeCorporateDocumento,
 } from "@/lib/api/corporate-auth-client";
 import { toast } from "@/lib/toast";
 import { isStaffRole, useStaffAuthStore } from "@/stores/staff-auth-store";
 import { RlLogo } from "@/components/portal/rl-logo";
-import { formatCpfCnpjBr } from "@/lib/format-cpf-cnpj-br";
+import { formatCpfBr } from "@/lib/format-cpf-cnpj-br";
+import { validarCPF } from "@/lib/br-documents";
 import { resolveStaffLoginDest } from "@/lib/staff-redirect";
 
 function StaffLoginInner() {
@@ -30,9 +31,15 @@ function StaffLoginInner() {
     e.preventDefault();
     setErr(null);
 
-    const { documento: cpfCnpj } = buildStaffLoginBody({ cpfCnpj: documento, password });
-    if (cpfCnpj.length !== 11 && cpfCnpj.length !== 14) {
-      const msg = "Documento inválido — use apenas números.";
+    const cpf = sanitizeCorporateDocumento(documento);
+    if (cpf.length !== 11) {
+      const msg = "CPF deve conter 11 dígitos";
+      setErr(msg);
+      toast.error(msg);
+      return;
+    }
+    if (!validarCPF(cpf)) {
+      const msg = "CPF inválido";
       setErr(msg);
       toast.error(msg);
       return;
@@ -51,12 +58,6 @@ function StaffLoginInner() {
       const dest = resolveStaffLoginDest(result.user.role, searchParams.get("next"));
       router.push(dest);
     } catch (error) {
-      if (error instanceof ApiError && error.status === 400) {
-        const msg = "Documento inválido — use apenas números.";
-        setErr(msg);
-        toast.error(msg);
-        return;
-      }
       const msg = error instanceof ApiError ? error.message : "Erro inesperado";
       setErr(msg);
       toast.error(msg);
@@ -77,13 +78,13 @@ function StaffLoginInner() {
       <Card className="w-full max-w-md border-white/10 bg-[#0c0f14]">
         <CardHeader>
           <CardTitle className="text-white">Entrar</CardTitle>
-          <CardDescription>Perfis ADMIN, GERENTE ou operadores de campo (cookies HttpOnly)</CardDescription>
+          <CardDescription>Acesso restrito a colaboradores — informe seu CPF cadastrado</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={(e) => void onSubmit(e)} className="space-y-4">
             <div className="space-y-2">
               <label htmlFor="documento" className="text-sm font-medium text-slate-300">
-                CPF/CNPJ
+                CPF
               </label>
               <Input
                 id="documento"
@@ -91,9 +92,10 @@ function StaffLoginInner() {
                 type="text"
                 inputMode="numeric"
                 autoComplete="username"
-                placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                placeholder="000.000.000-00"
+                maxLength={14}
                 value={documento}
-                onChange={(e) => setDocumento(formatCpfCnpjBr(e.target.value))}
+                onChange={(e) => setDocumento(formatCpfBr(e.target.value))}
                 required
               />
             </div>
@@ -115,6 +117,8 @@ function StaffLoginInner() {
               {submitting ? "Autenticando…" : "Acessar"}
             </Button>
             <p className="text-center text-xs text-slate-500">
+              Use seu CPF cadastrado no RH. Em caso de esquecimento de senha, contate o departamento de TI.
+              {" "}
               <Link href="/portal/login" className="text-[var(--accent)] hover:underline">
                 Portal do cliente
               </Link>

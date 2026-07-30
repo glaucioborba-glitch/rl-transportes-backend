@@ -227,21 +227,6 @@ export async function seedPortal(_cadastrosIds?: SeedCadastrosIds): Promise<Seed
     });
     void pessoa;
 
-    await prisma.tabelaTarifaria.upsert({
-      where: { clienteId: cliente.id },
-      create: {
-        clienteId: cliente.id,
-        freeTimeDias: 5 + (emp.idx % 3),
-        valorDiaria: decimal(String(75 + emp.idx * 2)),
-        valorServicosExtras: decimal(String(100 + emp.idx * 5)),
-      },
-      update: {
-        freeTimeDias: 5 + (emp.idx % 3),
-        valorDiaria: decimal(String(75 + emp.idx * 2)),
-        valorServicosExtras: decimal(String(100 + emp.idx * 5)),
-      },
-    });
-
     result.clientes.push({
       id: cliente.id,
       cnpj,

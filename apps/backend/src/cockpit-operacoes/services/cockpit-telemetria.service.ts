@@ -6,9 +6,9 @@ import type { MobileTelemetryBatch } from '../../mobile-hub/stores/mobile-teleme
 export class CockpitTelemetriaService {
   constructor(private readonly tel: MobileTelemetryStore) {}
 
-  mobile() {
-    const agg = this.tel.agregadoStaff();
-    const recent = this.tel.ultimosJanela(300);
+  async mobile() {
+    const agg = await this.tel.agregadoStaff();
+    const recent = await this.tel.ultimosJanela(300);
     const comLoc = recent.filter((b: MobileTelemetryBatch) => b.localizacao);
     return {
       geradoEm: new Date().toISOString(),
@@ -35,8 +35,8 @@ export class CockpitTelemetriaService {
     };
   }
 
-  dispositivos() {
-    const recent = this.tel.ultimosJanela(500);
+  async dispositivos() {
+    const recent = await this.tel.ultimosJanela(500);
     const m = new Map<
       string,
       { deviceId: string; amostras: number; ultimaEm: string; latenciaMedia: number | null; redeMedia: number | null }

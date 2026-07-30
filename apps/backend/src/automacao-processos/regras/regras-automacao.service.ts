@@ -15,23 +15,23 @@ export class RegrasAutomacaoService {
     private readonly workflows: WorkflowEngineService,
   ) {}
 
-  listar(): RegraNegocio[] {
+  async listar(): Promise<RegraNegocio[]> {
     return this.store.listar();
   }
 
-  salvar(r: Omit<RegraNegocio, 'id' | 'criadoEm'> & { id?: string }): RegraNegocio {
+  async salvar(r: Omit<RegraNegocio, 'id' | 'criadoEm'> & { id?: string }): Promise<RegraNegocio> {
     return this.store.salvar(r);
   }
 
   async avaliarParaEvento(evento: string, payload: Record<string, unknown>): Promise<void> {
     const ctx = { ...payload, evento };
-    const ativas = this.store.listar().filter((x) => x.ativo);
+    const ativas = (await this.store.listar()).filter((x) => x.ativo);
 
     for (const regra of ativas) {
       if (!avaliarExpressaoRegra(regra.if, ctx)) continue;
 
       const acoesResumo = await this.executarThen(regra, ctx, true);
-      this.execucao.registrar({
+      await this.execucao.registrar({
         tipo: 'regra',
         evento,
         regraId: regra.id,

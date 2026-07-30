@@ -11,6 +11,8 @@ import type { User } from '@prisma/client';
 import { AcaoAuditoria } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { permissionsForRole } from '../common/constants/role-permissions';
+import { canIntranetStaffLogin } from '../common/constants/intranet-staff-roles.util';
+import { maskCpfDisplay, onlyDigits } from '../common/utils/br-documents';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PRISMA_SERIALIZABLE_TX } from '../prisma/transaction-options';
@@ -24,14 +26,11 @@ import { DeviceService } from './session/device.service';
 import { parseDurationToSeconds } from './session/session.util';
 import { LoginTelemetryService } from '../security-center/login-telemetry.service';
 import { DEFAULT_TENANT_ID } from '../tenant/tenant.constants';
+import { TenantConfigService } from '../tenant/tenant-config.service';
 import { userWhereByDocumento, userWhereByEmail } from '../tenant/tenant-prisma.util';
 import type { Request } from 'express';
 
 const BCRYPT_ROUNDS = 12;
-const BRUTE_FORCE_MAX_ATTEMPTS = 5;
-const BRUTE_FORCE_LOCK_SECONDS = 900;
-const BRUTE_FORCE_MSG =
-  'Conta temporariamente bloqueada por excesso de tentativas. Tente novamente em 15 minutos.';
 
 function bruteForceLoginKey(tenantId: string, cpfCnpj: string): string {
   return `brute_force:login:${tenantId}:${cpfCnpj}`;
@@ -55,7 +54,22 @@ export class AuthService {
     private readonly sessionService: SessionService,
     private readonly deviceService: DeviceService,
     private readonly loginTelemetry: LoginTelemetryService,
+    private readonly tenantConfig: TenantConfigService,
   ) {}
+
+  private bruteForcePolicy(tenantId: string) {
+    const sec = this.tenantConfig.getParametrosSegurancaSync(tenantId);
+    return {
+      maxAttempts: sec.tentativasLoginAntesBloqueio,
+      lockSeconds: sec.duracaoBloqueioMin * 60,
+      message: `Conta temporariamente bloqueada por excesso de tentativas. Tente novamente em ${sec.duracaoBloqueioMin} minutos.`,
+    };
+  }
+
+  private async sessionTtlSeconds(tenantId: string): Promise<number> {
+    const sec = await this.tenantConfig.getParametrosSeguranca(tenantId);
+    return sec.ttlSessaoHoras * 3600;
+  }
 
   async validateUser(tenantId: string, cpfCnpj: string, password: string): Promise<User | null> {
     const user = await this.prisma.user.findUnique({
@@ -66,21 +80,20 @@ export class AuthService {
     return ok ? user : null;
   }
 
-  /** Sanitiza e alinha ao formato `User.cpfCnpj` (14 dígitos) para lookup. */
+  /** Alinha CPF (11 dígitos) ao formato `User.cpfCnpj` (14 dígitos) para lookup. */
   private resolveLoginDocumento(documento: string): string {
     const sanitized = sanitizeDocumentoInput(documento);
-    if (sanitized.length === 14) return sanitized;
-    if (sanitized.length === 11) return sanitized.padStart(14, '0');
-    if (sanitized.length === 10) return sanitized.padStart(11, '0').padStart(14, '0');
-    return sanitized;
+    return sanitized.padStart(14, '0');
   }
 
   private async assertBruteForceNotLocked(tenantId: string, cpfCnpj: string): Promise<void> {
+    await this.tenantConfig.getParametrosSeguranca(tenantId);
+    const { maxAttempts, message } = this.bruteForcePolicy(tenantId);
     const key = bruteForceLoginKey(tenantId, cpfCnpj);
     try {
       const raw = await this.redisService.get(key);
-      if (raw != null && parseInt(raw, 10) >= BRUTE_FORCE_MAX_ATTEMPTS) {
-        throw new UnauthorizedException(BRUTE_FORCE_MSG);
+      if (raw != null && parseInt(raw, 10) >= maxAttempts) {
+        throw new UnauthorizedException(message);
       }
     } catch (e) {
       if (e instanceof UnauthorizedException) throw e;
@@ -91,12 +104,13 @@ export class AuthService {
   }
 
   private async recordBruteForceFailure(tenantId: string, cpfCnpj: string): Promise<never> {
+    const { maxAttempts, lockSeconds, message } = this.bruteForcePolicy(tenantId);
     const key = bruteForceLoginKey(tenantId, cpfCnpj);
     try {
       const attempts = await this.redisService.incr(key);
-      if (attempts >= BRUTE_FORCE_MAX_ATTEMPTS) {
-        await this.redisService.expire(key, BRUTE_FORCE_LOCK_SECONDS);
-        throw new UnauthorizedException(BRUTE_FORCE_MSG);
+      if (attempts >= maxAttempts) {
+        await this.redisService.expire(key, lockSeconds);
+        throw new UnauthorizedException(message);
       }
     } catch (e) {
       if (e instanceof UnauthorizedException) throw e;
@@ -159,10 +173,22 @@ export class AuthService {
       return this.recordBruteForceFailure(tenant, normalized);
     }
 
+    if (!canIntranetStaffLogin(user.role)) {
+      await this.loginTelemetry.record({
+        documento: normalized,
+        userId: user.id,
+        sucesso: false,
+        motivo: 'Perfil não autorizado na intranet',
+        req,
+      });
+      throw new UnauthorizedException(
+        'Acesso restrito a colaboradores da intranet. Use o portal do cliente.',
+      );
+    }
+
     await this.clearBruteForceCounter(tenant, normalized);
 
-    const refreshExp = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
-    const ttlSec = parseDurationToSeconds(refreshExp);
+    const ttlSec = await this.sessionTtlSeconds(tenant);
 
     let sessionBundle:
       | { sessionId: string; fingerprint: string; ttlSec: number }
@@ -183,6 +209,7 @@ export class AuthService {
             channel: 'staff',
           },
           ttlSec,
+          tenant,
         );
         await this.bindActiveSession(user.id, sessionId, ttlSec);
         sessionBundle = { sessionId, fingerprint: fp, ttlSec };
@@ -193,14 +220,16 @@ export class AuthService {
     const tokens = this.issueTokens(user, sessionBundle);
 
     try {
+      const cpf11 = onlyDigits(documento).slice(-11).padStart(11, '0');
       await this.auditoria.registrar({
         tabela: 'auth',
         registroId: user.id,
         acao: AcaoAuditoria.INSERT,
         usuario: user.id,
         dadosDepois: {
-          event: 'LOGIN_SUCCESS',
-          cpfCnpj: user.cpfCnpj,
+          event: 'LOGIN_INTRANET',
+          cpfMascarado: maskCpfDisplay(cpf11),
+          role: user.role,
           clienteId: user.clienteId ?? null,
         },
         ip: audit?.ip,
@@ -248,8 +277,7 @@ export class AuthService {
       throw new UnauthorizedException('Sessão revogada. Faça login novamente.');
     }
 
-    const refreshExp = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
-    const ttlSec = parseDurationToSeconds(refreshExp);
+    const ttlSec = await this.sessionTtlSeconds(user.tenantId);
 
     if (payload.sid) {
       const s = await this.sessionService.getSession(payload.sub, payload.sid);
@@ -318,8 +346,7 @@ export class AuthService {
       throw new UnauthorizedException('Sessão revogada. Faça login novamente.');
     }
 
-    const refreshExp = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d';
-    const ttlSec = parseDurationToSeconds(refreshExp);
+    const ttlSec = await this.sessionTtlSeconds(user.tenantId);
 
     if (payload.sid && payload.fp !== undefined) {
       const ip = String(req?.ip || req?.socket?.remoteAddress || '');
@@ -408,9 +435,10 @@ export class AuthService {
     const userAgent = opts?.userAgent;
 
     if (sessionId) {
-      const ttl = parseDurationToSeconds(
-        this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d',
-      );
+      const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { tenantId: true } });
+      const ttl = user
+        ? await this.sessionTtlSeconds(user.tenantId)
+        : parseDurationToSeconds(this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d');
       await this.sessionService.removeSession(userId, sessionId, ttl);
       try {
         await this.auditoria.registrar({
@@ -462,9 +490,10 @@ export class AuthService {
 
   /** Encerra uma sessão específica do próprio usuário. */
   async revokeOwnSession(userId: string, sessionId: string): Promise<void> {
-    const ttl = parseDurationToSeconds(
-      this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d',
-    );
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { tenantId: true } });
+    const ttl = user
+      ? await this.sessionTtlSeconds(user.tenantId)
+      : parseDurationToSeconds(this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') ?? '7d');
     await this.sessionService.assertSessionOwnedAndRemove(userId, sessionId, ttl);
   }
 

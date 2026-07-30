@@ -11,8 +11,14 @@ import { AuditoriaService } from '../auditoria/auditoria.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CadastrosColaboradorFormDto } from './dto/cadastros-colaborador-form.dto';
 import { CadastrosColaboradorQueryDto } from './dto/cadastros-colaborador-query.dto';
+import {
+  ColaboradorFamiliarFormDto,
+  CreateFamiliarDto,
+  UpdateFamiliarDto,
+} from './dto/colaborador-familiar.dto';
 
 const PAGE_SIZE = 10;
+const MAX_FAMILIARES = 10;
 
 const CENTROS_CUSTO: Record<string, string> = {
   'CC-OP': 'Operacional',
@@ -39,8 +45,15 @@ const AUDIT_FIELD_LABELS: Record<string, string> = {
   deletedAt: 'Status cadastro',
 };
 
-type ColaboradorRow = Prisma.CadastroColaboradorGetPayload<{
+type ColaboradorListRow = Prisma.CadastroColaboradorGetPayload<{
   include: { gestor: { select: { id: true; nome: true } } };
+}>;
+
+type ColaboradorRow = Prisma.CadastroColaboradorGetPayload<{
+  include: {
+    gestor: { select: { id: true; nome: true } };
+    familiares: true;
+  };
 }>;
 
 @Injectable()
@@ -166,6 +179,9 @@ export class CadastrosColaboradoresService {
         },
         tx,
       );
+      if (dto.familiares?.length) {
+        await this.createFamiliaresBatch(tx, row.id, row.tenantId, dto.familiares);
+      }
       return row;
     });
 
@@ -212,6 +228,9 @@ export class CadastrosColaboradoresService {
         },
         tx,
       );
+      if (dto.familiares !== undefined) {
+        await this.syncFamiliares(tx, id, row.tenantId, dto.familiares);
+      }
       return row;
     });
 
@@ -281,13 +300,84 @@ export class CadastrosColaboradoresService {
   }
 
   async listCentrosCusto() {
+    const rows = await this.prisma.cadastroCentroCusto.findMany({
+      where: { deletedAt: null, ativo: true, tipo: 'ANALITICO' },
+      orderBy: { codigo: 'asc' },
+      select: { codigo: true, nome: true },
+    });
+    if (rows.length > 0) return rows;
     return Object.entries(CENTROS_CUSTO).map(([codigo, nome]) => ({ codigo, nome }));
+  }
+
+  async listFamiliares(colaboradorId: string) {
+    await this.getRowOrThrow(colaboradorId);
+    return this.prisma.colaboradorFamiliar.findMany({
+      where: { colaboradorId, ativo: true },
+      orderBy: { nome: 'asc' },
+    });
+  }
+
+  async addFamiliar(colaboradorId: string, dto: CreateFamiliarDto) {
+    const colaborador = await this.getRowOrThrow(colaboradorId);
+    this.assertFamiliarCpfValido(dto.cpf);
+    const count = await this.prisma.colaboradorFamiliar.count({
+      where: { colaboradorId, ativo: true },
+    });
+    if (count >= MAX_FAMILIARES) {
+      throw new BadRequestException('Máximo de 10 familiares por colaborador');
+    }
+    return this.prisma.colaboradorFamiliar.create({
+      data: this.buildFamiliarCreateData(colaboradorId, colaborador.tenantId, dto),
+    });
+  }
+
+  async updateFamiliar(familiarId: string, dto: UpdateFamiliarDto) {
+    const existing = await this.prisma.colaboradorFamiliar.findUnique({
+      where: { id: familiarId },
+    });
+    if (!existing || !existing.ativo) {
+      throw new NotFoundException('Familiar não encontrado.');
+    }
+    if (dto.cpf !== undefined) this.assertFamiliarCpfValido(dto.cpf);
+    return this.prisma.colaboradorFamiliar.update({
+      where: { id: familiarId },
+      data: this.buildFamiliarUpdateData(dto),
+    });
+  }
+
+  async removeFamiliar(familiarId: string) {
+    const existing = await this.prisma.colaboradorFamiliar.findUnique({
+      where: { id: familiarId },
+    });
+    if (!existing || !existing.ativo) {
+      throw new NotFoundException('Familiar não encontrado.');
+    }
+    return this.prisma.colaboradorFamiliar.update({
+      where: { id: familiarId },
+      data: { ativo: false },
+    });
+  }
+
+  async deleteFamiliar(familiarId: string) {
+    const existing = await this.prisma.colaboradorFamiliar.findUnique({
+      where: { id: familiarId },
+    });
+    if (!existing) {
+      throw new NotFoundException('Familiar não encontrado.');
+    }
+    await this.prisma.colaboradorFamiliar.delete({ where: { id: familiarId } });
   }
 
   private async getRowOrThrow(id: string): Promise<ColaboradorRow> {
     const row = await this.prisma.cadastroColaborador.findUnique({
       where: { id },
-      include: { gestor: { select: { id: true, nome: true } } },
+      include: {
+        gestor: { select: { id: true, nome: true } },
+        familiares: {
+          where: { ativo: true },
+          orderBy: { nome: 'asc' },
+        },
+      },
     });
     if (!row) throw new NotFoundException('Colaborador não encontrado.');
     return row;
@@ -346,7 +436,7 @@ export class CadastrosColaboradoresService {
         : { disconnect: true },
       centroCustoCodigo: extra.centroCustoCodigo,
       centroCustoNome: extra.centroCustoNome,
-      dados: dto as unknown as Prisma.InputJsonValue,
+      dados: this.dtoToDadosJson(dto),
       deletedAt,
     };
   }
@@ -377,12 +467,153 @@ export class CadastrosColaboradoresService {
         : undefined,
       centroCustoCodigo: extra.centroCustoCodigo,
       centroCustoNome: extra.centroCustoNome,
-      dados: dto as unknown as Prisma.InputJsonValue,
+      dados: this.dtoToDadosJson(dto),
       deletedAt,
     };
   }
 
-  private toListItem(row: ColaboradorRow) {
+  private dtoToDadosJson(dto: CadastrosColaboradorFormDto): Prisma.InputJsonValue {
+    const { familiares: _familiares, ...rest } = dto;
+    return rest as unknown as Prisma.InputJsonValue;
+  }
+
+  private normalizeFamiliaresInput(
+    familiares: ColaboradorFamiliarFormDto[],
+  ): ColaboradorFamiliarFormDto[] {
+    return familiares
+      .map((f) => ({
+        ...f,
+        nome: f.nome?.trim() ?? '',
+        cpf: f.cpf?.replace(/\D/g, '') || undefined,
+      }))
+      .filter((f) => f.nome.length >= 3);
+  }
+
+  private assertFamiliaresLimit(count: number) {
+    if (count > MAX_FAMILIARES) {
+      throw new BadRequestException('Máximo de 10 familiares por colaborador');
+    }
+  }
+
+  private assertFamiliarCpfValido(cpf?: string) {
+    if (!cpf?.trim()) return;
+    const clean = cpf.replace(/\D/g, '');
+    if (clean.length !== 11 || !validateCpfDigits(clean)) {
+      throw new BadRequestException('CPF do familiar inválido — dígitos verificadores não conferem.');
+    }
+  }
+
+  private buildFamiliarCreateData(
+    colaboradorId: string,
+    tenantId: string,
+    dto: CreateFamiliarDto,
+  ): Prisma.ColaboradorFamiliarCreateInput {
+    this.assertFamiliarCpfValido(dto.cpf);
+    return {
+      colaborador: { connect: { id: colaboradorId } },
+      tenantId,
+      nome: dto.nome.trim(),
+      cpf: dto.cpf?.replace(/\D/g, '') || null,
+      dataAniversario: dto.dataAniversario ? new Date(dto.dataAniversario) : null,
+      parentesco: dto.parentesco?.trim() || null,
+    };
+  }
+
+  private buildFamiliarUpdateData(dto: UpdateFamiliarDto): Prisma.ColaboradorFamiliarUpdateInput {
+    const data: Prisma.ColaboradorFamiliarUpdateInput = {};
+    if (dto.nome !== undefined) data.nome = dto.nome.trim();
+    if (dto.cpf !== undefined) data.cpf = dto.cpf?.replace(/\D/g, '') || null;
+    if (dto.dataAniversario !== undefined) {
+      data.dataAniversario = dto.dataAniversario ? new Date(dto.dataAniversario) : null;
+    }
+    if (dto.parentesco !== undefined) data.parentesco = dto.parentesco?.trim() || null;
+    return data;
+  }
+
+  private async createFamiliaresBatch(
+    tx: Prisma.TransactionClient,
+    colaboradorId: string,
+    tenantId: string,
+    familiares: ColaboradorFamiliarFormDto[],
+  ) {
+    const items = this.normalizeFamiliaresInput(familiares);
+    this.assertFamiliaresLimit(items.length);
+    for (const f of items) {
+      this.assertFamiliarCpfValido(f.cpf);
+    }
+    if (items.length === 0) return;
+    await tx.colaboradorFamiliar.createMany({
+      data: items.map((f) => ({
+        colaboradorId,
+        tenantId,
+        nome: f.nome.trim(),
+        cpf: f.cpf?.replace(/\D/g, '') || null,
+        dataAniversario: f.dataAniversario ? new Date(f.dataAniversario) : null,
+        parentesco: f.parentesco?.trim() || null,
+      })),
+    });
+  }
+
+  private async syncFamiliares(
+    tx: Prisma.TransactionClient,
+    colaboradorId: string,
+    tenantId: string,
+    familiares: ColaboradorFamiliarFormDto[],
+  ) {
+    const items = this.normalizeFamiliaresInput(familiares);
+    this.assertFamiliaresLimit(items.length);
+
+    const existing = await tx.colaboradorFamiliar.findMany({
+      where: { colaboradorId, ativo: true },
+    });
+    const incomingIds = new Set(items.filter((f) => f.id).map((f) => f.id!));
+
+    for (const row of existing) {
+      if (!incomingIds.has(row.id)) {
+        await tx.colaboradorFamiliar.update({
+          where: { id: row.id },
+          data: { ativo: false },
+        });
+      }
+    }
+
+    for (const f of items) {
+      this.assertFamiliarCpfValido(f.cpf);
+      if (f.id) {
+        const match = existing.find((e) => e.id === f.id);
+        if (!match) {
+          throw new BadRequestException(`Familiar ${f.id} não pertence a este colaborador.`);
+        }
+        await tx.colaboradorFamiliar.update({
+          where: { id: f.id },
+          data: this.buildFamiliarUpdateData(f),
+        });
+      } else {
+        await tx.colaboradorFamiliar.create({
+          data: {
+            colaboradorId,
+            tenantId,
+            nome: f.nome.trim(),
+            cpf: f.cpf?.replace(/\D/g, '') || null,
+            dataAniversario: f.dataAniversario ? new Date(f.dataAniversario) : null,
+            parentesco: f.parentesco?.trim() || null,
+          },
+        });
+      }
+    }
+  }
+
+  private mapFamiliares(row: ColaboradorRow) {
+    return (row.familiares ?? []).map((f) => ({
+      id: f.id,
+      nome: f.nome,
+      cpf: f.cpf ?? '',
+      dataAniversario: f.dataAniversario?.toISOString().slice(0, 10) ?? '',
+      parentesco: f.parentesco ?? '',
+    }));
+  }
+
+  private toListItem(row: ColaboradorListRow) {
     return {
       id: row.id,
       nome: row.nome,
@@ -425,6 +656,7 @@ export class CadastrosColaboradoresService {
         ? { codigo: row.centroCustoCodigo, nome: row.centroCustoNome ?? '' }
         : null,
       ...dados,
+      familiares: this.mapFamiliares(row),
       ativo: row.deletedAt == null && row.status !== 'INATIVO',
     };
   }

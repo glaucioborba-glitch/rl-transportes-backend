@@ -5,13 +5,33 @@ import { FolhaRhService } from './folha-rh.service';
 
 describe('FolhaRhService', () => {
   let service: FolhaRhService;
-  let store: FolhaRhStoreService;
+  let store: jest.Mocked<FolhaRhStoreService>;
 
   beforeEach(async () => {
+    const colaboradores: Awaited<ReturnType<FolhaRhStoreService['listColaboradores']>> = [];
+    store = {
+      createColaborador: jest.fn(async (input) => {
+        const e = {
+          ...input,
+          id: 'c1',
+          createdAt: new Date().toISOString(),
+        };
+        colaboradores.push(e);
+        return e;
+      }),
+      listColaboradores: jest.fn(async () => colaboradores),
+      getColaborador: jest.fn(async (id) => colaboradores.find((c) => c.id === id)),
+      createBeneficio: jest.fn(),
+      listBeneficios: jest.fn(async () => []),
+      createPresenca: jest.fn(),
+      listPresencas: jest.fn(async () => []),
+      presencasDoMes: jest.fn(async () => []),
+    } as unknown as jest.Mocked<FolhaRhStoreService>;
+
     const mod = await Test.createTestingModule({
       providers: [
         FolhaRhService,
-        FolhaRhStoreService,
+        { provide: FolhaRhStoreService, useValue: store },
         {
           provide: ConfigService,
           useValue: {
@@ -20,12 +40,12 @@ describe('FolhaRhService', () => {
         },
       ],
     }).compile();
+
     service = mod.get(FolhaRhService);
-    store = mod.get(FolhaRhStoreService);
   });
 
-  it('getCalculo retorna totais coerentes para um colaborador', () => {
-    store.createColaborador({
+  it('getCalculo retorna totais coerentes para um colaborador', async () => {
+    await store.createColaborador({
       nome: 'A',
       cpf: '1',
       cargo: 'x',
@@ -35,7 +55,7 @@ describe('FolhaRhService', () => {
       dataAdmissao: '2024-01-01',
       beneficiosAtivos: [],
     });
-    const r = service.getCalculo('2026-05');
+    const r = await service.getCalculo('2026-05');
     expect(r.porColaborador.length).toBe(1);
     expect(r.custoTotalEmpresa).toBeGreaterThan(r.salarioLiquidoTotal);
   });

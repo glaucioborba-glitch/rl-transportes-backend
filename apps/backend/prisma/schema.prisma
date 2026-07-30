@@ -105,6 +105,12 @@ enum TipoFluxoLogistico {
   SERVICO_ADICIONAL
 }
 
+enum StatusContainerTarifa {
+  AMBOS
+  CHEIO
+  VAZIO
+}
+
 enum TurnoAgendamento {
   MANHA
   TARDE
@@ -142,6 +148,9 @@ enum TipoOperacaoSolicitacaoIntent {
   SOLICITAR_IMPORTACAO_COLETA_DEPOT
   SOLICITAR_COLETA
   SOLICITAR_EXPORTACAO_ENTREGA_DEPOT
+  SOLICITAR_TRANSFERENCIA
+  SOLICITAR_INSPECAO
+  SOLICITAR_REPARO
 }
 
 /// Heurística V1 de permanência no pátio (alocação preditiva / ML futuro).
@@ -270,8 +279,16 @@ enum RegimeTributario {
 enum EventoGatilhoTarifa {
   GATE_IN
   GATE_OUT
+  HANDLING
   DIARIA_ARMAZENAGEM
   SHIFTING_EXTRA
+  ENERGIA_REEFER
+}
+
+/// Categoria do item na tabela cadastral de preços.
+enum CategoriaItemTabelaPreco {
+  OPERACAO
+  ARMAZENAGEM
 }
 
 /// Tipo de contêiner alvo da regra (filtro do rule engine).
@@ -348,8 +365,18 @@ model Tenant {
   cadastrosTransportadoras CadastroTransportadora[]
   cadastrosMotoristas CadastroMotorista[]
   cadastrosTiposContainer CadastroTipoContainer[]
+  cadastrosCapacidadesContainer CadastroCapacidadeContainer[]
   cadastrosContainerCache CadastroContainerCache[]
   cadastrosEquipamentos CadastroEquipamento[]
+  posicoesPatioZonas PosicaoPatioZona[]
+  posicoesPatio CadastroPosicaoPatio[]
+  cadastrosTiposOperacao CadastroTipoOperacao[]
+  cadastrosTurnos CadastroTurno[]
+  cadastrosMotivosRejeicao CadastroMotivoRejeicao[]
+  cadastrosBancos CadastroBanco[]
+  cadastrosCentrosCusto CadastroCentroCusto[]
+  cadastrosPlanoContas CadastroPlanoContas[]
+  cadastrosTabelasPreco CadastroTabelaPreco[]
 
   @@index([status])
   @@map("tenants")
@@ -449,6 +476,7 @@ model Cliente {
   diasToleranciaBloqueio Int?     @map("dias_tolerancia_bloqueio")
   percentualMultaAtraso  Decimal? @map("percentual_multa_atraso") @db.Decimal(5, 2)
   percentualJurosAoMes   Decimal? @map("percentual_juros_ao_mes") @db.Decimal(5, 2)
+  cancelamentosTardios   Int      @default(0) @map("cancelamentos_tardios")
 
   /// Aceite dos Termos de Uso no cadastro portal (non-repudiation).
   termosAceitosEm DateTime? @map("termos_aceitos_em")
@@ -482,6 +510,7 @@ model Cliente {
   transportadorasAutorizadas TransportadoraAutorizada[]
   containersTos    Container[]
   pilhasLogicas    PilhaLogica[]
+  cadastrosTabelasPreco CadastroTabelaPreco[]
 
   @@unique([tenantId, cpfCnpj])
   @@unique([tenantId, email])
@@ -597,6 +626,10 @@ model Solicitacao {
   bookingDeadline       DateTime? @map("booking_deadline")
   /// Classificação heurística de giro (calculada no backend).
   giroEstimado          GiroEstimado? @map("giro_estimado")
+  /// Estado sequencial do fluxo operacional Gate (portaria → vistoria → RIC → operação).
+  operacaoFluxoEstado   String?  @map("operacao_fluxo_estado") @db.VarChar(48)
+  /// Metadados do fluxo: QR token, vistoria, checklist, TAT, rejeição.
+  operacaoFluxoJson     Json     @default("{}") @map("operacao_fluxo_json")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   deletedAt DateTime?
@@ -674,6 +707,7 @@ model AgendamentoSolicitacao {
   turno                   TurnoAgendamento
   atendimentoEspecial     Boolean           @default(false) @map("atendimento_especial")
   atendimentoEspecialTexto String?          @map("atendimento_especial_texto") @db.VarChar(500)
+  atendimentoEspecialAudit Json?           @map("atendimento_especial_audit")
   createdAt               DateTime          @default(now())
   updatedAt               DateTime          @updatedAt
 
@@ -776,6 +810,7 @@ model GateCheckIn {
   motoristaCpf    String      @map("motorista_cpf") @db.VarChar(11)
   /// URLs S3 ou `local://` (mesmo padrão de anexos).
   fotosEntrada    Json        @default("[]") @map("fotos_entrada")
+  fotosEntradaKeys Json       @default("{}") @map("fotos_entrada_keys")
   divergenciasJson Json       @default("[]") @map("divergencias_json")
   ocrPlacaJson    Json?       @map("ocr_placa_json")
   pdfHashValidado String?     @map("pdf_hash_validado") @db.VarChar(64)
@@ -800,6 +835,7 @@ model GateCheckOut {
   operador         User        @relation("GateCheckOutOperador", fields: [operadorId], references: [id], onDelete: Restrict)
   dataHora         DateTime    @default(now()) @map("data_hora")
   fotosSaida       Json        @default("[]") @map("fotos_saida")
+  fotosSaidaKeys   Json        @default("{}") @map("fotos_saida_keys")
   divergenciasJson Json        @default("[]") @map("divergencias_json")
 
   vistorias Vistoria[]
@@ -852,6 +888,7 @@ model PatioUnidade {
   posicaoAtualId String?       @map("posicao_atual_id")
   posicaoAtual   PatioPosicao? @relation("PosicaoAtual", fields: [posicaoAtualId], references: [id], onDelete: SetNull)
   status         PatioStatus   @default(SEPARADO)
+  statusContainer StatusContainerTarifa? @default(AMBOS) @map("status_container")
   refrigerado    Boolean       @default(false)
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
@@ -1144,6 +1181,7 @@ enum StatusArquivoBancario {
 }
 
 /// Tarifário de armazenagem/demurrage por cliente (free time + diária).
+/// @deprecated Sunset A.5 — usar TabelaPreco + sync cadastral. Mantida read-only para dados históricos.
 model TabelaTarifaria {
   id                  String   @id @default(uuid())
   clienteId           String   @unique @map("cliente_id")
@@ -1449,7 +1487,7 @@ model TenantConfig {
   /// Configuração profunda (branding, turnos, free time, flags operacionais).
   parametros           Json     @default("{}")
   clienteIds           Json     @default("[]") @map("cliente_ids")
-  slasHorasProxy       Json     @map("slas_horas_proxy")
+  slasMinutosMeta      Json     @map("slas_minutos_meta")
   horarioFuncionamento String   @map("horario_funcionamento") @db.VarChar(64)
   regrasOperacao       String   @map("regras_operacao") @db.Text
   createdAt            DateTime @default(now()) @map("created_at")
@@ -1602,6 +1640,8 @@ model CadastroColaborador {
 
   dados     Json     @default("{}")
 
+  familiares ColaboradorFamiliar[]
+
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
@@ -1611,6 +1651,25 @@ model CadastroColaborador {
   @@index([tenantId, vinculo])
   @@index([gestorId])
   @@map("cadastros_colaboradores")
+}
+
+model ColaboradorFamiliar {
+  id              String              @id @default(cuid())
+  colaboradorId   String              @map("colaborador_id")
+  colaborador     CadastroColaborador @relation(fields: [colaboradorId], references: [id], onDelete: Cascade)
+  tenantId        String              @default("default") @map("tenant_id") @db.VarChar(64)
+  nome            String              @db.VarChar(255)
+  cpf             String?             @db.VarChar(11)
+  dataAniversario DateTime?           @map("data_aniversario") @db.Date
+  parentesco      String?             @db.VarChar(60)
+  ativo           Boolean             @default(true)
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  @@index([colaboradorId], map: "idx_colab_familiares_colab")
+  @@index([tenantId], map: "idx_colab_familiares_tenant")
+  @@index([dataAniversario], map: "idx_colab_familiares_aniversario")
+  @@map("colaborador_familiares")
 }
 
 /// MDM — transportadora (fonte única para Gate CPO e Dispatch).
@@ -1695,6 +1754,25 @@ model CadastroTipoContainer {
   @@map("cadastros_tipos_container")
 }
 
+/// MDM — capacidade/cubagem do contêiner (HC, DC, etc.).
+model CadastroCapacidadeContainer {
+  id        String   @id @default(uuid())
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  codigo    String   @db.VarChar(32)
+  nome      String   @db.VarChar(120)
+  ativo     Boolean  @default(true)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId, ativo])
+  @@map("cadastros_capacidades_container")
+}
+
 /// Cache leve de contêiner (número ISO + tipo + tamanho imutáveis).
 model CadastroContainerCache {
   id               String   @id @default(uuid())
@@ -1764,6 +1842,707 @@ model CadastroEquipamentoVinculo {
   @@map("cadastros_equipamentos_vinculos")
 }
 
+/// Zona do mapa de pátio (nível hierárquico superior).
+model PosicaoPatioZona {
+  id        String   @id @default(uuid())
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  codigo    String   @db.VarChar(16)
+  nome      String   @db.VarChar(120)
+  cor       String   @default("#3B82F6") @db.VarChar(16)
+  ativo     Boolean  @default(true)
+
+  baias    PosicaoPatioBaia[]
+  posicoes CadastroPosicaoPatio[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, codigo])
+  @@map("cadastros_posicoes_patio_zonas")
+}
+
+/// Baia dentro de uma zona de pátio.
+model PosicaoPatioBaia {
+  id       String   @id @default(uuid())
+  tenantId String   @default("default") @map("tenant_id") @db.VarChar(64)
+
+  zonaId   String   @map("zona_id")
+  zona     PosicaoPatioZona @relation(fields: [zonaId], references: [id], onDelete: Restrict)
+
+  codigo   String   @db.VarChar(32)
+  ativo    Boolean  @default(true)
+
+  posicoes CadastroPosicaoPatio[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, zonaId, codigo])
+  @@map("cadastros_posicoes_patio_baias")
+}
+
+/// Slot/stack individual no mapa de pátio.
+model CadastroPosicaoPatio {
+  id             String   @id @default(uuid())
+  tenantId       String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  zonaId         String   @map("zona_id")
+  zona           PosicaoPatioZona @relation(fields: [zonaId], references: [id], onDelete: Restrict)
+  baiaId         String   @map("baia_id")
+  baia           PosicaoPatioBaia @relation(fields: [baiaId], references: [id], onDelete: Restrict)
+
+  codigo         String   @db.VarChar(64)
+  zonaCodigo     String   @map("zona_codigo") @db.VarChar(16)
+  baiaCodigo     String   @map("baia_codigo") @db.VarChar(32)
+  zonaNome       String   @map("zona_nome") @db.VarChar(120)
+  zonaCor        String   @default("#3B82F6") @map("zona_cor") @db.VarChar(16)
+  slotNumero     Int      @map("slot_numero")
+  stackAltura    Int      @default(1) @map("stack_altura")
+  tipoAceito     String   @default("MISTO") @map("tipo_aceito") @db.VarChar(32)
+  tomadaReefer   Boolean  @default(false) @map("tomada_reefer")
+  capacidadePeso Decimal? @map("capacidade_peso") @db.Decimal(8, 2)
+  status         String   @default("LIVRE") @db.VarChar(32)
+  restricoes     String?  @db.Text
+  containerAtual String?  @map("container_atual") @db.VarChar(11)
+  ativo          Boolean  @default(true)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId, status, tipoAceito])
+  @@map("cadastros_posicoes_patio")
+}
+
+/// Catálogo de tipos de operação do Gate CPO.
+model CadastroTipoOperacao {
+  id                String   @id @default(uuid())
+  tenantId          String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  codigo            String   @db.VarChar(32)
+  nome              String   @db.VarChar(120)
+  descricao         String?  @db.Text
+  direcao           String   @default("ENTRADA") @db.VarChar(32)
+  exigeContainer    Boolean  @default(true) @map("exige_container")
+  exigeCaminhao     Boolean  @default(true) @map("exige_caminhao")
+  exigeEmpilhadeira Boolean  @default(true) @map("exige_empilhadeira")
+  tempoPadrao       Int?     @map("tempo_padrao")
+  centroCustoPadrao String?  @map("centro_custo_padrao") @db.VarChar(32)
+  cor               String   @default("#3B82F6") @db.VarChar(16)
+  ativo             Boolean  @default(true)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, codigo])
+  @@map("cadastros_tipos_operacao")
+}
+
+/// Catálogo de turnos operacionais.
+model CadastroTurno {
+  id               String   @id @default(uuid())
+  tenantId         String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  codigo           String   @db.VarChar(16)
+  nome             String   @db.VarChar(120)
+  horaInicio       String   @map("hora_inicio") @db.VarChar(8)
+  horaFim          String   @map("hora_fim") @db.VarChar(8)
+  capacidadeMaxima Int?     @map("capacidade_maxima")
+  diasSemana       Json     @default("[]") @map("dias_semana")
+  ativo            Boolean  @default(true)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, codigo])
+  @@map("cadastros_turnos")
+}
+
+/// Catálogo de motivos de rejeição/retorno no Gate.
+model CadastroMotivoRejeicao {
+  id              String   @id @default(uuid())
+  tenantId        String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  codigo          String   @db.VarChar(64)
+  descricao       String   @db.VarChar(255)
+  tipo            String   @default("REJEICAO_GATE") @db.VarChar(32)
+  exigeObservacao Boolean  @default(false) @map("exige_observacao")
+  notificaCliente Boolean  @default(false) @map("notifica_cliente")
+  ativo           Boolean  @default(true)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId, tipo, ativo])
+  @@map("cadastros_motivos_rejeicao")
+}
+
+/// Catálogo de bancos (código FEBRABAN).
+model CadastroBanco {
+  id        String   @id @default(uuid())
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  codigo    String   @db.VarChar(8)
+  nome      String   @db.VarChar(255)
+  cnpj      String?  @db.VarChar(14)
+  site      String?  @db.VarChar(255)
+  ativo     Boolean  @default(true)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId, ativo])
+  @@map("cadastros_bancos")
+}
+
+/// Centro de custo hierárquico (sintético / analítico).
+model CadastroCentroCusto {
+  id        String   @id @default(uuid())
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  codigo    String   @db.VarChar(32)
+  nome      String   @db.VarChar(120)
+  tipo      String   @default("ANALITICO") @db.VarChar(16)
+  paiId     String?  @map("pai_id")
+  pai       CadastroCentroCusto?  @relation("CentroCustoHierarquia", fields: [paiId], references: [id], onDelete: Restrict)
+  filhos    CadastroCentroCusto[] @relation("CentroCustoHierarquia")
+  descricao String?  @db.Text
+  ativo     Boolean  @default(true)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId, tipo, ativo])
+  @@index([tenantId, paiId])
+  @@map("cadastros_centros_custo")
+}
+
+/// Plano de contas contábil hierárquico.
+model CadastroPlanoContas {
+  id        String   @id @default(uuid())
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  codigo    String   @db.VarChar(32)
+  nome      String   @db.VarChar(255)
+  natureza  String   @default("RECEITA") @db.VarChar(16)
+  tipo      String   @default("ANALITICA") @db.VarChar(16)
+  paiId     String?  @map("pai_id")
+  pai       CadastroPlanoContas?  @relation("PlanoContasHierarquia", fields: [paiId], references: [id], onDelete: Restrict)
+  filhos    CadastroPlanoContas[] @relation("PlanoContasHierarquia")
+  descricao String?  @db.Text
+  ativo     Boolean  @default(true)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId, tipo, ativo])
+  @@index([tenantId, natureza])
+  @@map("cadastros_plano_contas")
+}
+
+/// Tabela de preços cadastral (vigência + itens por operação × contêiner).
+model CadastroTabelaPreco {
+  id          String   @id @default(uuid())
+  tenantId    String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  nome        String   @db.VarChar(255)
+  descricao   String?  @db.Text
+  clienteId   String?  @map("cliente_id")
+  cliente     Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  moeda       String   @default("BRL") @db.VarChar(8)
+  dataInicio  DateTime @default(now()) @map("data_inicio") @db.Date
+  dataFim     DateTime? @map("data_fim") @db.Date
+  ativo       Boolean  @default(true)
+  /// Tabela padrão do terminal (uma por tenant).
+  padrao      Boolean  @default(false)
+  billingTabelaPrecoId String? @unique @map("billing_tabela_preco_id")
+  billingTabelaPreco   TabelaPreco? @relation("CadastroBillingTabela", fields: [billingTabelaPrecoId], references: [id], onDelete: SetNull)
+  syncedAt    DateTime? @map("synced_at")
+
+  itens CadastroTabelaPrecoItem[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([tenantId, ativo])
+  @@index([tenantId, padrao])
+  @@index([tenantId, clienteId])
+  @@index([tenantId, dataInicio, dataFim])
+  @@map("cadastros_tabelas_preco")
+}
+
+/// Item de pricing dentro de uma tabela cadastral.
+model CadastroTabelaPrecoItem {
+  id                  String   @id @default(uuid())
+  tabelaId            String   @map("tabela_id")
+  tabela              CadastroTabelaPreco @relation(fields: [tabelaId], references: [id], onDelete: Cascade)
+
+  categoriaItem       CategoriaItemTabelaPreco @default(OPERACAO) @map("categoria_item")
+  tipoOperacaoCodigo  String   @map("tipo_operacao_codigo") @db.VarChar(32)
+  tipoContainerCodigo String?  @map("tipo_container_codigo") @db.VarChar(32)
+  capacidadeCodigo    String?  @map("capacidade_codigo") @db.VarChar(32)
+  containerTamanho    String?  @map("container_tamanho") @db.VarChar(8)
+  valor               Decimal  @default(0) @db.Decimal(12, 2)
+  unidade             String   @default("POR_OPERACAO") @db.VarChar(32)
+  valorMinimo         Decimal? @map("valor_minimo") @db.Decimal(12, 2)
+  statusContainer     StatusContainerTarifa @default(AMBOS) @map("status_container")
+  valorHandling       Decimal? @map("valor_handling") @db.Decimal(12, 2)
+  freeTimeDias        Int?     @map("free_time_dias")
+  /// Faixas escalonadas: [{ diaInicio, diaFim|null, valorDiaria }]
+  faixasDiaria        Json?    @map("faixas_diaria")
+  tarifaDiariaArmazenagem Decimal? @map("tarifa_diaria_armazenagem") @db.Decimal(10, 2)
+  tarifaEnergiaReeferDiaria Decimal? @map("tarifa_energia_reefer_diaria") @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tabelaId])
+  @@index([tabelaId, categoriaItem])
+  @@index([tipoOperacaoCodigo, tipoContainerCodigo])
+  @@map("cadastros_tabelas_preco_itens")
+}
+
+// ============================================================================
+// PR-001 — Stores persistentes (ex-in-memory)
+// ============================================================================
+
+model GrcRisco {
+  id            String   @id
+  tenantId      String   @default("default") @map("tenant_id") @db.VarChar(64)
+  titulo        String   @db.VarChar(255)
+  descricao     String   @db.Text
+  categoria     String   @db.VarChar(120)
+  probabilidade Int      @default(3)
+  impacto       Int      @default(3)
+  severidade    Int      @default(9)
+  status        String   @default("aberto") @db.VarChar(60)
+  responsavel   String   @db.VarChar(255)
+  origem        String   @db.VarChar(120)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  controles     GrcControle[]
+
+  @@index([tenantId])
+  @@map("grc_riscos")
+}
+
+model GrcControle {
+  id                 String   @id
+  tenantId           String   @default("default") @map("tenant_id") @db.VarChar(64)
+  riscoRelacionadoId String   @map("risco_relacionado_id")
+  risco              GrcRisco @relation(fields: [riscoRelacionadoId], references: [id], onDelete: Cascade)
+  nomeControle       String   @map("nome_controle") @db.VarChar(255)
+  frequencia         String   @db.VarChar(60)
+  responsavel        String   @db.VarChar(255)
+  evidencia          String?  @db.Text
+  eficacia           Int      @default(0)
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("grc_controles")
+}
+
+model GrcPlanoAcao {
+  id        String   @id
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  what      String   @db.Text
+  why       String   @db.Text
+  where     String   @map("where") @db.Text
+  when      String   @map("when") @db.Text
+  who       String   @map("who") @db.Text
+  how       String   @db.Text
+  howMuch   Decimal  @default(0) @map("how_much") @db.Decimal(14, 2)
+  status    String   @default("aberto") @db.VarChar(60)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("grc_planos_acao")
+}
+
+model TesourariaFornecedor {
+  id                    String   @id
+  tenantId              String   @default("default") @map("tenant_id") @db.VarChar(64)
+  nome                  String   @db.VarChar(255)
+  cnpj                  String   @db.VarChar(14)
+  categoriaFornecedor   String   @map("categoria_fornecedor") @db.VarChar(120)
+  contato               String   @db.VarChar(255)
+  prazoPagamentoPadrao  Int      @default(30) @map("prazo_pagamento_padrao")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+  contratos             TesourariaContrato[]
+
+  @@index([tenantId])
+  @@map("tesouraria_fornecedores")
+}
+
+model TesourariaDespesa {
+  id                  String   @id
+  tenantId            String   @default("default") @map("tenant_id") @db.VarChar(64)
+  fornecedor          String   @db.VarChar(255)
+  categoria           String   @db.VarChar(120)
+  descricao           String   @db.VarChar(500)
+  valor               Decimal  @db.Decimal(14, 2)
+  vencimento          DateTime @db.Date
+  status              String   @default("pendente") @db.VarChar(30)
+  recorrencia         String   @default("nenhuma") @db.VarChar(30)
+  documentoReferencia String?  @map("documento_referencia") @db.VarChar(255)
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@index([vencimento])
+  @@map("tesouraria_despesas")
+}
+
+model TesourariaContrato {
+  id               String               @id
+  tenantId         String               @default("default") @map("tenant_id") @db.VarChar(64)
+  fornecedorId     String               @map("fornecedor_id")
+  fornecedor       TesourariaFornecedor @relation(fields: [fornecedorId], references: [id], onDelete: Restrict)
+  tipoContrato     String               @map("tipo_contrato") @db.VarChar(60)
+  valorFixo        Decimal              @map("valor_fixo") @db.Decimal(14, 2)
+  vigenciaInicio   DateTime             @map("vigencia_inicio") @db.Date
+  vigenciaFim      DateTime             @map("vigencia_fim") @db.Date
+  reajusteAnualPct Decimal              @default(0) @map("reajuste_anual_pct") @db.Decimal(5, 2)
+  observacoes      String?              @db.Text
+  createdAt        DateTime             @default(now()) @map("created_at")
+  updatedAt        DateTime             @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("tesouraria_contratos")
+}
+
+model FolhaColaboradorRh {
+  id               String   @id
+  tenantId         String   @default("default") @map("tenant_id") @db.VarChar(64)
+  nome             String   @db.VarChar(255)
+  cpf              String   @db.VarChar(11)
+  cargo            String   @db.VarChar(255)
+  turno            String   @db.VarChar(30)
+  salarioBase      Decimal  @map("salario_base") @db.Decimal(14, 2)
+  tipoContratacao  String   @map("tipo_contratacao") @db.VarChar(30)
+  dataAdmissao     DateTime @map("data_admissao") @db.Date
+  dataDemissao     DateTime? @map("data_demissao") @db.Date
+  beneficiosAtivos Json     @default("[]") @map("beneficios_ativos")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  presencas        FolhaPresenca[]
+
+  @@index([tenantId])
+  @@map("folha_colaboradores_rh")
+}
+
+model FolhaBeneficio {
+  id            String   @id
+  tenantId      String   @default("default") @map("tenant_id") @db.VarChar(64)
+  nomeBeneficio String   @map("nome_beneficio") @db.VarChar(255)
+  valorMensal   Decimal  @map("valor_mensal") @db.Decimal(14, 2)
+  tipoBeneficio String   @map("tipo_beneficio") @db.VarChar(60)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@map("folha_beneficios")
+}
+
+model FolhaPresenca {
+  id                   String             @id
+  tenantId             String             @default("default") @map("tenant_id") @db.VarChar(64)
+  colaboradorId        String             @map("colaborador_id")
+  colaborador          FolhaColaboradorRh @relation(fields: [colaboradorId], references: [id], onDelete: Cascade)
+  dataRef              DateTime           @map("data_ref") @db.Date
+  horasTrabalhadas     Decimal            @default(0) @map("horas_trabalhadas") @db.Decimal(4, 2)
+  horasExtras          Decimal            @default(0) @map("horas_extras") @db.Decimal(4, 2)
+  adicionalNoturnoHoras Decimal           @default(0) @map("adicional_noturno_horas") @db.Decimal(4, 2)
+  falta                Boolean            @default(false)
+  createdAt            DateTime           @default(now()) @map("created_at")
+
+  @@index([colaboradorId])
+  @@map("folha_presencas")
+}
+
+model RhAvaliacao {
+  id                      String   @id
+  tenantId                String   @default("default") @map("tenant_id") @db.VarChar(64)
+  colaboradorId           String   @map("colaborador_id")
+  turnoReferencia         String?  @map("turno_referencia") @db.VarChar(30)
+  cargoReferencia         String?  @map("cargo_referencia") @db.VarChar(255)
+  periodo                 String   @db.VarChar(20)
+  avaliador               String   @db.VarChar(255)
+  notaTecnica             Decimal  @map("nota_tecnica") @db.Decimal(4, 2)
+  notaComportamental      Decimal  @map("nota_comportamental") @db.Decimal(4, 2)
+  aderenciaProcedimentos  Decimal  @default(0) @map("aderencia_procedimentos") @db.Decimal(4, 2)
+  qualidadeExecucao       Decimal  @default(0) @map("qualidade_execucao") @db.Decimal(4, 2)
+  comprometimento         Decimal  @default(0) @db.Decimal(4, 2)
+  comentarioGerencial     String?  @map("comentario_gerencial") @db.Text
+  scoreFinal              Decimal  @map("score_final") @db.Decimal(4, 2)
+  createdAt               DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@index([colaboradorId])
+  @@map("rh_avaliacoes")
+}
+
+model RhOkr {
+  id             String   @id
+  tenantId       String   @default("default") @map("tenant_id") @db.VarChar(64)
+  objetivo       String   @db.Text
+  escopo         String   @db.VarChar(120)
+  keyResults     Json     @default("[]") @map("key_results")
+  progressoAtual Decimal  @default(0) @map("progresso_atual") @db.Decimal(5, 2)
+  periodoInicio  DateTime @map("periodo_inicio") @db.Date
+  periodoFim     DateTime @map("periodo_fim") @db.Date
+  responsavel    String   @db.VarChar(255)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@map("rh_okrs")
+}
+
+model RhTreinamento {
+  id            String    @id
+  tenantId      String    @default("default") @map("tenant_id") @db.VarChar(64)
+  colaboradorId String    @map("colaborador_id")
+  modulo        String    @db.VarChar(255)
+  cargaHoraria  Int       @map("carga_horaria")
+  status        String    @default("pendente") @db.VarChar(30)
+  dataConclusao DateTime? @map("data_conclusao") @db.Date
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([colaboradorId])
+  @@map("rh_treinamentos")
+}
+
+model AutomacaoWorkflow {
+  id            String   @id
+  tenantId      String   @default("default") @map("tenant_id") @db.VarChar(64)
+  nome          String   @db.VarChar(255)
+  eventoDisparo String   @map("evento_disparo") @db.VarChar(255)
+  condicoes     Json     @default("[]")
+  acoes         Json     @default("[]")
+  prioridade    Int      @default(3)
+  ativo         Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("automacao_workflows")
+}
+
+model AutomacaoRegra {
+  id          String   @id
+  tenantId    String   @default("default") @map("tenant_id") @db.VarChar(64)
+  nome        String   @db.VarChar(255)
+  tipo        String   @db.VarChar(120)
+  expressaoIf String   @map("expressao_if") @db.Text
+  acaoThen    String   @map("acao_then") @db.Text
+  acaoElse    String?  @map("acao_else") @db.Text
+  ativo       Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@map("automacao_regras")
+}
+
+model AutomacaoExecucao {
+  id          String   @id
+  tenantId    String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tipo        String   @db.VarChar(30)
+  evento      String?  @db.VarChar(255)
+  workflowId  String?  @map("workflow_id")
+  regraId     String?  @map("regra_id")
+  rpaJobId    String?  @map("rpa_job_id")
+  ok          Boolean  @default(true)
+  detalhe     String?  @db.Text
+  acoesResumo Json     @default("[]") @map("acoes_resumo")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@index([createdAt])
+  @@map("automacao_execucoes")
+}
+
+model AutomacaoRpaJob {
+  id          String    @id
+  tenantId    String    @default("default") @map("tenant_id") @db.VarChar(64)
+  robotId     String    @map("robot_id") @db.VarChar(120)
+  status      String    @default("pendente") @db.VarChar(30)
+  mensagem    String?   @db.Text
+  tentativa   Int       @default(1)
+  startedAt   DateTime  @map("started_at")
+  finishedAt  DateTime? @map("finished_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@map("automacao_rpa_jobs")
+}
+
+model AutomacaoCronJob {
+  id             String    @id
+  tenantId       String    @default("default") @map("tenant_id") @db.VarChar(64)
+  expressao      String    @db.VarChar(120)
+  descricao      String?   @db.VarChar(500)
+  acao           String    @db.VarChar(255)
+  ativo          Boolean   @default(true)
+  ultimaExecucao DateTime? @map("ultima_execucao")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@map("automacao_cron_jobs")
+}
+
+model DatahubFato {
+  id        String   @id
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tipoFato  String   @map("tipo_fato") @db.VarChar(60)
+  sk        String   @db.VarChar(120)
+  dados     Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tipoFato, tenantId])
+  @@map("datahub_fatos")
+}
+
+model DatahubDimensao {
+  id           String   @id
+  tenantId     String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tipoDimensao String   @map("tipo_dimensao") @db.VarChar(60)
+  sk           String   @db.VarChar(120)
+  dados        Json
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([tenantId, tipoDimensao, sk])
+  @@map("datahub_dimensoes")
+}
+
+model DatahubDwMeta {
+  tenantId      String    @id @map("tenant_id") @db.VarChar(64)
+  ultimaCargaEm DateTime? @map("ultima_carga_em")
+
+  @@map("datahub_dw_meta")
+}
+
+model DatahubEtlExecucao {
+  id           String   @id
+  tenantId     String   @default("default") @map("tenant_id") @db.VarChar(64)
+  fase         String   @db.VarChar(30)
+  status       String   @default("SUCESSO") @db.VarChar(30)
+  iniciadoEm   DateTime @map("iniciado_em")
+  finalizadoEm DateTime @map("finalizado_em")
+  duracaoMs    Int      @default(0) @map("duracao_ms")
+  linhasEntrada Int?    @map("linhas_entrada")
+  linhasSaida  Int?     @map("linhas_saida")
+  mensagem     String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@map("datahub_etl_execucoes")
+}
+
+model DatahubLakeArquivo {
+  id                    String   @id
+  tenantId              String   @default("default") @map("tenant_id") @db.VarChar(64)
+  origem                String   @db.VarChar(120)
+  pathVirtual           String   @map("path_virtual") @db.VarChar(512)
+  payload               Json
+  tamanhoBrutoBytes     Int      @default(0) @map("tamanho_bruto_bytes")
+  gzipSimuladoRatio     Decimal  @default(0.35) @map("gzip_simulado_ratio") @db.Decimal(5, 4)
+  bytesCompactadosAprox Int      @default(0) @map("bytes_compactados_aprox")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@map("datahub_lake_arquivos")
+}
+
+model PlataformaConsumoLog {
+  id          String   @id
+  tenantId    String?  @map("tenant_id") @db.VarChar(64)
+  apiClientId String   @map("api_client_id")
+  rota        String   @db.VarChar(512)
+  metodo      String   @db.VarChar(10)
+  statusHttp  Int      @map("status_http")
+  latencyMs   Int      @default(0) @map("latency_ms")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([apiClientId])
+  @@index([createdAt])
+  @@map("plataforma_consumo_logs")
+}
+
+model PlataformaConsumoIncidente {
+  id        String   @id
+  tipo      String   @db.VarChar(120)
+  detalhe   String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("plataforma_consumo_incidentes")
+}
+
+model MobileOpsQueue {
+  id            String   @id
+  tenantId      String   @default("default") @map("tenant_id") @db.VarChar(64)
+  userId        String   @map("user_id") @db.VarChar(64)
+  canal         String   @db.VarChar(30)
+  payload       Json
+  payloadDigest String   @map("payload_digest") @db.VarChar(255)
+  receivedAt    DateTime @map("received_at")
+  flushed       Boolean  @default(false)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([userId, flushed])
+  @@map("mobile_ops_queue")
+}
+
+model IotReading {
+  id        String   @id
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  sensorId  String   @map("sensor_id") @db.VarChar(120)
+  tipo      String   @db.VarChar(60)
+  valor     Json
+  timestamp DateTime
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([sensorId, timestamp])
+  @@map("iot_readings")
+}
+
+model WebhookSubscription {
+  id        String   @id
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  url       String   @db.Text
+  secret    String   @db.VarChar(255)
+  eventos   Json     @default("[]")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId])
+  @@map("webhook_subscriptions")
+}
+
 /// Colaborador operacional cadastrado no módulo RH (workforce planning).
 model Funcionario {
   id        String            @id @default(uuid())
@@ -1804,6 +2583,8 @@ model TabelaPreco {
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   nome      String   @db.VarChar(255)
   ativa     Boolean  @default(true)
+  padrao    Boolean  @default(false)
+  cadastroTabelaPreco CadastroTabelaPreco? @relation("CadastroBillingTabela")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1811,6 +2592,7 @@ model TabelaPreco {
   clientes Cliente[]
 
   @@index([tenantId, ativa])
+  @@index([tenantId, padrao])
   @@map("tabelas_preco")
 }
 
@@ -1822,8 +2604,13 @@ model RegraTarifaria {
   nome            String?              @db.VarChar(120)
   eventoGatilho   EventoGatilhoTarifa  @map("evento_gatilho")
   tipoContainer   TipoContainerTarifa  @default(TODOS) @map("tipo_container")
+  tipoContainerCodigo String?          @map("tipo_container_codigo") @db.VarChar(32)
+  capacidadeCodigo    String?          @map("capacidade_codigo") @db.VarChar(32)
+  containerTamanho    String?          @map("container_tamanho") @db.VarChar(8)
+  statusContainer StatusContainerTarifa @default(AMBOS) @map("status_container")
   valor           Decimal              @db.Decimal(10, 2)
   diasFreeTime    Int                  @default(0) @map("dias_free_time")
+  faixasDiaria    Json?                @map("faixas_diaria")
   ativa           Boolean              @default(true)
   createdAt       DateTime             @default(now()) @map("created_at")
   updatedAt       DateTime             @updatedAt @map("updated_at")
@@ -1831,6 +2618,7 @@ model RegraTarifaria {
   itens ItemFaturaArmazenagem[]
 
   @@index([tabelaPrecoId, ativa, eventoGatilho])
+  @@index([tabelaPrecoId, tipoContainer, statusContainer, ativa], map: "idx_regras_tarifarias_composite")
   @@map("regras_tarifarias")
 }
 
@@ -1911,3 +2699,185 @@ model ItemFaturaArmazenagem {
   @@index([preFaturaId, eventoGatilho])
   @@map("itens_fatura_armazenagem")
 }
+
+// ============================================================================
+// Mobile Hub — persistência PostgreSQL (PR #2)
+// ============================================================================
+
+model MobileDeviceBinding {
+  id        String   @id @default(uuid())
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  deviceId  String   @unique @map("device_id") @db.VarChar(128)
+  userSub   String   @map("user_sub") @db.VarChar(128)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userSub])
+  @@map("mobile_device_bindings")
+}
+
+model MobileMotoristaIdentity {
+  id              String   @id @default(uuid())
+  tenantId        String   @default("default") @map("tenant_id") @db.VarChar(64)
+  cpfCnpj         String   @unique @map("cpf_cnpj") @db.VarChar(14)
+  email           String   @db.VarChar(255)
+  passwordHash    String   @map("password_hash") @db.VarChar(255)
+  protocoloPadrao String   @map("protocolo_padrao") @db.VarChar(64)
+  tokenVersion    Int      @default(0) @map("token_version")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("mobile_motorista_identities")
+}
+
+model MobileOfflineEvent {
+  id               String   @id @default(uuid())
+  tenantId         String   @default("default") @map("tenant_id") @db.VarChar(64)
+  deviceId         String   @map("device_id") @db.VarChar(128)
+  userSub          String   @map("user_sub") @db.VarChar(128)
+  op               String   @db.VarChar(32)
+  body             Json
+  clientTs         BigInt   @map("client_ts")
+  recebidoEm       DateTime @map("recebido_em")
+  synced           Boolean  @default(false)
+  conflictResolved String?  @map("conflict_resolved") @db.VarChar(64)
+
+  @@index([deviceId, synced])
+  @@map("mobile_offline_events")
+}
+
+model MobileFcmToken {
+  id        String   @id @default(uuid())
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  userSub   String   @unique @map("user_sub") @db.VarChar(128)
+  token     String   @db.VarChar(512)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("mobile_fcm_tokens")
+}
+
+model MobilePushJobRecord {
+  id         String    @id @default(uuid())
+  tenantId   String    @default("default") @map("tenant_id") @db.VarChar(64)
+  tipo       String    @db.VarChar(32)
+  destinoSub String?   @map("destino_sub") @db.VarChar(128)
+  deviceId   String?   @map("device_id") @db.VarChar(128)
+  titulo     String    @db.VarChar(255)
+  corpo      String    @db.Text
+  meta       Json?
+  criadoEm   DateTime  @default(now()) @map("criado_em")
+  entregueEm DateTime? @map("entregue_em")
+
+  @@index([destinoSub, entregueEm])
+  @@map("mobile_push_jobs")
+}
+
+model FinanceiroExtratoLote {
+  batchId     String   @id @map("batch_id")
+  tenantId    String   @default("default") @map("tenant_id") @db.VarChar(64)
+  formato     String   @db.VarChar(8)
+  nomeOrigem  String?  @map("nome_origem")
+  importadoEm DateTime @default(now()) @map("importado_em")
+  linhas      FinanceiroExtratoLinha[]
+
+  @@index([tenantId, importadoEm(sort: Desc)])
+  @@map("financeiro_extrato_lotes")
+}
+
+model FinanceiroExtratoLinha {
+  idLinha           String   @id @map("id_linha")
+  batchId           String   @map("batch_id")
+  lote              FinanceiroExtratoLote @relation(fields: [batchId], references: [batchId], onDelete: Cascade)
+  tenantId          String   @default("default") @map("tenant_id") @db.VarChar(64)
+  indice            Int
+  dataLancamento    String   @map("data_lancamento") @db.VarChar(32)
+  historico         String   @db.Text
+  valor             Decimal  @db.Decimal(14, 2)
+  tipo              String   @db.VarChar(8)
+  saldoParcial      Decimal? @map("saldo_parcial") @db.Decimal(14, 2)
+  documento         String?
+  nossoNumero       String?  @map("nosso_numero")
+  fitId             String?  @map("fit_id")
+  conciliacaoManual FinanceiroExtratoConciliacaoManual?
+
+  @@index([batchId])
+  @@index([tenantId])
+  @@map("financeiro_extrato_linhas")
+}
+
+model FinanceiroExtratoConciliacaoManual {
+  linhaId       String   @id @map("linha_id")
+  linha         FinanceiroExtratoLinha @relation(fields: [linhaId], references: [idLinha], onDelete: Cascade)
+  boletoId      String   @map("boleto_id")
+  faturamentoId String   @map("faturamento_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("financeiro_extrato_conciliacao_manual")
+}
+
+model IntegracaoEventLog {
+  id            String   @id @default(uuid())
+  tenantId      String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tipo          String   @db.VarChar(64)
+  payload       Json
+  clienteId     String?  @map("cliente_id")
+  correlationId String?  @map("correlation_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([clienteId, createdAt(sort: Desc)])
+  @@index([tenantId])
+  @@index([createdAt])
+  @@map("integracao_event_log")
+}
+
+model MobilePinLockout {
+  id         String   @id @default(uuid())
+  tenantId   String   @default("default") @map("tenant_id") @db.VarChar(64)
+  deviceId   String   @unique @map("device_id") @db.VarChar(128)
+  falhasJson Json     @default("[]") @map("falhas_json")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId])
+  @@map("mobile_pin_lockouts")
+}
+
+model MobileTelemetry {
+  id              String   @id @default(uuid())
+  tenantId        String   @default("default") @map("tenant_id") @db.VarChar(64)
+  deviceId        String?  @map("device_id") @db.VarChar(128)
+  userId          String   @map("user_id") @db.VarChar(64)
+  mobileRole      String?  @map("mobile_role") @db.VarChar(30)
+  canal           String   @db.VarChar(30)
+  lat             Float?
+  lon             Float?
+  networkStrength Int?     @map("network_strength")
+  latencyMs       Int?     @map("latency_ms")
+  batteryPct      Int?     @map("battery_pct")
+  errors          Json     @default("[]")
+  offlineUsageSec Int      @default(0) @map("offline_usage_sec")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([tenantId])
+  @@index([createdAt])
+  @@map("mobile_telemetry")
+}
+
+model MobileHubOp {
+  id        String   @id @default(uuid())
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  userId    String   @map("user_id") @db.VarChar(64)
+  canal     String   @db.VarChar(30)
+  acao      String   @db.VarChar(120)
+  payload   Json
+  ip        String?  @db.VarChar(64)
+  userAgent String?  @map("user_agent") @db.VarChar(1024)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([tenantId])
+  @@index([createdAt])
+  @@map("mobile_hub_ops")
+}
+

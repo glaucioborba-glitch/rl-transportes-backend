@@ -115,7 +115,7 @@ export type DashboardPortalConsolidated = {
   };
   meta: {
     tenantId: string;
-    slasHorasProxy: Record<string, number> | null;
+    slasMinutosMeta: Record<string, number> | null;
     cacheHit?: boolean;
     slaAmostraConcluidas: number;
   };
@@ -188,11 +188,11 @@ export class DashboardPortalService {
 
   private async limitesSla(cx: CxPortalRequestUser): Promise<SlaHorasOperacionais> {
     const t = (await this.tenants.obter(cx.tenantId)) ?? (await this.tenants.obter('default'));
-    const p = t?.config.slasHorasProxy;
+    const p = t?.config.slasMinutosMeta;
     return {
-      gate: p?.gate ?? 4,
-      patio: p?.patio ?? 72,
-      saida: p?.saida ?? 24,
+      gate: p?.gate ?? 240,
+      patio: p?.patio ?? 4320,
+      saida: p?.saida ?? 1440,
     };
   }
 
@@ -589,7 +589,7 @@ export class DashboardPortalService {
       },
       meta: {
         tenantId: cx.tenantId,
-        slasHorasProxy: limites,
+        slasMinutosMeta: limites,
         cacheHit: false,
         slaAmostraConcluidas: 0,
       },
@@ -766,7 +766,7 @@ export class DashboardPortalService {
         },
         meta: {
           tenantId: cx.tenantId,
-          slasHorasProxy: limites,
+          slasMinutosMeta: limites,
           cacheHit: false,
           slaAmostraConcluidas: slaReal.amostraConcluidas,
         },

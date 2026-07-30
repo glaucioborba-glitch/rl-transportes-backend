@@ -2,6 +2,7 @@ import {
   assertJwtSecretForProduction,
   getCorsOrigins,
   getGlobalRateLimitTiers,
+  isCsrfEnabled,
   isCsrfExemptPath,
   JWT_SECRET_MIN_LENGTH,
   JWT_SECRET_PLACEHOLDER,
@@ -107,5 +108,35 @@ describe('security.config — JWT boot guard (C-08)', () => {
     process.env.NODE_ENV = 'production';
     process.env.JWT_SECRET = 'a'.repeat(JWT_SECRET_MIN_LENGTH);
     expect(() => assertJwtSecretForProduction()).not.toThrow();
+  });
+});
+
+describe('security.config — CSRF defaults', () => {
+  const prev = process.env;
+
+  beforeEach(() => {
+    process.env = { ...prev };
+    delete process.env.CSRF_ENABLED;
+    delete process.env.DEPLOY_ENV;
+  });
+
+  afterAll(() => {
+    process.env = prev;
+  });
+
+  it('produção: CSRF ligado por default', () => {
+    process.env.NODE_ENV = 'production';
+    expect(isCsrfEnabled()).toBe(true);
+  });
+
+  it('development: CSRF desligado por default', () => {
+    process.env.NODE_ENV = 'development';
+    expect(isCsrfEnabled()).toBe(false);
+  });
+
+  it('CSRF_ENABLED=0 desliga mesmo em produção', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.CSRF_ENABLED = '0';
+    expect(isCsrfEnabled()).toBe(false);
   });
 });

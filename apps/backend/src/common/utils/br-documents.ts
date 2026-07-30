@@ -55,3 +55,10 @@ export const validateCpfDigits = validarCPF;
 
 /** @alias validarCNPJ */
 export const validateCnpjDigits = validarCNPJ;
+
+/** Máscara de exibição/auditoria: 000.000.000-00 */
+export function maskCpfDisplay(cpf: string): string {
+  const d = onlyDigits(cpf).slice(-11).padStart(11, '0');
+  if (d.length !== 11) return cpf;
+  return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+}

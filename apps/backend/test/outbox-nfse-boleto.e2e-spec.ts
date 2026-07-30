@@ -21,6 +21,7 @@ import {
   DEFAULT_VALOR_SERVICOS_EXTRAS,
 } from '../src/armazenagem-faturamento/armazenagem-billing.util';
 import { clienteE2eDefaults } from './helpers/e2e-cliente.factory';
+import { ensureE2ePricingTable } from './helpers/e2e-pricing.factory';
 import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
 
 const PLACA_CAVALO = 'ABC1D23';
@@ -82,13 +83,11 @@ describe('Outbox NFS-e + boleto (e2e)', () => {
     });
     clienteId = cliente.id;
 
-    await prisma.tabelaTarifaria.create({
-      data: {
-        clienteId,
-        freeTimeDias: 0,
-        valorDiaria: DEFAULT_VALOR_DIARIA,
-        valorServicosExtras: DEFAULT_VALOR_SERVICOS_EXTRAS,
-      },
+    await ensureE2ePricingTable(prisma, {
+      clienteId,
+      freeTimeDias: 0,
+      valorDiaria: DEFAULT_VALOR_DIARIA,
+      valorServicosExtras: DEFAULT_VALOR_SERVICOS_EXTRAS,
     });
 
     const pessoa = await prisma.pessoaAutorizada.create({
@@ -198,7 +197,11 @@ describe('Outbox NFS-e + boleto (e2e)', () => {
         await prisma.patioUnidade.deleteMany({ where: { solicitacaoId } });
         await prisma.solicitacao.deleteMany({ where: { id: solicitacaoId } });
       }
-      await prisma.tabelaTarifaria.deleteMany({ where: { clienteId } });
+      await prisma.cliente.update({ where: { id: clienteId }, data: { tabelaPrecoId: null } });
+      await prisma.regraTarifaria.deleteMany({
+        where: { tabelaPreco: { clientes: { some: { id: clienteId } } } },
+      });
+      await prisma.tabelaPreco.deleteMany({ where: { clientes: { some: { id: clienteId } } } });
       await prisma.user.deleteMany({ where: { clienteId } });
       await prisma.cliente.deleteMany({ where: { id: clienteId } });
     }

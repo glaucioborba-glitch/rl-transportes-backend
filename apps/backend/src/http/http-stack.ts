@@ -1,7 +1,7 @@
 import type { INestApplication } from '@nestjs/common';
 import { Logger } from '@nestjs/common';
-import * as compression from 'compression';
-import * as cookieParser from 'cookie-parser';
+import compression = require('compression');
+import cookieParser = require('cookie-parser');
 import type { Request } from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';

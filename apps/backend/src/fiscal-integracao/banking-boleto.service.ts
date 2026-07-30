@@ -18,6 +18,32 @@ export class BankingBoletoService {
     return base.length > 0 && token.length > 0;
   }
 
+  async testConnection(): Promise<{ ok: boolean; message: string; latencyMs?: number }> {
+    if (!this.isConfigured()) {
+      return { ok: false, message: 'Banking API não configurada (modo sandbox)' };
+    }
+    const baseUrl = this.config.get<string>('banking.apiBaseUrl', { infer: true })!;
+    const start = Date.now();
+    try {
+      const res = await fetch(`${baseUrl.replace(/\/$/, '')}/health`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(10_000),
+      });
+      return {
+        ok: res.ok,
+        message: res.ok ? 'Banking API acessível' : `Banking API HTTP ${res.status}`,
+        latencyMs: Date.now() - start,
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        message: (e as Error).message,
+        latencyMs: Date.now() - start,
+      };
+    }
+  }
+
   private sandboxResult(fatura: Fatura, vencimento: Date): BoletoRegistroResult {
     const base = this.config.get<string>('banking.sandboxPublicBaseUrl', { infer: true }) ?? '/portal/financeiro';
     const ref = fatura.id.slice(0, 8).toUpperCase();

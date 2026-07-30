@@ -52,7 +52,7 @@ export class TesourariaController {
       'Persistência em memória no processo (restart limpa dados). Migração Prisma posterior substituirá o armazenamento.',
   })
   @ApiCreatedResponse({ type: DespesaRespostaDto })
-  criarDespesa(@Body() dto: CreateDespesaDto): DespesaRespostaDto {
+  criarDespesa(@Body() dto: CreateDespesaDto): Promise<DespesaRespostaDto> {
     return this.tesouraria.createDespesa(dto);
   }
 
@@ -63,7 +63,7 @@ export class TesourariaController {
       'Lista todas as despesas com `statusEfetivo` derivado de vencimento × status persistido.',
   })
   @ApiOkResponse({ type: [DespesaRespostaDto] })
-  listarDespesas(): DespesaRespostaDto[] {
+  listarDespesas(): Promise<DespesaRespostaDto[]> {
     return this.tesouraria.listDespesas();
   }
 
@@ -71,14 +71,14 @@ export class TesourariaController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Cadastrar fornecedor (memória do processo)' })
   @ApiCreatedResponse({ type: FornecedorRespostaDto })
-  criarFornecedor(@Body() dto: CreateFornecedorDto): FornecedorRespostaDto {
+  criarFornecedor(@Body() dto: CreateFornecedorDto): Promise<FornecedorRespostaDto> {
     return this.tesouraria.createFornecedor(dto);
   }
 
   @Get('fornecedores')
   @ApiOperation({ summary: 'Listar fornecedores' })
   @ApiOkResponse({ type: [FornecedorRespostaDto] })
-  listarFornecedores(): FornecedorRespostaDto[] {
+  listarFornecedores(): Promise<FornecedorRespostaDto[]> {
     return this.tesouraria.listFornecedores();
   }
 
@@ -89,14 +89,14 @@ export class TesourariaController {
     description: '`fornecedorId` deve existir em POST /tesouraria/fornecedores.',
   })
   @ApiCreatedResponse({ type: ContratoRespostaDto })
-  criarContrato(@Body() dto: CreateContratoDto): ContratoRespostaDto {
+  criarContrato(@Body() dto: CreateContratoDto): Promise<ContratoRespostaDto> {
     return this.tesouraria.createContrato(dto);
   }
 
   @Get('contratos')
   @ApiOperation({ summary: 'Listar contratos' })
   @ApiOkResponse({ type: [ContratoRespostaDto] })
-  listarContratos(): ContratoRespostaDto[] {
+  listarContratos(): Promise<ContratoRespostaDto[]> {
     return this.tesouraria.listContratos();
   }
 
@@ -107,7 +107,7 @@ export class TesourariaController {
       'Combina despesas (inclui IMPOSTOS), parcelas mensais/anuais e contratos. Agrega pagamentos por dia/semana/mês no horizonte projetado.',
   })
   @ApiOkResponse({ type: AgendaPagamentosDto })
-  getAgenda(): AgendaPagamentosDto {
+  getAgenda(): Promise<AgendaPagamentosDto> {
     return this.tesouraria.getAgenda();
   }
 

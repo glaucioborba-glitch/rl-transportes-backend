@@ -48,7 +48,7 @@ export function portalDashboardFallbackPayload(tenantId = 'default') {
     },
     meta: {
       tenantId,
-      slasHorasProxy: null as Record<string, number> | null,
+      slasMinutosMeta: null as Record<string, number> | null,
       cacheHit: false,
       resilienceFallback: true,
     },

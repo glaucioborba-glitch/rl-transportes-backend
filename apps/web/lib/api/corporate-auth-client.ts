@@ -77,13 +77,14 @@ export function sanitizeCorporateDocumento(raw: string): string {
 
 export type StaffLoginPayload = {
   documento?: string;
+  cpf?: string;
   cpfCnpj?: string;
   password: string;
 };
 
 /** Monta body do POST /auth/login com documento sempre limpo. */
 export function buildStaffLoginBody(data: StaffLoginPayload): { documento: string; password: string } {
-  const raw = data.documento ?? data.cpfCnpj ?? "";
+  const raw = data.documento ?? data.cpf ?? data.cpfCnpj ?? "";
   return {
     documento: String(raw).replace(/\D/g, ""),
     password: data.password,

@@ -261,4 +261,13 @@ export class CreateClienteDto {
   @Min(0)
   @Max(100)
   percentualJurosAoMes?: number | null;
+
+  @ApiProperty({
+    required: false,
+    description: 'Tabela comercial de preços (billing). Null = usa tabela padrão do terminal.',
+  })
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null ? null : value))
+  @IsString()
+  tabelaPrecoId?: string | null;
 }

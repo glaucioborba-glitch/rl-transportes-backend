@@ -1,5 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConflictException } from '@nestjs/common';
 import { StatusPreFatura } from '@prisma/client';
+import { AlertService } from '../alert/alert.service';
 import { BillingRuleEngineService } from '../billing-engine/billing-rule-engine.service';
 import { ArmazenagemBillingService } from './armazenagem-billing.service';
 import { OutboxService } from '../outbox/outbox.service';
@@ -8,12 +10,14 @@ import { PrismaService } from '../prisma/prisma.service';
 describe('ArmazenagemBillingService', () => {
   let service: ArmazenagemBillingService;
   const prisma = {
-    tabelaTarifaria: { findUnique: jest.fn(), create: jest.fn() },
     preFatura: { findMany: jest.fn(), update: jest.fn(), upsert: jest.fn(), findFirst: jest.fn() },
-    patioUnidade: { findMany: jest.fn(), findFirst: jest.fn() },
+    patioUnidade: { findMany: jest.fn(), findFirst: jest.fn(), findFirstOrThrow: jest.fn() },
+    cliente: { findUnique: jest.fn().mockResolvedValue({ tenantId: 'default' }) },
+    tabelaPreco: { findFirst: jest.fn().mockResolvedValue({ regras: [{ diasFreeTime: 5 }] }) },
     $transaction: jest.fn(),
   };
   const outbox = { enqueue: jest.fn() };
+  const alerts = { fiscalIpmDown: jest.fn() };
   const ruleEngine = {
     resolvePricingForCliente: jest.fn(),
     loadContainerContext: jest.fn(),
@@ -26,9 +30,9 @@ describe('ArmazenagemBillingService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     ruleEngine.resolvePricingForCliente.mockResolvedValue({
-      source: 'LEGADO',
+      source: 'TABELA_PRECO',
+      tabelaPrecoId: 'tp1',
       regras: [],
-      legado: { freeTimeDias: 5, valorDiaria: 85, valorServicosExtras: 0 },
     });
     ruleEngine.loadContainerContext.mockResolvedValue({ tamanho: '40', tipo: 'DRY' });
     ruleEngine.evaluateForContainerCycle.mockReturnValue({
@@ -46,20 +50,20 @@ describe('ArmazenagemBillingService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: OutboxService, useValue: outbox },
         { provide: BillingRuleEngineService, useValue: ruleEngine },
+        { provide: AlertService, useValue: alerts },
       ],
     }).compile();
     service = module.get(ArmazenagemBillingService);
   });
 
   it('openPreFaturasForGateIn cria upsert por ISO do pátio', async () => {
-    prisma.tabelaTarifaria.findUnique.mockResolvedValue({ id: 't1', clienteId: 'c1' });
     prisma.patioUnidade.findMany.mockResolvedValue([{ unidadeIso: 'ABCD1234567' }]);
     prisma.preFatura.upsert.mockResolvedValue({ id: 'pf1' });
 
     const tx = {
-      tabelaTarifaria: prisma.tabelaTarifaria,
       patioUnidade: prisma.patioUnidade,
       preFatura: { ...prisma.preFatura, update: jest.fn() },
+      cliente: { findUnique: jest.fn().mockResolvedValue({ tenantId: 'default' }) },
       fatura: { findFirst: jest.fn() },
     };
     const gateInAt = new Date('2026-06-01T10:00:00.000Z');
@@ -106,7 +110,10 @@ describe('ArmazenagemBillingService', () => {
         findUnique: jest.fn().mockResolvedValue({ id: 't1', clienteId: 'c1' }),
         create: jest.fn(),
       },
-      fatura: { create: jest.fn().mockResolvedValue({ id: 'fat1' }) },
+      fatura: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'fat1' }),
+      },
     };
     await service.consolidateOnGateOut('gi1', gateOutAt, tx as never);
 
@@ -118,6 +125,23 @@ describe('ArmazenagemBillingService', () => {
     expect(outbox.enqueue).toHaveBeenCalledWith(
       tx,
       expect.objectContaining({ eventType: 'EMITIR_NFSE_BOLETO' }),
+    );
+  });
+
+  it('consolidateOnGateOut lança ConflictException se fatura já existe', async () => {
+    const gateOutAt = new Date('2026-06-10T12:00:00.000Z');
+    const tx = {
+      fatura: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'fat-existing',
+          preFatura: { containerIso: 'ABCD1234567' },
+        }),
+      },
+      preFatura: { findMany: jest.fn() },
+    };
+
+    await expect(service.consolidateOnGateOut('gi1', gateOutAt, tx as never)).rejects.toBeInstanceOf(
+      ConflictException,
     );
   });
 });

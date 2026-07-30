@@ -8,7 +8,8 @@ import { PlataformaPublicSurfaceModule } from './plataforma-integracao/plataform
 import { MobileHubModule } from './mobile-hub/mobile-hub.module';
 import { CockpitOperacoesModule } from './cockpit-operacoes/cockpit-operacoes.module';
 import { applyBaseHttpStack } from './http/http-stack';
-import { assertJwtSecretForProduction, getCorsOrigins, isProductionDeploy, isSwaggerEnabled } from './config/security.config';
+import { assertProductionEnvBoot } from './config/env-boot.validation';
+import { getCorsOrigins, isProductionDeploy, isSwaggerEnabled } from './config/security.config';
 import { createSecurityHeadersMiddleware } from './middleware/security-headers.middleware';
 import { IntrusionService } from './security-engine/intrusion.service';
 import { PrismaService } from './prisma/prisma.service';
@@ -17,7 +18,7 @@ import { initSentry } from './common/observability/sentry.init';
 
 async function bootstrap() {
   initSentry();
-  assertJwtSecretForProduction();
+  assertProductionEnvBoot();
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useWebSocketAdapter(new IoAdapter(app));
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
@@ -170,7 +171,7 @@ async function bootstrap() {
     )
     .addTag(
       'financeiro-conciliacao',
-      'Conciliação bancária (OFX/CSV), fluxo de caixa, previsibilidade e tesouraria (extratos em memória até migração)',
+      'Conciliação bancária (OFX/CSV), fluxo de caixa, previsibilidade — extratos persistidos em PostgreSQL (financeiro_extrato_lotes)',
     )
     .addTag(
       'tesouraria',

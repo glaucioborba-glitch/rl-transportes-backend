@@ -15,6 +15,11 @@ export function parseDataNascimentoPf(iso: string): Date {
   return new Date(iso);
 }
 
+function tabelaPrecoConnect(dto: CreateClienteDto): Pick<Prisma.ClienteCreateInput, 'tabelaPreco'> {
+  if (!dto.tabelaPrecoId) return {};
+  return { tabelaPreco: { connect: { id: dto.tabelaPrecoId } } };
+}
+
 /** Monta payload Prisma a partir do DTO (CPF/CNPJ já validado pelo pipe nos controllers). */
 export function clienteCreateInputFromDto(dto: CreateClienteDto): Prisma.ClienteCreateInput {
   const cpfCnpj = normalizeCpfCnpjDigits(dto);
@@ -53,6 +58,7 @@ export function clienteCreateInputFromDto(dto: CreateClienteDto): Prisma.Cliente
       responsavel: null,
       responsavelTelefone: null,
       responsavelEmail: null,
+      ...tabelaPrecoConnect(dto),
     };
   }
 
@@ -82,5 +88,6 @@ export function clienteCreateInputFromDto(dto: CreateClienteDto): Prisma.Cliente
     responsavel: dto.responsavel!.trim(),
     responsavelTelefone: dto.responsavelTelefone!.replace(/\D/g, ''),
     responsavelEmail: dto.responsavelEmail!.trim().toLowerCase(),
+    ...tabelaPrecoConnect(dto),
   };
 }

@@ -446,6 +446,12 @@ export class ClientesService {
           v == null || v === ('' as unknown) ? null : Number(v),
         );
 
+        if (updateClienteDto.tabelaPrecoId !== undefined) {
+          dadosAtualizacao.tabelaPreco = updateClienteDto.tabelaPrecoId
+            ? { connect: { id: updateClienteDto.tabelaPrecoId } }
+            : { disconnect: true };
+        }
+
         if (updateClienteDto.dataNascimento !== undefined) {
           if (tipoFinal === TipoCliente.PF) {
             const raw = String(updateClienteDto.dataNascimento).trim();

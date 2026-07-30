@@ -19,7 +19,7 @@ export class MobileHubMotoristaService {
       include: { cliente: true },
     });
     if (!sol) throw new NotFoundException('Solicitação não encontrada');
-    this.ops.add({
+    await this.ops.add({
       userId: cx.sub,
       canal: 'portaria',
       protocolo: proto,

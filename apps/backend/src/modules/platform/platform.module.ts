@@ -11,6 +11,7 @@ import { CadastrosModule } from '../../cadastros/cadastros.module';
 import { ClientesModule } from '../../clientes/clientes.module';
 import { AddressModule } from '../../common/address/address.module';
 import { ConfigCacheModule } from '../../common/cache/config-cache.module';
+import { ObjectStorageModule } from '../../common/storage/object-storage.module';
 import { winstonModuleOptions } from '../../common/logger/winston.config';
 import { ObservabilityCoreModule } from '../../common/observability/observability-core.module';
 import { PasswordPolicyModule } from '../../common/security/password-policy.module';
@@ -24,6 +25,7 @@ import { SecurityEngineModule } from '../../security-engine/security-engine.modu
 import { TenantModule } from '../../tenant/tenant.module';
 import { SuperAdminModule } from '../../super-admin/super-admin.module';
 import { BillingEngineModule } from '../../billing-engine/billing-engine.module';
+import { FeaturePhasesBootService } from '../../config/feature-phases-boot.service';
 import { SolicitacoesModule } from '../../solicitacoes/solicitacoes.module';
 import { SolicitacoesV2Module } from '../solicitacoes-v2/solicitacoes-v2.module';
 
@@ -31,6 +33,7 @@ import { SolicitacoesV2Module } from '../solicitacoes-v2/solicitacoes-v2.module'
 @Module({
   imports: [
     ObservabilityCoreModule,
+    ObjectStorageModule,
     WinstonModule.forRoot(winstonModuleOptions),
     CacheModule.register({ isGlobal: true, ttl: 300_000 }),
     ScheduleModule.forRoot(),
@@ -57,6 +60,7 @@ import { SolicitacoesV2Module } from '../solicitacoes-v2/solicitacoes-v2.module'
     SuperAdminModule,
     BillingEngineModule,
   ],
+  providers: [FeaturePhasesBootService],
   exports: [
     ObservabilityCoreModule,
     ConfigCacheModule,

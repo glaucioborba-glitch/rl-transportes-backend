@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   EstagioCobranca,
@@ -19,6 +19,7 @@ import {
 } from '../common/finance/regua-cobranca.util';
 import { NotificationEnqueueService } from '../notification/notification-enqueue.service';
 import { EmailService } from '../common/email/email.service';
+import { WhatsappService } from '../notification/whatsapp.service';
 
 const OPEN_STATUSES: StatusPagamentoFatura[] = [
   StatusPagamentoFatura.PENDENTE,
@@ -35,7 +36,7 @@ export type DunningRunResult = {
 };
 
 @Injectable()
-export class DunningProcessService {
+export class DunningProcessService implements OnModuleInit {
   private readonly logger = new Logger(DunningProcessService.name);
 
   constructor(
@@ -45,7 +46,31 @@ export class DunningProcessService {
     private readonly notifications: NotificationEnqueueService,
     private readonly email: EmailService,
     private readonly config: ConfigService,
+    private readonly whatsapp: WhatsappService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    const enabled = this.config.get<boolean>('whatsapp.enabled') === true;
+    if (!enabled) {
+      this.logger.warn(
+        'WhatsApp desabilitado. Dunning notifications serão apenas logadas. ' +
+          'Configure WHATSAPP_ENABLED=true e WHATSAPP_ACCESS_TOKEN para produção.',
+      );
+      return;
+    }
+
+    for (const template of WhatsappService.DUNNING_TEMPLATES) {
+      const status = await this.whatsapp.checkTemplateStatus(template);
+      if (!status.approved) {
+        this.logger.error(
+          `Template WhatsApp "${template}" não aprovado na Meta` +
+            (status.status ? ` (status=${status.status})` : '') +
+            (status.reason ? `: ${status.reason}` : '') +
+            '. Dunning não enviará esta notificação.',
+        );
+      }
+    }
+  }
 
   async runDunningForAllTenants(asOf = new Date()): Promise<DunningRunResult[]> {
     const tenants = await this.activeTenants.listActiveTenantIds();

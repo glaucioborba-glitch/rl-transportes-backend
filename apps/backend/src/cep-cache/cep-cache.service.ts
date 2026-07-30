@@ -42,16 +42,11 @@ export class CepCacheService {
     }
 
     const cacheKey = `${REDIS_KEY_PREFIX}${cep}`;
-    const cached = await this.redis.get(cacheKey);
+    const cached = await this.redis.safeGet<Omit<CepResponseDto, 'fromCache'>>(cacheKey);
     if (cached) {
       await this.bumpMetric('hits');
       this.emitObs('CEP_CACHE_HIT', { cep });
-      try {
-        const parsed = JSON.parse(cached) as CepResponseDto;
-        return { ...parsed, fromCache: true };
-      } catch {
-        await this.redis.del(cacheKey);
-      }
+      return { ...cached, fromCache: true };
     }
 
     await this.bumpMetric('miss');
@@ -66,7 +61,8 @@ export class CepCacheService {
     }
 
     try {
-      await this.redis.setex(cacheKey, this.ttlSec, JSON.stringify(built));
+      const toCache = { ...built, fromCache: undefined };
+      await this.redis.safeSet(cacheKey, toCache, this.ttlSec);
     } catch (e) {
       this.logger.warn(`Falha ao gravar cache CEP ${cep}: ${(e as Error).message}`);
     }

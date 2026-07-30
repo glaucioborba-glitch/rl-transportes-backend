@@ -37,6 +37,18 @@ export class OutboxService {
     return tx.outboxEvent.create({ data: { ...data, status: OutboxEventStatus.PENDING } });
   }
 
+  /** Enfileira fora de transação operacional (ex.: event listeners). */
+  enqueueStandalone(data: {
+    aggregateType: string;
+    aggregateId: string;
+    eventType: string;
+    payload: Prisma.InputJsonValue;
+  }) {
+    return this.prisma.outboxEvent.create({
+      data: { ...data, status: OutboxEventStatus.PENDING },
+    });
+  }
+
   /**
    * Claim atômico com FOR UPDATE SKIP LOCKED — seguro para múltiplas instâncias Nest.
    */

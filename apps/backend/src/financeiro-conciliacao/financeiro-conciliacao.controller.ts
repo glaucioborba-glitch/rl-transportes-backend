@@ -52,7 +52,7 @@ export class FinanceiroConciliacaoController {
   @ApiOperation({
     summary: 'Importar extrato OFX ou CSV',
     description:
-      'Normaliza lançamentos em memória (sem persistir arquivo bruto). Formatos: OFX (subset STMTTRN) ou CSV com colunas data,valor,historico[,tipo][,documento].',
+      'Normaliza lançamentos e persiste em PostgreSQL (financeiro_extrato_lotes). Formatos: OFX (subset STMTTRN) ou CSV com colunas data,valor,historico[,tipo][,documento].',
   })
   @ApiOkResponse({ type: ExtratoImportarRespostaDto })
   importarExtrato(@Body() dto: ExtratoImportarDto): Promise<ExtratoImportarRespostaDto> {
@@ -60,9 +60,9 @@ export class FinanceiroConciliacaoController {
   }
 
   @Get('extratos/listar')
-  @ApiOperation({ summary: 'Listar lotes de extratos importados (memória do processo).' })
+  @ApiOperation({ summary: 'Listar lotes de extratos importados (PostgreSQL).' })
   @ApiOkResponse({ type: [ExtratoLoteListaDto] })
-  listarExtratos(@Query() query: ExtratoListarQueryDto): ExtratoLoteListaDto[] {
+  listarExtratos(@Query() query: ExtratoListarQueryDto): Promise<ExtratoLoteListaDto[]> {
     return this.financeiroConciliacaoService.listarExtratos(query.batchId);
   }
 

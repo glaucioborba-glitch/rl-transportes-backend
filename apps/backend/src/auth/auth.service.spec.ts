@@ -12,9 +12,12 @@ import { RedisService } from '../redis/redis.service';
 import { SessionService } from './session/session.service';
 import { DeviceService } from './session/device.service';
 import { LoginTelemetryService } from '../security-center/login-telemetry.service';
+import { TenantConfigService } from '../tenant/tenant-config.service';
 
 /** CNPJ válido (testes) — mesmo formato armazenado em `User.cpfCnpj`. */
 const DOC_TEST = '11000000000108';
+const CPF_TEST = '52998224725';
+const CPF_STORED = '00052998224725';
 const TENANT_TEST = 'default';
 const BF_KEY = `brute_force:login:${TENANT_TEST}:${DOC_TEST}`;
 
@@ -97,6 +100,21 @@ describe('AuthService', () => {
         {
           provide: LoginTelemetryService,
           useValue: { record: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
+          provide: TenantConfigService,
+          useValue: {
+            getParametrosSeguranca: jest.fn().mockResolvedValue({
+              tentativasLoginAntesBloqueio: 5,
+              duracaoBloqueioMin: 15,
+              ttlSessaoHoras: 8,
+            }),
+            getParametrosSegurancaSync: jest.fn().mockReturnValue({
+              tentativasLoginAntesBloqueio: 5,
+              duracaoBloqueioMin: 15,
+              ttlSessaoHoras: 8,
+            }),
+          },
         },
       ],
     }).compile();
@@ -250,6 +268,49 @@ describe('AuthService', () => {
     expect(prisma.user.findUnique).toHaveBeenCalledWith({
       where: { tenantId_cpfCnpj: { tenantId: TENANT_TEST, cpfCnpj: '11000000000108' } },
     });
+  });
+
+  it('login rejeita perfil CLIENTE (somente intranet staff)', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'c1',
+      cpfCnpj: CPF_STORED,
+      email: 'cliente@rl.com',
+      password: await bcrypt.hash('ok', 4),
+      role: Role.CLIENTE,
+      tokenVersion: 0,
+      tenantId: TENANT_TEST,
+      clienteId: 'cli-1',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await expect(service.login(TENANT_TEST, CPF_TEST, 'ok')).rejects.toThrow(
+      /Acesso restrito a colaboradores/i,
+    );
+  });
+
+  it('login staff registra auditoria LOGIN_INTRANET com CPF mascarado', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'admin-1',
+      cpfCnpj: CPF_STORED,
+      email: 'admin@rl.com',
+      password: await bcrypt.hash('ok', 4),
+      role: Role.ADMIN,
+      tokenVersion: 0,
+      tenantId: TENANT_TEST,
+      clienteId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await service.login(TENANT_TEST, '529.982.247-25', 'ok');
+    expect(auditoria.registrar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dadosDepois: expect.objectContaining({
+          event: 'LOGIN_INTRANET',
+          cpfMascarado: '529.982.247-25',
+          role: Role.ADMIN,
+        }),
+      }),
+    );
   });
 
   it('logout incrementa tokenVersion em transação e registra auditoria', async () => {

@@ -1,16 +1,10 @@
-import { IsIn, IsNotEmpty, IsString, MaxLength } from 'class-validator';
-
-export const CONDICOES_PAGAMENTO_CADASTRO = ['FATURAMENTO', 'AVISTA_PIX'] as const;
-
-// TODO FASE 02: Substituir opções fixas por tabela CondicaoPagamentoPersonalizada
-
-export type CondicaoPagamentoCadastro = (typeof CONDICOES_PAGAMENTO_CADASTRO)[number];
+import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
 export class AprovarCadastroFinanceiroDto {
   @IsString()
   @IsNotEmpty()
-  @IsIn([...CONDICOES_PAGAMENTO_CADASTRO])
-  condicaoPagamento!: CondicaoPagamentoCadastro;
+  @MaxLength(64)
+  condicaoPagamento!: string;
 }
 
 export class RejeitarCadastroFinanceiroDto {

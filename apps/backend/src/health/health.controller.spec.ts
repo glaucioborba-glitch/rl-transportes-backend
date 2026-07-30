@@ -6,7 +6,9 @@ import {
 } from '@nestjs/terminus';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { CronAlertService } from '../common/cron/cron-alert.service';
 import { HealthController } from './health.controller';
+import { DbHealthService } from './db-health.service';
 import { PrismaHealthIndicator } from './indicators/prisma.health';
 import { RedisHealthIndicator } from './indicators/redis.health';
 import { IpmHealthIndicator } from './indicators/ipm.health';
@@ -35,6 +37,17 @@ describe('HealthController', () => {
         { provide: IpmHealthIndicator, useValue: { ping: jest.fn() } },
         { provide: PrismaService, useValue: { $queryRaw: jest.fn() } },
         { provide: RedisService, useValue: { ping: jest.fn() } },
+        { provide: CronAlertService, useValue: { getStatuses: jest.fn().mockResolvedValue({}) } },
+        {
+          provide: DbHealthService,
+          useValue: {
+            checkConnection: jest.fn().mockResolvedValue({
+              status: 'healthy',
+              latencyMs: 5,
+              activeConnections: 3,
+            }),
+          },
+        },
       ],
     }).compile();
     return module.get(HealthController);

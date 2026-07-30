@@ -106,7 +106,22 @@ async function createGateSolicitacao(input: GateSolicitacaoInput, operadorId: st
     },
   });
 
-  if (!input.withGateChain) return sol;
+  if (!input.withGateChain) {
+    const anexoCount = await prisma.solicitacaoAnexo.count({ where: { solicitacaoId: sol.id } });
+    if (anexoCount === 0) {
+      await prisma.solicitacaoAnexo.create({
+        data: {
+          solicitacaoId: sol.id,
+          filename: 'seed-cte.pdf',
+          mimeType: 'application/pdf',
+          size: 1024,
+          urlS3: 'local://seed/cte.pdf',
+          expiresAt: new Date(Date.now() + 365 * 86400000),
+        },
+      });
+    }
+    return sol;
+  }
 
   await prisma.portaria.upsert({
     where: { solicitacaoId: sol.id },

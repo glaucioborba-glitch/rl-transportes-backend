@@ -7,15 +7,20 @@ import {
   sanitizeAuditPayload,
   type AuditCaptureInput,
 } from './audit-trail-narrative.util';
+import type { AuditedPrismaModel } from './audit-trail.models';
 
 type ExtendedClient = PrismaClient;
 
 export async function resolveContainerIso(
   client: ExtendedClient,
-  model: 'Fatura' | 'Solicitacao' | 'BloqueioContainer',
+  model: AuditedPrismaModel,
   record: Record<string, unknown> | null,
 ): Promise<string | null> {
   if (!record) return null;
+
+  if (model === 'PreFatura') {
+    return (record.containerIso as string | undefined) ?? null;
+  }
 
   if (model === 'Fatura') {
     const preFaturaId = record.preFaturaId as string | undefined;
@@ -29,8 +34,28 @@ export async function resolveContainerIso(
     return null;
   }
 
+  if (model === 'Boleto' || model === 'NfsEmitida') {
+    const faturamentoId = record.faturamentoId as string | undefined;
+    if (!faturamentoId) return null;
+    const link = await client.faturamentoSolicitacao.findFirst({
+      where: { faturamentoId },
+      select: { solicitacaoId: true },
+    });
+    if (!link?.solicitacaoId) return null;
+    const unidade = await client.unidade.findFirst({
+      where: { solicitacaoId: link.solicitacaoId },
+      select: { numeroIso: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return unidade?.numeroIso ?? null;
+  }
+
   const solicitacaoId =
-    model === 'Solicitacao' ? (record.id as string) : (record.solicitacaoId as string | undefined);
+    model === 'Solicitacao'
+      ? (record.id as string)
+      : model === 'BloqueioContainer'
+        ? (record.solicitacaoId as string | undefined)
+        : undefined;
 
   if (!solicitacaoId) return null;
 
@@ -80,7 +105,7 @@ export async function appendAuditTrailEntry(
 export async function captureModelMutation(
   client: ExtendedClient,
   actor: AuditContextState,
-  model: 'Fatura' | 'Solicitacao' | 'BloqueioContainer',
+  model: AuditedPrismaModel,
   operation: 'update' | 'delete',
   before: Record<string, unknown> | null,
   after: Record<string, unknown> | null,

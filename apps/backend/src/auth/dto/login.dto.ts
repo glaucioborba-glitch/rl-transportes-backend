@@ -1,19 +1,27 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsOptional, IsString, Length, MinLength } from 'class-validator';
 import { sanitizeDocumentoInput } from '../../common/utils/login-documento.util';
 
 export class LoginDto {
-  @ApiProperty({ example: '04252011000110', description: 'CPF ou CNPJ (somente dígitos após normalização no servidor)' })
+  @ApiProperty({
+    example: '52998224725',
+    description: 'CPF do funcionário (11 dígitos, somente números após normalização)',
+  })
   @Type(() => String)
-  @Transform(({ obj }) => sanitizeDocumentoInput(obj?.documento ?? obj?.cpfCnpj ?? ''))
+  @Transform(({ obj }) => sanitizeDocumentoInput(obj?.documento ?? obj?.cpf ?? obj?.cpfCnpj ?? ''))
   @IsString()
-  @MinLength(10)
-  @MaxLength(14)
+  @Length(11, 11, { message: 'CPF deve conter exatamente 11 dígitos' })
   documento!: string;
 
+  /** Alias API — normalizado para `documento`. */
+  @ApiProperty({ required: false, example: '52998224725' })
+  @IsOptional()
+  @IsString()
+  cpf?: string;
+
   /** Alias legado — normalizado para `documento` pelo pipe/DTO. */
-  @ApiProperty({ required: false, example: '04252011000110' })
+  @ApiProperty({ required: false, example: '52998224725' })
   @IsOptional()
   @IsString()
   cpfCnpj?: string;
@@ -30,6 +38,6 @@ export class LoginDto {
   })
   @IsOptional()
   @IsString()
-  @MaxLength(64)
+  @Length(1, 64)
   tenantId?: string;
 }

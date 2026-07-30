@@ -78,4 +78,12 @@ export class AgendamentosController {
   ) {
     return this.agendamentos.reprovarTriagem(id, dto.motivo, user.id);
   }
+
+  @Post(':id/cancelar')
+  @ApiOperation({ summary: 'Cancelar agendamento (com registro de cancelamento tardio)' })
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_PORTARIA)
+  @Permissions('agendamentos:criar')
+  cancelar(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.agendamentos.cancelar(id, user.id);
+  }
 }

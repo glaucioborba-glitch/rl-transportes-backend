@@ -225,9 +225,15 @@ export class SolicitacoesService {
     etapa: 'PORTARIA' | 'GATE' | 'PATIO' | 'SAIDA',
     actorUserId: string,
   ) {
-    const ok =
+    const okPortaria =
       solicitacao.status === StatusSolicitacao.APROVADO ||
-      solicitacao.status === StatusSolicitacao.EM_EXECUCAO;
+      solicitacao.status === StatusSolicitacao.EM_EXECUCAO ||
+      solicitacao.status === StatusSolicitacao.AGUARDANDO_GATE_IN;
+    const ok =
+      etapa === 'PORTARIA'
+        ? okPortaria
+        : solicitacao.status === StatusSolicitacao.APROVADO ||
+          solicitacao.status === StatusSolicitacao.EM_EXECUCAO;
     if (!ok) {
       await registrarViolacaoSequenciaOperacional(this.auditoria, { usuario: actorUserId }, {
         solicitacaoId: solicitacao.id,

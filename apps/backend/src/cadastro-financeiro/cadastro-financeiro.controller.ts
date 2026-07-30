@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
@@ -17,6 +8,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { CadastroFinanceiroService } from './cadastro-financeiro.service';
+import { CondicaoPagamentoService } from './condicao-pagamento.service';
 import {
   AprovarCadastroFinanceiroDto,
   RejeitarCadastroFinanceiroDto,
@@ -27,7 +19,18 @@ import {
 @Controller('financeiro/cadastros-pendentes')
 @UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
 export class CadastroFinanceiroController {
-  constructor(private readonly cadastroFinanceiro: CadastroFinanceiroService) {}
+  constructor(
+    private readonly cadastroFinanceiro: CadastroFinanceiroService,
+    private readonly condicoes: CondicaoPagamentoService,
+  ) {}
+
+  @Get('condicoes-pagamento')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('cadastro-financeiro:analisar')
+  @ApiOperation({ summary: 'Opções de condição de pagamento do tenant (dinâmico)' })
+  listarCondicoes() {
+    return this.condicoes.listarAtivas();
+  }
 
   @Get()
   @Roles(Role.ADMIN, Role.GERENTE)
