@@ -376,10 +376,13 @@ export function TabelaPrecoForm({ tabelaId }: Props) {
       </FormSection>
 
       <FormSection title={`Matriz Armazenagem (${matriz.length})`} icon={Layers}>
-        <div className="mb-3 flex gap-2">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           <Button type="button" variant="outline" size="sm" onClick={gerarMatriz}>
             Gerar combinações MDM
           </Button>
+          <span className="text-xs text-muted-foreground">
+            Usa tipos ativos e tamanhos cadastrados em Operacional → Tipos de Contêiner.
+          </span>
         </div>
         <TabelaPrecoMatrixGrid items={matriz} onChange={setMatriz} />
       </FormSection>

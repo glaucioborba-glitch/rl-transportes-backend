@@ -14,8 +14,24 @@ import {
   type CadastrosTipoContainer,
 } from "@/lib/api/cadastros-tipos-container-client";
 import { toast } from "@/lib/toast";
+import {
+  TAMANHOS_CONTAINER_OPCOES,
+  normalizeTamanhoContainer,
+  normalizeTamanhosContainer,
+  tamanhoContainerSelecionado,
+} from "@/lib/cadastros/tipo-container-tamanhos";
 
-const TAMANHOS_OPCOES = ["20", "40", "45"];
+function pickTipoContainerPayload(
+  data: Omit<CadastrosTipoContainer, "id"> | CadastrosTipoContainer,
+): Omit<CadastrosTipoContainer, "id"> {
+  return {
+    codigo: data.codigo,
+    nome: data.nome,
+    tamanhos: normalizeTamanhosContainer(data.tamanhos),
+    tomadaReefer: data.tomadaReefer ?? false,
+    ativo: data.ativo ?? true,
+  };
+}
 
 type Props = {
   tipoId?: string;
@@ -39,7 +55,7 @@ export function TipoContainerForm({ tipoId }: Props) {
     void (async () => {
       try {
         const data = await getCadastrosTipoContainer(tipoId);
-        if (on) setFormData(data);
+        if (on) setFormData(pickTipoContainerPayload(data));
       } catch {
         toast.error("Erro ao carregar tipo.");
       } finally {
@@ -59,11 +75,12 @@ export function TipoContainerForm({ tipoId }: Props) {
     }
     setSaving(true);
     try {
+      const payload = pickTipoContainerPayload(formData);
       if (tipoId) {
-        await updateCadastrosTipoContainer(tipoId, formData);
+        await updateCadastrosTipoContainer(tipoId, payload);
         toast.success("Tipo atualizado!");
       } else {
-        await createCadastrosTipoContainer(formData);
+        await createCadastrosTipoContainer(payload);
         toast.success("Tipo cadastrado!");
       }
       router.push("/cadastros/operacional/tipos-container");
@@ -106,21 +123,25 @@ export function TipoContainerForm({ tipoId }: Props) {
           </FormField>
           <FormField label="Tamanhos Aceitos" className="md:col-span-2">
             <div className="flex flex-wrap gap-3">
-              {TAMANHOS_OPCOES.map((tam) => (
+              {TAMANHOS_CONTAINER_OPCOES.map((tam) => (
                 <label key={tam} className="flex cursor-pointer items-center gap-2 text-sm">
                   <input
                     type="checkbox"
-                    checked={formData.tamanhos.includes(tam)}
+                    checked={tamanhoContainerSelecionado(formData.tamanhos, tam)}
                     onChange={(e) => {
                       if (e.target.checked) {
                         setFormData((prev) => ({
                           ...prev,
-                          tamanhos: [...prev.tamanhos, tam],
+                          tamanhos: normalizeTamanhosContainer([...prev.tamanhos, tam]),
                         }));
                       } else {
                         setFormData((prev) => ({
                           ...prev,
-                          tamanhos: prev.tamanhos.filter((t) => t !== tam),
+                          tamanhos: normalizeTamanhosContainer(
+                            prev.tamanhos.filter(
+                              (t) => normalizeTamanhoContainer(t) !== tam,
+                            ),
+                          ),
                         }));
                       }
                     }}

@@ -17,25 +17,18 @@ import { PricingSyncService } from '../pricing-sync/pricing-sync.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 import {
-
+  formatTamanhoContainerMatrix,
+  normalizeTamanhosContainer,
+} from './tipo-container-tamanhos.util';
+import {
   CadastrosTabelaPrecoFormDto,
-
   CadastrosTabelaPrecoItemDto,
-
 } from './dto/cadastros-tabela-preco-form.dto';
 
-
-
 const DEFAULT_TENANT = 'default';
-
-const TAMANHOS_PADRAO = ["20'", "40'", "45'"] as const;
-
 const STATUS_ARMAZENAGEM = ['CHEIO', 'VAZIO'] as const;
 
-
-
 @Injectable()
-
 export class CadastrosTabelasPrecosService {
 
   constructor(
@@ -135,87 +128,37 @@ export class CadastrosTabelasPrecosService {
 
 
   async gerarMatrizCombinacoes() {
-
-    const [tipos, capacidades] = await Promise.all([
-
-      this.prisma.cadastroTipoContainer.findMany({
-
-        where: { tenantId: DEFAULT_TENANT, deletedAt: null, ativo: true },
-
-        orderBy: { codigo: 'asc' },
-
-      }),
-
-      this.prisma.cadastroCapacidadeContainer.findMany({
-
-        where: { tenantId: DEFAULT_TENANT, deletedAt: null, ativo: true },
-
-        orderBy: { codigo: 'asc' },
-
-      }),
-
-    ]);
-
-
+    const tipos = await this.prisma.cadastroTipoContainer.findMany({
+      where: { tenantId: DEFAULT_TENANT, deletedAt: null, ativo: true },
+      orderBy: { codigo: 'asc' },
+    });
 
     const items: CadastrosTabelaPrecoItemDto[] = [];
 
     for (const tipo of tipos) {
+      const tamanhos = normalizeTamanhosContainer(tipo.tamanhos);
+      if (!tamanhos.length) continue;
 
-      const caps =
-
-        tipo.codigo === 'DRY' && capacidades.length
-
-          ? capacidades
-
-          : [{ codigo: null as string | null }];
-
-
-
-      for (const cap of caps) {
-
-        for (const tamanho of TAMANHOS_PADRAO) {
-
-          for (const status of STATUS_ARMAZENAGEM) {
-
-            items.push({
-
-              categoriaItem: 'ARMAZENAGEM',
-
-              tipoOperacaoCodigo: 'ARMAZENAGEM',
-
-              tipoContainerCodigo: tipo.codigo,
-
-              capacidadeCodigo: cap.codigo ?? undefined,
-
-              containerTamanho: tamanho,
-
-              statusContainer: status,
-
-              valor: 0,
-
-              valorHandling: 150,
-
-              freeTimeDias: 7,
-
-              faixasDiaria: FAIXAS_DIARIA_PADRAO.map((f) => ({ ...f })),
-
-              tarifaEnergiaReeferDiaria: tipo.tomadaReefer ? 45 : undefined,
-
-            });
-
-          }
-
+      for (const tamanho of tamanhos) {
+        const containerTamanho = formatTamanhoContainerMatrix(tamanho);
+        for (const status of STATUS_ARMAZENAGEM) {
+          items.push({
+            categoriaItem: 'ARMAZENAGEM',
+            tipoOperacaoCodigo: 'ARMAZENAGEM',
+            tipoContainerCodigo: tipo.codigo,
+            containerTamanho,
+            statusContainer: status,
+            valor: 0,
+            valorHandling: 150,
+            freeTimeDias: 7,
+            faixasDiaria: FAIXAS_DIARIA_PADRAO.map((f) => ({ ...f })),
+            tarifaEnergiaReeferDiaria: tipo.tomadaReefer ? 45 : undefined,
+          });
         }
-
       }
-
     }
 
-
-
     return { items, total: items.length };
-
   }
 
 

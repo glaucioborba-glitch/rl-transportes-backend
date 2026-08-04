@@ -40,7 +40,8 @@ export function TabelaPrecoMatrixGrid({ items, onChange }: Props) {
   if (!items.length) {
     return (
       <p className="text-sm text-muted-foreground">
-        Use &quot;Gerar combinações MDM&quot; para montar a matriz Tipo × Capacidade × Tamanho × Status.
+        Use &quot;Gerar combinações MDM&quot; para montar linhas a partir dos tipos e tamanhos
+        cadastrados em Tipos de Contêiner (Tipo × Tamanho × Status).
       </p>
     );
   }

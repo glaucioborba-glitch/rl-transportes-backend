@@ -9,6 +9,7 @@ import { AuditoriaService } from '../auditoria/auditoria.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CadastrosTipoContainerFormDto } from './dto/cadastros-tipo-container-form.dto';
 import { CadastrosTipoContainerQueryDto } from './dto/cadastros-tipo-container-query.dto';
+import { normalizeTamanhosContainer } from './tipo-container-tamanhos.util';
 
 @Injectable()
 export class CadastrosTiposContainerService {
@@ -51,7 +52,7 @@ export class CadastrosTiposContainerService {
       data: {
         codigo,
         nome: dto.nome.trim(),
-        tamanhos: dto.tamanhos ?? [],
+        tamanhos: normalizeTamanhosContainer(dto.tamanhos),
         tomadaReefer: dto.tomadaReefer ?? false,
         ativo: dto.ativo ?? true,
       },
@@ -72,7 +73,7 @@ export class CadastrosTiposContainerService {
       data: {
         codigo,
         nome: dto.nome.trim(),
-        tamanhos: dto.tamanhos ?? [],
+        tamanhos: normalizeTamanhosContainer(dto.tamanhos),
         tomadaReefer: dto.tomadaReefer ?? false,
         ativo: dto.ativo ?? true,
         deletedAt: dto.ativo === false ? new Date() : null,
@@ -99,7 +100,7 @@ export class CadastrosTiposContainerService {
       id: row.id,
       codigo: row.codigo,
       nome: row.nome,
-      tamanhos: Array.isArray(row.tamanhos) ? row.tamanhos : [],
+      tamanhos: normalizeTamanhosContainer(row.tamanhos),
       tomadaReefer: row.tomadaReefer,
       ativo: row.ativo,
     };

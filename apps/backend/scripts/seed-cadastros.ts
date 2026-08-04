@@ -20,11 +20,11 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
   };
 
   const tipos = [
-    { codigo: 'DRY', nome: 'Dry Standard (latão)', tamanhos: ["20'", "40'", "45'"], tomadaReefer: false, ativo: true },
-    { codigo: 'REEFER', nome: 'Reefer (Refrigerado)', tamanhos: ["20'", "40'"], tomadaReefer: true, ativo: true },
-    { codigo: 'OT', nome: 'Open Top', tamanhos: ["20'", "40'"], tomadaReefer: false, ativo: true },
-    { codigo: 'FR', nome: 'Flat Rack', tamanhos: ["20'", "40'"], tomadaReefer: false, ativo: true },
-    { codigo: 'TANK', nome: 'Tank', tamanhos: ["20'"], tomadaReefer: false, ativo: true },
+    { codigo: 'DRY', nome: 'Dry Standard (latão)', tamanhos: ['20', '40', '45'], tomadaReefer: false, ativo: true },
+    { codigo: 'REEFER', nome: 'Reefer (Refrigerado)', tamanhos: ['20', '40'], tomadaReefer: true, ativo: true },
+    { codigo: 'OT', nome: 'Open Top', tamanhos: ['20', '40'], tomadaReefer: false, ativo: true },
+    { codigo: 'FR', nome: 'Flat Rack', tamanhos: ['20', '40'], tomadaReefer: false, ativo: true },
+    { codigo: 'TANK', nome: 'Tank', tamanhos: ['20'], tomadaReefer: false, ativo: true },
   ];
 
   for (const tipo of tipos) {

@@ -9,6 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useWidgetData, WidgetError } from "@/components/ui/widget-error";
 import { listCadastrosTiposContainer } from "@/lib/api/cadastros-tipos-container-client";
+import {
+  formatTamanhoContainerDisplay,
+  normalizeTamanhosContainer,
+} from "@/lib/cadastros/tipo-container-tamanhos";
 import { canDo } from "@/lib/cadastros/permission-matrix";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 
@@ -119,9 +123,9 @@ export default function TiposContainerListPage() {
                   </td>
                   <td className="p-4">
                     <div className="flex flex-wrap gap-1">
-                      {(tipo.tamanhos || []).map((tam) => (
+                      {normalizeTamanhosContainer(tipo.tamanhos).map((tam) => (
                         <Badge key={tam} variant="neutral" className="text-xs">
-                          {tam}
+                          {formatTamanhoContainerDisplay(tam)}
                         </Badge>
                       ))}
                     </div>
