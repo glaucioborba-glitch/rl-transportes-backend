@@ -1,4 +1,4 @@
-/** GRC Compliance — persistência em memória até migração Prisma. */
+/** GRC Compliance — persistência PostgreSQL (PR-001). */
 
 export type CategoriaRisco =
   | 'operacional'

@@ -10,7 +10,9 @@ describe('FaturamentoService', () => {
   const auditoria = { registrar: jest.fn() };
   const nfse = { emitirNfse: jest.fn(), cancelarNfse: jest.fn() };
 
-  const service = new FaturamentoService(prisma as never, auditoria as never, nfse as never);
+  const holdRelease = { assertNoActiveHold: jest.fn() };
+
+  const service = new FaturamentoService(prisma as never, auditoria as never, nfse as never, holdRelease as never);
 
   const admin = {
     role: Role.ADMIN,
@@ -90,7 +92,7 @@ describe('FaturamentoService', () => {
 
   it('listBoletosPortal nega sem clienteId', async () => {
     const prismaB = { boleto: { findMany: jest.fn(), count: jest.fn() } };
-    const svc = new FaturamentoService(prismaB as never, auditoria as never, nfse as never);
+    const svc = new FaturamentoService(prismaB as never, auditoria as never, nfse as never, holdRelease as never);
     await expect(svc.listBoletosPortal({ page: 1, limit: 10 }, cliente as never)).rejects.toThrow(
       ForbiddenException,
     );

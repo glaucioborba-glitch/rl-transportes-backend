@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
 import { toast } from "@/lib/toast";
+import { OperationCardIdentity } from "@/components/shared/operation-identity";
 import { YardGrid, type YardBucket } from "@/components/operador/yard-grid";
 import { MovimentacaoModal } from "@/components/operador/movimentacao-modal";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -140,7 +141,7 @@ export default function PatioPage() {
               className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-black/30 px-3 py-3"
             >
               <div>
-                <p className="font-mono text-white">{it.protocolo}</p>
+                <OperationCardIdentity isos={[]} protocolo={it.protocolo} size="md" />
                 <p className="text-xs text-slate-500">{it.n} un.</p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -173,7 +174,7 @@ export default function PatioPage() {
               className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 py-3 last:border-0"
             >
               <div>
-                <p className="font-mono text-white">{it.protocolo}</p>
+                <OperationCardIdentity isos={[]} protocolo={it.protocolo} size="md" />
                 <p className="text-xs text-slate-500">
                   Quadra: {it.quadra ?? "—"} · {it.quantidadeUnidades ?? 0} un.
                 </p>
@@ -208,7 +209,7 @@ export default function PatioPage() {
             </p>
             {fila.slice(0, 8).map((it) => (
               <div key={it.solicitacaoId} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <span className="font-mono text-slate-200">{it.protocolo}</span>
+                <OperationCardIdentity isos={[]} protocolo={it.protocolo} size="sm" />
                 <Button type="button" className="min-h-12 shrink-0" onClick={() => void registrarSaida(it.solicitacaoId)}>
                   Registrar saída
                 </Button>

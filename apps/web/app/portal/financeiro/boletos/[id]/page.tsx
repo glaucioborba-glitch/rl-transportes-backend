@@ -73,8 +73,38 @@ export default function BoletoDetailPage() {
             <RawStatusBadge label={st} variant={boletoStatusVariant(st)} />
           </div>
           <p className="text-xs text-slate-600">
-            Schema atual não expõe linha digitável nem PDF; use o número para conciliação.
+            {b.linkPdf
+              ? "Use os botões abaixo para abrir o PDF ou copiar o PIX."
+              : "Schema legado pode não expor PDF; use o número para conciliação."}
           </p>
+          <div className="flex flex-wrap gap-2 pt-1">
+            {b.linkPdf ? (
+              <Button variant="outline" asChild>
+                <a href={String(b.linkPdf)} target="_blank" rel="noopener noreferrer">
+                  Abrir PDF do boleto
+                </a>
+              </Button>
+            ) : null}
+            {b.pixCopiaCola ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  void navigator.clipboard.writeText(String(b.pixCopiaCola));
+                  toast.success("PIX copiado");
+                }}
+              >
+                Copiar PIX
+              </Button>
+            ) : null}
+            {b.pixQrCodeUrl ? (
+              <Button variant="outline" asChild>
+                <a href={String(b.pixQrCodeUrl)} target="_blank" rel="noopener noreferrer">
+                  QR Code PIX
+                </a>
+              </Button>
+            ) : null}
+          </div>
           <Button type="button" variant="outline" onClick={() => copyLinha()}>
             Copiar número do boleto
           </Button>

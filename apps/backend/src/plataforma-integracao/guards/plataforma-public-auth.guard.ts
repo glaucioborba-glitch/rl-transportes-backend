@@ -31,7 +31,7 @@ export class PlataformaPublicAuthGuard implements CanActivate {
     private readonly reflector: Reflector,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<PlataformaHttpReq>();
     const rawKey = req.headers['x-public-api-key'] ?? req.headers['X-Public-Api-Key'];
     const rawSec =
@@ -47,7 +47,7 @@ export class PlataformaPublicAuthGuard implements CanActivate {
       });
     }
 
-    const client = this.clients.obterPorApiKey(apiKey);
+    const client = await this.clients.obterPorApiKey(apiKey);
     if (!client || !client.enabled) {
       this.consumo.registrarIncidente('auth_falha', 'API Key inválida ou desativada');
       throw new UnauthorizedException({

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, StatusIpm, StatusPagamento, StatusSolicitacao } from '@prisma/client';
+import { Prisma, StatusIpm, StatusSolicitacao } from '@prisma/client';
+import { BOLETO_STATUS } from '../common/finance/boleto-status.constants';
 import {
   areasCriticasDeIncidentes,
   calcularIndicesCertificacao,
@@ -40,8 +41,8 @@ export class GrcComplianceService {
     private readonly config: ConfigService,
   ) {}
 
-  createRisco(dto: CreateRiscoGrcDto): RiscoGrcRespostaDto {
-    const e = this.store.createRisco({
+  async createRisco(dto: CreateRiscoGrcDto): Promise<RiscoGrcRespostaDto> {
+    const e = await this.store.createRisco({
       titulo: dto.titulo.trim(),
       descricao: dto.descricao.trim(),
       categoria: dto.categoria,
@@ -55,13 +56,14 @@ export class GrcComplianceService {
     return { ...e };
   }
 
-  listRiscos(): RiscoGrcRespostaDto[] {
-    return this.store.listRiscos().map((r) => ({ ...r }));
+  async listRiscos(): Promise<RiscoGrcRespostaDto[]> {
+    const rows = await this.store.listRiscos();
+    return rows.map((r) => ({ ...r }));
   }
 
-  createControle(dto: CreateControleGrcDto): ControleGrcRespostaDto {
-    this.store.assertRiscoExists(dto.riscoRelacionadoId);
-    const e = this.store.createControle({
+  async createControle(dto: CreateControleGrcDto): Promise<ControleGrcRespostaDto> {
+    await this.store.assertRiscoExists(dto.riscoRelacionadoId);
+    const e = await this.store.createControle({
       nomeControle: dto.nomeControle.trim(),
       riscoRelacionadoId: dto.riscoRelacionadoId,
       frequencia: dto.frequencia,
@@ -72,12 +74,13 @@ export class GrcComplianceService {
     return { ...e };
   }
 
-  listControles(): ControleGrcRespostaDto[] {
-    return this.store.listControles().map((c) => ({ ...c }));
+  async listControles(): Promise<ControleGrcRespostaDto[]> {
+    const rows = await this.store.listControles();
+    return rows.map((c) => ({ ...c }));
   }
 
-  createPlano(dto: CreatePlanoAcaoGrcDto): PlanoAcaoGrcRespostaDto {
-    const e = this.store.createPlano({
+  async createPlano(dto: CreatePlanoAcaoGrcDto): Promise<PlanoAcaoGrcRespostaDto> {
+    const e = await this.store.createPlano({
       what: dto.what.trim(),
       why: dto.why.trim(),
       where: dto.where.trim(),
@@ -90,8 +93,9 @@ export class GrcComplianceService {
     return { ...e };
   }
 
-  listPlanos(): PlanoAcaoGrcRespostaDto[] {
-    return this.store.listPlanos().map((p) => ({ ...p }));
+  async listPlanos(): Promise<PlanoAcaoGrcRespostaDto[]> {
+    const rows = await this.store.listPlanos();
+    return rows.map((p) => ({ ...p }));
   }
 
   /** Somente leitura no banco; se o schema local divergir do deploy (ex.: migração pendente), retorna lista vazia. */
@@ -126,7 +130,7 @@ export class GrcComplianceService {
     }
 
     const boVenc = await this.prisma.boleto.count({
-      where: { statusPagamento: StatusPagamento.VENCIDO },
+      where: { statusPagamento: BOLETO_STATUS.VENCIDO },
     });
     if (boVenc > 0) {
       out.push({
@@ -239,15 +243,15 @@ export class GrcComplianceService {
     return this.paraAuditoriaDto(incidentesCalc);
   }
 
-  private eficaciaMediaControles(): number {
-    const ctr = this.store.listControles();
+  private async eficaciaMediaControles(): Promise<number> {
+    const ctr = await this.store.listControles();
     const med = mediaEficaciaControles(ctr.map((c) => c.eficacia));
     if (med !== null) return med;
     return this.numEnv('GRC_EFICACIA_CONTROLE_DEFAULT', 72);
   }
 
-  private pctRiscosTratados(): number {
-    const r = this.store.listRiscos();
+  private async pctRiscosTratados(): Promise<number> {
+    const r = await this.store.listRiscos();
     if (r.length === 0) return 85;
     const ok = r.filter((x) => x.status === 'mitigando' || x.status === 'controlado').length;
     return Math.round((ok / r.length) * 10000) / 100;
@@ -258,11 +262,11 @@ export class GrcComplianceService {
     return Number.isFinite(v) ? v : d;
   }
 
-  private montarGapAnalysis(scoreCompliance: number): GapAnalysisCertificacaoDto {
+  private async montarGapAnalysis(scoreCompliance: number): Promise<GapAnalysisCertificacaoDto> {
     const { indiceAderenciaISO, indiceAderenciaOEA, indiceAderenciaISPS } = calcularIndicesCertificacao({
-      eficaciaMediaControles: this.eficaciaMediaControles(),
+      eficaciaMediaControles: await this.eficaciaMediaControles(),
       scoreCompliance,
-      pctRiscosMitigadosOuControlados: this.pctRiscosTratados(),
+      pctRiscosMitigadosOuControlados: await this.pctRiscosTratados(),
     });
     const gaps = listarGapsCertificacao({
       indiceAderenciaISO,
@@ -288,14 +292,14 @@ export class GrcComplianceService {
   async getGapAnalysis(): Promise<GapAnalysisCertificacaoDto> {
     const incidentesCalc = await this.coletarIncidentesReadOnly();
     const scoreCompliance = calcularScoreCompliance(incidentesCalc);
-    return this.montarGapAnalysis(scoreCompliance);
+    return await this.montarGapAnalysis(scoreCompliance);
   }
 
   async getDashboard(): Promise<DashboardGrcDto> {
-    const riscos = this.store.listRiscos();
+    const riscos = await this.store.listRiscos();
     const mapaSeveridade = mapaRiscoCorporativoPorSeveridade(riscos.map((r) => r.severidade));
 
-    const ctr = this.store.listControles();
+    const ctr = await this.store.listControles();
     const ctrBuckets: Record<string, number> = { '0-25': 0, '26-50': 0, '51-75': 0, '76-100': 0 };
     for (const c of ctr) {
       const e = c.eficacia;
@@ -307,14 +311,14 @@ export class GrcComplianceService {
 
     const incidentesCalc = await this.coletarIncidentesReadOnly();
     const ai = this.paraAuditoriaDto(incidentesCalc);
-    const ga = this.montarGapAnalysis(ai.scoreCompliance);
+    const ga = await this.montarGapAnalysis(ai.scoreCompliance);
 
     const incidentesPorArea: Record<string, number> = {};
     for (const i of ai.incidentes) {
       incidentesPorArea[i.area] = (incidentesPorArea[i.area] ?? 0) + 1;
     }
 
-    const planos = this.store.listPlanos();
+    const planos = await this.store.listPlanos();
     const planosAtivos = planos.filter((p) => p.status !== 'concluido').length;
     const planosConcluidos = planos.filter((p) => p.status === 'concluido').length;
 

@@ -12,12 +12,12 @@ export class ObservabilidadeService {
     private readonly config: ConfigService,
   ) {}
 
-  getDashboard() {
-    const c = this.store.getContadoresGlobais();
+  async getDashboard() {
+    const c = await this.store.getContadoresGlobais();
     const disponibilidadePct =
       c.totalReq === 0 ? 100 : Math.round((c.sucesso2xx / c.totalReq) * 10000) / 100;
 
-    const buckets = this.store.getBuckets();
+    const buckets = await this.store.getBuckets();
     const porLatencia = [...buckets]
       .map((b) => ({
         rota: b.rotaNormalizada,
@@ -27,7 +27,7 @@ export class ObservabilidadeService {
       .sort((a, b) => b.latenciaMediaMs - a.latenciaMediaMs)
       .slice(0, 15);
 
-    const logsRecent = this.store.listLogs({ limit: 500 });
+    const logsRecent = await this.store.listLogs({ limit: 500 });
     const custoPorOrigem: Record<string, { duracaoMsSum: number; n: number }> = {};
     for (const l of logsRecent) {
       const o = l.origem;
@@ -71,6 +71,7 @@ export class ObservabilidadeService {
     };
 
     return {
+      backend: this.store.isRedisBackendActive() ? 'redis' : 'in-memory',
       disponibilidadeApiPct: disponibilidadePct,
       totaisRequisicoes: c,
       rotasMaisLentas: porLatencia,
@@ -85,7 +86,7 @@ export class ObservabilidadeService {
   }
 
   async getPrometheusBody(): Promise<string> {
-    const buckets = this.store.getBuckets();
+    const buckets = await this.store.getBuckets();
     const mem = process.memoryUsage();
     const d = await this.health.detalhado();
     return buildPrometheusText({

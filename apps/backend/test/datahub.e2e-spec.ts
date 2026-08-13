@@ -1,3 +1,4 @@
+import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
@@ -47,19 +48,19 @@ describe('Datahub Fase 17 (e2e)', () => {
 
     const [ua, ug, uti, uo, uc] = await Promise.all([
       prisma.user.create({
-        data: { email: emailAdmin, password: hash, role: Role.ADMIN },
+        data: { cpfCnpj: cpfCnpjForTestUser(emailAdmin), email: emailAdmin, password: hash, role: Role.ADMIN },
       }),
       prisma.user.create({
-        data: { email: emailGerente, password: hash, role: Role.GERENTE },
+        data: { cpfCnpj: cpfCnpjForTestUser(emailGerente), email: emailGerente, password: hash, role: Role.GERENTE },
       }),
       prisma.user.create({
-        data: { email: emailGerenteTi, password: hash, role: Role.GERENTE },
+        data: { cpfCnpj: cpfCnpjForTestUser(emailGerenteTi), email: emailGerenteTi, password: hash, role: Role.GERENTE },
       }),
       prisma.user.create({
-        data: { email: emailOp, password: hash, role: Role.OPERADOR_GATE },
+        data: { cpfCnpj: cpfCnpjForTestUser(emailOp), email: emailOp, password: hash, role: Role.OPERADOR_GATE },
       }),
       prisma.user.create({
-        data: { email: emailCliente, password: hash, role: Role.CLIENTE },
+        data: { cpfCnpj: cpfCnpjForTestUser(emailCliente), email: emailCliente, password: hash, role: Role.CLIENTE },
       }),
     ]);
     idAdmin = ua.id;

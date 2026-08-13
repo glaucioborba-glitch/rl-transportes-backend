@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>{{titulo}} · {{pdfView.protocolo}}</title>
+  <style>
+    @page { size: A4 portrait; margin: 0; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+      font-size: 10.5pt;
+      color: #111;
+      margin: 0;
+      padding: 0;
+      line-height: 1.35;
+      background: #fff;
+    }
+    .page {
+      padding: 8mm 10mm 14mm 10mm;
+      max-width: 210mm;
+      margin: 0 auto;
+    }
+    .muted { color: #555; font-size: 9.5pt; }
+    .hdr {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      border-bottom: 2px solid #1a1a1a;
+      padding-bottom: 8px;
+      margin-bottom: 10px;
+    }
+    .hdr img { height: 36px; max-width: 160px; object-fit: contain; }
+    .hdr-title h1 {
+      margin: 0;
+      font-size: 15pt;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      text-transform: uppercase;
+    }
+    .hdr-meta { text-align: right; font-size: 9.5pt; }
+    .grid2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 16px;
+    }
+    section {
+      margin-top: 12px;
+      break-inside: avoid-page;
+    }
+    h2 {
+      margin: 0 0 6px 0;
+      font-size: 11pt;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-left: 4px solid #1a1a1a;
+      padding-left: 8px;
+    }
+    .box {
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 8px 10px;
+      background: #fafafa;
+    }
+    .kv { margin: 2px 0; }
+    .kv span.label { color: #444; min-width: 120px; display: inline-block; }
+    table.simple { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+    table.simple th, table.simple td {
+      border: 1px solid #ddd;
+      padding: 4px 6px;
+      text-align: left;
+      vertical-align: top;
+    }
+    table.simple th { background: #eee; font-weight: 600; }
+    .pill {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 8.5pt;
+      font-weight: 600;
+      background: #e8e8e8;
+      margin-right: 4px;
+    }
+    .timeline-item {
+      border-left: 2px solid #bbb;
+      padding-left: 8px;
+      margin: 6px 0 6px 4px;
+    }
+    .timeline-item .t { font-weight: 600; }
+    .footer {
+      margin-top: 16px;
+      padding-top: 8px;
+      border-top: 1px dashed #999;
+      font-size: 8.5pt;
+      color: #333;
+    }
+    .qr-wrap {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      margin-top: 8px;
+    }
+    .qr-wrap img { width: 160px; height: 160px; }
+    a { color: #0b57d0; text-decoration: none; }
+    .warn { font-size: 8.5pt; color: #7a2e0e; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hdr">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <img src="{{logoDataUri}}" alt="RL" />
+        <div class="hdr-title">
+          <h1>{{titulo}}</h1>
+          <p class="muted" style="margin:4px 0 0 0;">Terminal · Portaria / Gate / Pátio / Jurídico</p>
+        </div>
+      </div>
+      <div class="hdr-meta">
+        <div><strong>Protocolo</strong> {{pdfView.protocolo}}</div>
+        <div><strong>Emitido</strong> {{fmtDateTime emitidoEm}}</div>
+        <div class="muted">Versão documento {{versaoDoc}}</div>
+      </div>
+    </header>
+
+    <section>
+      <h2>Identificação</h2>
+      <div class="box grid2">
+        <div>
+          <div class="kv"><span class="label">Status (DB)</span> {{pdfView.statusDb}}</div>
+          <div class="kv"><span class="label">Rótulo PDF</span> {{pdfView.statusV2Label}}</div>
+          <div class="kv"><span class="label">Registro criado</span> {{fmtIsoDate pdfView.dataCriacaoSolicitacao}}</div>
+        </div>
+        <div>
+          <div class="kv"><span class="label">Cliente</span> {{clienteRazao}}</div>
+          <div class="kv"><span class="label">CNPJ / CPF</span> {{clienteDoc}}</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Solicitante</h2>
+      <div class="box">
+        <div class="kv"><span class="label">Nome</span> {{pdfView.solicitanteNome}}</div>
+        <div class="kv"><span class="label">Telefone</span> {{pdfView.solicitanteTelefone}}</div>
+        <div class="kv"><span class="label">E-mail</span> {{pdfView.solicitanteEmail}}</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Transporte</h2>
+      <div class="box grid2">
+        <div>
+          <div class="kv"><span class="label">Tipo caminhão</span> {{pdfView.tipoCaminhaoLabel}}</div>
+          <div class="kv"><span class="label">Motorista</span> {{pdfView.motoristaNome}}</div>
+          <div class="kv"><span class="label">CPF</span> {{pdfView.motoristaCpf}}</div>
+        </div>
+        <div>
+          <div class="kv"><span class="label">Placa cavalo</span> {{pdfView.placaCavalo}}</div>
+          <div class="kv"><span class="label">Carreta 01</span> {{pdfView.placaCarreta01}}</div>
+          {{#if pdfView.placaCarreta02}}
+          <div class="kv"><span class="label">Carreta 02</span> {{pdfView.placaCarreta02}}</div>
+          {{else}}
+          <div class="kv"><span class="label">Carreta 02</span> <span class="muted">— (LS ou não informado)</span></div>
+          {{/if}}
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Containers</h2>
+      <div class="grid2">
+        <div class="box">
+          <div class="muted" style="margin-bottom:6px;font-weight:600;">Bloco #1</div>
+          {{#if pdfView.container1}}
+          <div class="kv"><span class="label">Unidade</span> {{pdfView.container1.unidade}}</div>
+          <div class="kv"><span class="label">Booking</span> {{pdfView.container1.booking}}</div>
+          <div class="kv"><span class="label">Processo</span> {{pdfView.container1.processo}}</div>
+          <div class="kv"><span class="label">Tamanho</span> {{pdfView.container1.tamanho}}</div>
+          <div class="kv"><span class="label">Tipo</span> {{pdfView.container1.tipo}}</div>
+          <div class="kv"><span class="label">Status</span> <span class="pill">{{pdfView.container1.status}}</span></div>
+          {{#if pdfView.container1.mostrarLacre}}
+          <div class="kv"><span class="label">Lacre</span> {{#if pdfView.container1.lacre}}{{pdfView.container1.lacre}}{{else}}<span class="muted">—</span>{{/if}}</div>
+          {{/if}}
+          <div class="kv"><span class="label">Reefer</span> {{#if pdfView.container1.refrigerado}}Sim{{else}}Não{{/if}}</div>
+          {{#if pdfView.container1.refrigerado}}
+          <div class="kv"><span class="label">SetPoint</span> {{#if pdfView.container1.setPoint}}{{pdfView.container1.setPoint}} °C{{else}}<span class="muted">—</span>{{/if}}</div>
+          {{/if}}
+          {{else}}
+          <p class="muted">Sem container nesta posição.</p>
+          {{/if}}
+        </div>
+        <div class="box">
+          <div class="muted" style="margin-bottom:6px;font-weight:600;">Bloco #2</div>
+          {{#if pdfView.container2}}
+          <div class="kv"><span class="label">Unidade</span> {{pdfView.container2.unidade}}</div>
+          <div class="kv"><span class="label">Booking</span> {{pdfView.container2.booking}}</div>
+          <div class="kv"><span class="label">Processo</span> {{pdfView.container2.processo}}</div>
+          <div class="kv"><span class="label">Tamanho</span> {{pdfView.container2.tamanho}}</div>
+          <div class="kv"><span class="label">Tipo</span> {{pdfView.container2.tipo}}</div>
+          <div class="kv"><span class="label">Status</span> <span class="pill">{{pdfView.container2.status}}</span></div>
+          {{#if pdfView.container2.mostrarLacre}}
+          <div class="kv"><span class="label">Lacre</span> {{#if pdfView.container2.lacre}}{{pdfView.container2.lacre}}{{else}}<span class="muted">—</span>{{/if}}</div>
+          {{/if}}
+          <div class="kv"><span class="label">Reefer</span> {{#if pdfView.container2.refrigerado}}Sim{{else}}Não{{/if}}</div>
+          {{#if pdfView.container2.refrigerado}}
+          <div class="kv"><span class="label">SetPoint</span> {{#if pdfView.container2.setPoint}}{{pdfView.container2.setPoint}} °C{{else}}<span class="muted">—</span>{{/if}}</div>
+          {{/if}}
+          {{else}}
+          <p class="muted">Sem segundo container (ex.: LS).</p>
+          {{/if}}
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Agendamento</h2>
+      <div class="box">
+        <div class="kv"><span class="label">Data agendada</span> {{fmtIsoDate pdfView.agendamentoDataRef}}</div>
+        <div class="kv"><span class="label">Turno</span> {{pdfView.turnoLabel}}</div>
+        <div class="kv"><span class="label">Atendimento especial</span>
+          {{#if pdfView.atendimentoEspecial}}
+          Sim{{#if pdfView.atendimentoEspecialTexto}} — {{pdfView.atendimentoEspecialTexto}}{{/if}}
+          {{else}}Não{{/if}}
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Anexos</h2>
+      <table class="simple">
+        <thead>
+          <tr><th>Nome original</th><th>Tipo</th><th>Tamanho (KB)</th></tr>
+        </thead>
+        <tbody>
+          {{#each pdfView.anexoLinhas}}
+          <tr>
+            <td>{{nome}}</td>
+            <td>{{mime}}</td>
+            <td>{{kb}}</td>
+          </tr>
+          {{else}}
+          <tr><td colspan="3" class="muted">Nenhum anexo registrado.</td></tr>
+          {{/each}}
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Operações de Gate</h2>
+      {{#if pdfView.carimboPortariaGate}}
+      <p class="pill" style="background:#0d3d1f;color:#c8f5d9;border:1px solid #1a6b32;">Verificado em Portaria / Gate</p>
+      {{/if}}
+      {{#each pdfView.gateOperacoes}}
+      <div class="box" style="margin-top:8px;">
+        <div class="t">Check-in · {{dataHoraLocal}} · {{placaCavalo}}</div>
+        <div class="muted">Operador: {{operador}}</div>
+        <div class="muted" style="word-break:break-all;font-size:8.5pt;">Divergências (entrada): {{divergenciasInResumo}}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">
+          {{#each miniEntrada}}
+          <img src="{{this}}" alt="entrada" style="width:72px;height:54px;object-fit:cover;border:1px solid #ccc;" />
+          {{/each}}
+        </div>
+        {{#if checkout}}
+        <div style="margin-top:8px;border-top:1px dashed #ccc;padding-top:6px;">
+          <div class="t">Check-out · {{checkout.dataHoraLocal}}</div>
+          <div class="muted">Operador: {{checkout.operador}}</div>
+          <div class="muted" style="word-break:break-all;font-size:8.5pt;">Divergências (saída): {{checkout.divergenciasResumo}}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">
+            {{#each checkout.miniSaida}}
+            <img src="{{this}}" alt="saida" style="width:72px;height:54px;object-fit:cover;border:1px solid #ccc;" />
+            {{/each}}
+          </div>
+        </div>
+        {{/if}}
+      </div>
+      {{else}}
+      <p class="muted">Nenhuma operação de gate registrada nesta solicitação.</p>
+      {{/each}}
+    </section>
+
+    <section>
+      <h2>Auditoria e linha do tempo</h2>
+      <div class="box" style="margin-bottom:8px;">
+        <div class="muted" style="font-weight:600;margin-bottom:4px;">Eventos consolidados</div>
+        {{#each pdfView.timeline}}
+        <div class="timeline-item">
+          <div class="t">{{titulo}}</div>
+          {{#if subtitulo}}<div class="muted">{{subtitulo}}</div>{{/if}}
+          <div class="muted" style="font-size:8.5pt;">{{fmtDateTime createdAt}}</div>
+        </div>
+        {{else}}
+        <p class="muted">Sem itens de linha do tempo.</p>
+        {{/each}}
+      </div>
+      <div class="box">
+        <div class="muted" style="font-weight:600;margin-bottom:4px;">Trilhas de auditoria (delta)</div>
+        {{#each pdfView.auditoriaLinhas}}
+        <div class="timeline-item">
+          <div class="t">{{acao}} · {{quando}}</div>
+          <div class="muted" style="word-break:break-word;">{{detalhe}}</div>
+        </div>
+        {{else}}
+        <p class="muted">Sem registros de auditoria.</p>
+        {{/each}}
+      </div>
+    </section>
+
+    <section>
+      <h2>Risco operacional</h2>
+      <div class="box grid2">
+        <div>
+          <div class="kv"><span class="label">Score máx. (alertas)</span> {{#if pdfView.riskScore}}{{pdfView.riskScore}}{{else}}<span class="muted">—</span>{{/if}}</div>
+          <div class="kv"><span class="label">Total alertas</span> {{pdfView.totalAlertas}}</div>
+        </div>
+        <div>
+          <div class="kv"><span class="label">Maior risco detectado</span> {{pdfView.maiorRiscoDetectado}}</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Verificação antifraude</h2>
+      <div class="qr-wrap box">
+        <img src="{{qrDataUrl}}" alt="QR verificação" />
+        <div>
+          <p style="margin-top:0;">Escaneie o QRCode ou acesse o link para validar este documento no Security Engine.</p>
+          <p><a href="{{verificarUrl}}">Verificar autenticidade</a></p>
+          <p class="muted" style="word-break:break-all;font-size:9pt;"><strong>Hash SHA-256</strong><br/>{{hashAntifraude}}</p>
+          <p class="warn">Documento válido apenas com QRCode ativo e correspondência do hash.</p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div><strong>Resumo hash</strong> {{pdfView.hashCompacto}} · <span class="muted">Integral: {{hashAntifraude}}</span></div>
+      <div class="muted">Emissão local: {{emitidoEmLocal}} · IP: {{ipEmissao}} · Fingerprint emissão: {{fingerprintEmissao}}</div>
+    </footer>
+  </div>
+</body>
+</html>

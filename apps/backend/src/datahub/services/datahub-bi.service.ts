@@ -117,7 +117,16 @@ export class DatahubBiService {
     const solAberta = await this.prisma.solicitacao.count({
       where: {
         deletedAt: null,
-        status: { in: [StatusSolicitacao.PENDENTE, StatusSolicitacao.APROVADO] },
+        status: {
+          in: [
+            StatusSolicitacao.PENDENTE,
+            StatusSolicitacao.EM_ANALISE,
+            StatusSolicitacao.APROVADO,
+            StatusSolicitacao.EM_EXECUCAO,
+            StatusSolicitacao.AGUARDANDO_GATE_IN,
+            StatusSolicitacao.EM_PATIO,
+          ],
+        },
       },
     });
     return {

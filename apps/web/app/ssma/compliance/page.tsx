@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { SsmaWorkspace } from "@/components/ssma/ssma-workspace";
 import { SsmaSection } from "@/components/ssma/ssma-section";
 import { NrComplianceBoard } from "@/components/ssma/nr-compliance-board";
 import { EpiTracker } from "@/components/ssma/epi-tracker";
@@ -121,14 +120,14 @@ export default function SsmaCompliancePage() {
 
   if (!allowed) {
     return (
-      <SsmaWorkspace>
+      <div>
         <p className="text-center text-amber-400">Acesso restrito.</p>
-      </SsmaWorkspace>
+      </div>
     );
   }
 
   return (
-    <SsmaWorkspace>
+    <div>
       <div className="flex flex-col gap-6 lg:flex-row">
         <aside className="lg:w-44 lg:shrink-0">
           <div className="sticky top-28 rounded-xl border border-amber-500/15 bg-[#0c0a08] p-3 text-[11px]">
@@ -197,6 +196,6 @@ export default function SsmaCompliancePage() {
           </SsmaSection>
         </div>
       </div>
-    </SsmaWorkspace>
+    </div>
   );
 }

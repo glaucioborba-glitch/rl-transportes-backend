@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { GrcWorkspace } from "@/components/grc/grc-workspace";
 import { GrcSection } from "@/components/grc/grc-section";
 import { ComplianceExecutiveTiles } from "@/components/grc/executive/compliance-executive-tiles";
 import { LgpdRiskDashboard } from "@/components/grc/executive/lgpd-risk-dashboard";
@@ -155,7 +154,7 @@ export default function GrcExecutivoPage() {
   }, [dash, perf, comRec]);
 
   return (
-    <GrcWorkspace>
+    <div>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.35em] text-zinc-500">Painel C-level</p>
@@ -204,6 +203,6 @@ export default function GrcExecutivoPage() {
           <ReputationScoreCard rep={derived.rep} />
         </GrcSection>
       </div>
-    </GrcWorkspace>
+    </div>
   );
 }

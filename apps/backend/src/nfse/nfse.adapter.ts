@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
+import { readFileSync } from 'node:fs';
+import { Agent as HttpsAgent } from 'node:https';
 import { buildCancelamentoNfseIpmXml, buildEmissaoNfseIpmXml, buildConsultaNfseIpmPorAutenticidade, type EmissaoNfseIpmPayload } from './xml/ipm-nfse-xml.builder';
 import { parseIpmNfseXmlRetorno } from './xml/ipm-nfse-xml.parser';
 
@@ -44,6 +46,34 @@ export class IpmNfseAdapter {
     return this.config.get<string>('nfse.ipm.baseUrl', { infer: true }) ?? '';
   }
 
+  /** Certificado A1 (mTLS) quando NFSE_IPM_CERT_PATH configurado. */
+  private getHttpsAgent(): HttpsAgent | undefined {
+    const certPath = this.config.get<string>('nfse.ipm.certPath', { infer: true })?.trim();
+    if (!certPath) return undefined;
+    try {
+      const pfx = readFileSync(certPath);
+      const passphrase = this.config.get<string>('nfse.ipm.certPass', { infer: true }) ?? '';
+      return new HttpsAgent({ pfx, passphrase, rejectUnauthorized: true });
+    } catch (e) {
+      this.logger.warn(`Certificado IPM não carregado (${certPath})`);
+      return undefined;
+    }
+  }
+
+  private async postMultipart(form: FormData): Promise<Response> {
+    const url = this.getBaseUrl();
+    const agent = this.getHttpsAgent();
+    const init: RequestInit & { dispatcher?: unknown } = {
+      method: 'POST',
+      headers: { Authorization: this.getAuthHeader() },
+      body: form,
+    };
+    if (agent) {
+      init.dispatcher = agent;
+    }
+    return fetch(url, init);
+  }
+
   /**
    * Transmite XML (emissão, cancelamento ou consulta) via POST multipart, conforme NTE-35.
    * Não loga corpo, headers sensíveis nem resposta bruta com dados fiscais completos.
@@ -52,7 +82,6 @@ export class IpmNfseAdapter {
     if (!this.isConfigured()) {
       throw new Error('NFSE_IPM_SENHA não configurada');
     }
-    const url = this.getBaseUrl();
     const form = new FormData();
     const bodyBuf = Buffer.from(xml, 'latin1');
     const blob = new Blob([bodyBuf], { type: 'text/xml; charset=ISO-8859-1' });
@@ -61,13 +90,7 @@ export class IpmNfseAdapter {
     const t0 = Date.now();
     let res: Response;
     try {
-      res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          Authorization: this.getAuthHeader(),
-        },
-        body: form,
-      });
+      res = await this.postMultipart(form);
     } catch (e) {
       this.logger.warn(`Falha de rede IPM após ${Date.now() - t0}ms (sem detalhe sensível)`);
       throw e;
@@ -123,5 +146,49 @@ export class IpmNfseAdapter {
     const xml = buildConsultaNfseIpmPorAutenticidade(codigo);
     const raw = await this.transmitirXml(xml, 'consulta');
     return { retorno: parseIpmNfseXmlRetorno(raw, 'consulta'), xmlResposta: raw };
+  }
+
+  /**
+   * Health probe — verifica conectividade com o endpoint IPM (sem expor credenciais nos logs).
+   * Em sandbox (sem senha) retorna ok com mode=sandbox.
+   */
+  async probeHealth(): Promise<{
+    ok: boolean;
+    latencyMs: number;
+    mode: 'live' | 'sandbox' | 'offline';
+    reason?: string;
+  }> {
+    if (!this.isConfigured()) {
+      return { ok: true, latencyMs: 0, mode: 'sandbox', reason: 'NFSE_IPM_SENHA não configurada' };
+    }
+    const url = this.getBaseUrl();
+    if (!url) {
+      return { ok: false, latencyMs: 0, mode: 'offline', reason: 'NFSE_IPM_BASE_URL ausente' };
+    }
+    const started = Date.now();
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: this.getAuthHeader() },
+        body: new FormData(),
+        signal: AbortSignal.timeout(8_000),
+      });
+      const latencyMs = Date.now() - started;
+      // IPM costuma responder 400/415 sem XML válido — ainda indica serviço alcançável.
+      const reachable = res.status > 0 && res.status < 500;
+      return {
+        ok: reachable,
+        latencyMs,
+        mode: 'live',
+        reason: reachable ? undefined : `HTTP ${res.status}`,
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        latencyMs: Date.now() - started,
+        mode: 'offline',
+        reason: (e as Error).message,
+      };
+    }
   }
 }

@@ -144,6 +144,6 @@ export class DashboardFinanceiroRespostaDto {
   @ApiProperty({ description: 'Índice 0–100.' })
   indiceSaudeFinanceira!: number;
 
-  @ApiProperty({ description: 'Persistência de extratos em memória nesta fase.' })
+  @ApiProperty({ description: 'Extratos OFX/CSV persistidos em PostgreSQL (financeiro_extrato_lotes).' })
   observacaoExtratos!: string;
 }

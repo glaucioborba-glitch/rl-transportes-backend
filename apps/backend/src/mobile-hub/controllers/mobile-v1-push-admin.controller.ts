@@ -8,6 +8,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { MobileJwtAuthGuard } from '../guards/mobile-jwt-auth.guard';
 import { MobilePushStore } from '../stores/mobile-push.store';
+import { MobileHubOpsStore } from '../stores/mobile-hub-ops.store';
 import { MobileTelemetryStore } from '../stores/mobile-telemetry.store';
 import type { MobileRequestUser } from '../types/mobile-hub.types';
 
@@ -50,12 +51,22 @@ export class MobileV1PushController {
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Roles(Role.ADMIN, Role.GERENTE)
 export class MobileV1AdminController {
-  constructor(private readonly tel: MobileTelemetryStore, private readonly push: MobilePushStore) {}
+  constructor(
+    private readonly tel: MobileTelemetryStore,
+    private readonly push: MobilePushStore,
+    private readonly ops: MobileHubOpsStore,
+  ) {}
 
   @Get('telemetria')
   @ApiOperation({ summary: 'Agregado telemetria 24h (ADMIN/GERENTE JWT corporativo)' })
-  agregado() {
+  async agregado() {
     return this.tel.agregadoStaff();
+  }
+
+  @Get('ops')
+  @ApiOperation({ summary: 'Últimas operações mobile hub (auditoria)' })
+  async hubOps() {
+    return this.ops.ultimos(100);
   }
 
   @Get('push/jobs')

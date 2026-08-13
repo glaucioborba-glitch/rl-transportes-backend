@@ -80,6 +80,7 @@ export class ClientesController {
     @Param('id') id: string,
     @Body(CpfCnpjValidationPipe) updateClienteDto: UpdateClienteDto,
     @Request() req: any,
+    @CurrentUser() user: AuthUser,
   ) {
     const ip = req.ip || req.connection?.remoteAddress || 'unknown';
     const userAgent = req.get('user-agent') || 'unknown';
@@ -90,6 +91,7 @@ export class ClientesController {
       req.user.sub,
       ip,
       userAgent,
+      user,
     );
   }
 

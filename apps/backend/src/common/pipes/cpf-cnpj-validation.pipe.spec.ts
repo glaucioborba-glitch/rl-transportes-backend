@@ -50,12 +50,55 @@ describe('CpfCnpjValidationPipe', () => {
     });
   });
 
+  describe('CPF com tipo PF', () => {
+    it('rejeita 14 dígitos quando tipo=PF com mensagem específica', () => {
+      try {
+        pipe.transform({
+          tipo: 'PF',
+          cpfCnpj: '12345678000195',
+        });
+        throw new Error('esperava exceção');
+      } catch (e) {
+        expect(e).toBeInstanceOf(BadRequestException);
+        expect((e as BadRequestException).message).toContain('Pessoa Física');
+        expect((e as BadRequestException).message).toContain('CPF');
+      }
+    });
+
+    it('mensagem específica para tamanho errado com tipo PF', () => {
+      try {
+        pipe.transform({ tipo: 'PF', cpfCnpj: '123' });
+        throw new Error('esperava exceção');
+      } catch (e) {
+        expect(e).toBeInstanceOf(BadRequestException);
+        expect((e as BadRequestException).message).toContain('11 dígitos');
+      }
+    });
+  });
+
   describe('Validações gerais', () => {
     it('retorna o objeto com cpfCnpj normalizado', () => {
       const b = { cpfCnpj: '529.982.247-25', nome: 'x' };
       const out = pipe.transform(b);
       expect(out).toBe(b);
       expect((out as { cpfCnpj: string }).cpfCnpj).toBe('52998224725');
+    });
+
+    it('não explode com cpfCnpj undefined/null sem tipo (DTO valida depois)', () => {
+      expect(pipe.transform({ cpfCnpj: undefined })).toEqual({ cpfCnpj: undefined });
+      expect(pipe.transform({ cpfCnpj: null })).toEqual({ cpfCnpj: null });
+    });
+
+    it('rejeita documento com mensagem genérica quando tamanho inválido', () => {
+      try {
+        pipe.transform({ cpfCnpj: '123' });
+        throw new Error('esperava exceção');
+      } catch (e) {
+        expect(e).toBeInstanceOf(BadRequestException);
+        expect((e as BadRequestException).message).toContain(
+          'Documento deve ter 11 (CPF) ou 14 (CNPJ) dígitos',
+        );
+      }
     });
 
     it('rejeita documento com menos de 11 dígitos', () => {
@@ -66,6 +109,20 @@ describe('CpfCnpjValidationPipe', () => {
       expect(() =>
         pipe.transform({ cpfCnpj: '123456789012345' }),
       ).toThrow(BadRequestException);
+    });
+  });
+
+  describe('CPF vazio / PJ sem CNPJ', () => {
+    it('CPF vazio com tipo PF → 400', () => {
+      expect(() => pipe.transform({ tipo: 'PF', cpfCnpj: '' })).toThrow(BadRequestException);
+    });
+
+    it('CPF undefined com tipo PF → 400', () => {
+      expect(() => pipe.transform({ tipo: 'PF', cpfCnpj: undefined })).toThrow(BadRequestException);
+    });
+
+    it('CNPJ não informado com tipo PJ → 400', () => {
+      expect(() => pipe.transform({ tipo: 'PJ', cpfCnpj: null })).toThrow(BadRequestException);
     });
   });
 });

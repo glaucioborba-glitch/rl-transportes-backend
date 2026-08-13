@@ -47,8 +47,10 @@ jobs:
           cache-dependency-path: apps/backend/package-lock.json
       - run: npm ci
       - run: npx prisma validate
+      - run: npm run validate:migrations
       - run: npx prisma migrate deploy
       - run: npm run build
+      - run: npm run lint
       - run: npm test
       - run: npm run test:e2e
       - run: npm audit --production
@@ -69,18 +71,31 @@ jobs:
       - run: npm run lint
       - run: npm run build
 
-  code-export:
+  playwright:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
+    needs: frontend
+    defaults:
+      run:
+        working-directory: apps/web
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Gerar PROJETO-CODIGO-COMPLETO.txt
-        run: node scripts/dump-sources.mjs > PROJETO-CODIGO-COMPLETO-ci.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: projeto-codigo-completo
-          path: PROJETO-CODIGO-COMPLETO-ci.txt
-          retention-days: 14
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - name: Instalar browsers Playwright
+        run: npx playwright install --with-deps chromium webkit
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_PORTAL_COOKIE_AUTH: "0"
+          E2E_MOCK_AUTH: "1"
+          NEXT_PUBLIC_E2E_MOCK_AUTH: "1"
+      - name: Testes E2E visuais/funcionais (Playwright)
+        run: npx playwright test
+        env:
+          CI: "true"
+          NEXT_PUBLIC_PORTAL_COOKIE_AUTH: "0"
+          E2E_MOCK_AUTH: "1"
+          NEXT_PUBLIC_E2E_MOCK_AUTH: "1"

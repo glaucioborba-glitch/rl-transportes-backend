@@ -32,7 +32,7 @@ export class CockpitMapService {
     ]);
     const cap = this.capacidadePatio();
     const ocupados = patios.length;
-    const recentMob = this.mobileOps.ultimos(120);
+    const recentMob = await this.mobileOps.ultimos(120);
     const heatmap = this.heatmapPorQuadra(patios, recentMob);
     return {
       geradoEm: new Date().toISOString(),
@@ -94,7 +94,9 @@ export class CockpitMapService {
         orderBy: { dataHoraSaida: 'desc' },
         take: 200,
       }),
-      Promise.resolve(this.mobileOps.ultimos(80).filter((x) => x.canal === 'gate_in' || x.canal === 'gate_out')),
+      Promise.resolve(this.mobileOps.ultimos(80)).then((mob) =>
+        mob.filter((x) => x.canal === 'gate_in' || x.canal === 'gate_out'),
+      ),
     ]);
 
     return {
@@ -124,7 +126,7 @@ export class CockpitMapService {
         orderBy: { createdAt: 'desc' },
         take: 200,
       }),
-      Promise.resolve(this.mobileOps.ultimos(60).filter((x) => x.canal === 'portaria')),
+      this.mobileOps.ultimos(60).then((mob) => mob.filter((x) => x.canal === 'portaria')),
     ]);
     return {
       geradoEm: new Date().toISOString(),

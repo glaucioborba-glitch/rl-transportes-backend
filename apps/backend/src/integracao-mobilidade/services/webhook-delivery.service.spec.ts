@@ -1,9 +1,9 @@
 import { ConfigService } from '@nestjs/config';
 import { AuditoriaService } from '../../auditoria/auditoria.service';
 import { WebhookDeliveryService } from './webhook-delivery.service';
-import { IntegracaoEventLogStore } from '../stores/integracao-event-log.store';
 import type { WebhookSubscription } from '../stores/webhook-subscription.store';
 import { WebhookSubscriptionStore } from '../stores/webhook-subscription.store';
+import { createIntegracaoEventLogStoreForTest } from '../../../test/helpers/store-test.util';
 
 describe('WebhookDeliveryService', () => {
   const fetchMock = jest.fn();
@@ -23,8 +23,10 @@ describe('WebhookDeliveryService', () => {
       .mockRejectedValueOnce(new Error('network'))
       .mockResolvedValueOnce({ ok: true, status: 200 });
 
-    const subs = new WebhookSubscriptionStore();
-    const log = new IntegracaoEventLogStore();
+    const subs = {
+      matching: jest.fn(async () => []),
+    } as unknown as WebhookSubscriptionStore;
+    const log = createIntegracaoEventLogStoreForTest();
     const auditoria = { registrar: jest.fn() } as unknown as AuditoriaService;
     const config = { get: () => undefined } as unknown as ConfigService;
 

@@ -22,7 +22,7 @@ type FatDetail = {
   statusNfe: string;
   statusBoleto: string;
   createdAt: string;
-  cliente: { id: string; nome: string; email?: string };
+  cliente: { id: string; razaoSocial: string; email?: string };
   itens: { id: string; descricao: string; valor: unknown }[];
   boletos: {
     id: string;
@@ -99,7 +99,7 @@ export default function ApagarDetalhePage() {
             <CardTitle className="text-white">Credor</CardTitle>
           </CardHeader>
           <CardContent className="space-y-1 text-zinc-300">
-            <p className="text-lg font-semibold text-white">{fat.cliente.nome}</p>
+            <p className="text-lg font-semibold text-white">{fat.cliente.razaoSocial}</p>
             <p className="text-xs font-mono text-zinc-500">{fat.clienteId}</p>
             <p className="mt-4 text-sm">Valor total: {formatBRL(parseDecimal(fat.valorTotal))}</p>
             <p className="text-sm">NFS-e: {fat.statusNfe}</p>

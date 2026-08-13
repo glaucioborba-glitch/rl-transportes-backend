@@ -5,6 +5,8 @@ import { ConfigService } from '@nestjs/config';
 import { digestBase64Payload } from '../common/integracao-string.util';
 import type { MobileCanal } from '../stores/mobile-ops.store';
 import { MobileOpsStore } from '../stores/mobile-ops.store';
+import type { MobileHubCanal } from '../../mobile-hub/stores/mobile-hub-ops.store';
+import { MobileHubOpsStore } from '../../mobile-hub/stores/mobile-hub-ops.store';
 
 export interface MobileSubmitDto {
   protocolo?: string;
@@ -18,9 +20,16 @@ export interface MobileSubmitDto {
 export class MobileOperacionalService {
   constructor(
     private readonly store: MobileOpsStore,
+    private readonly hubOps: MobileHubOpsStore,
     private readonly auditoria: AuditoriaService,
     private readonly config: ConfigService,
   ) {}
+
+  private mapCanalToHub(canal: MobileCanal): MobileHubCanal {
+    if (canal === 'gate') return 'gate_in';
+    if (canal === 'saida') return 'gate_out';
+    return canal;
+  }
 
   private usuarioAuditoria(): string | undefined {
     return this.config.get<string>('INTEGRACAO_AUDITORIA_USER_ID')?.trim();
@@ -39,11 +48,17 @@ export class MobileOperacionalService {
         dto.lat != null && dto.lng != null ? { lat: dto.lat, lng: dto.lng } : null,
       imagemDigest: digest,
     };
-    const entry = this.store.add({
+    const entry = await this.store.add({
       userId,
       canal,
       payload,
       payloadDigest: JSON.stringify(digest),
+    });
+    await this.hubOps.add({
+        userId,
+        canal: this.mapCanalToHub(canal),
+        protocolo: dto.protocolo,
+        extras: payload,
     });
     const usuario = this.usuarioAuditoria();
     if (usuario) {
@@ -73,7 +88,7 @@ export class MobileOperacionalService {
     };
   }
 
-  listOps(userId: string) {
+  async listOps(userId: string) {
     return this.store.byUser(userId);
   }
 

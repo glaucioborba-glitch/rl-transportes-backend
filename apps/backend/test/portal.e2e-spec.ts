@@ -1,3 +1,4 @@
+import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
@@ -6,6 +7,7 @@ import { Role, StatusSolicitacao, TipoCliente } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
+import { clienteE2eDefaults } from './helpers/e2e-cliente.factory';
 
 /** 14 dígitos únicos por execução (evita colisão com smoke/outros e2e). */
 function cnpjUnico(serie: 'a' | 'b') {
@@ -49,39 +51,37 @@ describe('Portal do cliente (e2e)', () => {
     const hash = await bcrypt.hash(password, 10);
 
     const c1 = await prisma.cliente.create({
-      data: {
-        nome: `E2E Cliente1 ${suffix}`,
+      data: clienteE2eDefaults({
+        razaoSocial: `E2E Cliente1 ${suffix}`,
+        nomeFantasia: `Fantasia1 ${suffix}`,
         tipo: TipoCliente.PJ,
         cpfCnpj: cnpjUnico('a'),
         email: `c1-mail-${suffix}@local.test`,
-        telefone: '',
-        endereco: '',
-      },
+        emailNfse: `nfse-c1-${suffix}@local.test`,
+      }),
     });
     const c2 = await prisma.cliente.create({
-      data: {
-        nome: `E2E Cliente2 ${suffix}`,
+      data: clienteE2eDefaults({
+        razaoSocial: `E2E Cliente2 ${suffix}`,
+        nomeFantasia: `Fantasia2 ${suffix}`,
         tipo: TipoCliente.PJ,
         cpfCnpj: cnpjUnico('b'),
         email: `c2-mail-${suffix}@local.test`,
-        telefone: '',
-        endereco: '',
-      },
+        emailNfse: `nfse-c2-${suffix}@local.test`,
+      }),
     });
     cliente1Id = c1.id;
     cliente2Id = c2.id;
 
     const u1 = await prisma.user.create({
-      data: {
-        email: email1,
+      data: { cpfCnpj: cpfCnpjForTestUser(email1), email: email1,
         password: hash,
         role: Role.CLIENTE,
         clienteId: cliente1Id,
       },
     });
     const u2 = await prisma.user.create({
-      data: {
-        email: email2,
+      data: { cpfCnpj: cpfCnpjForTestUser(email2), email: email2,
         password: hash,
         role: Role.CLIENTE,
         clienteId: cliente2Id,
@@ -126,7 +126,7 @@ describe('Portal do cliente (e2e)', () => {
       await prisma.auditoria.deleteMany({
         where: { usuario: { in: [user1Id, user2Id] } },
       });
-      await prisma.user.deleteMany({ where: { email: { in: [email1, email2] } } });
+      await prisma.user.deleteMany({ where: { cpfCnpj: { in: [cpfCnpjForTestUser(email1), cpfCnpjForTestUser(email2)] } } });
     }
     if (prisma && cliente1Id) {
       await prisma.cliente.deleteMany({ where: { id: { in: [cliente1Id, cliente2Id].filter(Boolean) } } });

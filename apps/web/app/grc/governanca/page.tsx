@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { GrcWorkspace } from "@/components/grc/grc-workspace";
 import { GrcSection } from "@/components/grc/grc-section";
 import { CosoPillarsBoard } from "@/components/grc/coso-pillars-board";
 import { InternalControlsMatrix } from "@/components/grc/internal-controls-matrix";
@@ -66,7 +65,7 @@ export default function GrcGovernancaPage() {
   const updateDelete = useMemo(() => audRows.filter((r) => /UPDATE|DELETE/i.test(r.acao)), [audRows]);
 
   return (
-    <GrcWorkspace>
+    <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-white">Governança COSO</h1>
@@ -139,7 +138,7 @@ export default function GrcGovernancaPage() {
           <AuditTrailTable rows={audRows} />
         </GrcSection>
       </div>
-    </GrcWorkspace>
+    </div>
   );
 }
 

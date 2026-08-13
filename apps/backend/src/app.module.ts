@@ -1,95 +1,49 @@
-import { CacheModule } from '@nestjs/cache-manager';
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { WinstonModule } from 'nest-winston';
-import { AuditoriaModule } from './auditoria/auditoria.module';
-import { AuthModule } from './auth/auth.module';
-import { ClientesModule } from './clientes/clientes.module';
-import secretsConfig from './config/secrets.config';
+import { TraceMiddleware } from './common/observability/trace.middleware';
+import bankingConfig from './config/banking.config';
+import featurePhasesConfig from './config/feature-phases.config';
 import nfseConfig from './config/nfse.config';
+import secretsConfig from './config/secrets.config';
 import securityConfig from './config/security.config';
-import { winstonModuleOptions } from './common/logger/winston.config';
-import { requestIdMiddleware } from './common/middleware/request-id.middleware';
-import { HealthController } from './health/health.controller';
-import { PrismaModule } from './prisma/prisma.module';
-import { RedisModule } from './redis/redis.module';
-import { FaturamentoModule } from './faturamento/faturamento.module';
-import { PortalModule } from './portal/portal.module';
-import { RelatoriosModule } from './relatorios/relatorios.module';
-import { SolicitacoesModule } from './solicitacoes/solicitacoes.module';
-import { DashboardModule } from './dashboard/dashboard.module';
-import { DashboardFinanceiroModule } from './dashboard-financeiro/dashboard-financeiro.module';
-import { DashboardPerformanceModule } from './dashboard-performance/dashboard-performance.module';
-import { ComercialPricingModule } from './comercial-pricing/comercial-pricing.module';
-import { IaOperacionalModule } from './ia-operacional/ia-operacional.module';
-import { SimuladorTerminalModule } from './simulador-terminal/simulador-terminal.module';
-import { PlanejamentoEstrategicoModule } from './planejamento-estrategico/planejamento-estrategico.module';
-import { PlanejamentoPessoalModule } from './planejamento-pessoal/planejamento-pessoal.module';
-import { FiscalGovernancaModule } from './fiscal-governanca/fiscal-governanca.module';
-import { FinanceiroConciliacaoModule } from './financeiro-conciliacao/financeiro-conciliacao.module';
-import { TesourariaModule } from './tesouraria/tesouraria.module';
-import { FolhaRhModule } from './folha-rh/folha-rh.module';
-import { RhPerformanceModule } from './rh-performance/rh-performance.module';
-import { GrcComplianceModule } from './grc-compliance/grc-compliance.module';
-import { IntegracaoMobilidadeModule } from './integracao-mobilidade/integracao-mobilidade.module';
-import { ObservabilidadeModule } from './observabilidade/observabilidade.module';
-import { IaPreditivaModule } from './ia-preditiva/ia-preditiva.module';
-import { DatahubModule } from './datahub/datahub.module';
-import { PlataformaIntegracaoModule } from './plataforma-integracao/plataforma-integracao.module';
-import { AutomacaoProcessosModule } from './automacao-processos/automacao-processos.module';
-import { CxPortaisModule } from './cx-portais/cx-portais.module';
-import { MobileHubModule } from './mobile-hub/mobile-hub.module';
-import { CockpitOperacoesModule } from './cockpit-operacoes/cockpit-operacoes.module';
+import whatsappConfig from './config/whatsapp.config';
+import { PortalAuditInterceptor } from './cx-portais/audit/portal-audit.interceptor';
+import { DeviceAuditInterceptor } from './auditoria/device-audit.interceptor';
+import { HealthModule } from './health/health.module';
+import { BillingDomainModule } from './modules/billing/billing-domain.module';
+import { GateDomainModule } from './modules/gate/gate-domain.module';
+import { PlatformModule } from './modules/platform/platform.module';
+import { PortalClientDomainModule } from './modules/portal-client/portal-client-domain.module';
+import { resolvePhaseImports } from './modules/phase-imports';
+import { YardDomainModule } from './modules/yard/yard-domain.module';
 
+/**
+ * H4 — Monolito modular: bounded contexts + FEATURE_PHASES + feature flags globais.
+ */
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['../../.env', '.env'],
-      load: [secretsConfig, nfseConfig, securityConfig],
+      load: [secretsConfig, nfseConfig, bankingConfig, securityConfig, featurePhasesConfig, whatsappConfig],
     }),
-    WinstonModule.forRoot(winstonModuleOptions),
-    CacheModule.register({
-      isGlobal: true,
-      ttl: 300_000,
-    }),
-    PrismaModule,
-    RedisModule,
-    AuditoriaModule,
-    AuthModule,
-    ClientesModule,
-    SolicitacoesModule,
-    FaturamentoModule,
-    PortalModule,
-    RelatoriosModule,
-    DashboardModule,
-    DashboardFinanceiroModule,
-    DashboardPerformanceModule,
-    ComercialPricingModule,
-    IaOperacionalModule,
-    SimuladorTerminalModule,
-    PlanejamentoEstrategicoModule,
-    PlanejamentoPessoalModule,
-    FiscalGovernancaModule,
-    FinanceiroConciliacaoModule,
-    TesourariaModule,
-    FolhaRhModule,
-    RhPerformanceModule,
-    GrcComplianceModule,
-    IntegracaoMobilidadeModule,
-    ObservabilidadeModule,
-    IaPreditivaModule,
-    DatahubModule,
-    PlataformaIntegracaoModule,
-    AutomacaoProcessosModule,
-    CxPortaisModule,
-    MobileHubModule,
-    CockpitOperacoesModule,
+    PlatformModule,
+    GateDomainModule,
+    YardDomainModule,
+    BillingDomainModule,
+    PortalClientDomainModule,
+    HealthModule,
+    ...resolvePhaseImports(),
   ],
-  controllers: [HealthController],
+  controllers: [],
+  providers: [
+    { provide: APP_INTERCEPTOR, useClass: PortalAuditInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: DeviceAuditInterceptor },
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(requestIdMiddleware).forRoutes('*');
+    consumer.apply(TraceMiddleware).forRoutes('*');
   }
 }

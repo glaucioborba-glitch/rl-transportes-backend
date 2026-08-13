@@ -4,6 +4,7 @@ export type MobileRole = 'OPERADOR_MOBILE' | 'MOTORISTA' | 'CLIENTE_APP';
 export type MobileRequestUser = {
   sub: string;
   email: string;
+  cpfCnpj: string;
   mobileRole: MobileRole;
   deviceId: string;
   tv: number;
@@ -17,12 +18,14 @@ export type MobileRequestUser = {
 export type MobileAccessPayload = {
   sub: string;
   email: string;
+  cpfCnpj: string;
   mobileRole: MobileRole;
   deviceId: string;
   tv: number;
   kind: 'mobile_access';
   protocoloContexto?: string;
   clienteId?: string | null;
+  sid?: string;
 };
 
 export type MobileRefreshPayload = {
@@ -31,4 +34,6 @@ export type MobileRefreshPayload = {
   kind: 'mobile_refresh';
   mobileRole: MobileRole;
   deviceId: string;
+  sid?: string;
+  fp?: string;
 };

@@ -68,7 +68,7 @@ export class PortalComunicacaoController {
   @ApiOperation({ summary: 'Abrir ticket (chamado centralizado)' })
   async criar(@Req() req: Request & { cxUser?: CxPortalRequestUser }, @Body() body: NovoTicketDto) {
     const cx = this.u(req);
-    const t = this.tickets.criar({
+    const t = await this.tickets.criar({
       tenantId: cx.tenantId,
       autorSub: cx.sub,
       portalPapel: cx.portalPapel,
@@ -89,9 +89,9 @@ export class PortalComunicacaoController {
     const cx = this.u(req);
     if (cx.portalPapel === 'STAFF') {
       const tid = tenantId?.trim() || cx.tenantId;
-      return this.tickets.listar({ tenantId: tid });
+      return await this.tickets.listar({ tenantId: tid });
     }
-    return this.tickets.listar({ tenantId: cx.tenantId, autorSub: cx.sub });
+    return await this.tickets.listar({ tenantId: cx.tenantId, autorSub: cx.sub });
   }
 
   @Post(':id/respostas')
@@ -102,12 +102,12 @@ export class PortalComunicacaoController {
     @Body() body: RespostaTicketDto,
   ) {
     const cx = this.u(req);
-    const t = this.tickets.obter(id);
+    const t = await this.tickets.obter(id);
     if (!t) throw new NotFoundException('Ticket não encontrado');
     if (cx.portalPapel !== 'STAFF' && t.autorSub !== cx.sub) {
       throw new NotFoundException('Ticket não encontrado');
     }
-    const atualizado = this.tickets.responder(id, cx.sub, body.texto);
+    const atualizado = await this.tickets.responder(id, cx.sub, body.texto);
     await this.aud(cx, AcaoAuditoria.UPDATE, { ticketId: id });
     return atualizado;
   }

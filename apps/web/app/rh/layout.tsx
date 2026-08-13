@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { RhWorkspace } from "@/components/rh/rh-workspace";
+import { IntranetShell } from "@/components/intranet/intranet-shell";
 
 export default function RhLayout({ children }: { children: ReactNode }) {
-  return <RhWorkspace>{children}</RhWorkspace>;
+  return <IntranetShell>{children}</IntranetShell>;
 }

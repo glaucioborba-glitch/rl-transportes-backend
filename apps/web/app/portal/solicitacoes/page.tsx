@@ -1,30 +1,72 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { SolicitacoesIntentHeader } from "@/components/portal/solicitacoes-intent-header";
+import { SolicitacoesEscopoTabs } from "@/components/portal/solicitacoes-escopo-tabs";
+import { SolicitacaoCompactCard } from "@/components/portal/solicitacao-compact-card";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { PortalTable } from "@/components/portal/portal-table";
 import { SectionTitle } from "@/components/portal/portal-primitives";
-import { StatusBadge } from "@/components/portal/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ApiError, fetchSolicitacoesPaginated, type SolicitacaoRow } from "@/lib/api/portal-client";
-import { formatDateTime, operationTypeLabel } from "@/lib/portal-tracking";
+import { ApiError, fetchSolicitacoesPaginated, markPortalOnboardingConcluido, type SolicitacoesEscopo, type SolicitacaoRow } from "@/lib/api/portal-client";
+import { usePortalOnboardingTour } from "@/hooks/use-portal-onboarding-tour";
 import { toast } from "@/lib/toast";
+import { formatContainerISO, stripContainerISO } from "@/utils/containerFormatter";
+import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
 
 const STATUSES = ["", "PENDENTE", "APROVADO", "CONCLUIDO", "REJEITADO"];
 
+function hasFiltrosAvancados(input: {
+  status: string;
+  protocolo: string;
+  container: string;
+  booking: string;
+  processo: string;
+  from: string;
+  to: string;
+}): boolean {
+  return Boolean(
+    input.status ||
+      input.protocolo.trim() ||
+      input.container.trim() ||
+      input.booking.trim() ||
+      input.processo.trim() ||
+      input.from ||
+      input.to,
+  );
+}
+
+function mensagemListaVazia(escopo: SolicitacoesEscopo, filtrosAvancados: boolean): string {
+  if (filtrosAvancados) {
+    return "Nenhuma solicitação encontrada com os filtros atuais.";
+  }
+  if (escopo === "minhas") {
+    return "Você ainda não criou nenhum agendamento. Clique em \"Nova Solicitação\" para começar.";
+  }
+  return "Nenhum agendamento registrado para a sua empresa até o momento.";
+}
+
 export default function SolicitacoesPage() {
+  const [filtroAtivo, setFiltroAtivo] = useState<SolicitacoesEscopo>("todas");
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState("");
   const [protocolo, setProtocolo] = useState("");
+  const [container, setContainer] = useState("");
+  const [booking, setBooking] = useState("");
+  const [processo, setProcesso] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<SolicitacaoRow[]>([]);
   const [total, setTotal] = useState(0);
   const limit = 10;
+  const onboardingConcluido = usePortalClienteAuthStore((s) => s.user?.onboardingConcluido === true);
+
+  usePortalOnboardingTour({
+    enabled: !loading && !onboardingConcluido,
+    onComplete: markPortalOnboardingConcluido,
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -32,8 +74,12 @@ export default function SolicitacoesPage() {
       const res = await fetchSolicitacoesPaginated({
         page,
         limit,
+        escopo: filtroAtivo,
         status: status || undefined,
         protocolo: protocolo.trim() || undefined,
+        container: stripContainerISO(container) || undefined,
+        booking: booking.trim() || undefined,
+        processo: processo.trim() || undefined,
         createdFrom: from ? new Date(`${from}T00:00:00.000Z`).toISOString() : undefined,
         createdTo: to ? new Date(`${to}T23:59:59.999Z`).toISOString() : undefined,
         orderBy: "createdAt",
@@ -48,13 +94,22 @@ export default function SolicitacoesPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, status, protocolo, from, to]);
+  }, [page, filtroAtivo, status, protocolo, container, booking, processo, from, to]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
+  const filtrosAvancados = hasFiltrosAvancados({
+    status,
+    protocolo,
+    container,
+    booking,
+    processo,
+    from,
+    to,
+  });
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8">
@@ -63,9 +118,26 @@ export default function SolicitacoesPage() {
         description="GET /cliente/portal/solicitacoes — paginação e filtros no backend (camada CX)."
       />
 
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-500">
+          Escolha a intenção operacional — o sistema define automaticamente frota FL ou frota do cliente.
+        </p>
+        <SolicitacoesIntentHeader onCreated={() => void load()} />
+      </div>
+
+      <div className="mb-6">
+        <SolicitacoesEscopoTabs
+          value={filtroAtivo}
+          onChange={(escopo) => {
+            setFiltroAtivo(escopo);
+            setPage(1);
+          }}
+        />
+      </div>
+
       <Card className="mb-6">
         <CardHeader className="pb-2">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             <div>
               <label className="mb-1 block text-xs text-slate-500">Status</label>
               <select
@@ -90,6 +162,40 @@ export default function SolicitacoesPage() {
                 value={protocolo}
                 onChange={(e) => {
                   setProtocolo(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-500">Contêiner (ISO)</label>
+              <Input
+                placeholder="AAAA 000000-0"
+                value={container}
+                onChange={(e) => {
+                  setContainer(formatContainerISO(e.target.value));
+                  setPage(1);
+                }}
+                className="font-mono"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-500">Booking (contém)</label>
+              <Input
+                placeholder="Nº ou parte…"
+                value={booking}
+                onChange={(e) => {
+                  setBooking(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-500">Processo (contém)</label>
+              <Input
+                placeholder="Nº ou parte…"
+                value={processo}
+                onChange={(e) => {
+                  setProcesso(e.target.value);
                   setPage(1);
                 }}
               />
@@ -127,61 +233,41 @@ export default function SolicitacoesPage() {
 
       {loading ? (
         <Skeleton className="h-96 w-full" />
-      ) : (
-        <Card>
-          <CardContent className="p-0 pt-4">
-            <PortalTable
-              columns={[
-                { key: "protocolo", header: "Protocolo" },
-                { key: "status", header: "Status" },
-                { key: "createdAt", header: "Criação" },
-                { key: "tipo", header: "Tipo" },
-                { key: "nu", header: "Unidades" },
-                { key: "act", header: "" },
-              ]}
-              rows={rows}
-              getRowKey={(r) => r.id}
-              renderCell={(r, key) => {
-                if (key === "protocolo")
-                  return <span className="font-mono text-sm text-white">{r.protocolo}</span>;
-                if (key === "status") return <StatusBadge status={r.status} />;
-                if (key === "createdAt") return formatDateTime(r.createdAt);
-                if (key === "tipo") return operationTypeLabel(r);
-                if (key === "nu") return String(r.unidades?.length ?? 0);
-                if (key === "act")
-                  return (
-                    <Button variant="ghost" size="sm" asChild>
-                      <Link href={`/portal/solicitacoes/${r.id}`}>Abrir</Link>
-                    </Button>
-                  );
-                return null;
-              }}
-            />
-            <div className="flex flex-wrap items-center justify-between gap-2 p-4">
-              <p className="text-xs text-slate-500">
-                Pág. {page} / {totalPages} · {total} registros
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => p - 1)}
-                >
-                  Anterior
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Próxima
-                </Button>
-              </div>
-            </div>
+      ) : rows.length === 0 ? (
+        <Card className="border-white/10 bg-black/20">
+          <CardContent className="py-12 text-center text-sm text-slate-500">
+            {mensagemListaVazia(filtroAtivo, filtrosAvancados)}
           </CardContent>
         </Card>
+      ) : (
+        <div className="space-y-3">
+          {rows.map((row) => (
+            <SolicitacaoCompactCard key={row.id} row={row} onChanged={() => void load()} />
+          ))}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/20 px-4 py-3">
+            <p className="text-xs text-slate-500">
+              Pág. {page} / {totalPages} · {total} registros
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+              >
+                Anterior
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Próxima
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );

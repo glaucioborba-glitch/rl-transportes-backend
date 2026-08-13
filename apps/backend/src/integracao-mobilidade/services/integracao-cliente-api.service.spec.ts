@@ -1,8 +1,8 @@
 import { ConfigService } from '@nestjs/config';
 import { StatusSolicitacao } from '@prisma/client';
 import { IntegracaoClienteApiService } from './integracao-cliente-api.service';
-import { IntegracaoEventLogStore } from '../stores/integracao-event-log.store';
 import { PrismaService } from '../../prisma/prisma.service';
+import { createIntegracaoEventLogStoreForTest } from '../../../test/helpers/store-test.util';
 
 describe('IntegracaoClienteApiService', () => {
   it('metricsSlas conta dentro/fora do SLA previsto', async () => {
@@ -39,7 +39,7 @@ describe('IntegracaoClienteApiService', () => {
       get: (k: string) => (k === 'INTEGRACAO_SLA_HORAS_PADRAO' ? '48' : undefined),
     } as unknown as ConfigService;
 
-    const events = new IntegracaoEventLogStore();
+    const events = createIntegracaoEventLogStoreForTest();
     const svc = new IntegracaoClienteApiService(prisma, config, events);
 
     const m = await svc.metricsSlas('cid');

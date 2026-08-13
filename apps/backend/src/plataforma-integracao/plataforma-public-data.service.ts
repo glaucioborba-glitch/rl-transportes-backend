@@ -11,11 +11,11 @@ export class PlataformaPublicDataService {
   ) {}
 
   /** `clienteIds` = restrict; undefined = todos os clientes ativos. */
-  private filtroCliente(
+  private async filtroCliente(
     tenantId: string | undefined,
     client: PlataformaApiClient,
-  ): { in: string[] } | undefined {
-    const t = this.tenants.obter(tenantId ?? client.tenantId ?? 'default');
+  ): Promise<{ in: string[] } | undefined> {
+    const t = await this.tenants.obter(tenantId ?? client.tenantId ?? 'default');
     const tIds = t?.clienteIds?.length ? t.clienteIds : undefined;
     const kIds = client.clienteIds?.length ? client.clienteIds : undefined;
     let merged: string[] | undefined;
@@ -33,7 +33,7 @@ export class PlataformaPublicDataService {
   ) {
     const take = Math.min(Math.max(1, limit), 100);
     const skip = (Math.max(1, page) - 1) * take;
-    const filtro = this.filtroCliente(tenantId, client);
+    const filtro = await this.filtroCliente(tenantId, client);
     const where = {
       deletedAt: null,
       ...(filtro ? { clienteId: filtro } : {}),
@@ -59,7 +59,7 @@ export class PlataformaPublicDataService {
   }
 
   async obterSolicitacao(id: string, client: PlataformaApiClient, tenantId: string | undefined) {
-    const filtro = this.filtroCliente(tenantId, client);
+    const filtro = await this.filtroCliente(tenantId, client);
     const row = await this.prisma.solicitacao.findFirst({
       where: {
         id,
@@ -97,10 +97,10 @@ export class PlataformaPublicDataService {
   }
 
   async slasProxy(client: PlataformaApiClient, tenantId: string | undefined) {
-    const t = this.tenants.obter(tenantId ?? client.tenantId ?? 'default');
+    const t = await this.tenants.obter(tenantId ?? client.tenantId ?? 'default');
     const desde = new Date();
     desde.setDate(desde.getDate() - 30);
-    const filtro = this.filtroCliente(tenantId, client);
+    const filtro = await this.filtroCliente(tenantId, client);
     const total = await this.prisma.solicitacao.count({
       where: { deletedAt: null, updatedAt: { gte: desde }, ...(filtro ? { clienteId: filtro } : {}) },
     });
@@ -114,14 +114,14 @@ export class PlataformaPublicDataService {
     });
     return {
       janelaDias: 30,
-      slaConfigUsuario: t?.config.slasHorasProxy ?? {},
+      slaConfigUsuario: t?.config.slasMinutosMeta ?? {},
       taxaConclusaoProxy: total ? Math.round((concl / total) * 1000) / 1000 : 0,
       observacao: 'SLA-as-a-service — métricas agregadas read-only (Fase 18).',
     };
   }
 
   async listarContainers(client: PlataformaApiClient, tenantId: string | undefined, take = 40) {
-    const filtro = this.filtroCliente(tenantId, client);
+    const filtro = await this.filtroCliente(tenantId, client);
     const unidades = await this.prisma.unidade.findMany({
       where: {
         solicitacao: {
@@ -141,7 +141,7 @@ export class PlataformaPublicDataService {
   }
 
   async patioTempoReal(client: PlataformaApiClient, tenantId: string | undefined) {
-    const filtro = this.filtroCliente(tenantId, client);
+    const filtro = await this.filtroCliente(tenantId, client);
     const patios = await this.prisma.patio.findMany({
       where: {
         solicitacao: {
@@ -163,7 +163,7 @@ export class PlataformaPublicDataService {
   }
 
   async operacoesResumo(client: PlataformaApiClient, tenantId: string | undefined) {
-    const filtro = this.filtroCliente(tenantId, client);
+    const filtro = await this.filtroCliente(tenantId, client);
     const solWhere: { deletedAt: null; clienteId?: { in: string[] } } = {
       deletedAt: null,
       ...(filtro ? { clienteId: filtro } : {}),
@@ -199,7 +199,7 @@ export class PlataformaPublicDataService {
   }
 
   async listarNfse(client: PlataformaApiClient, tenantId: string | undefined, take = 30) {
-    const filtro = this.filtroCliente(tenantId, client);
+    const filtro = await this.filtroCliente(tenantId, client);
     const where = filtro ? { faturamento: { clienteId: filtro } } : {};
     const rows = await this.prisma.nfsEmitida.findMany({
       where,
@@ -218,7 +218,7 @@ export class PlataformaPublicDataService {
   }
 
   async listarFaturamento(client: PlataformaApiClient, tenantId: string | undefined, take = 30) {
-    const filtro = this.filtroCliente(tenantId, client);
+    const filtro = await this.filtroCliente(tenantId, client);
     const rows = await this.prisma.faturamento.findMany({
       where: {
         ...(filtro ? { clienteId: filtro } : {}),

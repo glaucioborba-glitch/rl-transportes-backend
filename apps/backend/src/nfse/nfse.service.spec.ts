@@ -3,7 +3,7 @@ import { Role } from '@prisma/client';
 import { NfseService } from './nfse.service';
 
 describe('NfseService', () => {
-  const staff = { role: Role.GERENTE, id: 'u1', sub: 'u1', email: 'a@a.com', permissions: [] };
+  const staff = { role: Role.GERENTE, id: 'u1', sub: 'u1', email: 'a@a.com', cpfCnpj: '11000000000108', permissions: [] };
   const prisma = {
     faturamento: { findUnique: jest.fn() },
     nfsEmitida: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn(), findUnique: jest.fn() },

@@ -6,19 +6,20 @@ import { DatahubLakeStore } from '../datahub-lake.store';
 export class DatahubLakeService {
   constructor(private readonly store: DatahubLakeStore) {}
 
-  ingest(origem: LakeOrigem, payload: Record<string, unknown>) {
-    const rec = this.store.ingestir(origem, payload);
+  async ingest(origem: LakeOrigem, payload: Record<string, unknown>) {
+    const rec = await this.store.ingestir(origem, payload);
     return {
       mensagem: 'Snapshot RAW aceito (gzip simulado).',
       arquivo: rec,
     };
   }
 
-  listarArquivos() {
+  async listarArquivos() {
+    const arquivos = await this.store.listar();
     return {
       geradoEm: new Date().toISOString(),
-      total: this.store.arquivos.length,
-      arquivos: this.store.listar(),
+      total: arquivos.length,
+      arquivos,
     };
   }
 }

@@ -31,14 +31,15 @@ export class PlataformaGatewayController {
   @ApiHeader({ name: 'X-Tenant-ID', required: false })
   @UseGuards(PlataformaIpAllowlistGuard, PlataformaPublicAuthGuard)
   @ApiOperation({ summary: 'Limites efetivos da API Key autenticada' })
-  limites(@Req() req: PlataformaHttpReq) {
+  async limites(@Req() req: PlataformaHttpReq) {
     const c = req.plataformaCliente!;
+    const total = (await this.clients.listar()).length;
     return envelopeOk(
       {
         requestsPorMinuto: c.requestsPerMinute,
         tenantPadrao: c.tenantId,
         servicosContratados: c.servicosHabilitados,
-        totalClientesApiRegistrados: this.clients.listar().length,
+        totalClientesApiRegistrados: total,
       },
       { tenantId: req.plataformaTenantId },
     );

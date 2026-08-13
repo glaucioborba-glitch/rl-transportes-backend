@@ -4,19 +4,78 @@ export type AuthLoginResponse = {
   refreshToken: string;
   user: {
     id: string;
+    cpfCnpj: string;
     email: string;
     role: string;
+    tenantId?: string;
     permissions: string[];
     clienteId: string | null;
+    tipo?: "PF" | "PJ";
+    nome?: string;
     createdAt?: string;
+    onboardingConcluido?: boolean;
   };
+};
+
+export type PortalIdentity = {
+  sub: string;
+  email: string;
+  cpfCnpj: string;
+  portalPapel: string;
+  tenantId: string;
+};
+
+/** `POST /portal/login` e `POST /portal/refresh` (JWT portal). */
+export type PortalPessoaAutorizadaSnapshot = {
+  id: string;
+  nome: string;
+  email: string;
+  telefone: string | null;
+};
+
+/** Tenant (cliente) vinculado ao usuário portal — retornado em login/refresh. */
+export type PortalClienteSnapshot = {
+  id: string;
+  nomeFantasia: string | null;
+  razaoSocial: string | null;
+  cpfCnpj: string;
+};
+
+export type PortalLoginResponse = {
+  accessToken: string;
+  refreshToken: string;
+  tokenType?: string;
+  portalIdentity: PortalIdentity;
+  clienteId: string | null;
+  portalPapel?: string;
+  tenantId?: string;
+  tipo?: "PF" | "PJ";
+  cliente?: PortalClienteSnapshot | null;
+  usuario?: {
+    id: string;
+    nome: string;
+    tipo: "PF" | "PJ";
+    email: string;
+    cpfCnpj: string;
+    onboardingConcluido?: boolean;
+  };
+  pessoaAutorizada?: PortalPessoaAutorizadaSnapshot;
+  /** Role Prisma do tenant (ADMIN_CLIENTE, TRANSPORTADORA_TERCEIRA, …). */
+  portalTenantRole?: string;
+  /** Transportadora: pula seleção de CPF pós-login. */
+  skipSelectPessoa?: boolean;
+  statusCadastro?: "PENDENTE_ANALISE_FINANCEIRA" | "APROVADO" | "REJEITADO";
+  validacaoDominio?: "APROVADO" | "DIVERGENTE" | "INDISPONIVEL";
+  condicaoPagamento?: string | null;
 };
 
 export type AuthMeResponse = {
   sub: string;
   id: string;
   email: string;
+  cpfCnpj: string;
   role: string;
+  tenantId?: string;
   permissions: string[];
   clienteId?: string | null;
 };
@@ -24,10 +83,23 @@ export type AuthMeResponse = {
 /** Payload JWT corporativo (pode incluir `clienteId` após emissão atualizada no backend). */
 export type CorporateJwtPayload = {
   sub: string;
+  cpfCnpj: string;
   email: string;
   role: string;
   tv?: number;
   clienteId?: string | null;
+};
+
+/** Claims típicos do JWT portal (acesso). */
+export type PortalJwtAccessPayload = {
+  sub: string;
+  email: string;
+  cpfCnpj: string;
+  portalPapel?: string;
+  tenantId?: string;
+  clienteId?: string | null;
+  tv?: number;
+  kind?: string;
 };
 
 export type PaginatedResponse<T> = {

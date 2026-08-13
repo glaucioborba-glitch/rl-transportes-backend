@@ -7,37 +7,49 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { KpiCard, SectionTitle } from "@/components/portal/portal-primitives";
 import { PortalTable } from "@/components/portal/portal-table";
 import { RawStatusBadge } from "@/components/portal/status-badge";
-import { boletoStatusVariant } from "@/lib/portal-status";
+import { boletoStatusVariant, faturaArmazenagemStatusLabel, faturaArmazenagemStatusVariant } from "@/lib/portal-status";
 import {
   ApiError,
   fetchBoletosPaginated,
   fetchFaturamentoPaginated,
+  fetchFaturasArmazenagemPaginated,
   fetchNfsePaginated,
+  type FaturaArmazenagemPortal,
 } from "@/lib/api/portal-client";
 import { toast } from "@/lib/toast";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  descricaoCondicaoPagamento,
+  labelCondicaoPagamento,
+} from "@/lib/condicao-pagamento-portal";
+import { fetchPortalDashboard } from "@/lib/api/portal-client";
 
 export default function FinanceiroPage() {
   const [loading, setLoading] = useState(true);
   const [fats, setFats] = useState<Record<string, unknown>[]>([]);
   const [boletos, setBoletos] = useState<Record<string, unknown>[]>([]);
   const [nfs, setNfs] = useState<Record<string, unknown>[]>([]);
+  const [armazenagem, setArmazenagem] = useState<FaturaArmazenagemPortal[]>([]);
   const [vencidos, setVencidos] = useState(0);
   const [pendenteVal, setPendenteVal] = useState(0);
   const [faturamentoLista, setFaturamentoLista] = useState(0);
+  const [condicaoPagamento, setCondicaoPagamento] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [fat, bol, nf] = await Promise.all([
+      const [fat, bol, nf, arm, dash] = await Promise.all([
         fetchFaturamentoPaginated({ page: 1, limit: 20 }),
         fetchBoletosPaginated({ page: 1, limit: 100 }),
         fetchNfsePaginated({ page: 1, limit: 50 }),
+        fetchFaturasArmazenagemPaginated({ page: 1, limit: 50 }),
+        fetchPortalDashboard({ recentPage: 1, recentLimit: 1 }),
       ]);
       const fatItems = (fat as { items?: Record<string, unknown>[] }).items ?? [];
       setFats(fatItems);
       setBoletos(bol.items ?? []);
       setNfs(nf.items ?? []);
+      setArmazenagem(arm.items ?? []);
       setFaturamentoLista(fatItems.reduce((a, r) => a + Number(r.valorTotal ?? 0), 0));
 
       const now = Date.now();
@@ -53,6 +65,7 @@ export default function FinanceiroPage() {
       }
       setVencidos(v);
       setPendenteVal(pend);
+      setCondicaoPagamento(dash.condicaoPagamento ?? null);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Erro ao carregar financeiro");
     } finally {
@@ -73,17 +86,39 @@ export default function FinanceiroPage() {
   }
 
   const inad = boletos.length ? Math.round((vencidos / boletos.length) * 100) : 0;
+  const condicaoLabel = labelCondicaoPagamento(condicaoPagamento);
+  const condicaoDescricao = descricaoCondicaoPagamento(condicaoPagamento);
 
   return (
     <main className="mx-auto max-w-7xl space-y-8 px-4 py-8">
       <SectionTitle
         title="Financeiro"
-        description="GET /portal/faturamento, /portal/boletos, /portal/nfse — indicadores derivados no cliente."
+        description="Faturamento mensal, armazenagem Gate-Out (NFS-e + boleto/PIX), boletos e NFS-e."
       />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <span aria-hidden>💳</span>
+            Condição de Pagamento
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm font-medium text-white">{condicaoLabel}</p>
+          {condicaoDescricao ? (
+            <p className="mt-1 text-sm text-muted-foreground">{condicaoDescricao}</p>
+          ) : null}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard title="Inadimplência (proxy)" value={`${inad}%`} hint="Boletos pendentes vencidos / total listado" />
         <KpiCard title="Valor pendente (R$)" value={pendenteVal.toFixed(2)} hint="Soma boletos pendentes + vencidos" />
+        <KpiCard
+          title="Armazenagem aguardando pagamento"
+          value={armazenagem.filter((r) => r.statusPagamento === "AGUARDANDO_PAGAMENTO").length}
+          hint="Faturas Gate-Out com boleto/NFS-e emitidos"
+        />
         <KpiCard
           title="Soma faturas (página)"
           value={`R$ ${faturamentoLista.toFixed(2)}`}
@@ -91,6 +126,51 @@ export default function FinanceiroPage() {
         />
         <KpiCard title="Boletos vencidos" value={vencidos} />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Armazenagem (Gate-Out)</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <PortalTable
+            columns={[
+              { key: "iso", header: "Contêiner" },
+              { key: "dias", header: "Diárias" },
+              { key: "valor", header: "Valor" },
+              { key: "st", header: "Status" },
+              { key: "docs", header: "Documentos" },
+              { key: "act", header: "" },
+            ]}
+            rows={armazenagem}
+            getRowKey={(r) => String(r.id)}
+            renderCell={(r, key) => {
+              if (key === "iso") return String(r.preFatura?.containerIso ?? "—");
+              if (key === "dias") return String(r.preFatura?.diasCobrados ?? "—");
+              if (key === "valor") return `R$ ${Number(r.valorTotal ?? 0).toFixed(2)}`;
+              if (key === "st") {
+                const st = String(r.statusPagamento ?? "");
+                return (
+                  <RawStatusBadge
+                    label={faturaArmazenagemStatusLabel(st)}
+                    variant={faturaArmazenagemStatusVariant(st)}
+                  />
+                );
+              }
+              if (key === "docs") {
+                const hasDocs = !!(r.linkNfse || r.linkBoleto || r.linkPix);
+                return hasDocs ? "Disponível" : "Processando";
+              }
+              if (key === "act")
+                return (
+                  <Button variant="ghost" size="sm" asChild>
+                    <Link href={`/portal/financeiro/armazenagem/${String(r.id)}`}>Abrir</Link>
+                  </Button>
+                );
+              return null;
+            }}
+          />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

@@ -13,12 +13,23 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { KpiCard, SectionTitle } from "@/components/portal/portal-primitives";
 import { PortalTable } from "@/components/portal/portal-table";
 import { StatusBadge } from "@/components/portal/status-badge";
+import { Progress } from "@/components/ui/progress";
 import { usePortalDashboard } from "@/hooks/use-portal-dashboard";
+import { usePortalHealth } from "@/hooks/use-portal-health";
 import { deriveTrackingLabel, formatDateTime, operationTypeLabel } from "@/lib/portal-tracking";
+import { collectSolicitacaoContainerISOs } from "@/lib/container-display";
+import { ContainerNumber } from "@/components/ui/container-number";
+import { ProtocolRefLabel } from "@/components/shared/operation-identity";
+import { PortalContainerTimelineSlideOver } from "@/components/portal/container-timeline-slideover";
 import type { SolicitacaoRow } from "@/lib/api/portal-client";
-import { CalendarClock, Container, Gauge, LayoutGrid, WalletCards } from "lucide-react";
+import { CalendarClock, Container, Gauge, LayoutGrid, TrendingDown, TrendingUp, WalletCards } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
+import { PORTAL_BLOQUEIO_FINANCEIRO_TOAST, PORTAL_SCHEDULING_DISABLED_CLASS } from "@/lib/portal-financeiro-block";
+import { labelCondicaoPagamento } from "@/lib/condicao-pagamento-portal";
+import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
+import { toast } from "@/lib/toast";
 
 const TURNOS = [
   { id: "m", label: "Manhã · 07:00–13:00 (UTC)", startH: 7, endH: 13, cap: 40 },
@@ -29,6 +40,26 @@ function hourUtc(iso: string) {
   return new Date(iso).getUTCHours();
 }
 
+function TrendDelta({ value, label }: { value: number; label: string }) {
+  const up = value >= 0;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 text-xs font-medium tabular-nums ${
+        up ? "text-emerald-400" : "text-rose-400"
+      }`}
+    >
+      {up ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+      {value > 0 ? "+" : ""}
+      {value.toFixed(1)}% <span className="text-slate-500">{label}</span>
+    </span>
+  );
+}
+
+function pctPart(n: number, total: number) {
+  if (total <= 0) return 0;
+  return Math.min(100, Math.round((n / total) * 100));
+}
+
 function countInTurn(rows: SolicitacaoRow[], startH: number, endH: number) {
   return rows.filter((s) => {
     const h = hourUtc(s.createdAt);
@@ -37,10 +68,29 @@ function countInTurn(rows: SolicitacaoRow[], startH: number, endH: number) {
 }
 
 export function PortalDashboardClient() {
+  const searchParams = useSearchParams();
+  const bloqueadoFin = usePortalClienteAuthStore((s) => s.isBloqueadoFinanceiramente);
   const [recentPage, setRecentPage] = useState(1);
   const recentLimit = 8;
-  const { data, loading, error, reload } = usePortalDashboard({ recentPage, recentLimit });
+  const health = usePortalHealth();
+  const secOffline = health?.securityEngine === "offline";
+  const secDegraded = health?.securityEngine === "degraded";
+  const { data, loading, error, awaitingPessoa, reload } = usePortalDashboard({ recentPage, recentLimit });
+
   const [q, setQ] = useState("");
+  const [timelineIso, setTimelineIso] = useState<string | null>(null);
+  const [timelineOpen, setTimelineOpen] = useState(false);
+
+  function openContainerTimeline(iso: string) {
+    setTimelineIso(iso);
+    setTimelineOpen(true);
+  }
+
+  useEffect(() => {
+    if (searchParams.get("bloqueioFinanceiro") === "1") {
+      toast.error(PORTAL_BLOQUEIO_FINANCEIRO_TOAST);
+    }
+  }, [searchParams]);
 
   const agendamentosHoje = data?.solicitacoesHoje.length ?? 0;
 
@@ -55,7 +105,7 @@ export function PortalDashboardClient() {
     );
   }, [data?.tracking, q]);
 
-  if (loading && !data) {
+  if (awaitingPessoa || (loading && !data)) {
     return (
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-8">
         <Skeleton className="h-10 w-64" />
@@ -86,20 +136,28 @@ export function PortalDashboardClient() {
     );
   }
 
-  const slaPct =
-    data.slas.historicoProxy.find((h) => h.periodo === "30d")?.cumprimentoPctProxy ??
-    data.slas.historicoProxy[0]?.cumprimentoPctProxy ??
-    null;
+  const slaMedioPct = data.slaDesempenho;
   const kpis = data.kpis.valores;
   const recentTotalPages = Math.max(1, Math.ceil(data.recent.total / recentLimit));
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8">
+      {secOffline ? (
+        <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-950/35 px-4 py-3 text-sm text-amber-100">
+          Serviço de segurança indisponível — exibindo informações essenciais (cliente, agendamentos e
+          solicitações).
+        </div>
+      ) : null}
+      {secDegraded ? (
+        <div className="mb-4 rounded-lg border border-orange-500/45 bg-orange-950/35 px-4 py-3 text-sm text-orange-100">
+          Serviço de segurança lento — reduzindo chamadas automáticas de monitoramento.
+        </div>
+      ) : null}
       <div className="grid grid-cols-12 gap-6">
         <div className="col-span-12">
           <SectionTitle
             title="Visão geral"
-            description="KPIs / SLAs e listagens de solicitações em /cliente/portal; aprovação via PATCH /portal/solicitacoes/:id/aprovar; financeiro resumo via /cliente/portal/financeiro/*."
+            description="KPIs / SLAs e listagens de solicitações em /cliente/portal; aprovação via PATCH /cliente/portal/solicitacoes/:id/aprovar; financeiro em /cliente/portal/financeiro/*."
           />
         </div>
 
@@ -107,7 +165,7 @@ export function PortalDashboardClient() {
           <KpiCard
             title="Unidades ativas"
             value={kpis.containers_ativos}
-            hint="GET /cliente/portal/kpis"
+            hint="Solicitações pendentes/aprovadas aguardando saída (ciclo aberto)"
             icon={Container}
           />
           <KpiCard
@@ -118,18 +176,78 @@ export function PortalDashboardClient() {
           />
           <KpiCard
             title="SLA médio"
-            value={slaPct != null ? `${slaPct}%` : "—"}
-            hint="GET /cliente/portal/slas"
+            value={slaMedioPct != null ? `${slaMedioPct}%` : "—"}
+            hint="Cumprimento real (municipal / terminal) — amostra concluída"
             icon={Gauge}
           />
-          <KpiCard
-            title="Pendências financeiras"
-            value={data.pendenciasFinanceiras}
-            hint="Boletos com status ≠ pago (GET /cliente/portal/financeiro/boletos)"
-            icon={WalletCards}
-          />
+          {!secOffline ? (
+            <KpiCard
+              title="Pendências financeiras"
+              value={data.pendenciasFinanceiras}
+              hint="Boletos com status ≠ pago (GET /cliente/portal/financeiro/boletos)"
+              icon={WalletCards}
+            />
+          ) : null}
         </div>
 
+        <div className="col-span-12 grid gap-4 sm:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Tendências (mês vs anterior)</CardTitle>
+              <CardDescription>Variação de solicitações criadas e faturamento (mês civil UTC).</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs text-slate-500">Solicitações (criadas no mês)</p>
+                <TrendDelta
+                  value={data.tendencias.solicitacoesMesVsAnteriorPct}
+                  label="vs mês anterior"
+                />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Faturamento (R$ no mês)</p>
+                <TrendDelta
+                  value={data.tendencias.faturadoMesVsAnteriorPct}
+                  label="vs mês anterior"
+                />
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Unidades por tipo</CardTitle>
+              <CardDescription>
+                Total {data.unidades.total} contêineres vinculados às suas solicitações.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {(
+                [
+                  ["import", "Import"],
+                  ["export", "Export"],
+                  ["gateIn", "Gate-In"],
+                  ["gateOut", "Gate-Out"],
+                ] as const
+              ).map(([k, label]) => {
+                const n = data.unidades[k];
+                const p = pctPart(n, data.unidades.total);
+                return (
+                  <div key={k} className="space-y-1">
+                    <div className="flex justify-between text-xs text-slate-400">
+                      <span>{label}</span>
+                      <span className="tabular-nums text-slate-300">
+                        {n} <span className="text-slate-500">({p}%)</span>
+                      </span>
+                    </div>
+                    <Progress value={p} />
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        </div>
+
+        {!secOffline ? (
         <div className="col-span-12">
           <Card>
             <CardHeader>
@@ -137,8 +255,13 @@ export function PortalDashboardClient() {
               <CardDescription>
                 Contadores alinhados ao CX e ao KPI de faturamento em aberto.
               </CardDescription>
+              {data.condicaoPagamento ? (
+                <p className="text-xs text-muted-foreground">
+                  Condição contratual: {labelCondicaoPagamento(data.condicaoPagamento)}
+                </p>
+              ) : null}
             </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-3">
+            <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                   Faturas em aberto
@@ -157,10 +280,21 @@ export function PortalDashboardClient() {
               </div>
               <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                  NFS-e (amostra API)
+                  NFS-e (emitidas)
                 </p>
                 <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
                   {data.financeCounts.nfseEmitidasAmostra}
+                </p>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Faturamento no mês (R$)
+                </p>
+                <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
+                  {data.financeCounts.faturadoMes.toLocaleString("pt-BR", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
                 </p>
               </div>
               <div className="col-span-full flex flex-wrap gap-2">
@@ -174,6 +308,7 @@ export function PortalDashboardClient() {
             </CardContent>
           </Card>
         </div>
+        ) : null}
 
         <div className="col-span-12 lg:col-span-5">
           <Card>
@@ -187,9 +322,6 @@ export function PortalDashboardClient() {
             <CardContent className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" asChild>
                 <Link href="/portal/solicitacoes">Solicitações</Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/portal/agendamentos">Agendamentos</Link>
               </Button>
               <Button variant="outline" size="sm" asChild>
                 <Link href="/portal/financeiro">Financeiro</Link>
@@ -249,9 +381,23 @@ export function PortalDashboardClient() {
                       key={s.id}
                       className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
                     >
-                      <div className="min-w-0 space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-mono text-sm text-white">{s.protocolo}</span>
+                      <div className="min-w-0 flex-1">
+                        <button
+                          type="button"
+                          className="text-left"
+                          onClick={() => {
+                            const iso = collectSolicitacaoContainerISOs(s)[0];
+                            if (iso) openContainerTimeline(iso);
+                          }}
+                        >
+                          <ContainerNumber
+                            value={collectSolicitacaoContainerISOs(s)[0] ?? "—"}
+                            showLabel={false}
+                            size="md"
+                          />
+                        </button>
+                        <ProtocolRefLabel protocolo={s.protocolo} className="mt-1" />
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
                           <StatusBadge status={s.status} />
                           <span className="text-xs text-slate-500">{label}</span>
                         </div>
@@ -299,8 +445,18 @@ export function PortalDashboardClient() {
                   </div>
                 );
               })}
-              <Button className="w-full" variant="outline" asChild>
-                <Link href="/portal/agendamentos">Abrir agendamentos</Link>
+              <Button
+                className={`w-full ${PORTAL_SCHEDULING_DISABLED_CLASS}`}
+                variant="outline"
+                disabled={bloqueadoFin}
+                asChild={!bloqueadoFin}
+                data-tour="nova-solicitacao"
+              >
+                {bloqueadoFin ? (
+                  <span>Nova solicitação</span>
+                ) : (
+                  <Link href="/portal/solicitacoes">Nova solicitação</Link>
+                )}
               </Button>
             </CardContent>
           </Card>
@@ -315,7 +471,7 @@ export function PortalDashboardClient() {
             <CardContent className="p-0 pt-2">
               <PortalTable
                 columns={[
-                  { key: "protocolo", header: "Protocolo" },
+                  { key: "container", header: "Contêiner" },
                   { key: "status", header: "Status" },
                   { key: "tipo", header: "Tipo" },
                   { key: "createdAt", header: "Criação" },
@@ -324,8 +480,21 @@ export function PortalDashboardClient() {
                 rows={data.recent.items}
                 getRowKey={(r) => r.id}
                 renderCell={(r, key) => {
-                  if (key === "protocolo")
-                    return <span className="font-mono text-sm text-white">{r.protocolo}</span>;
+                  if (key === "container") {
+                    const iso = collectSolicitacaoContainerISOs(r)[0] ?? "—";
+                    return (
+                      <button
+                        type="button"
+                        className="text-left"
+                        onClick={() => {
+                          const raw = collectSolicitacaoContainerISOs(r)[0];
+                          if (raw) openContainerTimeline(raw);
+                        }}
+                      >
+                        <ContainerNumber value={iso} showLabel={false} size="sm" />
+                      </button>
+                    );
+                  }
                   if (key === "status") return <StatusBadge status={r.status} />;
                   if (key === "tipo") return operationTypeLabel(r);
                   if (key === "createdAt") return formatDateTime(r.createdAt);
@@ -365,6 +534,11 @@ export function PortalDashboardClient() {
           </Card>
         </div>
       </div>
+      <PortalContainerTimelineSlideOver
+        iso={timelineIso}
+        open={timelineOpen}
+        onClose={() => setTimelineOpen(false)}
+      />
     </main>
   );
 }

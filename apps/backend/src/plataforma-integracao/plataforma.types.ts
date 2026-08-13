@@ -11,7 +11,7 @@ export type PlataformaServicoId =
   | 'faturamento_pagamentos';
 
 export interface PlataformaTenantConfig {
-  slasHorasProxy: Record<string, number>;
+  slasMinutosMeta: Record<string, number>;
   horarioFuncionamento: string;
   regrasOperacao: string;
 }

@@ -33,7 +33,7 @@ export default function MotoristaCheckinPage() {
   const [placaCarreta, setPlacaCarreta] = useState("");
   const [iso, setIso] = useState("");
   const [clienteId, setClienteId] = useState("");
-  const [clientes, setClientes] = useState<{ id: string; nome: string }[]>([]);
+  const [clientes, setClientes] = useState<{ id: string; razaoSocial: string }[]>([]);
   const [opTipo, setOpTipo] = useState<"BAIXA" | "COLETA" | "TRANSBORDO">("BAIXA");
   const [protocoloBusca, setProtocoloBusca] = useState("");
   const [busy, setBusy] = useState(false);
@@ -52,7 +52,7 @@ export default function MotoristaCheckinPage() {
     if (!listCxOk || user?.role === "CLIENTE") return;
     void (async () => {
       try {
-        const r = await motoristaJson<{ data: { id: string; nome: string }[] }>("/clientes?limit=40&page=1");
+        const r = await motoristaJson<{ data: { id: string; razaoSocial: string }[] }>("/clientes?limit=40&page=1");
         setClientes(r.data ?? []);
       } catch {
         /* sem permissão ou rede */
@@ -246,7 +246,7 @@ export default function MotoristaCheckinPage() {
                       <option value="">Selecione…</option>
                       {clientes.map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.nome}
+                          {c.razaoSocial}
                         </option>
                       ))}
                     </select>

@@ -9,7 +9,7 @@ describe('CockpitTimelineService', () => {
             protocolo: 'P1',
             status: 'APROVADO',
             updatedAt: new Date(),
-            cliente: { nome: 'C' },
+            cliente: { razaoSocial: 'C' },
             portaria: { createdAt: new Date('2026-01-01T10:00:00Z') },
             gate: { updatedAt: new Date('2026-01-01T11:00:00Z') },
             patio: { updatedAt: new Date('2026-01-02T12:00:00Z') },

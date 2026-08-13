@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { StatusPagamento } from '@prisma/client';
+import { StatusPagamentoFatura } from '@prisma/client';
+import { BOLETO_STATUS_ABERTO } from '../common/finance/boleto-status.constants';
 import type { DespesaEntity } from './tesouraria.domain';
 import { TesourariaStoreService } from './tesouraria-store.service';
 import {
@@ -50,8 +51,8 @@ export class TesourariaService {
     private readonly prisma: PrismaService,
   ) {}
 
-  private nomeFornecedor(id: string): string | undefined {
-    return this.store.getFornecedor(id)?.nome;
+  private async nomeFornecedor(id: string): Promise<string | undefined> {
+    return (await this.store.getFornecedor(id))?.nome;
   }
 
   private mapDespesa(d: DespesaEntity): DespesaRespostaDto {
@@ -71,8 +72,8 @@ export class TesourariaService {
     };
   }
 
-  createDespesa(dto: CreateDespesaDto): DespesaRespostaDto {
-    const e = this.store.createDespesa({
+  async createDespesa(dto: CreateDespesaDto): Promise<DespesaRespostaDto> {
+    const e = await this.store.createDespesa({
       fornecedor: dto.fornecedor.trim(),
       categoria: dto.categoria,
       descricao: dto.descricao.trim(),
@@ -85,12 +86,13 @@ export class TesourariaService {
     return this.mapDespesa(e);
   }
 
-  listDespesas(): DespesaRespostaDto[] {
-    return this.store.listDespesas().map((d) => this.mapDespesa(d));
+  async listDespesas(): Promise<DespesaRespostaDto[]> {
+    const despesas = await this.store.listDespesas();
+    return despesas.map((d) => this.mapDespesa(d));
   }
 
-  createFornecedor(dto: CreateFornecedorDto): FornecedorRespostaDto {
-    const e = this.store.createFornecedor({
+  async createFornecedor(dto: CreateFornecedorDto): Promise<FornecedorRespostaDto> {
+    const e = await this.store.createFornecedor({
       nome: dto.nome.trim(),
       cnpj: dto.cnpj.replace(/\D/g, ''),
       categoriaFornecedor: dto.categoriaFornecedor,
@@ -100,21 +102,22 @@ export class TesourariaService {
     return { ...e };
   }
 
-  listFornecedores(): FornecedorRespostaDto[] {
-    return this.store.listFornecedores().map((f) => ({ ...f }));
+  async listFornecedores(): Promise<FornecedorRespostaDto[]> {
+    const fornecedores = await this.store.listFornecedores();
+    return fornecedores.map((f) => ({ ...f }));
   }
 
-  createContrato(dto: CreateContratoDto): ContratoRespostaDto {
-    const fornecedor = this.store.getFornecedor(dto.fornecedorId);
+  async createContrato(dto: CreateContratoDto): Promise<ContratoRespostaDto> {
+    const fornecedor = await this.store.getFornecedor(dto.fornecedorId);
     if (!fornecedor) {
-      throw new BadRequestException('fornecedorId não encontrado no cadastro em memória.');
+      throw new BadRequestException('fornecedorId não encontrado no cadastro.');
     }
     const ini = dto.vigenciaInicio.slice(0, 10);
     const fim = dto.vigenciaFim.slice(0, 10);
     if (ini > fim) {
       throw new BadRequestException('vigenciaInicio deve ser anterior ou igual a vigenciaFim.');
     }
-    const e = this.store.createContrato({
+    const e = await this.store.createContrato({
       fornecedorId: dto.fornecedorId,
       tipoContrato: dto.tipoContrato,
       valorFixo: dto.valorFixo,
@@ -126,22 +129,25 @@ export class TesourariaService {
     return { ...e };
   }
 
-  listContratos(): ContratoRespostaDto[] {
-    return this.store.listContratos().map((c) => ({ ...c }));
+  async listContratos(): Promise<ContratoRespostaDto[]> {
+    const contratos = await this.store.listContratos();
+    return contratos.map((c) => ({ ...c }));
   }
 
-  getAgenda(): AgendaPagamentosDto {
-    const despesas = this.store.listDespesas();
-    const contratos = this.store.listContratos();
+  async getAgenda(): Promise<AgendaPagamentosDto> {
+    const despesas = await this.store.listDespesas();
+    const contratos = await this.store.listContratos();
     const mapped = despesas.map((d) => this.mapDespesa(d));
     const pendentes = mapped.filter((d) => d.statusEfetivo === 'pendente');
     const atrasadas = mapped.filter((d) => d.statusEfetivo === 'atrasado');
 
     const hoje = startOfDay(new Date());
     const fim = addDays(hoje, 400);
+    const fornecedores = await this.store.listFornecedores();
+    const nomePorId = new Map(fornecedores.map((f) => [f.id, f.nome]));
     const pagamentos = [
       ...expandirDespesasParaPagamentos(despesas, hoje, fim),
-      ...expandirContratosParaPagamentos(contratos, (id) => this.nomeFornecedor(id), hoje, fim),
+      ...expandirContratosParaPagamentos(contratos, (id) => nomePorId.get(id), hoje, fim),
     ];
     const porDia = somarPagamentosPorDia(pagamentos);
 
@@ -185,7 +191,7 @@ export class TesourariaService {
 
     const boletosAbertos = await this.prisma.boleto.findMany({
       where: {
-        statusPagamento: { in: [StatusPagamento.PENDENTE, StatusPagamento.VENCIDO] },
+        statusPagamento: { in: [...BOLETO_STATUS_ABERTO] },
         dataVencimento: { gte: iniDia, lte: fim },
       },
       select: { valorBoleto: true },
@@ -198,9 +204,11 @@ export class TesourariaService {
   private async buildImpactoJanela(dias: number): Promise<ImpactoCaixaJanelaDto> {
     const ini = startOfDay(new Date());
     const fim = addDays(ini, dias);
-    const despesas = this.store.listDespesas();
-    const contratos = this.store.listContratos();
-    const nomeFn = (id: string) => this.nomeFornecedor(id);
+    const despesas = await this.store.listDespesas();
+    const contratos = await this.store.listContratos();
+    const fornecedores = await this.store.listFornecedores();
+    const nomePorId = new Map(fornecedores.map((f) => [f.id, f.nome]));
+    const nomeFn = (id: string) => nomePorId.get(id);
 
     const saidaTesourariaOpex = somaSaidaOpexNoPeriodo(despesas, contratos, nomeFn, ini, fim);
     const saidaTesourariaTotal = somaSaidaTotalNoPeriodo(despesas, contratos, nomeFn, ini, fim);
@@ -247,8 +255,10 @@ export class TesourariaService {
   }
 
   async getDashboard(): Promise<DashboardTesourariaDto> {
-    const despesas = this.store.listDespesas();
-    const contratos = this.store.listContratos();
+    const despesas = await this.store.listDespesas();
+    const contratos = await this.store.listContratos();
+    const fornecedores = await this.store.listFornecedores();
+    const nomePorId = new Map(fornecedores.map((f) => [f.id, f.nome]));
 
     const agora = new Date();
     const iniMes = new Date(agora.getFullYear(), agora.getMonth(), 1);
@@ -256,7 +266,7 @@ export class TesourariaService {
 
     const pMes = [
       ...expandirDespesasParaPagamentos(despesas, iniMes, fimMes),
-      ...expandirContratosParaPagamentos(contratos, (id) => this.nomeFornecedor(id), iniMes, fimMes),
+      ...expandirContratosParaPagamentos(contratos, (id) => nomePorId.get(id), iniMes, fimMes),
     ];
     const totalDespesasMes = totalSaidaNoPeriodo(pMes);
 
@@ -277,7 +287,7 @@ export class TesourariaService {
     const { curvaOpex12Meses, curvaCapex12Meses } = projetarCurvasOpexCapex12Meses(
       despesas,
       contratos,
-      (id) => this.nomeFornecedor(id),
+      (id) => nomePorId.get(id),
       agora,
     );
 
@@ -330,9 +340,9 @@ export class TesourariaService {
   }
 
   async getSugestoes(): Promise<SugestaoTesourariaDto[]> {
-    const despesas = this.store.listDespesas();
-    const contratos = this.store.listContratos();
-    const fornecedores = this.store.listFornecedores();
+    const despesas = await this.store.listDespesas();
+    const contratos = await this.store.listContratos();
+    const fornecedores = await this.store.listFornecedores();
 
     const imp90 = await this.buildImpactoJanela(90);
     const estouroCaixaPotencial =

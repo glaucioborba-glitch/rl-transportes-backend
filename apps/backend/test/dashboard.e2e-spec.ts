@@ -1,3 +1,4 @@
+import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
@@ -40,22 +41,19 @@ describe('Dashboard operacional (e2e)', () => {
     const hash = await bcrypt.hash(password, 10);
 
     const ug = await prisma.user.create({
-      data: {
-        email: emailGerente,
+      data: { cpfCnpj: cpfCnpjForTestUser(emailGerente), email: emailGerente,
         password: hash,
         role: Role.GERENTE,
       },
     });
     const uo = await prisma.user.create({
-      data: {
-        email: emailOp,
+      data: { cpfCnpj: cpfCnpjForTestUser(emailOp), email: emailOp,
         password: hash,
         role: Role.OPERADOR_GATE,
       },
     });
     const uc = await prisma.user.create({
-      data: {
-        email: emailCliente,
+      data: { cpfCnpj: cpfCnpjForTestUser(emailCliente), email: emailCliente,
         password: hash,
         role: Role.CLIENTE,
       },

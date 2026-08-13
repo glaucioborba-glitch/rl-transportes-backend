@@ -1,3 +1,4 @@
+import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
@@ -6,11 +7,7 @@ import { Role, TipoCliente } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
-
-function cnpjUnico() {
-  const n = `3${Date.now()}${process.hrtime.bigint() % 1000n}`.replace(/\D/g, '');
-  return n.padStart(14, '0').slice(-14);
-}
+import { clienteE2eDefaults } from './helpers/e2e-cliente.factory';
 
 describe('CX Portais Fase 20 (e2e)', () => {
   let app: INestApplication;
@@ -24,10 +21,14 @@ describe('CX Portais Fase 20 (e2e)', () => {
   let clienteId: string;
   let userOpId: string;
   let userAdminId: string;
+  let clienteDoc: string;
+  let fornecedorDoc: string;
   const password = 'CxPortalE2E@1';
 
   beforeAll(async () => {
-    process.env.CX_PORTAL_FORNECEDOR_SEED = `${fornecedorEmail}|${password}|default`;
+    clienteDoc = cpfCnpjForTestUser(cxClientEmail);
+    fornecedorDoc = cpfCnpjForTestUser(fornecedorEmail);
+    process.env.CX_PORTAL_FORNECEDOR_SEED = `${fornecedorDoc}|${password}|default|FORNECEDOR`;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -47,20 +48,21 @@ describe('CX Portais Fase 20 (e2e)', () => {
     const hash = await bcrypt.hash(password, 10);
 
     const cliente = await prisma.cliente.create({
-      data: {
-        nome: 'Cliente CX E2E',
+      data: clienteE2eDefaults({
+        razaoSocial: 'Cliente CX E2E',
+        nomeFantasia: 'CX Fantasia',
         tipo: TipoCliente.PJ,
-        cpfCnpj: cnpjUnico(),
+        cpfCnpj: clienteDoc,
         email: `cli-${suffix}@local.test`,
-        telefone: '',
-        endereco: '',
-      },
+        emailNfse: `nfse-cli-${suffix}@local.test`,
+      }),
     });
     clienteId = cliente.id;
 
     const [uc, uo, ua] = await Promise.all([
       prisma.user.create({
         data: {
+          cpfCnpj: clienteDoc,
           email: cxClientEmail,
           password: hash,
           role: Role.CLIENTE,
@@ -69,6 +71,7 @@ describe('CX Portais Fase 20 (e2e)', () => {
       }),
       prisma.user.create({
         data: {
+          cpfCnpj: cpfCnpjForTestUser(cxOpEmail),
           email: cxOpEmail,
           password: hash,
           role: Role.OPERADOR_GATE,
@@ -76,6 +79,7 @@ describe('CX Portais Fase 20 (e2e)', () => {
       }),
       prisma.user.create({
         data: {
+          cpfCnpj: cpfCnpjForTestUser(cxAdminEmail),
           email: cxAdminEmail,
           password: hash,
           role: Role.ADMIN,
@@ -110,7 +114,7 @@ describe('CX Portais Fase 20 (e2e)', () => {
   it('login portal CLIENTE e GET dashboard', async () => {
     const login = await request(app.getHttpServer())
       .post('/portal/login')
-      .send({ email: cxClientEmail, password, papel: 'CLIENTE', tenantId: 'default' })
+      .send({ documento: clienteDoc, password, papel: 'CLIENTE', tenantId: 'default' })
       .expect(201);
     const token = login.body.accessToken as string;
     expect(token).toBeDefined();
@@ -136,7 +140,7 @@ describe('CX Portais Fase 20 (e2e)', () => {
   it('fornecedor login e GET contratos', async () => {
     const login = await request(app.getHttpServer())
       .post('/portal/login')
-      .send({ email: fornecedorEmail, password, papel: 'FORNECEDOR' })
+      .send({ documento: fornecedorDoc, password, papel: 'FORNECEDOR' })
       .expect(201);
     const token = login.body.accessToken as string;
 

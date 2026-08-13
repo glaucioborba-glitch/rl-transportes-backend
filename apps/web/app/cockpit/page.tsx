@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { LazyCockpitKpisPanel as CockpitKpisPanel } from "@/components/lazy/heavy-charts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
@@ -83,8 +84,12 @@ export default function CockpitPage() {
     <main className="mx-auto max-w-7xl space-y-8 px-4 py-8">
       <div>
         <h1 className="text-2xl font-bold text-white">Cockpit TOC / NOC</h1>
-        <p className="text-sm text-slate-500">GET /dashboard + /dashboard-performance (+ relatórios se gestão)</p>
+        <p className="text-sm text-slate-500">
+          KPIs executivos (GET /dashboard/kpis) + painel operacional (/dashboard)
+        </p>
       </div>
+
+      <CockpitKpisPanel />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="border-white/10 bg-[#0c1018]">

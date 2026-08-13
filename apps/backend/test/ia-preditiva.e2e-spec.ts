@@ -1,3 +1,4 @@
+import { cpfCnpjForTestUser, userWhereForTestEmail } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
@@ -6,6 +7,7 @@ import { Role, TipoCliente } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
+import { clienteE2eDefaults } from './helpers/e2e-cliente.factory';
 
 describe('IA preditiva (e2e)', () => {
   let app: INestApplication;
@@ -41,43 +43,40 @@ describe('IA preditiva (e2e)', () => {
     const hash = await bcrypt.hash(password, 10);
 
     const c = await prisma.cliente.create({
-      data: {
-        nome: `E2E IA ${suffix}`,
+      data: clienteE2eDefaults({
+        razaoSocial: `E2E IA ${suffix}`,
+        nomeFantasia: `IA Fan ${suffix}`,
         tipo: TipoCliente.PJ,
         cpfCnpj: `${suffix}`.replace(/\D/g, '').padStart(14, '0').slice(-14),
         email: `e2e-ia-cli-${suffix}@corp.local`,
-        telefone: '',
-        endereco: '',
-      },
+        emailNfse: `nfse-ia-${suffix}@corp.local`,
+      }),
     });
     clienteId = c.id;
 
     await prisma.user.create({
-      data: {
-        email: emailGer,
+      data: { cpfCnpj: cpfCnpjForTestUser(emailGer), email: emailGer,
         password: hash,
         role: Role.GERENTE,
       },
     });
     await prisma.user.create({
-      data: {
-        email: emailCli,
+      data: { cpfCnpj: cpfCnpjForTestUser(emailCli), email: emailCli,
         password: hash,
         role: Role.CLIENTE,
         clienteId,
       },
     });
     await prisma.user.create({
-      data: {
-        email: emailOp,
+      data: { cpfCnpj: cpfCnpjForTestUser(emailOp), email: emailOp,
         password: hash,
         role: Role.OPERADOR_PATIO,
       },
     });
 
-    const uGer = await prisma.user.findUniqueOrThrow({ where: { email: emailGer } });
-    const uCli = await prisma.user.findUniqueOrThrow({ where: { email: emailCli } });
-    const uOp = await prisma.user.findUniqueOrThrow({ where: { email: emailOp } });
+    const uGer = await prisma.user.findUniqueOrThrow({ where: userWhereForTestEmail(emailGer) });
+    const uCli = await prisma.user.findUniqueOrThrow({ where: userWhereForTestEmail(emailCli) });
+    const uOp = await prisma.user.findUniqueOrThrow({ where: userWhereForTestEmail(emailOp) });
     tokenGerente = authService.issueTokens(uGer).accessToken;
     tokenCliente = authService.issueTokens(uCli).accessToken;
     tokenOperador = authService.issueTokens(uOp).accessToken;
@@ -85,7 +84,7 @@ describe('IA preditiva (e2e)', () => {
 
   afterAll(async () => {
     await prisma.user.deleteMany({
-      where: { email: { in: [emailGer, emailCli, emailOp] } },
+      where: { cpfCnpj: { in: [cpfCnpjForTestUser(emailGer), cpfCnpjForTestUser(emailCli), cpfCnpjForTestUser(emailOp)] } },
     });
     await prisma.cliente.delete({ where: { id: clienteId } }).catch(() => undefined);
     await app.close();

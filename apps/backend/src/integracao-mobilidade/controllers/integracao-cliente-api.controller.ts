@@ -41,7 +41,7 @@ export class IntegracaoClienteApiController {
 
   @Get('eventos')
   @ApiOperation({ summary: 'Eventos recentes do barramento filtrados ao cliente' })
-  eventos(@IntegracaoClienteIdParam() clienteId: string) {
+  async eventos(@IntegracaoClienteIdParam() clienteId: string) {
     return this.svc.recentEvents(clienteId);
   }
 }

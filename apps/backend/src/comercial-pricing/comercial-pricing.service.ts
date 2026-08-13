@@ -155,9 +155,9 @@ export class ComercialPricingService {
     const clienteIds = fatRows.map((r) => r.clienteId);
     const nomes = await this.prisma.cliente.findMany({
       where: { id: { in: clienteIds }, deletedAt: null },
-      select: { id: true, nome: true },
+      select: { id: true, razaoSocial: true },
     });
-    const nomeMap = new Map(nomes.map((c) => [c.id, c.nome]));
+    const nomeMap = new Map(nomes.map((c) => [c.id, c.razaoSocial]));
 
     const abcInput = fatRows.map((r) => {
       const fat = num(r._sum.valorTotal);
@@ -298,9 +298,9 @@ export class ComercialPricingService {
         id: { in: fatRows.map((r) => r.clienteId) },
         deletedAt: null,
       },
-      select: { id: true, nome: true },
+      select: { id: true, razaoSocial: true },
     });
-    const nomeMap = new Map(nomes.map((c) => [c.id, c.nome]));
+    const nomeMap = new Map(nomes.map((c) => [c.id, c.razaoSocial]));
 
     const clientes: ComercialClienteLucroDto[] = fatRows.map((fr) => {
       const fat = num(fr._sum.valorTotal);
@@ -677,9 +677,9 @@ export class ComercialPricingService {
 
     const nomes = await this.prisma.cliente.findMany({
       where: { id: { in: fatRows.map((x) => x.clienteId) }, deletedAt: null },
-      select: { id: true, nome: true },
+      select: { id: true, razaoSocial: true },
     });
-    const nomeMap = new Map(nomes.map((c) => [c.id, c.nome]));
+    const nomeMap = new Map(nomes.map((c) => [c.id, c.razaoSocial]));
 
     const unidadesPorCliente = await this.prisma.$queryRaw<
       Array<{ clienteId: string; u: bigint }>

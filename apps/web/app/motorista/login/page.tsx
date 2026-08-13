@@ -5,13 +5,14 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MobileButton } from "@/components/motorista/mobile-button";
 import { BigInput } from "@/components/motorista/big-input";
-import { ApiError, authLogin } from "@/lib/api/portal-client";
+import { ApiError, authLogin } from "@/lib/api/corporate-auth-client";
 import { setMotoristaSessionCookie } from "@/lib/auth-motorista-cookie";
 import { toast } from "@/lib/toast";
 import { useMotoristaAuthStore } from "@/stores/motorista-auth-store";
 import { RlLogo } from "@/components/portal/rl-logo";
+import { formatCpfCnpjBr } from "@/lib/format-cpf-cnpj-br";
 
-const RECENT_KEY = "rl_motorista_recent_emails";
+const RECENT_KEY = "rl_motorista_recent_docs";
 
 function readRecent(): string[] {
   try {
@@ -22,11 +23,11 @@ function readRecent(): string[] {
   }
 }
 
-function pushRecent(email: string) {
-  const e = email.trim().toLowerCase();
-  if (!e) return;
-  const prev = readRecent().filter((x) => x !== e);
-  prev.unshift(e);
+function pushRecent(displayDoc: string) {
+  const d = displayDoc.trim();
+  if (!d) return;
+  const prev = readRecent().filter((x) => x !== d);
+  prev.unshift(d);
   localStorage.setItem(RECENT_KEY, JSON.stringify(prev.slice(0, 5)));
 }
 
@@ -34,7 +35,7 @@ function MotoristaLoginInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const setSession = useMotoristaAuthStore((s) => s.setSession);
-  const [email, setEmail] = useState("");
+  const [documento, setDocumento] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [recent, setRecent] = useState<string[]>([]);
@@ -46,10 +47,17 @@ function MotoristaLoginInner() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    const digits = documento.replace(/\D/g, "");
+    if (digits.length !== 11 && digits.length !== 14) {
+      const msg = "Documento inválido. Informe um CPF ou CNPJ válido.";
+      setErr(msg);
+      toast.error(msg);
+      return;
+    }
     try {
-      const res = await authLogin(email, password);
+      const res = await authLogin(documento, password);
       setSession(res.accessToken, res.refreshToken, res.user);
-      pushRecent(email);
+      pushRecent(documento);
       setMotoristaSessionCookie();
       vibrateOk();
       toast.success("Bem-vindo ao app do motorista");
@@ -73,16 +81,17 @@ function MotoristaLoginInner() {
 
         <form onSubmit={(e) => void onSubmit(e)} className="space-y-4 rounded-3xl border border-white/10 bg-[#0c1018] p-5 shadow-xl">
           <BigInput
-            label="E-mail"
-            type="email"
-            autoComplete="email"
-            inputMode="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            label="CPF/CNPJ"
+            type="text"
+            autoComplete="username"
+            inputMode="numeric"
+            placeholder="CPF ou CNPJ"
+            value={documento}
+            onChange={(e) => setDocumento(formatCpfCnpjBr(e.target.value))}
             required
-            list="motorista-recent-emails"
+            list="motorista-recent-docs"
           />
-          <datalist id="motorista-recent-emails">
+          <datalist id="motorista-recent-docs">
             {recent.map((r) => (
               <option key={r} value={r} />
             ))}
@@ -99,11 +108,11 @@ function MotoristaLoginInner() {
           {err ? <p className="text-sm text-red-400">{err}</p> : null}
           <MobileButton type="submit">Entrar</MobileButton>
           <p className="text-center text-xs text-slate-500">
-            <Link href="/login" className="text-[var(--accent)] hover:underline">
+            <Link href="/portal/login" className="text-[var(--accent)] hover:underline">
               Portal do cliente (desktop)
             </Link>
             {" · "}
-            <Link href="/operador/login" className="text-slate-400 hover:underline">
+            <Link href="/login/staff" className="text-slate-400 hover:underline">
               Operação
             </Link>
           </p>

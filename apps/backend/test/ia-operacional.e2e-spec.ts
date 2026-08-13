@@ -1,3 +1,4 @@
+import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
@@ -43,13 +44,13 @@ describe('IA operacional (e2e)', () => {
     const hash = await bcrypt.hash(password, 10);
 
     const g = await prisma.user.create({
-      data: { email: emailGerente, password: hash, role: Role.GERENTE },
+      data: { cpfCnpj: cpfCnpjForTestUser(emailGerente), email: emailGerente, password: hash, role: Role.GERENTE },
     });
     const gt = await prisma.user.create({
-      data: { email: emailGate, password: hash, role: Role.OPERADOR_GATE },
+      data: { cpfCnpj: cpfCnpjForTestUser(emailGate), email: emailGate, password: hash, role: Role.OPERADOR_GATE },
     });
     const c = await prisma.user.create({
-      data: { email: emailCliente, password: hash, role: Role.CLIENTE },
+      data: { cpfCnpj: cpfCnpjForTestUser(emailCliente), email: emailCliente, password: hash, role: Role.CLIENTE },
     });
 
     tokenGerente = auth.issueTokens(g).accessToken;
@@ -59,7 +60,7 @@ describe('IA operacional (e2e)', () => {
 
   afterAll(async () => {
     await prisma.user.deleteMany({
-      where: { email: { in: [emailGerente, emailGate, emailCliente] } },
+      where: { cpfCnpj: { in: [cpfCnpjForTestUser(emailGerente), cpfCnpjForTestUser(emailGate), cpfCnpjForTestUser(emailCliente)] } },
     });
     await app.close();
   });

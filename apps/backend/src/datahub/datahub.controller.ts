@@ -67,8 +67,8 @@ export class DatahubController {
   @ApiOperation({
     summary: 'Data Warehouse — fatos (Kimball / star schema lógico)',
     description:
-      'Lista `FATO_Solicitacoes`, `FATO_Gate`, `FATO_Patio`, `FATO_Saida`, `FATO_Faturamento`, `FATO_Boletos`, `FATO_NFSe`, `FATO_RH_Folha` ' +
-      'com surrogate keys simuladas e linhas após `POST /datahub/etl/carregar`. Sem tabelas físicas nesta fase.',
+      'Fatos persistidos em materialized views PostgreSQL (`mv_datahub_fato_*`); cache L1 TTL 5 min. ' +
+      'Dimensões Kimball via `POST /datahub/etl/carregar`.',
   })
   dwFatos() {
     return this.dw.catalogoFatos();
@@ -80,7 +80,7 @@ export class DatahubController {
   @Permissions('datahub:dw:read')
   @ApiOperation({
     summary: 'Data Warehouse — dimensões (DIM_*)',
-    description: '`DIM_Clientes`, `DIM_Colaboradores`, `DIM_Turnos`, `DIM_Tempo` — populadas na carga ETL em memória.',
+    description: '`DIM_Clientes`, `DIM_Colaboradores`, `DIM_Turnos`, `DIM_Tempo` — populadas na carga ETL.',
   })
   dwDims() {
     return this.dw.catalogoDimensoes();
@@ -114,8 +114,9 @@ export class DatahubController {
   @UseGuards(AuthGuard('jwt'), RolesGuard, DatahubPipelineGuard)
   @Roles(Role.ADMIN, Role.GERENTE)
   @ApiOperation({
-    summary: 'ETL — carregar no DW em memória',
-    description: '**Pipeline** — Publica o star schema simulado no `DatahubDwStore` (substituição total).',
+    summary: 'ETL — carregar (REFRESH MVs + dimensões)',
+    description:
+      '**Pipeline** — `REFRESH MATERIALIZED VIEW CONCURRENTLY` nas MVs do Datahub; persiste dimensões e recarrega cache L1.',
   })
   etlCarregar() {
     return this.etl.carregar();

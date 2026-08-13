@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 type FatDetail = {
   id: string;
   periodo: string;
-  cliente: { nome: string; id: string };
+  cliente: { razaoSocial: string; id: string };
   boletos: {
     id: string;
     numeroBoleto: string;
@@ -105,7 +105,7 @@ function BoletosDetalheInner() {
           </div>
           <div>
             <p className="text-xs text-zinc-500">Cliente</p>
-            <p>{fat.cliente.nome}</p>
+            <p>{fat.cliente.razaoSocial}</p>
           </div>
           <div>
             <p className="text-xs text-zinc-500">Fatura (período)</p>

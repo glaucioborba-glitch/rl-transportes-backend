@@ -23,8 +23,8 @@ describe('DashboardFinanceiroService', () => {
       _count: 2,
     });
     prisma.faturamento.findMany.mockResolvedValue([
-      { valorTotal: dec('600.00'), statusBoleto: 'PAGO' },
-      { valorTotal: dec('400.00'), statusBoleto: 'PENDENTE' },
+      { valorTotal: dec('600.00'), statusBoleto: 'pago' },
+      { valorTotal: dec('400.00'), statusBoleto: 'pendente' },
     ]);
     prisma.faturamento.groupBy.mockResolvedValue([
       { clienteId: 'c1', _sum: { valorTotal: dec('1000.00') } },
@@ -37,7 +37,7 @@ describe('DashboardFinanceiroService', () => {
     prisma.boleto.count.mockResolvedValue(0);
     prisma.boleto.aggregate.mockResolvedValue({ _sum: { valorBoleto: dec('0') } });
     prisma.boleto.groupBy.mockResolvedValue([]);
-    prisma.cliente.findMany.mockResolvedValue([{ id: 'c1', nome: 'Cliente', tipo: 'PJ' as never }]);
+    prisma.cliente.findMany.mockResolvedValue([{ id: 'c1', razaoSocial: 'Cliente', tipo: 'PJ' as never }]);
     prisma.cliente.findFirst.mockResolvedValue(null);
     prisma.unidade.count.mockResolvedValue(4);
 

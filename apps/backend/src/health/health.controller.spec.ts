@@ -1,33 +1,72 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import {
+  HealthCheckError,
+  HealthCheckService,
+  type HealthCheckResult,
+} from '@nestjs/terminus';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
+import { CronAlertService } from '../common/cron/cron-alert.service';
 import { HealthController } from './health.controller';
+import { DbHealthService } from './db-health.service';
+import { PrismaHealthIndicator } from './indicators/prisma.health';
+import { RedisHealthIndicator } from './indicators/redis.health';
+import { IpmHealthIndicator } from './indicators/ipm.health';
 
 describe('HealthController', () => {
-  it('retorna ok quando database e redis respondem', async () => {
+  const okResult: HealthCheckResult = {
+    status: 'ok',
+    info: {
+      database: { status: 'up' },
+      redis: { status: 'up' },
+    },
+    error: {},
+    details: {
+      database: { status: 'up' },
+      redis: { status: 'up' },
+    },
+  };
+
+  async function buildController(checkImpl: () => Promise<HealthCheckResult>) {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [HealthController],
       providers: [
-        { provide: PrismaService, useValue: { $queryRaw: jest.fn().mockResolvedValue(1) } },
-        { provide: RedisService, useValue: { ping: jest.fn().mockResolvedValue('PONG') } },
+        { provide: HealthCheckService, useValue: { check: jest.fn(checkImpl) } },
+        { provide: PrismaHealthIndicator, useValue: { ping: jest.fn() } },
+        { provide: RedisHealthIndicator, useValue: { ping: jest.fn() } },
+        { provide: IpmHealthIndicator, useValue: { ping: jest.fn() } },
+        { provide: PrismaService, useValue: { $queryRaw: jest.fn() } },
+        { provide: RedisService, useValue: { ping: jest.fn() } },
+        { provide: CronAlertService, useValue: { getStatuses: jest.fn().mockResolvedValue({}) } },
+        {
+          provide: DbHealthService,
+          useValue: {
+            checkConnection: jest.fn().mockResolvedValue({
+              status: 'healthy',
+              latencyMs: 5,
+              activeConnections: 3,
+            }),
+          },
+        },
       ],
     }).compile();
-    const controller = module.get(HealthController);
+    return module.get(HealthController);
+  }
+
+  it('retorna ok quando database e redis respondem', async () => {
+    const controller = await buildController(async () => okResult);
     const r = await controller.check();
     expect(r.status).toBe('ok');
-    expect(r.checks).toEqual({ database: true, redis: true });
+    expect(r.info?.database).toEqual({ status: 'up' });
+    expect(r.info?.redis).toEqual({ status: 'up' });
   });
 
-  it('retorna degraded se um dos serviços falha', async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      controllers: [HealthController],
-      providers: [
-        { provide: PrismaService, useValue: { $queryRaw: jest.fn().mockRejectedValue(new Error('off')) } },
-        { provide: RedisService, useValue: { ping: jest.fn().mockResolvedValue('PONG') } },
-      ],
-    }).compile();
-    const controller = module.get(HealthController);
-    const r = await controller.check();
-    expect(r.status).toBe('degraded');
+  it('propaga falha Terminus quando dependência está down', async () => {
+    const controller = await buildController(async () => {
+      throw new HealthCheckError('degraded', {
+        database: { status: 'down', message: 'off' },
+      });
+    });
+    await expect(controller.check()).rejects.toBeInstanceOf(HealthCheckError);
   });
 });

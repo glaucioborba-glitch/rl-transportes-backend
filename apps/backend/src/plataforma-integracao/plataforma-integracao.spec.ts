@@ -3,10 +3,16 @@ import { PlataformaApiClientStore } from './stores/plataforma-api-client.store';
 import { PlataformaRateLimitService } from './services/plataforma-rate-limit.service';
 import type { PlataformaApiClient } from './plataforma.types';
 import { PlataformaContractsService } from './services/plataforma-contracts.service';
+import { ConfigCacheService } from '../common/cache/config-cache.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 describe('PlataformaApiClientStore (validarSecret)', () => {
   it('aceita secret correto', () => {
-    const store = new PlataformaApiClientStore({ get: () => '' } as unknown as ConfigService);
+    const store = new PlataformaApiClientStore(
+      { get: () => '' } as unknown as ConfigService,
+      {} as PrismaService,
+      { get: jest.fn(), set: jest.fn(), invalidate: jest.fn(), key: (_p: string, id: string) => `mock:${id}` } as unknown as ConfigCacheService,
+    );
     const client = {
       secret: 'segredo-forte',
     } as PlataformaApiClient;

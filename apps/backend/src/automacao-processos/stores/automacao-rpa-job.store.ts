@@ -1,27 +1,66 @@
 import { randomUUID } from 'crypto';
 import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
+import { TenantContextService } from '../../tenant/tenant-context.service';
+import { resolveStoreTenantId } from '../../common/stores/store-tenant.util';
 import type { RpaJob, RpaRobotId, RpaJobStatus } from '../automacao.types';
 
 @Injectable()
 export class AutomacaoRpaJobStore {
-  readonly jobs: RpaJob[] = [];
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenantCtx: TenantContextService,
+  ) {}
 
-  registrar(inicio: Omit<RpaJob, 'id'>): RpaJob {
-    const j: RpaJob = { id: randomUUID(), ...inicio };
-    this.jobs.push(j);
-    if (this.jobs.length > 2000) this.jobs.splice(0, 500);
-    return j;
+  private tenantId() {
+    return resolveStoreTenantId(this.tenantCtx);
   }
 
-  atualizar(id: string, patch: Partial<Pick<RpaJob, 'status' | 'finalizadoEm' | 'mensagem' | 'tentativa'>>) {
-    const j = this.jobs.find((x) => x.id === id);
-    if (!j) return undefined;
-    Object.assign(j, patch);
-    return j;
+  async registrar(inicio: Omit<RpaJob, 'id'>): Promise<RpaJob> {
+    const id = randomUUID();
+    const row = await this.prisma.automacaoRpaJob.create({
+      data: {
+        id,
+        tenantId: this.tenantId(),
+        robotId: inicio.robotId,
+        status: inicio.status,
+        mensagem: inicio.mensagem ?? null,
+        tentativa: inicio.tentativa,
+        startedAt: new Date(inicio.iniciadoEm),
+        finishedAt: inicio.finalizadoEm ? new Date(inicio.finalizadoEm) : null,
+      },
+    });
+    return this.mapRow(row);
   }
 
-  ultimos(n = 100): RpaJob[] {
-    return [...this.jobs].slice(-n).reverse();
+  async atualizar(
+    id: string,
+    patch: Partial<Pick<RpaJob, 'status' | 'finalizadoEm' | 'mensagem' | 'tentativa'>>,
+  ): Promise<RpaJob | undefined> {
+    const existing = await this.prisma.automacaoRpaJob.findFirst({
+      where: { id, tenantId: this.tenantId() },
+    });
+    if (!existing) return undefined;
+
+    const row = await this.prisma.automacaoRpaJob.update({
+      where: { id },
+      data: {
+        status: patch.status,
+        mensagem: patch.mensagem,
+        tentativa: patch.tentativa,
+        finishedAt: patch.finalizadoEm ? new Date(patch.finalizadoEm) : undefined,
+      },
+    });
+    return this.mapRow(row);
+  }
+
+  async ultimos(n = 100): Promise<RpaJob[]> {
+    const rows = await this.prisma.automacaoRpaJob.findMany({
+      where: { tenantId: this.tenantId() },
+      orderBy: { createdAt: 'desc' },
+      take: n,
+    });
+    return rows.map((r) => this.mapRow(r));
   }
 
   static validarRobot(id: string): id is RpaRobotId {
@@ -33,5 +72,25 @@ export class AutomacaoRpaJobStore {
       'rpa_rh_absenteismo',
       'rpa_grc_incidentes',
     ].includes(id);
+  }
+
+  private mapRow(row: {
+    id: string;
+    robotId: string;
+    status: string;
+    mensagem: string | null;
+    tentativa: number;
+    startedAt: Date;
+    finishedAt: Date | null;
+  }): RpaJob {
+    return {
+      id: row.id,
+      robotId: row.robotId as RpaRobotId,
+      status: row.status as RpaJobStatus,
+      iniciadoEm: row.startedAt.toISOString(),
+      finalizadoEm: row.finishedAt?.toISOString(),
+      mensagem: row.mensagem ?? undefined,
+      tentativa: row.tentativa,
+    };
   }
 }

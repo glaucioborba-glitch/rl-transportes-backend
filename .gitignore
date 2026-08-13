@@ -9,4 +9,14 @@ logs/
 # Ambiente local (nunca versionar segredos)
 .env
 .env.local
-.env.*.local
+
+# Credenciais e dumps locais de dev (não commitar)
+credenciais-teste*.txt
+dados-teste*.txt
+CODIGO-*.txt
+RELATORIO-AUDITORIA-CORRECOES.md
+tmp-cookies.txt
+
+# Uploads locais (dev) — produção usa S3
+uploads/
+apps/backend/uploads/

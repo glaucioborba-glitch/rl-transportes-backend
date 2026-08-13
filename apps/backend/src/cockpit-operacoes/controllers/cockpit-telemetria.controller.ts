@@ -13,13 +13,13 @@ export class CockpitTelemetriaController {
 
   @Get('mobile')
   @ApiOperation({ summary: 'Telemetria mobile agregada (Fase 21)' })
-  mobile() {
+  async mobile() {
     return this.tel.mobile();
   }
 
   @Get('dispositivos')
   @ApiOperation({ summary: 'Dispositivos e métricas agregadas' })
-  dispositivos() {
+  async dispositivos() {
     return this.tel.dispositivos();
   }
 }

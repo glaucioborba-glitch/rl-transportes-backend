@@ -45,14 +45,14 @@ export class FolhaRhController {
       'Armazenamento em memória até migração Prisma. Campo `beneficiosAtivos` referencia nomes cadastrados em POST /folha/beneficios.',
   })
   @ApiCreatedResponse({ type: ColaboradorRhRespostaDto })
-  criarColaborador(@Body() dto: CreateColaboradorRhDto): ColaboradorRhRespostaDto {
+  criarColaborador(@Body() dto: CreateColaboradorRhDto): Promise<ColaboradorRhRespostaDto> {
     return this.folha.createColaborador(dto);
   }
 
   @Get('colaboradores')
   @ApiOperation({ summary: 'Listar colaboradores' })
   @ApiOkResponse({ type: [ColaboradorRhRespostaDto] })
-  listarColaboradores(): ColaboradorRhRespostaDto[] {
+  listarColaboradores(): Promise<ColaboradorRhRespostaDto[]> {
     return this.folha.listColaboradores();
   }
 
@@ -64,13 +64,13 @@ export class FolhaRhController {
       '`fixo`: custo empresa mensal; `percentual`: percentual sobre salário contratual (valorMensal = %); `coparticipacao`: custo empresa + desconto estimado em folha.',
   })
   @ApiCreatedResponse({ type: BeneficioRhRespostaDto })
-  criarBeneficio(@Body() dto: CreateBeneficioRhDto): BeneficioRhRespostaDto {
+  criarBeneficio(@Body() dto: CreateBeneficioRhDto): Promise<BeneficioRhRespostaDto> {
     return this.folha.createBeneficio(dto);
   }
 
   @Get('beneficios')
   @ApiOkResponse({ type: [BeneficioRhRespostaDto] })
-  listarBeneficios(): BeneficioRhRespostaDto[] {
+  listarBeneficios(): Promise<BeneficioRhRespostaDto[]> {
     return this.folha.listBeneficios();
   }
 
@@ -82,13 +82,13 @@ export class FolhaRhController {
       'Agrega horas normais, extras, adicional noturno e falta para competência (YYYY-MM da data).',
   })
   @ApiCreatedResponse({ type: PresencaRhRespostaDto })
-  criarPresenca(@Body() dto: CreatePresencaRhDto): PresencaRhRespostaDto {
+  criarPresenca(@Body() dto: CreatePresencaRhDto): Promise<PresencaRhRespostaDto> {
     return this.folha.createPresenca(dto);
   }
 
   @Get('presencas')
   @ApiOkResponse({ type: [PresencaRhRespostaDto] })
-  listarPresencas(): PresencaRhRespostaDto[] {
+  listarPresencas(): Promise<PresencaRhRespostaDto[]> {
     return this.folha.listPresencas();
   }
 
@@ -106,7 +106,7 @@ export class FolhaRhController {
       '**Provisões**: férias 1/12 e 13º 1/12 sobre salário contratual.',
   })
   @ApiOkResponse({ type: CalculoFolhaRespostaDto })
-  getCalculo(@Query() q: MesReferenciaQueryDto): CalculoFolhaRespostaDto {
+  getCalculo(@Query() q: MesReferenciaQueryDto): Promise<CalculoFolhaRespostaDto> {
     return this.folha.getCalculo(q.mes);
   }
 
@@ -117,7 +117,7 @@ export class FolhaRhController {
       'Agrega `custoTotalEmpresa` por MANHA/TARDE/NOITE e distribui proxy entre operações (`FOLHA_SIMULADOR_OPERACOES_COUNT`) para alinhamento conceitual com simulador/planejamento sem acoplamento de código.',
   })
   @ApiOkResponse({ type: CustosTurnoRespostaDto })
-  getCustosTurno(@Query() q: MesReferenciaQueryDto): CustosTurnoRespostaDto {
+  getCustosTurno(@Query() q: MesReferenciaQueryDto): Promise<CustosTurnoRespostaDto> {
     return this.folha.getCustosTurno(q.mes);
   }
 
@@ -128,7 +128,7 @@ export class FolhaRhController {
       'Série 12 meses a partir do mês corrente; custos de folha, benefícios e provisões. Contratações previstas via `FOLHA_PREVISAO_ADMISSOES_ANO`. Impacto em caixa usa `FINANCEIRO_SALDO_CONTA_PROXY` (Fase 9).',
   })
   @ApiOkResponse({ type: ProjecaoAnualRhRespostaDto })
-  getProjecaoAnual(): ProjecaoAnualRhRespostaDto {
+  getProjecaoAnual(): Promise<ProjecaoAnualRhRespostaDto> {
     return this.folha.getProjecaoAnual();
   }
 
@@ -139,7 +139,7 @@ export class FolhaRhController {
       'Headcount ativo no mês corrente, custos consolidados, absenteísmo por presenças e eficiência por turno.',
   })
   @ApiOkResponse({ type: DashboardFolhaRhDto })
-  getDashboard(): DashboardFolhaRhDto {
+  getDashboard(): Promise<DashboardFolhaRhDto> {
     return this.folha.getDashboard();
   }
 }

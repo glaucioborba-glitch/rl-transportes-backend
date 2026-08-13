@@ -1,3 +1,4 @@
+import { cpfCnpjForTestUser, userWhereForTestEmail } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
@@ -40,13 +41,13 @@ describe('Observabilidade (e2e)', () => {
     const hash = await bcrypt.hash(pwd, 10);
 
     const adm = await prisma.user.create({
-      data: { email: emailAdm, password: hash, role: Role.ADMIN },
+      data: { cpfCnpj: cpfCnpjForTestUser(emailAdm), email: emailAdm, password: hash, role: Role.ADMIN },
     });
     const ger = await prisma.user.create({
-      data: { email: emailGer, password: hash, role: Role.GERENTE },
+      data: { cpfCnpj: cpfCnpjForTestUser(emailGer), email: emailGer, password: hash, role: Role.GERENTE },
     });
     await prisma.user.create({
-      data: { email: emailOp, password: hash, role: Role.OPERADOR_GATE },
+      data: { cpfCnpj: cpfCnpjForTestUser(emailOp), email: emailOp, password: hash, role: Role.OPERADOR_GATE },
     });
 
     tokenAdm = auth.issueTokens(adm).accessToken;
@@ -55,7 +56,7 @@ describe('Observabilidade (e2e)', () => {
 
   afterAll(async () => {
     await prisma.user.deleteMany({
-      where: { email: { in: [emailAdm, emailGer, emailOp] } },
+      where: { cpfCnpj: { in: [cpfCnpjForTestUser(emailAdm), cpfCnpjForTestUser(emailGer), cpfCnpjForTestUser(emailOp)] } },
     });
     await app.close();
   });
@@ -103,7 +104,7 @@ describe('Observabilidade (e2e)', () => {
   });
 
   it('OPERADOR GET /observabilidade/logs — 403', async () => {
-    const op = await prisma.user.findUnique({ where: { email: emailOp } });
+    const op = await prisma.user.findUnique({ where: userWhereForTestEmail(emailOp) });
     expect(op).toBeTruthy();
     const tOp = auth.issueTokens(op!).accessToken;
     await request(app.getHttpServer())

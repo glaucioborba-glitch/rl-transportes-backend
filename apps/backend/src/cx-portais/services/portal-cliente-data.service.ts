@@ -1,15 +1,45 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { StatusAgendamentoTerminal, StatusSolicitacao, type Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PlataformaTenantStore } from '../../plataforma-integracao/stores/plataforma-tenant.store';
 import type { CxPortalRequestUser } from '../types/cx-portal.types';
 import { PortalClienteSolicitacoesQueryDto } from '../dto/portal-cliente-solicitacoes-query.dto';
+import { UpdatePortalSolicitacaoDto } from '../dto/update-portal-solicitacao.dto';
+import { DashboardPortalService } from '../dashboard/dashboard-portal.service';
+import { AgendamentosService } from '../../agendamentos/agendamentos.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { stripContainerIsoCanonical } from '../../common/utils/data-sanitize';
+import {
+  diffSolicitacaoAuditSnapshots,
+  resolveAuditActor,
+  snapshotFromPersisted,
+  snapshotFromUpdateDto,
+} from '../../audit-log/audit-log-solicitacao.util';
+import {
+  containerIsosChanged,
+  deltasInvalidateQrCredential,
+} from '../../common/utils/credencial-version.util';
+import {
+  formatTamanhoContainerMatrix,
+  normalizeTamanhoContainer,
+  normalizeTamanhosContainer,
+} from '../../cadastros/tipo-container-tamanhos.util';
+
+const STATUS_TERMINAL = new Set<StatusSolicitacao>([
+  StatusSolicitacao.CONCLUIDO,
+  StatusSolicitacao.REJEITADO,
+  StatusSolicitacao.CANCELADO,
+  StatusSolicitacao.CANCELADO_CLIENTE,
+]);
 
 @Injectable()
 export class PortalClienteDataService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenants: PlataformaTenantStore,
+    private readonly dashboardPortal: DashboardPortalService,
+    private readonly agendamentos: AgendamentosService,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   private clientScope(cx: CxPortalRequestUser, clienteIdParam?: string): string {
@@ -26,25 +56,7 @@ export class PortalClienteDataService {
   }
 
   async dashboard(cx: CxPortalRequestUser, clienteIdParam?: string) {
-    const clienteId = this.clientScope(cx, clienteIdParam);
-    const [totalSol, abertas, concluidas, cliente] = await Promise.all([
-      this.prisma.solicitacao.count({ where: { clienteId, deletedAt: null } }),
-      this.prisma.solicitacao.count({
-        where: { clienteId, deletedAt: null, status: { in: ['PENDENTE', 'APROVADO'] } },
-      }),
-      this.prisma.solicitacao.count({ where: { clienteId, deletedAt: null, status: 'CONCLUIDO' } }),
-      this.prisma.cliente.findFirst({ where: { id: clienteId, deletedAt: null } }),
-    ]);
-    const tenant = this.tenants.obter(cx.tenantId) ?? this.tenants.obter('default');
-    return {
-      cliente: cliente ? { id: cliente.id, nome: cliente.nome, email: cliente.email } : null,
-      solicitacoes: { total: totalSol, emAndamentoProxy: abertas, concluidas },
-      meta: {
-        tenantId: cx.tenantId,
-        slasProxy: tenant?.config.slasHorasProxy ?? null,
-        publicApiEnvelope: { success: true, data: 'Camada CX consome contratos alinhados à API pública (Fase 18) — proxy read-only.' },
-      },
-    };
+    return this.dashboardPortal.buildConsolidated(cx, clienteIdParam);
   }
 
   private readonly orderFields = new Set(['createdAt', 'updatedAt', 'protocolo', 'status']);
@@ -77,6 +89,70 @@ export class PortalClienteDataService {
     if (proto) {
       where.protocolo = { contains: proto, mode: 'insensitive' };
     }
+    const containerRaw = q.container?.trim();
+    if (containerRaw) {
+      const container = containerRaw.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+      if (container) {
+        where.AND = [
+          ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+          {
+            OR: [
+              {
+                containersSolicitacao: {
+                  some: { unidade: { contains: container, mode: 'insensitive' } },
+                },
+              },
+              {
+                unidades: {
+                  some: { numeroIso: { contains: container, mode: 'insensitive' } },
+                },
+              },
+            ],
+          },
+        ];
+      }
+    }
+    const bookingRaw = q.booking?.trim();
+    if (bookingRaw) {
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+        {
+          containersSolicitacao: {
+            some: { booking: { contains: bookingRaw, mode: 'insensitive' } },
+          },
+        },
+      ];
+    }
+    const processoRaw = q.processo?.trim();
+    if (processoRaw) {
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+        {
+          containersSolicitacao: {
+            some: { processo: { contains: processoRaw, mode: 'insensitive' } },
+          },
+        },
+      ];
+    }
+
+    if (q.escopo === 'minhas') {
+      const email = (
+        cx.pessoaAutorizada?.email?.trim() ||
+        cx.email?.trim() ||
+        ''
+      ).toLowerCase();
+      if (!email) {
+        return { items: [], total: 0, page, limit, orderBy, order };
+      }
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+        {
+          solicitanteContato: {
+            is: { email: { equals: email, mode: 'insensitive' } },
+          },
+        },
+      ];
+    }
 
     const [items, total] = await Promise.all([
       this.prisma.solicitacao.findMany({
@@ -91,6 +167,11 @@ export class PortalClienteDataService {
           patio: true,
           saida: true,
           unidades: true,
+          transporteSolicitacao: true,
+          containersSolicitacao: { orderBy: { ordem: 'asc' } },
+          agendamentoSolicitacao: true,
+          solicitanteContato: true,
+          anexosSolicitacao: { orderBy: { createdAt: 'desc' } },
         },
       }),
       this.prisma.solicitacao.count({ where }),
@@ -108,6 +189,12 @@ export class PortalClienteDataService {
         patio: true,
         saida: true,
         unidades: true,
+        cliente: { select: { id: true, razaoSocial: true, nomeFantasia: true } },
+        transporteSolicitacao: true,
+        containersSolicitacao: { orderBy: { ordem: 'asc' } },
+        agendamentoSolicitacao: true,
+        solicitanteContato: true,
+        anexosSolicitacao: { orderBy: { createdAt: 'desc' } },
       },
     });
     if (!s) return null;
@@ -143,6 +230,28 @@ export class PortalClienteDataService {
     });
   }
 
+  /** Faturas de armazenagem (Gate-Out) com links NFS-e / boleto / PIX. */
+  async faturasArmazenagem(cx: CxPortalRequestUser, clienteIdParam?: string) {
+    const clienteId = this.clientScope(cx, clienteIdParam);
+    return this.prisma.fatura.findMany({
+      where: { clienteId },
+      orderBy: { dataEmissao: 'desc' },
+      take: 100,
+      select: {
+        id: true,
+        valorTotal: true,
+        dataEmissao: true,
+        statusPagamento: true,
+        linkNfse: true,
+        linkBoleto: true,
+        linkPix: true,
+        numeroRps: true,
+        serieRps: true,
+        preFatura: { select: { containerIso: true, diasCobrados: true } },
+      },
+    });
+  }
+
   async boletos(cx: CxPortalRequestUser, clienteIdParam?: string) {
     const clienteId = this.clientScope(cx, clienteIdParam);
     return this.prisma.boleto.findMany({
@@ -170,10 +279,10 @@ export class PortalClienteDataService {
   }
 
   async slas(cx: CxPortalRequestUser) {
-    const t = this.tenants.obter(cx.tenantId) ?? this.tenants.obter('default');
+    const t = (await this.tenants.obter(cx.tenantId)) ?? (await this.tenants.obter('default'));
     return {
       tenantId: cx.tenantId,
-      contratadosProxy: t?.config.slasHorasProxy ?? { gate: 4, patio: 72, saida: 24 },
+      contratadosProxy: t?.config.slasMinutosMeta ?? { gate: 240, patio: 4320, saida: 1440 },
       historicoProxy: [
         { periodo: '30d', cumprimentoPctProxy: 94 },
         { periodo: '90d', cumprimentoPctProxy: 91 },
@@ -237,5 +346,221 @@ export class PortalClienteDataService {
       const csv = `tipo,info\nportal.cx,export_simulado\ncliente,${cx.sub}\n`;
       return { formato: 'csv', conteudo: csv, bytes: Buffer.byteLength(csv, 'utf8') };
     });
+  }
+
+  async cancelarSolicitacaoPortal(cx: CxPortalRequestUser, id: string) {
+    const sol = await this.obterSolicitacao(cx, id);
+    if (!sol) throw new NotFoundException('Solicitação não encontrada');
+    if (STATUS_TERMINAL.has(sol.status)) {
+      throw new BadRequestException('Solicitação não pode ser cancelada neste status.');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.solicitacao.update({
+        where: { id },
+        data: { status: StatusSolicitacao.CANCELADO_CLIENTE },
+      });
+      await tx.agendamentoTerminal.updateMany({
+        where: { solicitacaoId: id },
+        data: { status: StatusAgendamentoTerminal.CANCELADO_CLIENTE },
+      });
+    });
+
+    const updated = await this.obterSolicitacao(cx, id);
+    if (!updated) throw new NotFoundException('Solicitação não encontrada');
+    return updated;
+  }
+
+  async atualizarSolicitacaoPortal(cx: CxPortalRequestUser, id: string, dto: UpdatePortalSolicitacaoDto) {
+    const sol = await this.prisma.solicitacao.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        containersSolicitacao: { orderBy: { ordem: 'asc' } },
+        agendamentoSolicitacao: true,
+        transporteSolicitacao: true,
+        solicitanteContato: true,
+      },
+    });
+    if (!sol) throw new NotFoundException('Solicitação não encontrada');
+    if (cx.portalPapel !== 'STAFF' && sol.clienteId !== this.clientScope(cx)) {
+      throw new NotFoundException('Solicitação não encontrada');
+    }
+    if (STATUS_TERMINAL.has(sol.status)) {
+      throw new BadRequestException('Solicitação não editável neste status.');
+    }
+    if (!sol.agendamentoSolicitacao) {
+      throw new BadRequestException('Solicitação sem agendamento vinculado.');
+    }
+
+    const dataRef = new Date(`${dto.agendamento.dataRef}T00:00:00.000Z`);
+    if (Number.isNaN(dataRef.getTime())) {
+      throw new BadRequestException('Data de agendamento inválida');
+    }
+
+    const tiposAtivos = await this.prisma.cadastroTipoContainer.findMany({
+      where: { deletedAt: null, ativo: true },
+      select: { codigo: true, tamanhos: true },
+    });
+    const byCodigo = new Map(
+      tiposAtivos.map((t) => [t.codigo.toUpperCase(), normalizeTamanhosContainer(t.tamanhos)]),
+    );
+
+    for (const c of dto.containers) {
+      const existing = sol.containersSolicitacao.find((x) => x.ordem === c.ordem);
+      if (!existing) {
+        throw new BadRequestException(`Contêiner ordem ${c.ordem} não encontrado`);
+      }
+      // ISO imutável — se enviado, só bloqueia quando o valor canônico for diferente (ignora máscara).
+      if (c.unidade?.trim()) {
+        const incoming = stripContainerIsoCanonical(c.unidade);
+        const current = stripContainerIsoCanonical(existing.unidade);
+        if (incoming !== current) {
+          throw new BadRequestException('Alteração do número ISO do contêiner não é permitida.');
+        }
+      }
+      const codigo = c.tipo.trim().toUpperCase();
+      const tamanhos = byCodigo.get(codigo);
+      if (!tamanhos) {
+        throw new BadRequestException(
+          `Tipo de contêiner inválido ou inativo na ordem ${c.ordem}: ${c.tipo}`,
+        );
+      }
+      const tamanhoNorm = normalizeTamanhoContainer(c.tamanho);
+      if (!tamanhos.includes(tamanhoNorm)) {
+        throw new BadRequestException(
+          `Tamanho ${c.tamanho} não permitido para o tipo ${codigo} (ordem ${c.ordem}).`,
+        );
+      }
+      c.tipo = codigo;
+      c.tamanho = formatTamanhoContainerMatrix(tamanhoNorm);
+    }
+
+    const oldAg = sol.agendamentoSolicitacao;
+    const oldDateStr = oldAg.dataRef.toISOString().slice(0, 10);
+    const scheduleChanged =
+      oldDateStr !== dto.agendamento.dataRef || oldAg.turno !== dto.agendamento.turno;
+    if (scheduleChanged) {
+      await this.agendamentos.assertCapacidadeTurno(
+        dto.agendamento.dataRef,
+        dto.agendamento.turno,
+        sol.containersSolicitacao.length,
+      );
+    }
+
+    const beforeSnap = snapshotFromPersisted(sol);
+    const transporteDto =
+      dto.transporte && sol.transporteSolicitacao
+        ? dto.transporte
+        : sol.transporteSolicitacao
+          ? {
+              nomeMotorista: sol.transporteSolicitacao.nomeMotorista,
+              cpfMotorista: sol.transporteSolicitacao.cpfMotorista,
+              placaCavalo: sol.transporteSolicitacao.placaCavalo,
+              placaCarreta01: sol.transporteSolicitacao.placaCarreta01,
+              placaCarreta02: sol.transporteSolicitacao.placaCarreta02,
+            }
+          : undefined;
+    const afterSnap = snapshotFromUpdateDto({
+      agendamento: dto.agendamento,
+      ...(transporteDto ? { transporte: transporteDto } : {}),
+    });
+    const auditDeltas = diffSolicitacaoAuditSnapshots(beforeSnap, afterSnap);
+    const auditActor = resolveAuditActor(cx);
+    const isosBefore = sol.containersSolicitacao.map((c) => c.unidade);
+    const isosAfter = sol.containersSolicitacao.map((c) => {
+      const incoming = dto.containers.find((x) => x.ordem === c.ordem);
+      return incoming?.unidade?.trim() ? incoming.unidade : c.unidade;
+    });
+    const invalidateQr =
+      deltasInvalidateQrCredential(auditDeltas) || containerIsosChanged(isosBefore, isosAfter);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.agendamentoSolicitacao.update({
+        where: { solicitacaoId: id },
+        data: {
+          dataRef,
+          turno: dto.agendamento.turno,
+          atendimentoEspecial: dto.agendamento.atendimentoEspecial,
+          atendimentoEspecialTexto: dto.agendamento.atendimentoEspecialTexto?.trim() || null,
+        },
+      });
+
+      for (const c of dto.containers) {
+        const existing = sol.containersSolicitacao.find((x) => x.ordem === c.ordem)!;
+        await tx.containerSolicitacao.update({
+          where: { id: existing.id },
+          data: {
+            booking: (c.booking ?? '').trim(),
+            processo: (c.processo ?? '').trim(),
+            tamanho: c.tamanho.trim(),
+            tipo: c.tipo.trim(),
+            status: c.status,
+            lacre: c.lacre?.trim() || null,
+            refrigerado: c.refrigerado,
+            setPoint: c.setPoint ?? null,
+          },
+        });
+      }
+
+      if (dto.transporte && sol.transporteSolicitacao) {
+        await tx.transporteSolicitacao.update({
+          where: { solicitacaoId: id },
+          data: {
+            nomeMotorista: dto.transporte.nomeMotorista.trim(),
+            cpfMotorista: dto.transporte.cpfMotorista.replace(/\D/g, ''),
+            tipoCaminhao: dto.transporte.tipoCaminhao,
+            placaCavalo: dto.transporte.placaCavalo.trim().toUpperCase(),
+            placaCarreta01: dto.transporte.placaCarreta01.trim().toUpperCase(),
+            placaCarreta02: dto.transporte.placaCarreta02?.trim().toUpperCase() || null,
+          },
+        });
+      }
+
+      await tx.solicitanteContato.update({
+        where: { solicitacaoId: id },
+        data: {
+          nome: dto.solicitante.nome.trim(),
+          telefone: dto.solicitante.telefone.replace(/\D/g, ''),
+          email: dto.solicitante.email.trim().toLowerCase(),
+        },
+      });
+
+      await tx.agendamentoTerminal.updateMany({
+        where: { solicitacaoId: id },
+        data: {
+          dataRef,
+          turno: dto.agendamento.turno,
+          localOrigem: dto.localOrigem?.trim() || null,
+          localDestino: dto.localDestino?.trim() || null,
+        },
+      });
+
+      await this.auditLog.appendSolicitacaoUpdate(
+        id,
+        auditActor,
+        beforeSnap,
+        afterSnap,
+        auditDeltas,
+        tx,
+      );
+
+      if (invalidateQr) {
+        await tx.solicitacao.update({
+          where: { id },
+          data: { versaoCredencial: { increment: 1 } },
+        });
+      }
+    });
+
+    const updated = await this.obterSolicitacao(cx, id);
+    if (!updated) throw new NotFoundException('Solicitação não encontrada');
+    return updated;
+  }
+
+  async historicoAlteracoesSolicitacao(cx: CxPortalRequestUser, id: string) {
+    const sol = await this.obterSolicitacao(cx, id);
+    if (!sol) throw new NotFoundException('Solicitação não encontrada');
+    const logs = await this.auditLog.listBySolicitacao(id, { cx });
+    return { solicitacaoId: id, items: this.auditLog.serializeForUi(logs) };
   }
 }

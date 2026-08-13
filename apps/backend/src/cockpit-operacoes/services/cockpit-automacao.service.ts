@@ -15,11 +15,12 @@ export class CockpitAutomacaoService {
     private readonly schedulers: AutomacaoSchedulerStore,
   ) {}
 
-  painel() {
-    const wfs = this.workflows.listar();
-    const ult24 = this.execucao.ultimas24h();
-    const erros = this.execucao.comErroUltimas24h();
+  async painel() {
+    const wfs = await this.workflows.listar();
+    const ult24 = await this.execucao.ultimas24h();
+    const erros = await this.execucao.comErroUltimas24h();
     const tempoRespostaProxyMs = ult24.length ? Math.min(120_000, 800 + ult24.length * 12) : null;
+    const schedulers = await this.schedulers.listar();
     return {
       geradoEm: new Date().toISOString(),
       workflowsAcionadosUlt24h: ult24.filter((e: AutomacaoExecucaoLog) => e.tipo === 'workflow').length,
@@ -28,12 +29,12 @@ export class CockpitAutomacaoService {
       falhasUlt24h: erros.length,
       tempoRespostaMedioProxyMs: tempoRespostaProxyMs,
       gatilhosRecentes: this.topEventos(ult24),
-      schedulersAtivos: this.schedulers.listar().filter((c: CronJobDef) => c.ativo).length,
+      schedulersAtivos: schedulers.filter((c: CronJobDef) => c.ativo).length,
     };
   }
 
-  jobs() {
-    const jobs = this.rpaJobs.ultimos(200);
+  async jobs() {
+    const jobs = await this.rpaJobs.ultimos(200);
     const ult24t = Date.now() - 24 * 60 * 60 * 1000;
     const jobsUlt24 = jobs.filter((j: RpaJob) => new Date(j.iniciadoEm).getTime() >= ult24t);
     return {

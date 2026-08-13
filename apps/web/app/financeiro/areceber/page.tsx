@@ -22,7 +22,7 @@ type DashFin = {
 type FatDetail = {
   id: string;
   periodo: string;
-  cliente: { nome: string };
+  cliente: { razaoSocial: string };
   boletos: {
     id: string;
     numeroBoleto: string;
@@ -79,7 +79,7 @@ export default function AreceberPage() {
             rows.push({
               boletoId: b.id,
               numeroBoleto: b.numeroBoleto,
-              cliente: f.cliente.nome,
+              cliente: f.cliente.razaoSocial,
               vencimento: b.dataVencimento?.slice(0, 10) ?? "",
               status: b.statusPagamento,
               valor: parseDecimal(b.valorBoleto),

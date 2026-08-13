@@ -1,5 +1,6 @@
-import { SdtShell } from "@/components/sdt/sdt-shell";
+import type { ReactNode } from "react";
+import { IntranetShell } from "@/components/intranet/intranet-shell";
 
-export default function SdtLayout({ children }: { children: React.ReactNode }) {
-  return <SdtShell>{children}</SdtShell>;
+export default function SdtLayout({ children }: { children: ReactNode }) {
+  return <IntranetShell>{children}</IntranetShell>;
 }
