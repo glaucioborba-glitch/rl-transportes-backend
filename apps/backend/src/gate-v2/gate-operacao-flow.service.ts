@@ -14,6 +14,10 @@ import {
 } from './operacao-states.constants';
 import { buildQrOnApproval } from './operacao-fluxo-qr.util';
 import { generateRICPDF, type RICData } from './ric-pdf.service';
+import {
+  formatTamanhoContainerMatrix,
+  resolveTipoContainerCodigo,
+} from '../cadastros/tipo-container-tamanhos.util';
 import type { PassThrough } from 'stream';
 
 const SOLICITACAO_INCLUDE = {
@@ -80,8 +84,8 @@ export class GateOperacaoFlowService {
       stateLabel: STATE_LABELS[state],
       etapa: state,
       containerNumero: this.containerNumero(s),
-      containerTipo: c?.tipo ?? '—',
-      containerTamanho: c?.tamanho ?? '—',
+      containerTipo: c?.tipo ? resolveTipoContainerCodigo(c.tipo) : '—',
+      containerTamanho: c?.tamanho ? formatTamanhoContainerMatrix(c.tamanho) : '—',
       containerSituacao: c?.status ?? '—',
       placa: t?.placaCavalo?.trim() || s.portaria?.placaVeiculo || '—',
       motoristaNome: t?.nomeMotorista?.trim() || s.portaria?.motoristaNome || '—',
@@ -174,7 +178,9 @@ export class GateOperacaoFlowService {
       items: rows.map((s) => ({
         protocolo: s.protocolo,
         containerNumero: this.containerNumero(s),
-        containerTipo: s.containersSolicitacao[0]?.tipo ?? '—',
+        containerTipo: s.containersSolicitacao[0]?.tipo
+          ? resolveTipoContainerCodigo(s.containersSolicitacao[0].tipo)
+          : '—',
         placa: s.transporteSolicitacao?.placaCavalo ?? '—',
         clienteNome: s.cliente.nomeFantasia || s.cliente.razaoSocial,
       })),
@@ -401,8 +407,8 @@ export class GateOperacaoFlowService {
     return {
       protocolo: s.protocolo,
       containerNumero: this.containerNumero(s),
-      containerTipo: c?.tipo ?? '—',
-      containerTamanho: c?.tamanho ?? '—',
+      containerTipo: c?.tipo ? resolveTipoContainerCodigo(c.tipo) : '—',
+      containerTamanho: c?.tamanho ? formatTamanhoContainerMatrix(c.tamanho) : '—',
       containerSituacao: c?.status ?? '—',
       tipoOperacao: String(s.tipoOperacao ?? '—'),
       placa: t?.placaCavalo?.trim() || s.portaria?.placaVeiculo || '—',

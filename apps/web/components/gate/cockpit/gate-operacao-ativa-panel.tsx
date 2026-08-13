@@ -17,6 +17,7 @@ import {
   type YardFlowColumnId,
 } from "@/lib/gate/yard-flow";
 import { ContainerNumber } from "@/components/ui/container-number";
+import { coerceTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -112,7 +113,9 @@ function YardFlowCardView({
 
       {card.tipoTamanho ? (
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">{card.tipoTamanho}</span>
+          <span className="text-sm text-muted-foreground">
+            {coerceTipoTamanhoContainerLabel(card.tipoTamanho) ?? card.tipoTamanho}
+          </span>
           {card.situacao ? <SituacaoBadge situacao={card.situacao} /> : null}
         </div>
       ) : null}

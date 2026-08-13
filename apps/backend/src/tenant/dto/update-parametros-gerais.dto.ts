@@ -152,6 +152,12 @@ export class UpdateOperacionalDto {
   @IsBoolean()
   operacaoFimSemana?: boolean;
 
+  /** Texto explicativo exibido na UI (fim de semana / cobrança). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  descricaoFimSemana?: string;
+
   @IsOptional()
   @ValidateNested()
   @Type(() => UpdateToleranciaChegadaDto)

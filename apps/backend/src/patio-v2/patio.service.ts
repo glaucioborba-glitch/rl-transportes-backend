@@ -7,6 +7,7 @@ import {
   AcaoAuditoria,
   MovTipo,
   PatioStatus,
+  PatioTomadaEventType,
   Prisma,
   StatusSolicitacao,
 } from '@prisma/client';
@@ -18,6 +19,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { YardSnapshotService } from '../yard-read/yard-snapshot.service';
 import type { PatioMovimentarDto } from './dto/movimentar.dto';
 import type { PatioPosicionarDto } from './dto/posicionar.dto';
+import type {
+  PatioTomadaConectarDto,
+  PatioTomadaDesconectarDto,
+  PortalSolicitarTomadaDto,
+} from './dto/tomada.dto';
 
 const OCUPACAO_CRITICA_RATIO = 1;
 
@@ -48,7 +54,7 @@ export class PatioV2Service {
     let created = 0;
     for (const c of containers) {
       const iso = normalizeContainerIso(c.unidade).replace(/\s/g, '').toUpperCase();
-      await db.patioUnidade.create({
+      const unit = await db.patioUnidade.create({
         data: {
           unidadeIso: iso,
           solicitacaoId,
@@ -57,9 +63,218 @@ export class PatioV2Service {
           refrigerado: c.refrigerado,
         },
       });
+      if (c.refrigerado) {
+        await db.patioTomadaEvent.create({
+          data: {
+            patioUnidadeId: unit.id,
+            tipo: PatioTomadaEventType.CONECTADO,
+            setPoint: c.setPoint ?? null,
+            observacao: 'Conexão solicitada na baixa (gate-in)',
+          },
+        });
+      }
       created++;
     }
     return created;
+  }
+
+  async solicitarTomadaPortal(
+    clienteId: string,
+    unidadeIsoRaw: string,
+    dto: PortalSolicitarTomadaDto,
+    actorUserId?: string,
+  ) {
+    const unidadeIso = normalizeContainerIso(unidadeIsoRaw).replace(/\s/g, '').toUpperCase();
+    const unit = await this.prisma.patioUnidade.findFirst({
+      where: {
+        unidadeIso,
+        solicitacao: { clienteId, deletedAt: null },
+        gateIn: { checkOut: null },
+        status: { not: PatioStatus.AGUARDANDO_GATE_OUT },
+      },
+      include: {
+        tomadaEventos: { orderBy: { createdAt: 'desc' }, take: 5 },
+        solicitacao: {
+          include: {
+            containersSolicitacao: true,
+          },
+        },
+      },
+    });
+    if (!unit) {
+      throw new NotFoundException('Contêiner não encontrado no pátio ou já liberado.');
+    }
+    if (unit.refrigerado) {
+      throw new BadRequestException('Tomada já está conectada para este contêiner.');
+    }
+    const pending = unit.tomadaEventos.find((e) => e.tipo === PatioTomadaEventType.SOLICITADO);
+    const last = unit.tomadaEventos[0];
+    if (pending && last?.tipo === PatioTomadaEventType.SOLICITADO) {
+      throw new BadRequestException('Já existe solicitação de tomada pendente para este contêiner.');
+    }
+
+    const form = unit.solicitacao.containersSolicitacao.find(
+      (c) => normalizeContainerIso(c.unidade).replace(/\s/g, '').toUpperCase() === unidadeIso,
+    );
+    await this.prisma.$transaction(async (tx) => {
+      await tx.patioTomadaEvent.create({
+        data: {
+          patioUnidadeId: unit.id,
+          tipo: PatioTomadaEventType.SOLICITADO,
+          setPoint: dto.setPoint,
+          actorUserId: actorUserId ?? null,
+          observacao: dto.observacao?.trim() || 'Solicitação do cliente (portal)',
+        },
+      });
+      if (form) {
+        await tx.containerSolicitacao.update({
+          where: { id: form.id },
+          data: { refrigerado: true, setPoint: dto.setPoint },
+        });
+      }
+    });
+
+    await this.auditoria.registrar({
+      tabela: 'patio_v2_tomada_eventos',
+      registroId: unit.id,
+      acao: AcaoAuditoria.INSERT,
+      usuario: actorUserId ?? 'portal',
+      solicitacaoId: unit.solicitacaoId,
+      dadosDepois: { tipo: 'SOLICITADO', unidadeIso, setPoint: dto.setPoint },
+    });
+
+    return {
+      unidadeIso,
+      status: 'SOLICITADO',
+      setPoint: dto.setPoint,
+      message: 'Pedido de tomada registrado. A operação conectará a unidade no pátio.',
+    };
+  }
+
+  async conectarTomada(unidadeId: string, operadorId: string, dto: PatioTomadaConectarDto) {
+    const unit = await this.prisma.patioUnidade.findUnique({
+      where: { id: unidadeId },
+      include: {
+        solicitacao: { include: { containersSolicitacao: true } },
+      },
+    });
+    if (!unit) throw new NotFoundException('Unidade de pátio não encontrada');
+    if (unit.refrigerado) {
+      throw new BadRequestException('Tomada já conectada.');
+    }
+
+    const iso = unit.unidadeIso;
+    const form = unit.solicitacao.containersSolicitacao.find(
+      (c) => normalizeContainerIso(c.unidade).replace(/\s/g, '').toUpperCase() === iso,
+    );
+    const setPoint = dto.setPoint ?? form?.setPoint ?? null;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.patioUnidade.update({
+        where: { id: unit.id },
+        data: { refrigerado: true },
+      });
+      await tx.patioTomadaEvent.create({
+        data: {
+          patioUnidadeId: unit.id,
+          tipo: PatioTomadaEventType.CONECTADO,
+          setPoint,
+          actorUserId: operadorId,
+          observacao: dto.observacao?.trim() || null,
+        },
+      });
+      if (form) {
+        await tx.containerSolicitacao.update({
+          where: { id: form.id },
+          data: {
+            refrigerado: true,
+            ...(setPoint != null ? { setPoint } : {}),
+          },
+        });
+      }
+    });
+
+    await this.auditoria.registrar({
+      tabela: 'patio_v2_tomada_eventos',
+      registroId: unit.id,
+      acao: AcaoAuditoria.UPDATE,
+      usuario: operadorId,
+      solicitacaoId: unit.solicitacaoId,
+      dadosDepois: { tipo: 'CONECTADO', unidadeIso: iso, setPoint },
+    });
+
+    return { id: unit.id, unidadeIso: iso, refrigerado: true, setPoint };
+  }
+
+  async desconectarTomada(unidadeId: string, operadorId: string, dto: PatioTomadaDesconectarDto) {
+    const unit = await this.prisma.patioUnidade.findUnique({ where: { id: unidadeId } });
+    if (!unit) throw new NotFoundException('Unidade de pátio não encontrada');
+    if (!unit.refrigerado) {
+      throw new BadRequestException('Tomada já está desconectada.');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.patioUnidade.update({
+        where: { id: unit.id },
+        data: { refrigerado: false },
+      });
+      await tx.patioTomadaEvent.create({
+        data: {
+          patioUnidadeId: unit.id,
+          tipo: PatioTomadaEventType.DESCONECTADO,
+          actorUserId: operadorId,
+          observacao: dto.observacao?.trim() || null,
+        },
+      });
+    });
+
+    await this.auditoria.registrar({
+      tabela: 'patio_v2_tomada_eventos',
+      registroId: unit.id,
+      acao: AcaoAuditoria.UPDATE,
+      usuario: operadorId,
+      solicitacaoId: unit.solicitacaoId,
+      dadosDepois: { tipo: 'DESCONECTADO', unidadeIso: unit.unidadeIso },
+    });
+
+    return { id: unit.id, unidadeIso: unit.unidadeIso, refrigerado: false };
+  }
+
+  async statusTomada(unidadeIsoRaw: string, clienteId?: string) {
+    const unidadeIso = normalizeContainerIso(unidadeIsoRaw).replace(/\s/g, '').toUpperCase();
+    const unit = await this.prisma.patioUnidade.findFirst({
+      where: {
+        unidadeIso,
+        ...(clienteId ? { solicitacao: { clienteId } } : {}),
+        gateIn: { checkOut: null },
+      },
+      include: {
+        tomadaEventos: { orderBy: { createdAt: 'desc' }, take: 20 },
+      },
+    });
+    if (!unit) throw new NotFoundException('Contêiner não encontrado no pátio');
+    let solicitacaoPendente = false;
+    for (const e of unit.tomadaEventos) {
+      if (e.tipo === PatioTomadaEventType.CONECTADO || e.tipo === PatioTomadaEventType.DESCONECTADO) {
+        break;
+      }
+      if (e.tipo === PatioTomadaEventType.SOLICITADO) {
+        solicitacaoPendente = !unit.refrigerado;
+        break;
+      }
+    }
+    return {
+      unidadeId: unit.id,
+      unidadeIso: unit.unidadeIso,
+      conectada: unit.refrigerado,
+      solicitacaoPendente,
+      eventos: unit.tomadaEventos.map((e) => ({
+        tipo: e.tipo,
+        setPoint: e.setPoint,
+        createdAt: e.createdAt.toISOString(),
+        observacao: e.observacao,
+      })),
+    };
   }
 
   async posicionar(operadorId: string, dto: PatioPosicionarDto) {

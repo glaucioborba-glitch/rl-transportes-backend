@@ -54,6 +54,8 @@ export type TenantParametrosOperacional = {
   limiteAgendamentosPorTurno: number;
   /** Restringe novos agendamentos em fim de semana — não afeta contagem de diárias. */
   operacaoFimSemana: boolean;
+  /** Texto explicativo (UI) sobre operação/cobrança em fim de semana. */
+  descricaoFimSemana?: string;
   toleranciaChegada: ToleranciaChegadaConfig;
   /** @deprecated use antecedenciaMinimaMin */
   tempoToleranciaChegadaMin?: number;

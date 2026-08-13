@@ -20,11 +20,55 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
   };
 
   const tipos = [
-    { codigo: 'DRY', nome: 'Dry Standard (latão)', tamanhos: ['20', '40', '45'], tomadaReefer: false, ativo: true },
-    { codigo: 'REEFER', nome: 'Reefer (Refrigerado)', tamanhos: ['20', '40'], tomadaReefer: true, ativo: true },
-    { codigo: 'OT', nome: 'Open Top', tamanhos: ['20', '40'], tomadaReefer: false, ativo: true },
-    { codigo: 'FR', nome: 'Flat Rack', tamanhos: ['20', '40'], tomadaReefer: false, ativo: true },
-    { codigo: 'TANK', nome: 'Tank', tamanhos: ['20'], tomadaReefer: false, ativo: true },
+    {
+      codigo: 'DRYDC',
+      nome: 'Dry DC',
+      tamanhos: ['20', '40', '45'],
+      tomadaReefer: false,
+      ativo: true,
+    },
+    {
+      codigo: 'DRYHC',
+      nome: 'Dry HC',
+      tamanhos: ['20', '40', '45'],
+      tomadaReefer: false,
+      ativo: true,
+    },
+    {
+      codigo: 'FLATRACK',
+      nome: 'Flat Rack',
+      tamanhos: ['20', '40'],
+      tomadaReefer: false,
+      ativo: true,
+    },
+    {
+      codigo: 'ISOTANK',
+      nome: 'IsoTank',
+      tamanhos: ['20'],
+      tomadaReefer: false,
+      ativo: true,
+    },
+    {
+      codigo: 'OPENTOP',
+      nome: 'Open Top',
+      tamanhos: ['20', '40'],
+      tomadaReefer: false,
+      ativo: true,
+    },
+    {
+      codigo: 'REEFER',
+      nome: 'Reefer',
+      tamanhos: ['20', '40'],
+      tomadaReefer: true,
+      ativo: true,
+    },
+    {
+      codigo: 'REEFERDRY',
+      nome: 'Reefer Dry',
+      tamanhos: ['20', '40'],
+      tomadaReefer: false,
+      ativo: true,
+    },
   ];
 
   for (const tipo of tipos) {
@@ -60,9 +104,12 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
     });
   }
 
-  // Desativa HC como tipo legado (agora é capacidade)
+  // Desativa códigos legados (matriz atual: DRYDC/DRYHC/…)
   await prisma.cadastroTipoContainer.updateMany({
-    where: { tenantId: DEFAULT_TENANT, codigo: 'HC' },
+    where: {
+      tenantId: DEFAULT_TENANT,
+      codigo: { in: ['DRY', 'HC', 'OT', 'FR', 'TANK', 'DC'] },
+    },
     data: { ativo: false, deletedAt: new Date() },
   });
 
@@ -588,10 +635,10 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
     { diaInicio: 16, diaFim: null, valorDiaria: 45 },
   ];
   const matrixSeed = [
-    { tipo: 'DRY', cap: 'DC', tam: "20'", status: 'CHEIO' as const, handling: 150, free: 7 },
-    { tipo: 'DRY', cap: 'DC', tam: "40'", status: 'CHEIO' as const, handling: 180, free: 7 },
-    { tipo: 'DRY', cap: 'HC', tam: "40'", status: 'CHEIO' as const, handling: 200, free: 7 },
-    { tipo: 'DRY', cap: 'DC', tam: "20'", status: 'VAZIO' as const, handling: 120, free: 10 },
+    { tipo: 'DRYDC', cap: 'DC', tam: "20'", status: 'CHEIO' as const, handling: 150, free: 7 },
+    { tipo: 'DRYDC', cap: 'DC', tam: "40'", status: 'CHEIO' as const, handling: 180, free: 7 },
+    { tipo: 'DRYHC', cap: 'HC', tam: "40'", status: 'CHEIO' as const, handling: 200, free: 7 },
+    { tipo: 'DRYDC', cap: 'DC', tam: "20'", status: 'VAZIO' as const, handling: 120, free: 10 },
     { tipo: 'REEFER', cap: null, tam: "40'", status: 'CHEIO' as const, handling: 250, free: 5, reefer: 45 },
   ];
   for (const m of matrixSeed) {
@@ -615,14 +662,14 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
   }
 
   const itensTabela = [
-    { tipoOperacaoCodigo: 'BAIXA', tipoContainerCodigo: 'DRY', containerTamanho: "20'", valor: 180.0, unidade: 'POR_OPERACAO' },
-    { tipoOperacaoCodigo: 'BAIXA', tipoContainerCodigo: 'DRY', containerTamanho: "40'", valor: 280.0, unidade: 'POR_OPERACAO' },
-    { tipoOperacaoCodigo: 'BAIXA', tipoContainerCodigo: 'DRY', containerTamanho: "40'", valor: 320.0, unidade: 'POR_OPERACAO' },
+    { tipoOperacaoCodigo: 'BAIXA', tipoContainerCodigo: 'DRYDC', containerTamanho: "20'", valor: 180.0, unidade: 'POR_OPERACAO' },
+    { tipoOperacaoCodigo: 'BAIXA', tipoContainerCodigo: 'DRYDC', containerTamanho: "40'", valor: 280.0, unidade: 'POR_OPERACAO' },
+    { tipoOperacaoCodigo: 'BAIXA', tipoContainerCodigo: 'DRYHC', containerTamanho: "40'", valor: 320.0, unidade: 'POR_OPERACAO' },
     { tipoOperacaoCodigo: 'BAIXA', tipoContainerCodigo: 'REEFER', containerTamanho: "20'", valor: 220.0, unidade: 'POR_OPERACAO' },
     { tipoOperacaoCodigo: 'BAIXA', tipoContainerCodigo: 'REEFER', containerTamanho: "40'", valor: 350.0, unidade: 'POR_OPERACAO' },
-    { tipoOperacaoCodigo: 'COLETA', tipoContainerCodigo: 'DRY', containerTamanho: "20'", valor: 160.0, unidade: 'POR_OPERACAO' },
-    { tipoOperacaoCodigo: 'COLETA', tipoContainerCodigo: 'DRY', containerTamanho: "40'", valor: 250.0, unidade: 'POR_OPERACAO' },
-    { tipoOperacaoCodigo: 'COLETA', tipoContainerCodigo: 'DRY', containerTamanho: "40'", valor: 290.0, unidade: 'POR_OPERACAO' },
+    { tipoOperacaoCodigo: 'COLETA', tipoContainerCodigo: 'DRYDC', containerTamanho: "20'", valor: 160.0, unidade: 'POR_OPERACAO' },
+    { tipoOperacaoCodigo: 'COLETA', tipoContainerCodigo: 'DRYDC', containerTamanho: "40'", valor: 250.0, unidade: 'POR_OPERACAO' },
+    { tipoOperacaoCodigo: 'COLETA', tipoContainerCodigo: 'DRYHC', containerTamanho: "40'", valor: 290.0, unidade: 'POR_OPERACAO' },
     { tipoOperacaoCodigo: 'COLETA', tipoContainerCodigo: 'REEFER', containerTamanho: "40'", valor: 320.0, unidade: 'POR_OPERACAO' },
     { tipoOperacaoCodigo: 'TRANSFERENCIA', tipoContainerCodigo: '*', containerTamanho: '*', valor: 80.0, unidade: 'POR_OPERACAO' },
     { tipoOperacaoCodigo: 'INSPECAO', tipoContainerCodigo: '*', containerTamanho: '*', valor: 50.0, unidade: 'POR_OPERACAO' },

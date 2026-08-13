@@ -58,6 +58,8 @@ import { TermosUsoModule } from '../common/legal/termos-uso.module';
 import { DominioCorporativoModule } from '../common/validation/dominio-corporativo.module';
 import { TransportadorasAutorizadasModule } from '../transportadoras-autorizadas/transportadoras-autorizadas.module';
 import { TenantModule } from '../tenant/tenant.module';
+import { CadastrosModule } from '../cadastros/cadastros.module';
+import { PatioV2Module } from '../patio-v2/patio.module';
 
 /**
  * Fase 20 — Camada CX: portais cliente/fornecedor, IAM dedicado, branding, tickets e analytics.
@@ -67,6 +69,8 @@ import { TenantModule } from '../tenant/tenant.module';
   imports: [
     PrismaModule,
     AuditoriaModule,
+    CadastrosModule,
+    PatioV2Module,
     SolicitacoesModule,
     EmailModule,
     AddressModule,

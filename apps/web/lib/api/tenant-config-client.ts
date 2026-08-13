@@ -95,6 +95,8 @@ export type TenantParametrosOperacional = {
   tatAlvoRemocaoMin: number;
   limiteAgendamentosPorTurno: number;
   operacaoFimSemana: boolean;
+  /** Texto explicativo (UI) sobre operação/cobrança em fim de semana. */
+  descricaoFimSemana?: string;
   toleranciaChegada: ToleranciaChegadaConfig;
   antecedenciaMinimaMin: number;
   cancelamentoSemPenalidadeMin: number;

@@ -106,16 +106,16 @@ export function buildIso(prefix: string, serial: number): string {
 }
 
 export const SEED_CONTAINERS = [
-  { numero: buildIso('MSCU', 100113), tipo: 'DRY', tamanho: '20DC', situacao: 'CHEIO' as const },
-  { numero: buildIso('FCIU', 100112), tipo: 'REEFER', tamanho: '40HC', situacao: 'CHEIO' as const },
-  { numero: buildIso('YMLU', 900302), tipo: 'HC', tamanho: '40HC', situacao: 'CHEIO' as const },
-  { numero: buildIso('CMAU', 100124), tipo: 'DRY', tamanho: '20DC', situacao: 'VAZIO' as const },
-  { numero: buildIso('SEGU', 100135), tipo: 'DRY', tamanho: '20DC', situacao: 'CHEIO' as const },
-  { numero: buildIso('TXGU', 100134), tipo: 'HC', tamanho: '40HC', situacao: 'CHEIO' as const },
-  { numero: buildIso('OOLU', 100133), tipo: 'REEFER', tamanho: '40HC', situacao: 'VAZIO' as const },
-  { numero: buildIso('HLBU', 100139), tipo: 'DRY', tamanho: '40HC', situacao: 'CHEIO' as const },
-  { numero: buildIso('TEMU', 100138), tipo: 'HC', tamanho: '40HC', situacao: 'CHEIO' as const },
-  { numero: buildIso('MSCU', 100137), tipo: 'DRY', tamanho: '20DC', situacao: 'CHEIO' as const },
+  { numero: buildIso('MSCU', 100113), tipo: 'DRYDC', tamanho: "20'", situacao: 'CHEIO' as const },
+  { numero: buildIso('FCIU', 100112), tipo: 'REEFER', tamanho: "40'", situacao: 'CHEIO' as const },
+  { numero: buildIso('YMLU', 900302), tipo: 'DRYHC', tamanho: "40'", situacao: 'CHEIO' as const },
+  { numero: buildIso('CMAU', 100124), tipo: 'DRYDC', tamanho: "20'", situacao: 'VAZIO' as const },
+  { numero: buildIso('SEGU', 100135), tipo: 'DRYDC', tamanho: "20'", situacao: 'CHEIO' as const },
+  { numero: buildIso('TXGU', 100134), tipo: 'DRYHC', tamanho: "40'", situacao: 'CHEIO' as const },
+  { numero: buildIso('OOLU', 100133), tipo: 'REEFER', tamanho: "40'", situacao: 'VAZIO' as const },
+  { numero: buildIso('HLBU', 100139), tipo: 'DRYHC', tamanho: "40'", situacao: 'CHEIO' as const },
+  { numero: buildIso('TEMU', 100138), tipo: 'DRYHC', tamanho: "40'", situacao: 'CHEIO' as const },
+  { numero: buildIso('MSCU', 100137), tipo: 'DRYDC', tamanho: "20'", situacao: 'CHEIO' as const },
 ];
 
 export type SeedCadastrosIds = {

@@ -1,5 +1,6 @@
 import type { SolicitacaoRow } from "@/lib/api/portal-client";
 import { collectSolicitacaoContainerISOs, formatIsoDisplay } from "@/lib/container-display";
+import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
 import { intentLabel } from "@/lib/solicitacao-intent";
 
 export function deriveTrackingLabel(s: SolicitacaoRow): "Entrada" | "Pátio" | "Saída" {
@@ -69,34 +70,10 @@ export function solicitacaoBookingLabel(s: SolicitacaoRow): string {
   return booking || "—";
 }
 
-function formatContainerTipoLabel(tipo: string): string {
-  const map: Record<string, string> = {
-    DRY: "Dry",
-    HC: "Dry",
-    REEFER: "Reefer",
-    TANK: "Tank",
-  };
-  const key = tipo.trim().toUpperCase();
-  return map[key] ?? tipo.trim();
-}
-
-function formatContainerTamanhoLabel(tamanho: string): string {
-  const digits = tamanho.replace(/\D/g, "");
-  if (digits) return `${digits}ft`;
-  return tamanho.trim() || "—";
-}
-
 export function solicitacaoEquipamentoLabel(s: SolicitacaoRow): string {
   const c = s.containersSolicitacao?.[0];
   if (!c) return "—";
-  const tipo = c.tipo?.trim();
-  const tamanho = c.tamanho?.trim();
-  if (tipo && tamanho) {
-    return `${formatContainerTipoLabel(tipo)} / ${formatContainerTamanhoLabel(tamanho)}`;
-  }
-  if (tipo) return formatContainerTipoLabel(tipo);
-  if (tamanho) return formatContainerTamanhoLabel(tamanho);
-  return "—";
+  return formatTipoTamanhoContainerLabel(c.tipo, c.tamanho) ?? "—";
 }
 
 export function solicitacaoTransporteLabel(s: SolicitacaoRow): string {

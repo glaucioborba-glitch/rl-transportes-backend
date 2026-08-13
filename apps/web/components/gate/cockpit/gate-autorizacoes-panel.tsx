@@ -28,6 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { ContainerNumber } from "@/components/ui/container-number";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
 import { useGateCockpitContext } from "./gate-cockpit-context";
 
 type ContainerRow = {
@@ -78,7 +79,7 @@ function mapItem(row: Record<string, unknown>): AutorizacaoItem {
     protocolo: String(row.protocolo ?? ""),
     empresa: cliente?.razaoSocial ?? "—",
     container: isos[0] ?? "—",
-    tipoTamanho: cs?.tipo && cs?.tamanho ? `${cs.tipo} / ${cs.tamanho}` : null,
+    tipoTamanho: formatTipoTamanhoContainerLabel(cs?.tipo, cs?.tamanho),
     situacao,
     status: String(row.status ?? ""),
     criadoEm: String(row.createdAt ?? ""),

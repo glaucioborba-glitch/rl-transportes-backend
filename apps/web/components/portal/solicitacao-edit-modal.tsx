@@ -10,6 +10,7 @@ import {
   ContainerIsoInput,
   ContainerTamanhoSelect,
   ContainerTipoSelect,
+  findPortalTipo,
 } from "@/components/portal/container-form-fields";
 import {
   ApiError,
@@ -25,6 +26,8 @@ import { intentLabel, intentUsesFlFrete } from "@/lib/solicitacao-intent";
 import { toast } from "@/lib/toast";
 import { formatContainerISO } from "@/utils/containerFormatter";
 import { isJanelaExecucao } from "@/utils/janelaExecucao";
+import { usePortalTiposContainer } from "@/hooks/use-portal-tipos-container";
+import { formatTamanhoContainerDisplay, normalizeTamanhoContainer } from "@/lib/cadastros/tipo-container-tamanhos";
 
 type ContainerDraft = {
   unidade: string;
@@ -76,6 +79,7 @@ export function SolicitacaoEditModal({
   const [solEmail, setSolEmail] = useState("");
 
   const isFrotaFL = useMemo(() => intentUsesFlFrete(intent), [intent]);
+  const { tipos: tiposContainer, loading: loadingTipos } = usePortalTiposContainer(open);
   const selectCls =
     "flex h-10 w-full rounded-md border border-white/10 bg-black/40 px-3 text-sm text-white";
 
@@ -137,9 +141,21 @@ export function SolicitacaoEditModal({
   function updateContainer(i: number, patch: Partial<ContainerDraft>) {
     setContainers((rows) => {
       const next = [...rows];
-      next[i] = { ...next[i], ...patch };
-      if (patch.status === "VAZIO") next[i].lacre = "";
-      if (patch.refrigerado === false) next[i].setPoint = "";
+      const merged = { ...next[i], ...patch };
+      if (patch.tipo !== undefined) {
+        const tipo = findPortalTipo(tiposContainer, patch.tipo);
+        const tamanhoOk = tipo?.tamanhos.some(
+          (t) => normalizeTamanhoContainer(t) === normalizeTamanhoContainer(merged.tamanho),
+        );
+        if (!tamanhoOk) merged.tamanho = "";
+        if (!tipo?.tomadaReefer) {
+          merged.refrigerado = false;
+          merged.setPoint = "";
+        }
+      }
+      if (patch.status === "VAZIO") merged.lacre = "";
+      if (patch.refrigerado === false || !merged.refrigerado) merged.setPoint = "";
+      next[i] = merged;
       return next;
     });
   }
@@ -173,8 +189,8 @@ export function SolicitacaoEditModal({
           ordem: c.ordem,
           booking: c.booking.trim() || undefined,
           processo: c.processo.trim() || undefined,
-          tamanho: c.tamanho.trim(),
-          tipo: c.tipo.trim(),
+          tamanho: formatTamanhoContainerDisplay(c.tamanho),
+          tipo: c.tipo.trim().toUpperCase(),
           status: c.status,
           lacre: c.status === "CHEIO" ? c.lacre.trim() || undefined : undefined,
           refrigerado: c.refrigerado,
@@ -227,7 +243,7 @@ export function SolicitacaoEditModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="max-h-[92vh] w-[min(1440px,95vw)] max-w-[min(1440px,95vw)] overflow-y-auto sm:max-w-[min(1440px,95vw)]">
         <OperationDialogHeader
           isos={containers.map((c) => c.unidade)}
           protocolo={protocolo || undefined}
@@ -275,21 +291,25 @@ export function SolicitacaoEditModal({
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs text-slate-500">Tamanho</label>
-                    <ContainerTamanhoSelect
-                      value={c.tamanho}
-                      onChange={(v) => updateContainer(idx, { tamanho: v })}
-                      required
-                      selectClassName={selectCls}
-                    />
-                  </div>
-                  <div>
                     <label className="mb-1 block text-xs text-slate-500">Tipo</label>
                     <ContainerTipoSelect
                       value={c.tipo}
                       onChange={(v) => updateContainer(idx, { tipo: v })}
                       required
                       selectClassName={selectCls}
+                      tipos={tiposContainer}
+                      disabled={loadingTipos}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">Tamanho</label>
+                    <ContainerTamanhoSelect
+                      value={c.tamanho}
+                      onChange={(v) => updateContainer(idx, { tamanho: v })}
+                      required
+                      selectClassName={selectCls}
+                      tamanhos={findPortalTipo(tiposContainer, c.tipo)?.tamanhos ?? []}
+                      disabled={!c.tipo}
                     />
                   </div>
                 </CardContent>

@@ -5,6 +5,7 @@ import {
   assertTabelaPrecoConfigurada,
   calculateReeferSurcharge,
   evaluateBillingRules,
+  computeDiasEnergiaFromTomadaEvents,
   inferTipoContainer,
   legacyTarifaToRegras,
   pickRegra,
@@ -195,6 +196,35 @@ describe('billing-rule-engine.util', () => {
     const energia = result.items.find((i) => i.eventoGatilho === EventoGatilhoTarifa.ENERGIA_REEFER);
     expect(energia).toBeDefined();
     expect(energia?.valorTotal).toBeGreaterThan(0);
+  });
+
+  it('evaluateBillingRules NÃO cobra energia se reefer sem tomada (refrigerado=false)', () => {
+    const asOf = new Date('2026-06-10T10:00:00.000Z');
+    const result = evaluateBillingRules({
+      gateInAt: gateIn,
+      asOf,
+      regras: regras as never,
+      container: { tamanho: '40', tipo: 'REEFER', refrigerado: false, setPoint: null },
+      incluirGateIn: false,
+      incluirGateOut: false,
+    });
+    const energia = result.items.find((i) => i.eventoGatilho === EventoGatilhoTarifa.ENERGIA_REEFER);
+    expect(energia).toBeUndefined();
+  });
+
+  it('evaluateBillingRules usa diasEnergiaReefer (prorata da tomada)', () => {
+    const asOf = new Date('2026-06-10T10:00:00.000Z');
+    const result = evaluateBillingRules({
+      gateInAt: gateIn,
+      asOf,
+      regras: regras as never,
+      container: { tamanho: '40', tipo: 'REEFER', refrigerado: false, setPoint: -18 },
+      diasEnergiaReefer: 3,
+      incluirGateIn: false,
+      incluirGateOut: false,
+    });
+    const energia = result.items.find((i) => i.eventoGatilho === EventoGatilhoTarifa.ENERGIA_REEFER);
+    expect(energia?.quantidade).toBe(3);
   });
 
   it('assertTabelaPrecoConfigurada exige diária ativa', () => {

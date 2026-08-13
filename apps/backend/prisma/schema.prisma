@@ -219,11 +219,19 @@ enum ContainerEventType {
   GATE_IN_COMPLETED
   YARD_ALLOCATED
   REEFER_PLUGGED
+  REEFER_UNPLUGGED
   REEFER_TEMP_LOGGED
   REPAIR_REQUESTED
   REPAIR_APPROVED
   GATE_OUT_COMPLETED
   PRE_MOUNTING_DONE
+}
+
+/// Eventos comerciais/operacionais de tomada reefer no pátio v2.
+enum PatioTomadaEventType {
+  SOLICITADO
+  CONECTADO
+  DESCONECTADO
 }
 
 enum OutboxEventStatus {
@@ -894,6 +902,7 @@ model PatioUnidade {
   updatedAt      DateTime      @updatedAt @map("updated_at")
 
   movimentacoes PatioMovimentacao[]
+  tomadaEventos PatioTomadaEvent[]
 
   @@unique([gateInId, unidadeIso])
   @@index([solicitacaoId])
@@ -901,6 +910,22 @@ model PatioUnidade {
   @@index([status])
   @@index([posicaoAtualId])
   @@map("patio_v2_unidades")
+}
+
+/// Histórico de tomada reefer (pedido do cliente + conexão/desconexão operacional).
+model PatioTomadaEvent {
+  id             String               @id @default(uuid())
+  patioUnidadeId String               @map("patio_unidade_id")
+  patioUnidade   PatioUnidade         @relation(fields: [patioUnidadeId], references: [id], onDelete: Cascade)
+  tipo           PatioTomadaEventType
+  setPoint       Float?               @map("set_point")
+  actorUserId    String?              @map("actor_user_id")
+  observacao     String?              @db.VarChar(500)
+  createdAt      DateTime             @default(now()) @map("created_at")
+
+  @@index([patioUnidadeId, createdAt])
+  @@index([tipo])
+  @@map("patio_v2_tomada_eventos")
 }
 
 model PatioMovimentacao {

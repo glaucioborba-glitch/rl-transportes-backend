@@ -31,6 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ContainerNumber } from "@/components/ui/container-number";
+import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
 import { useGateCockpitContext } from "./gate-cockpit-context";
 
 type Props = {
@@ -165,8 +166,7 @@ export function GateAutorizacaoDetalhePanel({ id }: Props) {
   });
   const situacao =
     cs?.status === "CHEIO" ? "CHEIO" : cs?.status === "VAZIO" ? "VAZIO" : null;
-  const tipoTamanho =
-    cs?.tipo && cs?.tamanho ? `${String(cs.tipo)} / ${String(cs.tamanho)}` : null;
+  const tipoTamanho = formatTipoTamanhoContainerLabel(cs?.tipo, cs?.tamanho);
   const status = String(sol.status ?? "");
   const canAct = podeAutorizar && (status === "PENDENTE" || status === "EM_ANALISE");
 

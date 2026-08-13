@@ -28,10 +28,15 @@ import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
 import { intentLabel, intentUsesBookingDeadline, intentUsesFlFrete, intentUsesPrevisaoRetirada, optionalDateTimeLocalToIso } from "@/lib/solicitacao-intent";
 import {
   ContainerIsoInput,
+  ContainerRefrigeradoSelect,
+  ContainerStatusSelect,
   ContainerTamanhoSelect,
   ContainerTipoSelect,
+  findPortalTipo,
 } from "@/components/portal/container-form-fields";
 import { stripContainerISO } from "@/utils/containerFormatter";
+import { usePortalTiposContainer } from "@/hooks/use-portal-tipos-container";
+import { formatTamanhoContainerDisplay, normalizeTamanhoContainer } from "@/lib/cadastros/tipo-container-tamanhos";
 
 type TipoCaminhao = "LS" | "RODOTREM";
 
@@ -108,6 +113,7 @@ export function SolicitacaoFormModal({ open, intent, onClose, onCreated }: Solic
   const showPrevisaoRetirada = useMemo(() => intentUsesPrevisaoRetirada(intent), [intent]);
   const showBookingDeadline = useMemo(() => intentUsesBookingDeadline(intent), [intent]);
   const containerCount = isFrotaFL || tipoCaminhao === "LS" ? 1 : 2;
+  const { tipos: tiposContainer, loading: loadingTipos } = usePortalTiposContainer(open);
 
   const label = useMemo(() => intentLabel(intent), [intent]);
 
@@ -174,9 +180,21 @@ export function SolicitacaoFormModal({ open, intent, onClose, onCreated }: Solic
   function updateContainer(i: number, patch: Partial<ContainerDraft>) {
     setContainers((rows) => {
       const next = [...rows];
-      next[i] = { ...next[i], ...patch };
-      if (patch.status === "VAZIO") next[i].lacre = "";
-      if (!next[i].refrigerado) next[i].setPoint = "";
+      const merged = { ...next[i], ...patch };
+      if (patch.tipo !== undefined) {
+        const tipo = findPortalTipo(tiposContainer, patch.tipo);
+        const tamanhoOk = tipo?.tamanhos.some(
+          (t) => normalizeTamanhoContainer(t) === normalizeTamanhoContainer(merged.tamanho),
+        );
+        if (!tamanhoOk) merged.tamanho = "";
+        if (!tipo?.tomadaReefer) {
+          merged.refrigerado = false;
+          merged.setPoint = "";
+        }
+      }
+      if (patch.status === "VAZIO") merged.lacre = "";
+      if (!merged.refrigerado) merged.setPoint = "";
+      next[i] = merged;
       return next;
     });
   }
@@ -214,8 +232,8 @@ export function SolicitacaoFormModal({ open, intent, onClose, onCreated }: Solic
           unidade: stripContainerISO(c.unidade),
           booking: c.booking.trim(),
           processo: c.processo.trim(),
-          tamanho: c.tamanho.trim(),
-          tipo: c.tipo.trim(),
+          tamanho: formatTamanhoContainerDisplay(c.tamanho),
+          tipo: c.tipo.trim().toUpperCase(),
           status: c.status,
           lacre: c.status === "CHEIO" ? c.lacre.trim() : undefined,
           refrigerado: c.refrigerado,
@@ -303,7 +321,7 @@ export function SolicitacaoFormModal({ open, intent, onClose, onCreated }: Solic
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="max-h-[92vh] w-[min(1440px,95vw)] max-w-[min(1440px,95vw)] overflow-y-auto sm:max-w-[min(1440px,95vw)]">
         <DialogHeader>
           <DialogTitle>{label}</DialogTitle>
           <DialogDescription>
@@ -499,35 +517,34 @@ export function SolicitacaoFormModal({ open, intent, onClose, onCreated }: Solic
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-slate-500">Tamanho</label>
-                  <ContainerTamanhoSelect
-                    value={c.tamanho}
-                    onChange={(v) => updateContainer(idx, { tamanho: v })}
-                    required
-                    selectClassName={selectCls}
-                  />
-                </div>
-                <div>
                   <label className="mb-1 block text-xs text-slate-500">Tipo</label>
                   <ContainerTipoSelect
                     value={c.tipo}
                     onChange={(v) => updateContainer(idx, { tipo: v })}
                     required
                     selectClassName={selectCls}
+                    tipos={tiposContainer}
+                    disabled={loadingTipos}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">Tamanho</label>
+                  <ContainerTamanhoSelect
+                    value={c.tamanho}
+                    onChange={(v) => updateContainer(idx, { tamanho: v })}
+                    required
+                    selectClassName={selectCls}
+                    tamanhos={findPortalTipo(tiposContainer, c.tipo)?.tamanhos ?? []}
+                    disabled={!c.tipo}
                   />
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-slate-500">Status</label>
-                  <select
-                    className={selectCls}
+                  <ContainerStatusSelect
                     value={c.status}
-                    onChange={(e) =>
-                      updateContainer(idx, { status: e.target.value as "CHEIO" | "VAZIO" })
-                    }
-                  >
-                    <option value="CHEIO">Cheio</option>
-                    <option value="VAZIO">Vazio</option>
-                  </select>
+                    onChange={(v) => updateContainer(idx, { status: v as "CHEIO" | "VAZIO" })}
+                    selectClassName={selectCls}
+                  />
                 </div>
                 {c.status === "CHEIO" ? (
                   <div className="sm:col-span-2">
@@ -540,31 +557,38 @@ export function SolicitacaoFormModal({ open, intent, onClose, onCreated }: Solic
                     />
                   </div>
                 ) : null}
-                <div className="flex items-center gap-2 sm:col-span-2">
-                  <input
-                    type="checkbox"
-                    id={`ref-${idx}`}
-                    checked={c.refrigerado}
-                    onChange={(e) => updateContainer(idx, { refrigerado: e.target.checked })}
-                  />
-                  <label htmlFor={`ref-${idx}`} className="text-sm text-slate-300">
-                    Refrigerado
-                  </label>
-                </div>
-                {c.refrigerado ? (
-                  <div>
-                    <label className="mb-1 block text-xs text-slate-500">Set point (°C)</label>
-                    <Input
-                      type="number"
-                      step="0.1"
-                      min={-30}
-                      max={30}
-                      value={c.setPoint}
-                      onChange={(e) => updateContainer(idx, { setPoint: e.target.value })}
-                      required
-                      className="bg-black/40"
-                    />
-                  </div>
+                {findPortalTipo(tiposContainer, c.tipo)?.tomadaReefer ? (
+                  <>
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-500">
+                        Conectar à tomada reefer?
+                      </label>
+                      <ContainerRefrigeradoSelect
+                        value={c.refrigerado}
+                        onChange={(v) => updateContainer(idx, { refrigerado: v })}
+                        selectClassName={selectCls}
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Sim = diária de energia (premium). Não = só armazenagem. Pode solicitar
+                        tomada depois, durante a estadia.
+                      </p>
+                    </div>
+                    {c.refrigerado ? (
+                      <div>
+                        <label className="mb-1 block text-xs text-slate-500">Set point (°C)</label>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          min={-30}
+                          max={30}
+                          value={c.setPoint}
+                          onChange={(e) => updateContainer(idx, { setPoint: e.target.value })}
+                          required
+                          className="bg-black/40"
+                        />
+                      </div>
+                    ) : null}
+                  </>
                 ) : null}
               </CardContent>
             </Card>

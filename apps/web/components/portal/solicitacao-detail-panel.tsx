@@ -6,8 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { SolicitacaoRow } from "@/lib/api/portal-client";
 import { formatDateTime } from "@/lib/portal-tracking";
+import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
 import { formatContainerISO } from "@/utils/containerFormatter";
 import { PreFaturaCustosCard } from "@/components/portal/pre-fatura-custos-card";
+import { PortalTomadaReeferActions } from "@/components/portal/portal-tomada-reefer-actions";
 
 function PhotoStrip({ title, urls }: { title: string; urls: unknown }) {
   const list = Array.isArray(urls) ? urls.filter((u) => typeof u === "string") : [];
@@ -106,9 +108,14 @@ export function SolicitacaoDetailPanel({ row }: { row: SolicitacaoRow }) {
                     </p>
                     <p className="mt-1 text-xs text-slate-500">Unidade #{c.ordem}</p>
                     <p className="text-slate-400">
-                      {c.booking} · {c.status}
-                      {c.refrigerado ? ` · reefer ${c.setPoint ?? "—"}°C` : ""}
+                      {formatTipoTamanhoContainerLabel(c.tipo, c.tamanho) ?? "—"} · {c.status}
+                      {c.refrigerado ? ` · tomada Sim (${c.setPoint ?? "—"}°C)` : " · tomada Não"}
                     </p>
+                    <PortalTomadaReeferActions
+                      unidadeIso={c.unidade}
+                      solicitacaoStatus={row.status}
+                      tipoCodigo={c.tipo}
+                    />
                   </div>
                 ))}
               </CardContent>

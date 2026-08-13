@@ -20,13 +20,18 @@ import { formatCpfCnpjBr } from "@/lib/format-cpf-cnpj-br";
 import { formatPhoneBr } from "@/lib/nfse/cliente-fiscal";
 import {
   ContainerIsoInput,
+  ContainerRefrigeradoSelect,
+  ContainerStatusSelect,
   ContainerTamanhoSelect,
   ContainerTipoSelect,
+  findPortalTipo,
 } from "@/components/portal/container-form-fields";
 import { stripContainerISO } from "@/utils/containerFormatter";
 import { optionalDateTimeLocalToIso } from "@/lib/solicitacao-intent";
 import { PortalAgendamentoGuard } from "@/components/portal/portal-agendamento-guard";
 import { useTenantTurnos } from "@/hooks/use-tenant-turnos";
+import { usePortalTiposContainer } from "@/hooks/use-portal-tipos-container";
+import { formatTamanhoContainerDisplay, normalizeTamanhoContainer } from "@/lib/cadastros/tipo-container-tamanhos";
 
 type TipoCaminhao = "LS" | "RODOTREM";
 
@@ -83,6 +88,7 @@ export default function NovaSolicitacaoCorporativaPage() {
 
   const [files, setFiles] = useState<File[]>([]);
   const [previsaoRetirada, setPrevisaoRetirada] = useState("");
+  const { tipos: tiposContainer, loading: loadingTipos } = usePortalTiposContainer(true);
 
   const pessoa = usePessoaAutorizadaStore((s) => s.pessoa);
   const user = usePortalClienteAuthStore((s) => s.user);
@@ -122,9 +128,21 @@ export default function NovaSolicitacaoCorporativaPage() {
   function updateContainer(i: number, patch: Partial<ContainerDraft>) {
     setContainers((rows) => {
       const next = [...rows];
-      next[i] = { ...next[i], ...patch };
-      if (patch.status === "VAZIO") next[i].lacre = "";
-      if (!next[i].refrigerado) next[i].setPoint = "";
+      const merged = { ...next[i], ...patch };
+      if (patch.tipo !== undefined) {
+        const tipo = findPortalTipo(tiposContainer, patch.tipo);
+        const tamanhoOk = tipo?.tamanhos.some(
+          (t) => normalizeTamanhoContainer(t) === normalizeTamanhoContainer(merged.tamanho),
+        );
+        if (!tamanhoOk) merged.tamanho = "";
+        if (!tipo?.tomadaReefer) {
+          merged.refrigerado = false;
+          merged.setPoint = "";
+        }
+      }
+      if (patch.status === "VAZIO") merged.lacre = "";
+      if (!merged.refrigerado) merged.setPoint = "";
+      next[i] = merged;
       return next;
     });
   }
@@ -150,8 +168,8 @@ export default function NovaSolicitacaoCorporativaPage() {
           unidade: stripContainerISO(c.unidade),
           booking: c.booking.trim(),
           processo: c.processo.trim(),
-          tamanho: c.tamanho.trim(),
-          tipo: c.tipo.trim(),
+          tamanho: formatTamanhoContainerDisplay(c.tamanho),
+          tipo: c.tipo.trim().toUpperCase(),
           status: c.status,
           lacre: c.status === "CHEIO" ? c.lacre.trim() : undefined,
           refrigerado: c.refrigerado,
@@ -303,33 +321,34 @@ export default function NovaSolicitacaoCorporativaPage() {
                 <Input value={c.processo} onChange={(e) => updateContainer(idx, { processo: e.target.value })} className="bg-black/40" />
               </div>
               <div>
-                <label className="mb-1 block text-xs text-slate-500">Tamanho</label>
-                <ContainerTamanhoSelect
-                  value={c.tamanho}
-                  onChange={(v) => updateContainer(idx, { tamanho: v })}
-                  required
-                  selectClassName="flex h-10 w-full rounded-md border border-white/10 bg-black/40 px-3 text-sm text-white"
-                />
-              </div>
-              <div>
                 <label className="mb-1 block text-xs text-slate-500">Tipo</label>
                 <ContainerTipoSelect
                   value={c.tipo}
                   onChange={(v) => updateContainer(idx, { tipo: v })}
                   required
                   selectClassName="flex h-10 w-full rounded-md border border-white/10 bg-black/40 px-3 text-sm text-white"
+                  tipos={tiposContainer}
+                  disabled={loadingTipos}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-slate-500">Tamanho</label>
+                <ContainerTamanhoSelect
+                  value={c.tamanho}
+                  onChange={(v) => updateContainer(idx, { tamanho: v })}
+                  required
+                  selectClassName="flex h-10 w-full rounded-md border border-white/10 bg-black/40 px-3 text-sm text-white"
+                  tamanhos={findPortalTipo(tiposContainer, c.tipo)?.tamanhos ?? []}
+                  disabled={!c.tipo}
                 />
               </div>
               <div>
                 <label className="mb-1 block text-xs text-slate-500">Status</label>
-                <select
-                  className="flex h-10 w-full rounded-md border border-white/10 bg-black/40 px-3 text-sm text-white"
+                <ContainerStatusSelect
                   value={c.status}
-                  onChange={(e) => updateContainer(idx, { status: e.target.value as "CHEIO" | "VAZIO" })}
-                >
-                  <option value="CHEIO">Cheio</option>
-                  <option value="VAZIO">Vazio</option>
-                </select>
+                  onChange={(v) => updateContainer(idx, { status: v as "CHEIO" | "VAZIO" })}
+                  selectClassName="flex h-10 w-full rounded-md border border-white/10 bg-black/40 px-3 text-sm text-white"
+                />
               </div>
               {c.status === "CHEIO" ? (
                 <div className="sm:col-span-2">
@@ -337,31 +356,37 @@ export default function NovaSolicitacaoCorporativaPage() {
                   <Input value={c.lacre} onChange={(e) => updateContainer(idx, { lacre: e.target.value })} required className="bg-black/40" />
                 </div>
               ) : null}
-              <div className="flex items-center gap-2 sm:col-span-2">
-                <input
-                  type="checkbox"
-                  id={`ref-${idx}`}
-                  checked={c.refrigerado}
-                  onChange={(e) => updateContainer(idx, { refrigerado: e.target.checked })}
-                />
-                <label htmlFor={`ref-${idx}`} className="text-sm text-slate-300">
-                  Refrigerado
-                </label>
-              </div>
-              {c.refrigerado ? (
-                <div>
-                  <label className="mb-1 block text-xs text-slate-500">Set point (°C)</label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    min={-30}
-                    max={30}
-                    value={c.setPoint}
-                    onChange={(e) => updateContainer(idx, { setPoint: e.target.value })}
-                    required
-                    className="bg-black/40"
-                  />
-                </div>
+              {findPortalTipo(tiposContainer, c.tipo)?.tomadaReefer ? (
+                <>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">
+                      Conectar à tomada reefer?
+                    </label>
+                    <ContainerRefrigeradoSelect
+                      value={c.refrigerado}
+                      onChange={(v) => updateContainer(idx, { refrigerado: v })}
+                      selectClassName="flex h-10 w-full rounded-md border border-white/10 bg-black/40 px-3 text-sm text-white"
+                    />
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Sim = diária de energia (premium). Não = só armazenagem.
+                    </p>
+                  </div>
+                  {c.refrigerado ? (
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-500">Set point (°C)</label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min={-30}
+                        max={30}
+                        value={c.setPoint}
+                        onChange={(e) => updateContainer(idx, { setPoint: e.target.value })}
+                        required
+                        className="bg-black/40"
+                      />
+                    </div>
+                  ) : null}
+                </>
               ) : null}
             </CardContent>
           </Card>

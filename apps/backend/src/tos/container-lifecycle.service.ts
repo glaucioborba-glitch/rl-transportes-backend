@@ -51,6 +51,7 @@ import {
   assertGateOutCompleted,
 
   assertReeferPlugged,
+  assertReeferUnplugged,
 
   type GateInPayload,
 
@@ -645,6 +646,12 @@ export class ContainerLifecycleService {
       case ContainerEventType.REEFER_PLUGGED:
 
         assertReeferPlugged(container.tipo);
+
+        break;
+
+      case ContainerEventType.REEFER_UNPLUGGED:
+
+        assertReeferUnplugged(container.tipo);
 
         break;
 

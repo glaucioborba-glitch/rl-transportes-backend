@@ -1116,6 +1116,46 @@ export function fetchSolicitacao(id: string) {
   return portalJson<SolicitacaoRow>(`/cliente/portal/solicitacoes/${id}`);
 }
 
+export type PortalTipoContainerCatalogItem = {
+  codigo: string;
+  nome: string;
+  tamanhos: string[];
+  tomadaReefer: boolean;
+};
+
+/** Catálogo MDM ativo — mesma base de /cadastros/operacional/tipos-container. */
+export function listPortalTiposContainer() {
+  return portalJson<{ items: PortalTipoContainerCatalogItem[]; total: number }>(
+    "/cliente/portal/catalogo/tipos-container",
+  );
+}
+
+export type PortalTomadaStatus = {
+  unidadeId: string;
+  unidadeIso: string;
+  conectada: boolean;
+  solicitacaoPendente: boolean;
+  eventos: Array<{
+    tipo: string;
+    setPoint: number | null;
+    createdAt: string;
+    observacao: string | null;
+  }>;
+};
+
+export function fetchPortalTomadaStatus(iso: string) {
+  return portalJson<PortalTomadaStatus>(
+    `/cliente/portal/containers/${encodeURIComponent(iso)}/tomada`,
+  );
+}
+
+export function solicitarTomadaPortal(iso: string, body: { setPoint: number; observacao?: string }) {
+  return portalJson<{ unidadeIso: string; status: string; setPoint: number; message: string }>(
+    `/cliente/portal/containers/${encodeURIComponent(iso)}/solicitar-tomada`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
 export function fetchSolicitacaoVistorias(id: string) {
   return portalJson<import("@/lib/gate-vistoria").VistoriaPortalRow[]>(
     `/cliente/portal/solicitacoes/${encodeURIComponent(id)}/vistorias`,

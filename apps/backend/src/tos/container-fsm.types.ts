@@ -47,6 +47,10 @@ export const FSM_TRANSITIONS: Record<
     from: [ContainerLifecycleState.IN_YARD, ContainerLifecycleState.YARD_ALLOCATED],
     to: ContainerLifecycleState.REEFER_ACTIVE,
   },
+  [ContainerEventType.REEFER_UNPLUGGED]: {
+    from: [ContainerLifecycleState.REEFER_ACTIVE],
+    to: ContainerLifecycleState.YARD_ALLOCATED,
+  },
   [ContainerEventType.REEFER_TEMP_LOGGED]: {
     from: [
       ContainerLifecycleState.REEFER_ACTIVE,

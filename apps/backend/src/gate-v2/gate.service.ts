@@ -36,6 +36,8 @@ import { VistoriaService, type VistoriaPhotoUpload } from '../vistoria/vistoria.
 import { HoldReleaseService } from '../hold-release/hold-release.service';
 import { AnguloFotoVistoria, TipoVistoria } from '@prisma/client';
 import { extractPessoaResponsavelFromAudit } from '../pessoas-autorizadas/pessoa-context.util';
+import { formatTipoTamanhoContainerLabel } from '../cadastros/tipo-container-tamanhos.util';
+import { CadastrosTiposContainerService } from '../cadastros/cadastros-tipos-container.service';
 import type { GateCheckInDto } from './dto/gate-checkin.dto';
 import type { GateCheckOutDto } from './dto/gate-checkout.dto';
 import type { GateDivergenciaItemDto, GateDivergenciaTipo } from './dto/gate-divergencia.dto';
@@ -56,6 +58,9 @@ function assertPlate(label: string, raw: string): string {
 
 @Injectable()
 export class GateV2Service {
+  /** Códigos MDM ativos no request de cockpit (cadastro = matriz). */
+  private catalogCodigosForRequest: string[] = [];
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditoria: AuditoriaService,
@@ -68,6 +73,7 @@ export class GateV2Service {
     private readonly yardAllocation: YardAllocationService,
     private readonly vistoria: VistoriaService,
     private readonly holdRelease: HoldReleaseService,
+    private readonly tiposContainer: CadastrosTiposContainerService,
   ) {}
 
   private hasCritical(divs: GateDivergenciaItemDto[]): boolean {
@@ -916,6 +922,7 @@ export class GateV2Service {
 
   async listarCockpit(dataRefRaw?: string) {
     const dataRef = this.resolveDataRef(dataRefRaw);
+    this.catalogCodigosForRequest = await this.tiposContainer.listActiveCodigos();
     const [filaChegadaRows, operacaoRows, despachoRows, osRows, patioInv, patioUnidadesRows] = await Promise.all([
       this.prisma.solicitacao.findMany({
         where: {
@@ -1205,14 +1212,20 @@ export class GateV2Service {
   ): { tipoTamanho: string | null; situacao: 'CHEIO' | 'VAZIO' | null } {
     if (!cs) {
       return {
-        tipoTamanho: fallbackTipo ?? null,
+        tipoTamanho: fallbackTipo
+          ? formatTipoTamanhoContainerLabel(fallbackTipo, undefined, this.catalogCodigosForRequest)
+          : null,
         situacao: null,
       };
     }
     const situacao: 'CHEIO' | 'VAZIO' =
       cs.status === StatusContainer.CHEIO ? 'CHEIO' : 'VAZIO';
     return {
-      tipoTamanho: `${cs.tipo} / ${cs.tamanho}`,
+      tipoTamanho: formatTipoTamanhoContainerLabel(
+        cs.tipo,
+        cs.tamanho,
+        this.catalogCodigosForRequest,
+      ),
       situacao,
     };
   }

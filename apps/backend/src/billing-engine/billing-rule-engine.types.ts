@@ -23,6 +23,11 @@ export type BillingRuleEngineInput = {
   incluirGateIn?: boolean;
   incluirGateOut?: boolean;
   shiftingExtras?: number;
+  /**
+   * Dias com tomada reefer conectada (prorata).
+   * Se omitido: cobra energia só quando `container.refrigerado` (intenção/legado).
+   */
+  diasEnergiaReefer?: number;
   pricingOverrides?: {
     diasFreeTime?: number;
     valorDiaria?: number;

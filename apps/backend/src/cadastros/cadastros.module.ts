@@ -85,6 +85,6 @@ import { OperacionalVinculoService } from './operacional-vinculo.service';
     CadastrosTabelasPrecosService,
     OperacionalVinculoService,
   ],
-  exports: [CadastrosContainerCacheService],
+  exports: [CadastrosContainerCacheService, CadastrosTiposContainerService],
 })
 export class CadastrosModule {}

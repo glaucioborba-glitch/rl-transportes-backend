@@ -48,6 +48,9 @@ import { Iso6346ValidationPipe } from '../common/pipes/iso6346-validation.pipe';
 import { AgendamentosService } from '../agendamentos/agendamentos.service';
 import { PortalCreateAgendamentoDto } from '../agendamentos/dto/portal-create-agendamento.dto';
 import { YardSnapshotService } from '../yard-read/yard-snapshot.service';
+import { CadastrosTiposContainerService } from '../cadastros/cadastros-tipos-container.service';
+import { PatioV2Service } from '../patio-v2/patio.service';
+import { PortalSolicitarTomadaDto } from '../patio-v2/dto/tomada.dto';
 
 class ChamadoDto {
   @ApiProperty()
@@ -93,6 +96,8 @@ export class PortalClienteController {
     private readonly configService: ConfigService,
     private readonly agendamentosService: AgendamentosService,
     private readonly yardSnapshot: YardSnapshotService,
+    private readonly tiposContainer: CadastrosTiposContainerService,
+    private readonly patio: PatioV2Service,
   ) {}
 
   private cx(req: Request & { cxUser?: CxPortalRequestUser }) {
@@ -130,6 +135,48 @@ export class PortalClienteController {
       this.configService.get<string>('PORTAL_JWT_REFRESH_EXPIRES_IN') ?? '7d',
     );
     await this.sessionService.assertSessionOwnedAndRemove(u.sub, sessionId, ttl);
+  }
+
+  @Get('catalogo/tipos-container')
+  @ApiOperation({
+    summary: 'Catálogo de tipos de contêiner ativos (MDM) para formulário de solicitação',
+    description:
+      'Retorna `{ items: [{ codigo, nome, tamanhos, tomadaReefer }], total }` — mesma base de /cadastros/operacional/tipos-container.',
+  })
+  async catalogoTiposContainer(@Req() req: Request & { cxUser?: CxPortalRequestUser }) {
+    const u = this.cx(req);
+    await this.audPortal(u, 'GET /cliente/portal/catalogo/tipos-container');
+    return this.tiposContainer.listAtivosForPortal();
+  }
+
+  @Get('containers/:iso/tomada')
+  @ApiOperation({ summary: 'Status da tomada reefer do contêiner no pátio' })
+  async statusTomada(
+    @Req() req: Request & { cxUser?: CxPortalRequestUser },
+    @Param('iso') iso: string,
+  ) {
+    const u = this.cx(req);
+    if (!u.clienteId) throw new ForbiddenException('Cliente não identificado');
+    await this.audPortal(u, `GET /cliente/portal/containers/${iso}/tomada`);
+    return this.patio.statusTomada(iso, u.clienteId);
+  }
+
+  @Post('containers/:iso/solicitar-tomada')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Solicitar conexão de tomada reefer durante a estadia (mid-stay)',
+    description:
+      'Registra pedido SOLICITADO. A operação conecta no pátio; a diária de energia passa a contar a partir da conexão.',
+  })
+  async solicitarTomada(
+    @Req() req: Request & { cxUser?: CxPortalRequestUser },
+    @Param('iso') iso: string,
+    @Body() dto: PortalSolicitarTomadaDto,
+  ) {
+    const u = this.cx(req);
+    if (!u.clienteId) throw new ForbiddenException('Cliente não identificado');
+    await this.audPortal(u, `POST /cliente/portal/containers/${iso}/solicitar-tomada`, undefined, AcaoAuditoria.INSERT);
+    return this.patio.solicitarTomadaPortal(u.clienteId, iso, dto, u.sub);
   }
 
   @Get('solicitacoes')

@@ -1,5 +1,6 @@
 import { ApiError, staffFetchSolicitacaoV2Detalhe, staffJson } from "@/lib/api/staff-client";
 import type { QrCredencialPayload } from "@/lib/credencial-motorista";
+import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
 import { stripContainerISO } from "@/utils/containerFormatter";
 
 export type PortariaPrevisaoItem = {
@@ -56,8 +57,7 @@ function containerLabel(row: V2Row): string {
 function tipoTamanhoLabel(row: V2Row): string {
   const c = row.containersSolicitacao?.[0];
   if (!c) return "—";
-  const parts = [c.tipo, c.tamanho].filter(Boolean);
-  return parts.length ? parts.join(" · ") : "—";
+  return formatTipoTamanhoContainerLabel(c.tipo, c.tamanho) ?? "—";
 }
 
 function mapPrevisao(row: V2Row): PortariaPrevisaoItem {

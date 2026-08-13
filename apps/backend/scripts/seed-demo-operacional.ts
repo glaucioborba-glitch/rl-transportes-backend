@@ -361,7 +361,7 @@ async function createSolicitacaoDemo(
           booking: `BK-DEMO-${solIdx}`,
           processo: `PROC-${2026000 + solIdx}`,
           tamanho: solIdx % 3 === 0 ? '40HC' : '20DC',
-          tipo: solIdx % 4 === 0 ? 'REEFER' : 'DRY',
+          tipo: solIdx % 4 === 0 ? 'REEFER' : 'DRYDC',
           status: solIdx % 2 === 0 ? StatusContainer.CHEIO : StatusContainer.VAZIO,
           lacre: `LCR${10000 + solIdx}`,
           refrigerado: solIdx % 4 === 0,

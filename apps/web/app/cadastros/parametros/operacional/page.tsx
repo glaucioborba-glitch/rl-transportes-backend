@@ -76,16 +76,36 @@ export default function ParametrosOperacionalPage() {
     setSaving(true);
     try {
       const operacional = {
-        ...form,
+        capacidadeTotalSlots: form.capacidadeTotalSlots,
+        teuMaximoSimultaneo: form.teuMaximoSimultaneo,
+        horarioFuncionamentoInicio: form.horarioFuncionamentoInicio.slice(0, 5),
+        horarioFuncionamentoFim: form.horarioFuncionamentoFim.slice(0, 5),
+        freeTimePadraoDias: form.freeTimePadraoDias,
+        tatAlvoEntradaMin: form.tatAlvoEntradaMin,
+        tatAlvoSaidaMin: form.tatAlvoSaidaMin,
+        tatAlvoRemocaoMin: form.tatAlvoRemocaoMin,
+        limiteAgendamentosPorTurno: form.limiteAgendamentosPorTurno,
+        operacaoFimSemana: form.operacaoFimSemana,
+        ...(form.descricaoFimSemana != null
+          ? { descricaoFimSemana: form.descricaoFimSemana }
+          : {}),
+        toleranciaChegada: form.toleranciaChegada,
+        antecedenciaMinimaMin: form.antecedenciaMinimaMin,
+        cancelamentoSemPenalidadeMin: form.cancelamentoSemPenalidadeMin,
+        validarAntecedenciaAgendamento: form.validarAntecedenciaAgendamento,
+        validarCancelamentoSemPenalidade: form.validarCancelamentoSemPenalidade,
         turnos: form.turnos.map((t) => ({
-          ...t,
+          id: t.id,
           slot: t.slot ?? "MANHA",
           codigo: t.codigo.trim().slice(0, 32),
           nome: t.nome.trim(),
           horaInicio: t.horaInicio.slice(0, 5),
           horaFim: t.horaFim.slice(0, 5),
           capacidadeMaxima: Math.round(Number(t.capacidadeMaxima) || 1),
+          diasSemana: t.diasSemana,
+          ativo: t.ativo,
         })),
+        feriadosMunicipais: form.feriadosMunicipais ?? [],
       };
       await update({ operacional });
       toast.success("Parâmetros operacionais salvos.");

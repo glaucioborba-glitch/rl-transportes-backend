@@ -111,9 +111,12 @@ export function TabelaPrecoMatrixGrid({ items, onChange }: Props) {
                         freeTimeDias={item.freeTimeDias}
                         onChange={(faixasDiaria) => update(index, { faixasDiaria })}
                       />
-                      {item.tipoContainerCodigo === "REEFER" && (
+                      {(item.tipoContainerCodigo.toUpperCase().includes("REEFER") ||
+                        item.tarifaEnergiaReeferDiaria !== "") && (
                         <div className="mt-2">
-                          <label className="text-xs text-muted-foreground">Energia reefer (R$/dia)</label>
+                          <label className="text-xs text-muted-foreground">
+                            Energia / tomada reefer (R$/dia) — cobrada só nos dias conectados
+                          </label>
                           <Input
                             className="mt-1 h-8 w-32"
                             type="number"

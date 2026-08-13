@@ -8,11 +8,13 @@ import { PatioV2Module } from '../patio-v2/patio.module';
 import { PatioV2Service } from '../patio-v2/patio.service';
 import { ArmazenagemFaturamentoModule } from '../armazenagem-faturamento/armazenagem-faturamento.module';
 import { YardAllocationModule } from '../yard-allocation/yard-allocation.module';
+import { CadastrosModule } from '../cadastros/cadastros.module';
 import { GateV2Controller } from './gate.controller';
 import { GateQrController } from './gate-qr.controller';
 import { GateOperacaoFlowController } from './gate-operacao-flow.controller';
 import { GateOperacaoFlowService } from './gate-operacao-flow.service';
 import { GateV2Service } from './gate.service';
+import { PrevisaoNaviosService } from './previsao-navios/previsao-navios.service';
 import { VistoriaModule } from '../vistoria/vistoria.module';
 import { VistoriaGateController } from '../vistoria/vistoria-gate.controller';
 import { HoldReleaseModule } from '../hold-release/hold-release.module';
@@ -31,9 +33,10 @@ import { OCRModule } from '../modules/ocr/ocr.module';
     VistoriaModule,
     HoldReleaseModule,
     OCRModule,
+    CadastrosModule,
   ],
   controllers: [GateV2Controller, GateQrController, VistoriaGateController, GateOperacaoFlowController],
-  providers: [GateV2Service, GateOperacaoFlowService],
-  exports: [GateV2Service, GateOperacaoFlowService],
+  providers: [GateV2Service, GateOperacaoFlowService, PrevisaoNaviosService],
+  exports: [GateV2Service, GateOperacaoFlowService, PrevisaoNaviosService],
 })
 export class GateV2Module {}

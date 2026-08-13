@@ -38,6 +38,7 @@ const TURNO_FAIXA: Record<string, string> = {
 };
 
 import { ContainerNumber } from "@/components/ui/container-number";
+import { coerceTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
 
 function SituacaoBadge({ situacao }: { situacao: GateContainerSituacao }) {
   const cheio = situacao === "CHEIO";
@@ -63,10 +64,11 @@ function TipoTamanhoSituacao({
   tipoTamanho?: string | null;
   situacao?: GateContainerSituacao | null;
 }) {
-  if (!tipoTamanho) return null;
+  const label = coerceTipoTamanhoContainerLabel(tipoTamanho);
+  if (!label) return null;
   return (
     <div className="mb-1 flex flex-wrap items-center gap-2">
-      <span className="text-sm text-muted-foreground">{tipoTamanho}</span>
+      <span className="text-sm text-muted-foreground">{label}</span>
       {situacao ? <SituacaoBadge situacao={situacao} /> : null}
     </div>
   );

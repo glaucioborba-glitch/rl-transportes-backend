@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { fetchOperacao, postCheckin, type OperacaoDto } from "@/lib/gate/operacao-api";
 import { STATE_LABELS } from "@/lib/gate/operacao-states";
+import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
 import { toast } from "@/lib/toast";
 
 export default function CheckinPage({ params }: { params: { protocolo: string } }) {
@@ -84,7 +85,10 @@ export default function CheckinPage({ params }: { params: { protocolo: string } 
         <DataRow
           icon={Package}
           label="Tipo/Tamanho"
-          value={`${operacao.containerTipo} / ${operacao.containerTamanho}`}
+          value={
+            formatTipoTamanhoContainerLabel(operacao.containerTipo, operacao.containerTamanho) ??
+            "—"
+          }
         />
         <DataRow icon={Package} label="Situação" value={operacao.containerSituacao} />
         <DataRow icon={Truck} label="Placa" value={operacao.placa} />

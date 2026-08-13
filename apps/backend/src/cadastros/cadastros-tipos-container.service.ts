@@ -9,11 +9,47 @@ import { AuditoriaService } from '../auditoria/auditoria.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CadastrosTipoContainerFormDto } from './dto/cadastros-tipo-container-form.dto';
 import { CadastrosTipoContainerQueryDto } from './dto/cadastros-tipo-container-query.dto';
-import { normalizeTamanhosContainer } from './tipo-container-tamanhos.util';
+import {
+  formatTipoTamanhoContainerLabel,
+  normalizeTamanhosContainer,
+  resolveTipoContainerCodigo,
+} from './tipo-container-tamanhos.util';
 
 @Injectable()
 export class CadastrosTiposContainerService {
+  private catalogCodigosCache: { at: number; codigos: string[] } | null = null;
+
   constructor(private readonly prisma: PrismaService) {}
+
+  /** Códigos ativos do MDM (cache curto — cadastro é a matriz). */
+  async listActiveCodigos(): Promise<string[]> {
+    const now = Date.now();
+    if (this.catalogCodigosCache && now - this.catalogCodigosCache.at < 60_000) {
+      return this.catalogCodigosCache.codigos;
+    }
+    const rows = await this.prisma.cadastroTipoContainer.findMany({
+      where: { deletedAt: null, ativo: true },
+      select: { codigo: true },
+      orderBy: { codigo: 'asc' },
+    });
+    const codigos = rows.map((r) => r.codigo.toUpperCase());
+    this.catalogCodigosCache = { at: now, codigos };
+    return codigos;
+  }
+
+  invalidateCatalogCache() {
+    this.catalogCodigosCache = null;
+  }
+
+  async formatTipoTamanhoLabel(tipo?: unknown, tamanho?: unknown): Promise<string | null> {
+    const codigos = await this.listActiveCodigos();
+    return formatTipoTamanhoContainerLabel(tipo, tamanho, codigos);
+  }
+
+  async resolveCodigo(tipo: unknown): Promise<string> {
+    const codigos = await this.listActiveCodigos();
+    return resolveTipoContainerCodigo(tipo, codigos);
+  }
 
   async list(query: CadastrosTipoContainerQueryDto, _actor: AuthUser) {
     const where: Prisma.CadastroTipoContainerWhereInput = { deletedAt: null };
@@ -32,6 +68,26 @@ export class CadastrosTiposContainerService {
 
     return {
       items: rows.map((r) => this.toShape(r)),
+      total: rows.length,
+    };
+  }
+
+  /** Catálogo read-only para o portal do cliente (só tipos ativos). */
+  async listAtivosForPortal() {
+    const rows = await this.prisma.cadastroTipoContainer.findMany({
+      where: { deletedAt: null, ativo: true },
+      orderBy: { codigo: 'asc' },
+    });
+    return {
+      items: rows.map((r) => {
+        const shape = this.toShape(r);
+        return {
+          codigo: shape.codigo,
+          nome: shape.nome,
+          tamanhos: shape.tamanhos,
+          tomadaReefer: shape.tomadaReefer,
+        };
+      }),
       total: rows.length,
     };
   }
@@ -57,6 +113,7 @@ export class CadastrosTiposContainerService {
         ativo: dto.ativo ?? true,
       },
     });
+    this.invalidateCatalogCache();
     return this.toShape(row);
   }
 
@@ -79,6 +136,7 @@ export class CadastrosTiposContainerService {
         deletedAt: dto.ativo === false ? new Date() : null,
       },
     });
+    this.invalidateCatalogCache();
     return this.toShape(row);
   }
 

@@ -9,6 +9,7 @@ import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { PatioMovimentarDto } from './dto/movimentar.dto';
 import { PatioPosicionarDto, PatioPrepararGateOutDto } from './dto/posicionar.dto';
+import { PatioTomadaConectarDto, PatioTomadaDesconectarDto } from './dto/tomada.dto';
 import { PatioV2Service } from './patio.service';
 
 const PATIO_ROLES: Role[] = [
@@ -64,5 +65,41 @@ export class PatioV2Controller {
   @Permissions('solicitacoes:patio')
   unidade(@Param('iso') iso: string) {
     return this.patio.historicoUnidade(iso);
+  }
+
+  @Get('unidade/:iso/tomada')
+  @ApiOperation({ summary: 'Status da tomada reefer da unidade no pátio' })
+  @Roles(...PATIO_ROLES)
+  @Permissions('solicitacoes:patio')
+  statusTomada(@Param('iso') iso: string) {
+    return this.patio.statusTomada(iso);
+  }
+
+  @Post('unidades/:id/tomada/conectar')
+  @ApiOperation({
+    summary: 'Conectar tomada reefer (inicia cobrança de energia diária premium)',
+  })
+  @Roles(...PATIO_ROLES)
+  @Permissions('solicitacoes:patio')
+  conectarTomada(
+    @Param('id') id: string,
+    @Body() dto: PatioTomadaConectarDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.patio.conectarTomada(id, user.id, dto);
+  }
+
+  @Post('unidades/:id/tomada/desconectar')
+  @ApiOperation({
+    summary: 'Desconectar tomada reefer (encerra cobrança de energia)',
+  })
+  @Roles(...PATIO_ROLES)
+  @Permissions('solicitacoes:patio')
+  desconectarTomada(
+    @Param('id') id: string,
+    @Body() dto: PatioTomadaDesconectarDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.patio.desconectarTomada(id, user.id, dto);
   }
 }

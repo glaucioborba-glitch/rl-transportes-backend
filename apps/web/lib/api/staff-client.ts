@@ -310,6 +310,54 @@ export function staffGateCockpit(dataRef?: string) {
   return staffJson<import("@/lib/gate/gate-cockpit-types").GateCockpitPayload>(`/v2/gate/cockpit${q}`);
 }
 
+export type StaffPrevisaoNavios = {
+  fonte: string;
+  fonteUrl: string;
+  atualizadoEm: string;
+  stale: boolean;
+  previstos: Array<{
+    navio: string;
+    loa: string;
+    calado: string;
+    rota: string;
+    previsaoChegada: string;
+    rebocadores: string;
+  }>;
+  atracados: Array<{
+    berco: string;
+    bordo: string;
+    navio: string;
+    rota: string;
+    dataHora: string;
+  }>;
+  fundeados: Array<{
+    navio: string;
+    loa: string;
+    posicao: string;
+    calado: string;
+    rota: string;
+    dataHora: string;
+  }>;
+  manobrasPrevistas: Array<{
+    data: string;
+    horario: string;
+    manobra: string;
+    berco: string;
+    bordo: string;
+    navio: string;
+    rota: string;
+    loa: string;
+    boca: string;
+    calado: string;
+    situacao: string;
+  }>;
+};
+
+export function staffGatePrevisaoNavios(refresh = false) {
+  const q = refresh ? "?refresh=1" : "";
+  return staffJson<StaffPrevisaoNavios>(`/v2/gate/previsao-navios${q}`);
+}
+
 export function staffGateDirecionarOperacao(solicitacaoId: string) {
   return staffJson<{ ok: boolean; status: string }>(
     `/v2/gate/solicitacoes/${encodeURIComponent(solicitacaoId)}/direcionar-operacao`,

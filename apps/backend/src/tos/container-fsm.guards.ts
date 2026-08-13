@@ -99,3 +99,9 @@ export function assertReeferPlugged(tipo: TipoContainerTos): void {
     throw new BadRequestException('REEFER_PLUGGED só se aplica a contêineres REEFER.');
   }
 }
+
+export function assertReeferUnplugged(tipo: TipoContainerTos): void {
+  if (tipo !== TipoContainerTos.REEFER) {
+    throw new BadRequestException('REEFER_UNPLUGGED só se aplica a contêineres REEFER.');
+  }
+}

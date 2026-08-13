@@ -18,6 +18,7 @@ import type {
   LegacyTarifaLike,
   RegraTarifariaLike,
 } from './billing-rule-engine.types';
+import { resolveTipoContainerCodigo } from '../cadastros/tipo-container-tamanhos.util';
 
 const IMO_HINTS = ['IMO', 'PERIG', 'HAZ', 'DGR', 'ONU'];
 const REEFER_HINTS = ['REEFER', 'RF', 'REEF'];
@@ -76,6 +77,43 @@ export function calculateReeferSurcharge(
 
 export function reeferEnergyFactor(setPoint: number): number {
   return setPoint < -10 ? 1.5 : setPoint < 0 ? 1.2 : 1.0;
+}
+
+export type TomadaIntervalEvent = {
+  tipo: 'CONECTADO' | 'DESCONECTADO';
+  at: Date;
+};
+
+/** Soma dias corridos com tomada ligada (pares CONECTADO→DESCONECTADO|asOf). */
+export function computeDiasEnergiaFromTomadaEvents(
+  events: TomadaIntervalEvent[],
+  asOf: Date,
+): number {
+  const ordered = [...events].sort((a, b) => a.at.getTime() - b.at.getTime());
+  let open: Date | null = null;
+  let total = 0;
+  for (const e of ordered) {
+    if (e.tipo === 'CONECTADO') {
+      if (!open) open = e.at;
+    } else if (e.tipo === 'DESCONECTADO' && open) {
+      total += diffDiasCalendario(open, e.at);
+      open = null;
+    }
+  }
+  if (open) total += diffDiasCalendario(open, asOf);
+  return Math.max(0, total);
+}
+
+/** Resolve dias faturáveis de energia: eventos de tomada > flag refrigerado legado. */
+export function resolveDiasEnergiaReefer(input: {
+  diasNoPatio: number;
+  diasEnergiaReefer?: number;
+  refrigerado?: boolean;
+}): number {
+  if (input.diasEnergiaReefer !== undefined) {
+    return Math.max(0, input.diasEnergiaReefer);
+  }
+  return input.refrigerado ? input.diasNoPatio : 0;
 }
 
 export function assertTabelaPrecoConfigurada(
@@ -139,21 +177,26 @@ export function scoreRegraTarifaria(
 }
 
 export function extractContainerMdmKeys(ctx: ContainerBillingContext): ContainerMdmKeys {
-  const tipoRaw = (ctx.tipo ?? 'DRY').toUpperCase();
-  let tipoCodigo = tipoRaw;
+  const tipoRaw = (ctx.tipo ?? 'DRYDC').toUpperCase();
   let capacidadeCodigo = ctx.capacidade?.toUpperCase() ?? null;
 
   if (!capacidadeCodigo && (tipoRaw === 'HC' || tipoRaw === 'DC')) {
     capacidadeCodigo = tipoRaw;
-    tipoCodigo = 'DRY';
+  }
+
+  let tipoCodigo = resolveTipoContainerCodigo(tipoRaw);
+
+  // Energia/tomada: refrigerado explícito ou tipo REEFER (exceto REEFERDRY sem plug).
+  if (ctx.refrigerado) {
+    tipoCodigo = 'REEFER';
+  } else if (tipoRaw === 'REEFERDRY') {
+    tipoCodigo = 'REEFERDRY';
+  } else if (REEFER_HINTS.some((h) => tipoRaw.includes(h)) && tipoRaw !== 'REEFERDRY') {
+    tipoCodigo = 'REEFER';
   }
 
   const digits = (ctx.tamanho ?? '40').replace(/\D/g, '');
   const containerTamanho = digits ? `${digits}'` : "40'";
-
-  if (ctx.refrigerado || REEFER_HINTS.some((h) => tipoRaw.includes(h))) {
-    tipoCodigo = 'REEFER';
-  }
 
   return { tipoCodigo, capacidadeCodigo, containerTamanho };
 }
@@ -319,10 +362,19 @@ export function evaluateBillingRules(input: BillingRuleEngineInput): BillingRule
     }
   }
 
-  if (tipoContainer === TipoContainerTarifa.REEFER && diasNoPatio > 0) {
+  const diasEnergia = resolveDiasEnergiaReefer({
+    diasNoPatio,
+    diasEnergiaReefer: input.diasEnergiaReefer,
+    refrigerado: input.container.refrigerado,
+  });
+  if (diasEnergia > 0) {
+    const tipoEnergia =
+      tipoContainer === TipoContainerTarifa.REEFER
+        ? tipoContainer
+        : TipoContainerTarifa.REEFER;
     const regraEnergia = pickRegra(
       input.regras,
-      tipoContainer,
+      tipoEnergia,
       EventoGatilhoTarifa.ENERGIA_REEFER,
       statusContainer,
       mdm,
@@ -332,14 +384,14 @@ export function evaluateBillingRules(input: BillingRuleEngineInput): BillingRule
     const setPoint = input.container.setPoint ?? 0;
     const fator = reeferEnergyFactor(setPoint);
     const valorUnitario = roundMoney(tarifaBase * fator);
-    const valorTotal = calculateReeferSurcharge(diasNoPatio, setPoint, tarifaBase);
+    const valorTotal = calculateReeferSurcharge(diasEnergia, setPoint, tarifaBase);
     items.push({
       regraTarifariaId: regraEnergia?.id ?? null,
       eventoGatilho: EventoGatilhoTarifa.ENERGIA_REEFER,
       descricao:
         regraEnergia?.nome?.trim() ||
-        `Energia reefer (set point ${setPoint}°C, fator ${fator}x)`,
-      quantidade: diasNoPatio,
+        `Energia reefer / tomada (set point ${setPoint}°C, fator ${fator}x)`,
+      quantidade: diasEnergia,
       valorUnitario,
       valorTotal,
     });

@@ -95,6 +95,8 @@ export class ArmazenagemBillingService {
         fase: 'GATE_IN',
         clienteId,
         tabelaPrecoId: pricing.tabelaPrecoId,
+        gateInId,
+        containerIso,
       });
 
       await this.ruleEngine.persistItens(
@@ -175,6 +177,8 @@ export class ArmazenagemBillingService {
         fase: 'PROVISAO_DIARIA',
         clienteId: pf.clienteId,
         tabelaPrecoId: pricing.tabelaPrecoId,
+        gateInId: pf.gateInId,
+        containerIso: pf.containerIso,
       });
 
       await this.ruleEngine.persistItens(pf.id, diariaEval, undefined, [
@@ -284,20 +288,19 @@ export class ArmazenagemBillingService {
       gateInAt = unit.gateIn.dataHora;
     }
 
-    const container = pf
-      ? await this.ruleEngine.loadContainerContext(pf.gateInId, containerIso)
-      : await this.ruleEngine.loadContainerContext(
-          (
-            await this.prisma.patioUnidade.findFirstOrThrow({
-              where: {
-                unidadeIso: { equals: containerIso, mode: 'insensitive' },
-                solicitacao: { clienteId },
-                gateIn: { checkOut: null },
-              },
-            })
-          ).gateInId,
-          containerIso,
-        );
+    const resolvedGateInId =
+      pf?.gateInId ??
+      (
+        await this.prisma.patioUnidade.findFirstOrThrow({
+          where: {
+            unidadeIso: { equals: containerIso, mode: 'insensitive' },
+            solicitacao: { clienteId },
+            gateIn: { checkOut: null },
+          },
+        })
+      ).gateInId;
+
+    const container = await this.ruleEngine.loadContainerContext(resolvedGateInId, containerIso);
 
     const live = await this.ruleEngine.evaluateForContainerCycleWithTenant(tenantId, {
       gateInAt,
@@ -307,6 +310,8 @@ export class ArmazenagemBillingService {
       fase: 'PROVISAO_DIARIA',
       clienteId,
       tabelaPrecoId: pricing.tabelaPrecoId,
+      gateInId: resolvedGateInId,
+      containerIso,
     });
 
     const gateInItems =
@@ -403,6 +408,8 @@ export class ArmazenagemBillingService {
         fase: 'GATE_OUT',
         clienteId: pf.clienteId,
         tabelaPrecoId: pricing.tabelaPrecoId,
+        gateInId,
+        containerIso: pf.containerIso,
       });
 
       await this.ruleEngine.persistItens(pf.id, evaluation, tx);

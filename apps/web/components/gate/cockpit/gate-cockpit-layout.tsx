@@ -8,7 +8,10 @@ import { GateCockpitProvider } from "./gate-cockpit-context";
 import { GateCockpitMain } from "./gate-cockpit-main";
 import { GateCockpitTopbar } from "./gate-cockpit-topbar";
 
-const GATE_STANDALONE_ROUTES = ["/operador/gate/historico-container"];
+const GATE_STANDALONE_ROUTES = [
+  "/operador/gate/historico-container",
+  "/operador/gate/previsao-navios",
+];
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);

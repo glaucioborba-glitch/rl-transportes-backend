@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   EventoGatilhoTarifa,
+  PatioTomadaEventType,
   Prisma,
   StatusContainer,
   StatusContainerTarifa,
@@ -19,11 +20,14 @@ import type {
   ContainerBillingContext,
 } from './billing-rule-engine.types';
 import {
+  computeDiasEnergiaFromTomadaEvents,
   DEFAULT_TARIFA_ENERGIA_REEFER_DIA,
+  diffDiasCalendario,
   evaluateBillingRules,
   extractContainerMdmKeys,
   inferTipoContainer,
   pickRegra,
+  resolveDiasEnergiaReefer,
 } from './billing-rule-engine.util';
 import { parseFaixasDiaria } from './faixa-diaria.types';
 import { resolveFaixasFromCadastroItem } from './faixa-diaria-calculator';
@@ -261,6 +265,8 @@ export class BillingRuleEngineService {
     tenantId?: string;
     clienteId?: string;
     tabelaPrecoId?: string;
+    gateInId?: string;
+    containerIso?: string;
   }): Promise<BillingRuleEngineResult> {
     const incluirGateIn = params.fase === 'GATE_IN' || params.fase === 'GATE_OUT';
     const incluirGateOut = params.fase === 'GATE_OUT';
@@ -278,6 +284,14 @@ export class BillingRuleEngineService {
       );
     }
 
+    const diasEnergiaReefer = await this.resolveDiasEnergiaReeferForCycle({
+      container: params.container,
+      gateInAt: params.gateInAt,
+      asOf: params.asOf,
+      gateInId: params.gateInId,
+      containerIso: params.containerIso,
+    });
+
     return this.evaluate({
       gateInAt: params.gateInAt,
       asOf: params.asOf,
@@ -287,6 +301,57 @@ export class BillingRuleEngineService {
       incluirGateOut,
       shiftingExtras,
       pricingOverrides,
+      diasEnergiaReefer,
+    });
+  }
+
+  /**
+   * Dias de energia: histórico CONECTADO/DESCONECTADO do pátio;
+   * sem histórico, fallback para flag `refrigerado` da solicitação.
+   */
+  async resolveDiasEnergiaReeferForCycle(params: {
+    container: ContainerBillingContext;
+    gateInAt: Date;
+    asOf: Date;
+    gateInId?: string;
+    containerIso?: string;
+  }): Promise<number> {
+    const diasNoPatio = diffDiasCalendario(params.gateInAt, params.asOf);
+
+    if (!params.gateInId || !params.containerIso) {
+      return resolveDiasEnergiaReefer({
+        diasNoPatio,
+        refrigerado: params.container.refrigerado,
+      });
+    }
+
+    const iso = params.containerIso.replace(/\s/g, '').toUpperCase();
+    const unit = await this.prisma.patioUnidade.findFirst({
+      where: { gateInId: params.gateInId, unidadeIso: iso },
+      include: {
+        tomadaEventos: {
+          where: {
+            tipo: { in: [PatioTomadaEventType.CONECTADO, PatioTomadaEventType.DESCONECTADO] },
+          },
+          orderBy: { createdAt: 'asc' },
+          select: { tipo: true, createdAt: true },
+        },
+      },
+    });
+
+    if (unit?.tomadaEventos?.length) {
+      return computeDiasEnergiaFromTomadaEvents(
+        unit.tomadaEventos.map((e) => ({
+          tipo: e.tipo as 'CONECTADO' | 'DESCONECTADO',
+          at: e.createdAt,
+        })),
+        params.asOf,
+      );
+    }
+
+    return resolveDiasEnergiaReefer({
+      diasNoPatio,
+      refrigerado: params.container.refrigerado || unit?.refrigerado,
     });
   }
 

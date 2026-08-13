@@ -33,6 +33,7 @@ import {
   Settings,
   Shield,
   ShieldCheck,
+  Ship,
   CheckSquare,
   Target,
   Timer,
@@ -190,6 +191,12 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
       href: "/operador/gate/historico-container",
       icon: History,
       description: "Consultar todas as passagens de um contêiner pelo terminal",
+    },
+    {
+      label: "Previsão de chegada de navios",
+      href: "/operador/gate/previsao-navios",
+      icon: Ship,
+      description: "Line-up ZP21 (Itajaí/Navegantes) — atualização automática",
     },
     {
       label: "Autorizações",

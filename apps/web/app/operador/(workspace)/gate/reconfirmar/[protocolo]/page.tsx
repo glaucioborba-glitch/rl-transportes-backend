@@ -16,6 +16,7 @@ import {
   postRejeitar,
   type OperacaoDto,
 } from "@/lib/gate/operacao-api";
+import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
 import { toast } from "@/lib/toast";
 
 const MOTIVOS = [
@@ -115,7 +116,15 @@ export default function ReconfirmarDetailPage({ params }: { params: { protocolo:
             <h2 className="mb-4 text-lg font-bold">Dados da Operação</h2>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <Field label="Contêiner" value={operacao.containerNumero} />
-              <Field label="Tipo" value={`${operacao.containerTipo} / ${operacao.containerTamanho}`} />
+              <Field
+                label="Tipo"
+                value={
+                  formatTipoTamanhoContainerLabel(
+                    operacao.containerTipo,
+                    operacao.containerTamanho,
+                  ) ?? "—"
+                }
+              />
               <Field label="Situação" value={operacao.containerSituacao} />
               <Field label="Placa" value={operacao.placa} />
               <Field label="Motorista" value={operacao.motoristaNome} />

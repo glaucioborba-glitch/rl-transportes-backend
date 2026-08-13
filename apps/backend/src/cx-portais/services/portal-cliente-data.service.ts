@@ -19,6 +19,11 @@ import {
   containerIsosChanged,
   deltasInvalidateQrCredential,
 } from '../../common/utils/credencial-version.util';
+import {
+  formatTamanhoContainerMatrix,
+  normalizeTamanhoContainer,
+  normalizeTamanhosContainer,
+} from '../../cadastros/tipo-container-tamanhos.util';
 
 const STATUS_TERMINAL = new Set<StatusSolicitacao>([
   StatusSolicitacao.CONCLUIDO,
@@ -392,6 +397,14 @@ export class PortalClienteDataService {
       throw new BadRequestException('Data de agendamento inválida');
     }
 
+    const tiposAtivos = await this.prisma.cadastroTipoContainer.findMany({
+      where: { deletedAt: null, ativo: true },
+      select: { codigo: true, tamanhos: true },
+    });
+    const byCodigo = new Map(
+      tiposAtivos.map((t) => [t.codigo.toUpperCase(), normalizeTamanhosContainer(t.tamanhos)]),
+    );
+
     for (const c of dto.containers) {
       const existing = sol.containersSolicitacao.find((x) => x.ordem === c.ordem);
       if (!existing) {
@@ -405,6 +418,21 @@ export class PortalClienteDataService {
           throw new BadRequestException('Alteração do número ISO do contêiner não é permitida.');
         }
       }
+      const codigo = c.tipo.trim().toUpperCase();
+      const tamanhos = byCodigo.get(codigo);
+      if (!tamanhos) {
+        throw new BadRequestException(
+          `Tipo de contêiner inválido ou inativo na ordem ${c.ordem}: ${c.tipo}`,
+        );
+      }
+      const tamanhoNorm = normalizeTamanhoContainer(c.tamanho);
+      if (!tamanhos.includes(tamanhoNorm)) {
+        throw new BadRequestException(
+          `Tamanho ${c.tamanho} não permitido para o tipo ${codigo} (ordem ${c.ordem}).`,
+        );
+      }
+      c.tipo = codigo;
+      c.tamanho = formatTamanhoContainerMatrix(tamanhoNorm);
     }
 
     const oldAg = sol.agendamentoSolicitacao;

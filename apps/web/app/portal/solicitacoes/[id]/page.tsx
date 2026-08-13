@@ -18,6 +18,7 @@ import {
   type SolicitacaoRow,
 } from "@/lib/api/portal-client";
 import { formatDateTime } from "@/lib/portal-tracking";
+import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
 import type { VistoriaPortalRow } from "@/lib/gate-vistoria";
 import { VistoriaGallery } from "@/components/portal/vistoria-gallery";
 import { collectSolicitacaoContainerISOs } from "@/lib/container-display";
@@ -246,7 +247,8 @@ export default function SolicitacaoDetailPage() {
                         {c.refrigerado ? ` · reefer ${c.setPoint ?? "—"}°C` : ""}
                       </p>
                       <p className="text-xs text-slate-500">
-                        {c.processo} · {c.tamanho} · {c.tipo}
+                        {c.processo} ·{" "}
+                        {formatTipoTamanhoContainerLabel(c.tipo, c.tamanho) ?? "—"}
                         {c.lacre ? ` · lacre ${c.lacre}` : ""}
                       </p>
                     </div>

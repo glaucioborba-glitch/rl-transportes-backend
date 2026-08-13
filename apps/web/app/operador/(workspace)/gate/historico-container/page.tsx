@@ -25,6 +25,10 @@ import {
   isValidISO6346,
   stripContainerISO,
 } from "@/lib/cadastros/formatters";
+import {
+  formatTamanhoContainerDisplay,
+  resolveTipoContainerCodigo,
+} from "@/lib/cadastros/tipo-container-tamanhos";
 import { formatContainerISO } from "@/utils/containerFormatter";
 
 export default function HistoricoContainerPage() {
@@ -119,11 +123,15 @@ export default function HistoricoContainerPage() {
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wider text-muted-foreground">Tipo</p>
-                <p className="text-lg font-medium">{resultado.tipo || "—"}</p>
+                <p className="text-lg font-medium">
+                  {resolveTipoContainerCodigo(resultado.tipo) || "—"}
+                </p>
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wider text-muted-foreground">Tamanho</p>
-                <p className="text-lg font-medium">{resultado.tamanho || "—"}</p>
+                <p className="text-lg font-medium">
+                  {formatTamanhoContainerDisplay(resultado.tamanho) || "—"}
+                </p>
               </div>
             </div>
             <div className="mt-3 border-t border-border/50 pt-3 text-xs text-muted-foreground">

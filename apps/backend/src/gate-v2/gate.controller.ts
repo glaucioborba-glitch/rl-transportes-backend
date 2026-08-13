@@ -35,6 +35,7 @@ import { GateCheckInDto } from './dto/gate-checkin.dto';
 import { GateCheckOutDto } from './dto/gate-checkout.dto';
 import { GateRetornarEntradaDto, GateRejeitarOsDto } from './dto/gate-cockpit-action.dto';
 import { GateV2Service } from './gate.service';
+import { PrevisaoNaviosService } from './previsao-navios/previsao-navios.service';
 import { VistoriaService } from '../vistoria/vistoria.service';
 
 const VISTORIA_FOTO_FIELDS = [
@@ -60,6 +61,7 @@ export class GateV2Controller {
   constructor(
     private readonly gate: GateV2Service,
     private readonly vistoria: VistoriaService,
+    private readonly previsaoNavios: PrevisaoNaviosService,
   ) {}
 
   @Get('metricas/resumo')
@@ -68,6 +70,18 @@ export class GateV2Controller {
   @Permissions('solicitacoes:ler')
   metricasResumo() {
     return this.gate.metricasResumo();
+  }
+
+  @Get('previsao-navios')
+  @ApiOperation({
+    summary:
+      'Previsão de chegada de navios (ZP21 Práticos — Itajaí/Navegantes). Cache atualizado a cada ~10 min.',
+  })
+  @Roles(...GATE_ROLES)
+  @Permissions('solicitacoes:ler')
+  previsaoNaviosList(@Query('refresh') refresh?: string) {
+    const force = refresh === '1' || refresh === 'true';
+    return this.previsaoNavios.getSnapshot(force);
   }
 
   @Get('cockpit')

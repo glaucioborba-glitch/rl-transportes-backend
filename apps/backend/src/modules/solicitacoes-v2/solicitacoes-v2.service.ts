@@ -42,6 +42,12 @@ import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { buildPessoaAuditMeta } from '../../pessoas-autorizadas/pessoa-context.util';
 import { HoldReleaseService } from '../../hold-release/hold-release.service';
 import { CreateBloqueioDto } from '../../hold-release/dto/create-bloqueio.dto';
+import {
+  formatTamanhoContainerMatrix,
+  normalizeTamanhoContainer,
+  normalizeTamanhosContainer,
+  resolveTipoContainerCodigo,
+} from '../../cadastros/tipo-container-tamanhos.util';
 
 const ANEXO_MAX = 5 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/jpeg', 'application/pdf']);
@@ -163,6 +169,39 @@ export class SolicitacoesV2Service {
       if (c.refrigerado && (c.setPoint === undefined || c.setPoint === null || Number.isNaN(c.setPoint))) {
         throw new BadRequestException(`SetPoint obrigatório para reefer ordem ${c.ordem}`);
       }
+    }
+  }
+
+  /** Garante tipo/tamanho contra cadastros_tipos_container ativos (MDM). */
+  private async assertContainersAgainstCatalog(
+    containers: Array<{ ordem: number; tipo: string; tamanho: string }>,
+  ) {
+    const tipos = await this.prisma.cadastroTipoContainer.findMany({
+      where: { deletedAt: null, ativo: true },
+      select: { codigo: true, tamanhos: true },
+    });
+    const byCodigo = new Map(
+      tipos.map((t) => [t.codigo.toUpperCase(), normalizeTamanhosContainer(t.tamanhos)]),
+    );
+
+    for (const c of containers) {
+      const codigo = resolveTipoContainerCodigo(c.tipo, byCodigo.keys());
+      const tamanhos = byCodigo.get(codigo);
+      if (!tamanhos) {
+        throw new BadRequestException(
+          `Tipo de contêiner inválido ou inativo na ordem ${c.ordem}: ${c.tipo}`,
+        );
+      }
+      const tamanhoNorm = normalizeTamanhoContainer(c.tamanho);
+      if (!tamanhos.includes(tamanhoNorm)) {
+        throw new BadRequestException(
+          `Tamanho ${c.tamanho} não permitido para o tipo ${codigo} (ordem ${c.ordem}). Permitidos: ${tamanhos
+            .map((t) => formatTamanhoContainerMatrix(t))
+            .join(', ')}`,
+        );
+      }
+      c.tipo = codigo;
+      c.tamanho = formatTamanhoContainerMatrix(tamanhoNorm);
     }
   }
 
@@ -381,6 +420,7 @@ export class SolicitacoesV2Service {
       throw new ForbiddenException('Somente cliente autenticado no portal pode criar solicitação v2');
     }
     this.validateDto(dto);
+    await this.assertContainersAgainstCatalog(dto.containers);
     const transporte = dto.transporte!;
     if (opts?.anexos !== undefined && !opts.anexos.length) {
       throw new BadRequestException('Anexo obrigatório: envie ao menos um arquivo (JPG/PDF).');
