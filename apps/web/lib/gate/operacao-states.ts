@@ -1,6 +1,7 @@
 /**
  * Estados sequenciais do fluxo operacional.
- * Cada estado só pode ser atingido se o anterior foi concluído.
+ * Cada estado só pode ser atingido se o anterior foi concluído,
+ * exceto a devolução à portaria (reabre só a vistoria, sem rejeitar).
  */
 export type OperacaoState =
   | 'SOLICITADA'
@@ -22,7 +23,7 @@ export const TRANSICOES_VALIDAS: Record<OperacaoState, OperacaoState[]> = {
   AGUARDANDO_CHEGADA: ['CHECKIN_PORTARIA', 'REJEITADA'],
   CHECKIN_PORTARIA: ['VISTORIA_FOTOGRAFICA', 'REJEITADA'],
   VISTORIA_FOTOGRAFICA: ['AGUARDANDO_RECONFIRMACAO'],
-  AGUARDANDO_RECONFIRMACAO: ['RECONFIRMADA', 'REJEITADA'],
+  AGUARDANDO_RECONFIRMACAO: ['RECONFIRMADA', 'REJEITADA', 'VISTORIA_FOTOGRAFICA'],
   RECONFIRMADA: ['RIC_GERADO'],
   RIC_GERADO: ['LIBERADA_OPERACAO'],
   LIBERADA_OPERACAO: ['EM_OPERACAO'],

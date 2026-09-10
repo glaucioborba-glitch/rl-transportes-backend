@@ -5,8 +5,6 @@ import { PdfOperacionalV2Module } from '../pdf-operacional-v2/pdf-operacional-v2
 import { SecurityEventsModule } from '../security-center/security-events.module';
 import { SolicitacoesV2Module } from '../modules/solicitacoes-v2/solicitacoes-v2.module';
 import { PatioV2Module } from '../patio-v2/patio.module';
-import { PatioV2Service } from '../patio-v2/patio.service';
-import { ArmazenagemFaturamentoModule } from '../armazenagem-faturamento/armazenagem-faturamento.module';
 import { YardAllocationModule } from '../yard-allocation/yard-allocation.module';
 import { CadastrosModule } from '../cadastros/cadastros.module';
 import { GateV2Controller } from './gate.controller';
@@ -19,6 +17,10 @@ import { VistoriaModule } from '../vistoria/vistoria.module';
 import { VistoriaGateController } from '../vistoria/vistoria-gate.controller';
 import { HoldReleaseModule } from '../hold-release/hold-release.module';
 import { OCRModule } from '../modules/ocr/ocr.module';
+import { UnidadeProcessoModule } from '../unidade-processo/unidade-processo.module';
+import { AuthModule } from '../auth/auth.module';
+import { CessaoTitularidadeModule } from '../cessao-titularidade/cessao-titularidade.module';
+import { TenantModule } from '../tenant/tenant.module';
 
 @Module({
   imports: [
@@ -28,12 +30,15 @@ import { OCRModule } from '../modules/ocr/ocr.module';
     SecurityEventsModule,
     SolicitacoesV2Module,
     PatioV2Module,
-    ArmazenagemFaturamentoModule,
     YardAllocationModule,
     VistoriaModule,
     HoldReleaseModule,
     OCRModule,
     CadastrosModule,
+    UnidadeProcessoModule,
+    AuthModule,
+    CessaoTitularidadeModule,
+    TenantModule,
   ],
   controllers: [GateV2Controller, GateQrController, VistoriaGateController, GateOperacaoFlowController],
   providers: [GateV2Service, GateOperacaoFlowService, PrevisaoNaviosService],

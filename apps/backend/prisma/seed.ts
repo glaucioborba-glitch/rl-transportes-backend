@@ -38,7 +38,7 @@ const BCRYPT_ROUNDS = 12;
 
 /** CPFs QA intranet — login em /login/staff usa 11 dígitos; User.cpfCnpj = zeros à esquerda (14). */
 const STAFF_CPF = {
-  SUPER_ADMIN: '11144477735',
+  SUPER_ADMIN: '03650163900',
   ADMIN: '39053344705',
   GERENTE: '98765432100',
   OPERADOR_PORTARIA: '12345678909',
@@ -184,7 +184,7 @@ async function main() {
     process.env.SEED_SUPER_ADMIN_CPF ?? process.env.SEED_SUPER_ADMIN_CPF_CNPJ,
     STAFF_CPF.SUPER_ADMIN,
   );
-  const superPwd = process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'SuperAdmin@123';
+  const superPwd = process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'Gl@ucioSuper1425';
   await prisma.user.upsert({
     where: { tenantId_email: { tenantId: DEFAULT_TENANT, email: superEmail } },
     create: {
@@ -198,6 +198,7 @@ async function main() {
       cpfCnpj: superDoc,
       password: await bcrypt.hash(superPwd, BCRYPT_ROUNDS),
       role: Role.SUPER_ADMIN,
+      tokenVersion: { increment: 1 },
     },
   });
 

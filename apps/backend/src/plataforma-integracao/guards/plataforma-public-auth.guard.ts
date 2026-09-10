@@ -77,7 +77,17 @@ export class PlataformaPublicAuthGuard implements CanActivate {
     const rawTenant = req.headers['x-tenant-id'] ?? req.headers['X-Tenant-ID'];
     const tenantHeader =
       typeof rawTenant === 'string' ? rawTenant : Array.isArray(rawTenant) ? rawTenant[0] : '';
-    req.plataformaTenantId = (tenantHeader || client.tenantId || 'default').trim();
+    const boundTenant = (client.tenantId || 'default').trim();
+    if (tenantHeader?.trim() && tenantHeader.trim() !== boundTenant) {
+      throw new ForbiddenException({
+        success: false,
+        error: {
+          code: 'TENANT_MISMATCH',
+          message: 'X-Tenant-ID não corresponde à API Key.',
+        },
+      });
+    }
+    req.plataformaTenantId = boundTenant;
     req.plataformaCliente = client;
 
     const servico = this.reflector.getAllAndOverride<PlataformaServicoId | undefined>(

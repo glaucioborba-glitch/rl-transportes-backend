@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, Loader2, MapPin, Phone, Save, Truck, Wallet, X } from "lucide-react";
-import { FormField, FormSection } from "@/components/cadastros/form-field";
+import { FileText, Loader2, MapPin, Phone, Save, Truck, X } from "lucide-react";
+import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/staff-client";
@@ -171,130 +171,138 @@ export function TransportadoraForm({ transportadoraId }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-4xl space-y-8">
+    <form onSubmit={handleSubmit} className={CADASTRO_FORM_CLASS}>
       <FormSection title="Dados Cadastrais" icon={Truck}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Razão Social" required>
-            <Input
-              value={formData.razaoSocial}
-              onChange={(e) => setFormData({ ...formData, razaoSocial: e.target.value })}
-              placeholder="Ex: Expresso Portuário SC LTDA"
-            />
-          </FormField>
-          <FormField label="Nome Fantasia">
-            <Input
-              value={formData.nomeFantasia}
-              onChange={(e) => setFormData({ ...formData, nomeFantasia: e.target.value })}
-              placeholder="Ex: Expresso SC"
-            />
-          </FormField>
-          <FormField label="CNPJ" required>
-            <div className="flex gap-2">
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-4">
+            <FormField label="Razão Social" required className="min-w-[16rem] flex-1">
               <Input
-                value={formatCNPJ(formData.cnpj)}
-                onChange={(e) =>
-                  setFormData({ ...formData, cnpj: e.target.value.replace(/\D/g, "") })
-                }
-                onBlur={(e) => void validateCnpj(e.target.value)}
-                placeholder="00.000.000/0000-00"
+                value={formData.razaoSocial}
+                onChange={(e) => setFormData({ ...formData, razaoSocial: e.target.value })}
+                placeholder="Ex: Expresso Portuário SC LTDA"
+              />
+            </FormField>
+            <FormField label="Nome Fantasia" className="min-w-[14rem] flex-1">
+              <Input
+                value={formData.nomeFantasia}
+                onChange={(e) => setFormData({ ...formData, nomeFantasia: e.target.value })}
+                placeholder="Ex: Expresso SC"
+              />
+            </FormField>
+          </div>
+          <div className="flex flex-wrap gap-4">
+            <FormField label="CNPJ" required size="md">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={formatCNPJ(formData.cnpj)}
+                  onChange={(e) =>
+                    setFormData({ ...formData, cnpj: e.target.value.replace(/\D/g, "") })
+                  }
+                  onBlur={(e) => void validateCnpj(e.target.value)}
+                  placeholder="00.000.000/0000-00"
+                  className="tabular-nums"
+                />
+                {validatingCnpj ? (
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                ) : null}
+              </div>
+            </FormField>
+            <FormField label="Inscrição Estadual" size="md">
+              <Input
+                value={formData.ie}
+                onChange={(e) => setFormData({ ...formData, ie: e.target.value })}
+                placeholder="000.000.000.000"
                 className="tabular-nums"
               />
-              {validatingCnpj ? (
-                <Loader2 className="h-4 w-4 animate-spin self-center text-muted-foreground" />
-              ) : null}
-            </div>
-          </FormField>
-          <FormField label="Inscrição Estadual">
-            <Input
-              value={formData.ie}
-              onChange={(e) => setFormData({ ...formData, ie: e.target.value })}
-              placeholder="000.000.000.000"
-              className="tabular-nums"
-            />
-          </FormField>
-          <FormField label="RNTRC (ANTT)">
-            <div className="flex gap-2">
+            </FormField>
+            <FormField label="RNTRC (ANTT)" size="sm">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={formData.rntrc}
+                  onChange={(e) =>
+                    setFormData({ ...formData, rntrc: e.target.value.replace(/\D/g, "") })
+                  }
+                  onBlur={(e) => void validateRntrc(e.target.value)}
+                  placeholder="00000000"
+                  maxLength={8}
+                  className="tabular-nums"
+                />
+                {validatingRntrc ? (
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                ) : null}
+              </div>
+            </FormField>
+            <FormField label="Validade RNTRC" size="md">
               <Input
-                value={formData.rntrc}
-                onChange={(e) =>
-                  setFormData({ ...formData, rntrc: e.target.value.replace(/\D/g, "") })
-                }
-                onBlur={(e) => void validateRntrc(e.target.value)}
-                placeholder="00000000"
-                maxLength={8}
-                className="tabular-nums"
+                type="date"
+                value={formData.rntrcValidade}
+                onChange={(e) => setFormData({ ...formData, rntrcValidade: e.target.value })}
               />
-              {validatingRntrc ? (
-                <Loader2 className="h-4 w-4 animate-spin self-center text-muted-foreground" />
-              ) : null}
-            </div>
-          </FormField>
-          <FormField label="Validade RNTRC">
-            <Input
-              type="date"
-              value={formData.rntrcValidade}
-              onChange={(e) => setFormData({ ...formData, rntrcValidade: e.target.value })}
-            />
-          </FormField>
+            </FormField>
+          </div>
         </div>
       </FormSection>
 
       <FormSection title="Endereço" icon={MapPin}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <FormField label="CEP">
-            <Input
-              value={formatCEP(formData.cep)}
-              onChange={(e) => setFormData({ ...formData, cep: e.target.value.replace(/\D/g, "") })}
-              onBlur={(e) => void buscaCepTransportadora(e.target.value, setFormData)}
-              placeholder="00000-000"
-              className="tabular-nums"
-            />
-          </FormField>
-          <FormField label="Endereço" className="md:col-span-2">
-            <Input
-              value={formData.endereco}
-              onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
-            />
-          </FormField>
-          <FormField label="Número">
-            <Input
-              value={formData.numero}
-              onChange={(e) => setFormData({ ...formData, numero: e.target.value })}
-            />
-          </FormField>
-          <FormField label="Complemento">
-            <Input
-              value={formData.complemento}
-              onChange={(e) => setFormData({ ...formData, complemento: e.target.value })}
-            />
-          </FormField>
-          <FormField label="Bairro">
-            <Input
-              value={formData.bairro}
-              onChange={(e) => setFormData({ ...formData, bairro: e.target.value })}
-            />
-          </FormField>
-          <FormField label="Cidade">
-            <Input
-              value={formData.cidade}
-              onChange={(e) => setFormData({ ...formData, cidade: e.target.value })}
-            />
-          </FormField>
-          <FormField label="UF">
-            <Input
-              value={formData.uf}
-              onChange={(e) =>
-                setFormData({ ...formData, uf: e.target.value.toUpperCase() })
-              }
-              maxLength={2}
-            />
-          </FormField>
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-4">
+            <FormField label="CEP" size="sm">
+              <Input
+                value={formatCEP(formData.cep)}
+                onChange={(e) => setFormData({ ...formData, cep: e.target.value.replace(/\D/g, "") })}
+                onBlur={(e) => void buscaCepTransportadora(e.target.value, setFormData)}
+                placeholder="00000-000"
+                className="tabular-nums"
+              />
+            </FormField>
+            <FormField label="Endereço" className="min-w-[16rem] flex-[3]">
+              <Input
+                value={formData.endereco}
+                onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
+              />
+            </FormField>
+            <FormField label="Número" size="sm">
+              <Input
+                value={formData.numero}
+                onChange={(e) => setFormData({ ...formData, numero: e.target.value })}
+              />
+            </FormField>
+          </div>
+          <div className="flex flex-wrap gap-4">
+            <FormField label="Complemento" className="min-w-[10rem] flex-1">
+              <Input
+                value={formData.complemento}
+                onChange={(e) => setFormData({ ...formData, complemento: e.target.value })}
+              />
+            </FormField>
+            <FormField label="Bairro" className="min-w-[10rem] flex-1">
+              <Input
+                value={formData.bairro}
+                onChange={(e) => setFormData({ ...formData, bairro: e.target.value })}
+              />
+            </FormField>
+            <FormField label="Cidade" className="min-w-[10rem] flex-1">
+              <Input
+                value={formData.cidade}
+                onChange={(e) => setFormData({ ...formData, cidade: e.target.value })}
+              />
+            </FormField>
+            <FormField label="UF" size="xs">
+              <Input
+                value={formData.uf}
+                onChange={(e) =>
+                  setFormData({ ...formData, uf: e.target.value.toUpperCase().slice(0, 2) })
+                }
+                maxLength={2}
+              />
+            </FormField>
+          </div>
         </div>
       </FormSection>
 
       <FormSection title="Contato" icon={Phone}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="E-mail">
+        <div className="flex flex-wrap gap-4">
+          <FormField label="E-mail" className="min-w-[16rem] flex-[2]">
             <Input
               type="email"
               value={formData.email}
@@ -302,7 +310,7 @@ export function TransportadoraForm({ transportadoraId }: Props) {
               placeholder="contato@transportadora.com.br"
             />
           </FormField>
-          <FormField label="Telefone">
+          <FormField label="Telefone" size="md">
             <Input
               value={formatPhone(formData.telefone)}
               onChange={(e) =>
@@ -312,7 +320,7 @@ export function TransportadoraForm({ transportadoraId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Celular">
+          <FormField label="Celular" size="md">
             <Input
               value={formatPhone(formData.celular)}
               onChange={(e) =>
@@ -326,8 +334,8 @@ export function TransportadoraForm({ transportadoraId }: Props) {
       </FormSection>
 
       <FormSection title="Frota" icon={Truck}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Total de Veículos">
+        <div className="flex flex-wrap items-start gap-4">
+          <FormField label="Total de Veículos" size="sm">
             <Input
               type="number"
               value={formData.frotaTotal}
@@ -341,7 +349,7 @@ export function TransportadoraForm({ transportadoraId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Tipos de Veículo">
+          <FormField label="Tipos de Veículo" className="min-w-[16rem] flex-1">
             <div className="mt-1 flex flex-wrap gap-2">
               {TIPOS_VEICULO.map((tipo) => (
                 <label key={tipo} className="flex cursor-pointer items-center gap-1 text-xs">
@@ -368,12 +376,7 @@ export function TransportadoraForm({ transportadoraId }: Props) {
               ))}
             </div>
           </FormField>
-        </div>
-      </FormSection>
-
-      <FormSection title="Dados Financeiros" icon={Wallet}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Condição de Pagamento">
+          <FormField label="Condição de Pagamento" className="min-w-[14rem] flex-1">
             <select
               value={formData.condicaoPagamento}
               onChange={(e) =>
@@ -396,7 +399,7 @@ export function TransportadoraForm({ transportadoraId }: Props) {
           value={formData.observacoes}
           onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })}
           placeholder="Anotações sobre rotas preferenciais, restrições, etc..."
-          rows={4}
+          rows={3}
           className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
         />
       </FormSection>
@@ -413,7 +416,7 @@ export function TransportadoraForm({ transportadoraId }: Props) {
         </label>
       </div>
 
-      <div className="sticky bottom-0 -mx-6 flex gap-3 border-t border-border bg-background/95 p-4 backdrop-blur">
+      <div className="flex gap-3">
         <Button type="button" variant="outline" onClick={() => router.back()}>
           <X className="mr-2 h-4 w-4" /> Cancelar
         </Button>

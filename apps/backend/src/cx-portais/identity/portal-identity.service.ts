@@ -21,12 +21,15 @@ import {
   normalizeClienteDocumentoStorage,
 } from '../../clientes/cliente-documento.util';
 import { clienteCreateInputFromDto } from '../../clientes/cliente-fiscal.mapper';
+import { resolveBillingTabelaPrecoIdPadrao } from '../../cadastros/cadastro-tabela-preco-vigente';
+import { resolveCadastroTabelaTransportePadraoId } from '../../cadastros/cadastro-tabela-transporte';
 import { normalizeLoginDocumento } from '../../common/utils/login-documento.util';
 import { canPortalClienteLogin, isTransportadoraTerceiraRole } from '../../common/constants/portal-tenant-roles.util';
 import { TRANSPORTADORA_PERMISSOES_FIXAS } from '../../common/constants/transportadora-permissoes.constants';
 import { AddressService } from '../../common/address/address.service';
 import { DEFAULT_TENANT_ID } from '../../tenant/tenant.constants';
 import { TenantConfigService } from '../../tenant/tenant-config.service';
+import { EmpresaOperadoraService } from '../../tenant/empresa-operadora.service';
 import { userWhereByDocumento } from '../../tenant/tenant-prisma.util';
 import {
   applyNormalizedToCreateDto,
@@ -38,6 +41,11 @@ import { SessionService } from '../../auth/session/session.service';
 import { DeviceService } from '../../auth/session/device.service';
 import { parseDurationToSeconds } from '../../auth/session/session.util';
 import { LoginTelemetryService } from '../../security-center/login-telemetry.service';
+import {
+  FORMA_CADASTRO_INICIAL,
+  formaEfetivaCadastro,
+  PRAZO_CADASTRO_INICIAL,
+} from '../../cadastro-financeiro/cadastro-operacao-inicial';
 import type { AuthChannel } from '../../auth/session/session.types';
 import { PessoasAutorizadasService } from '../../pessoas-autorizadas/pessoas-autorizadas.service';
 import type { CreatePessoaAutorizadaDto } from '../../pessoas-autorizadas/dto/create-pessoa-autorizada.dto';
@@ -47,6 +55,7 @@ import { TermosUsoService } from '../../common/legal/termos-uso.service';
 import { extractRequestIp } from '../../common/utils/request-ip.util';
 import { DominioCorporativoValidatorService } from '../../common/validation/dominio-corporativo-validator.service';
 import { TransportadorasAutorizadasService } from '../../transportadoras-autorizadas/transportadoras-autorizadas.service';
+import { PortalNotificacaoService } from '../../portal-notificacoes/portal-notificacao.service';
 
 @Injectable()
 export class PortalIdentityService {
@@ -69,6 +78,8 @@ export class PortalIdentityService {
     private readonly dominioValidator: DominioCorporativoValidatorService,
     private readonly transportadorasAutorizadas: TransportadorasAutorizadasService,
     private readonly tenantConfig: TenantConfigService,
+    private readonly empresa: EmpresaOperadoraService,
+    private readonly notificacoes: PortalNotificacaoService,
   ) {}
 
   private resolvePortalTenantId(req?: Request): string {
@@ -170,6 +181,17 @@ export class PortalIdentityService {
     }
     data.validacaoDominio = validacaoDominio;
     data.statusCadastro = StatusCadastroCliente.PENDENTE_ANALISE_FINANCEIRA;
+    data.prazoPagamento = PRAZO_CADASTRO_INICIAL;
+    data.condicaoPagamento = FORMA_CADASTRO_INICIAL;
+    data.tenant = { connect: { id: tenantId } };
+    const billingPadraoId = await resolveBillingTabelaPrecoIdPadrao(this.prisma, tenantId);
+    if (billingPadraoId && !data.tabelaPreco) {
+      data.tabelaPreco = { connect: { id: billingPadraoId } };
+    }
+    const tabelaTransporteId = await resolveCadastroTabelaTransportePadraoId(this.prisma, tenantId);
+    if (tabelaTransporteId && !data.cadastroTabelaTransporte) {
+      data.cadastroTabelaTransporte = { connect: { id: tabelaTransporteId } };
+    }
 
     const empresaNome =
       parsed.tipo === TipoCliente.PF
@@ -187,6 +209,10 @@ export class PortalIdentityService {
           clienteId: cliente.id,
         },
       });
+      await this.notificacoes.criarCadastroEmAnalise(
+        { clienteId: cliente.id, tenantId: cliente.tenantId },
+        tx,
+      );
       return cliente.id;
     }).then(async (clienteId) => {
       let pessoas =
@@ -298,10 +324,13 @@ export class PortalIdentityService {
     }
 
     try {
+      const branding = await this.empresa.brandingPublico(this.resolvePortalTenantId());
       await this.emailService.sendPortalPasswordReset({
         to: email,
         nomeCliente,
         resetUrl,
+        nomeEmpresa: branding.nome,
+        logoUrl: branding.logos.email?.url ?? branding.logos.horizontal?.url ?? branding.logos.icone?.url,
       });
     } catch {
       this.logger.warn(`Recuperação registrada; falha ao enviar SMTP. Link: ${resetUrl}`);
@@ -339,7 +368,9 @@ export class PortalIdentityService {
   /** Pré-visualização do HTML do e-mail (desenvolvimento / endpoint GET). */
   getResetPreviewHtml(nomeCliente = 'Cliente exemplo', token = 'exemplo-uuid'): string {
     const resetUrl = `${this.portalPublicBase()}/portal/redefinir/${encodeURIComponent(token)}`;
-    return this.emailService.renderResetPasswordHtml(nomeCliente, resetUrl);
+    return this.emailService.renderResetPasswordHtml(nomeCliente, resetUrl, {
+      nomeEmpresa: 'RL Transportes',
+    });
   }
 
   private async registerPortalSession(
@@ -433,7 +464,7 @@ export class PortalIdentityService {
       tipo: cliente.tipo,
       statusCadastro: cliente.statusCadastro,
       validacaoDominio: cliente.validacaoDominio,
-      condicaoPagamento: cliente.condicaoPagamento,
+      condicaoPagamento: formaEfetivaCadastro(cliente.statusCadastro, cliente.condicaoPagamento),
       cliente: {
         id: cliente.id,
         nomeFantasia: cliente.nomeFantasia?.trim() || null,

@@ -71,7 +71,8 @@ export default function TransportadorasListPage() {
           </div>
           <h1 className="text-2xl font-bold">Transportadoras</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {total} transportadora(s) cadastrada(s) · Fonte única para Gate CPO e Dispatch
+            {total} transportadora(s) · Inclui empresas marcadas como Transportador no cadastro de
+            clientes
           </p>
         </div>
         <div className="flex gap-2">
@@ -132,6 +133,11 @@ export default function TransportadorasListPage() {
               onEdit={() => router.push(`/cadastros/pessoas/transportadoras/${transp.id}`)}
               onAuditoria={() =>
                 router.push(`/cadastros/pessoas/transportadoras/${transp.id}/auditoria`)
+              }
+              onVerCliente={
+                transp.clienteId
+                  ? () => router.push(`/cadastros/pessoas/clientes/${transp.clienteId}`)
+                  : undefined
               }
             />
           ))}

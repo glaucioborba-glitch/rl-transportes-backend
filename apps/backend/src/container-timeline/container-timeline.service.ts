@@ -3,7 +3,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { MomentoAvaria } from '@prisma/client';
 import { stripContainerIsoCanonical } from '../common/utils/data-sanitize';
 import { PrismaService } from '../prisma/prisma.service';
 import type {
@@ -40,6 +39,7 @@ export class ContainerTimelineService {
     const iso = stripContainerIsoCanonical(isoRaw);
     await this.assertClienteOwnsIso(iso, clienteId);
     const ctx = await this.loadContext(iso);
+    ctx.unidadeProcessos = ctx.unidadeProcessos.filter((p) => p.clienteId === clienteId);
     if (!ctx.hasData) {
       throw new NotFoundException(`Contêiner não encontrado para sua conta.`);
     }
@@ -125,7 +125,28 @@ export class ContainerTimelineService {
       observacoesInternas: ctx.internalNotes,
       assinaturaRicPresente: legacyGate?.ricAssinado ?? false,
       hashPdfValidado: gateIn.pdfHashValidado,
+      ...this.lacreDoRic(tipo, iso, ctx),
     };
+  }
+
+  private lacreDoRic(
+    tipo: ContainerRicTipo,
+    iso: string,
+    ctx: { unidadeProcessos: Array<{ unidadeIso: string; lacreSaida?: string | null; lacreSaidaObservacao?: string | null }>; containerSolicitacoes: Array<{ unidade: string; lacre?: string | null }> },
+  ): { lacre?: string; lacreObservacao?: string } {
+    const form = ctx.containerSolicitacoes.find(
+      (c) => c.unidade.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() === iso,
+    );
+    const lacreEntrada = form?.lacre?.trim() || undefined;
+    if (tipo !== 'SAIDA') return lacreEntrada ? { lacre: lacreEntrada } : {};
+    const processo = ctx.unidadeProcessos.find((p) => p.unidadeIso === iso && p.lacreSaida);
+    if (processo?.lacreSaida) {
+      return {
+        lacre: processo.lacreSaida,
+        lacreObservacao: processo.lacreSaidaObservacao ?? undefined,
+      };
+    }
+    return lacreEntrada ? { lacre: lacreEntrada } : {};
   }
 
   private async assertClienteOwnsIso(iso: string, clienteId: string): Promise<void> {
@@ -138,7 +159,6 @@ export class ContainerTimelineService {
   private async clienteOwnsIso(iso: string, clienteId: string): Promise<boolean> {
     const ctx = await this.loadContext(iso);
     if (ctx.agendamentos.some((a) => a.clienteId === clienteId)) return true;
-    if (ctx.tosContainer?.clienteId === clienteId) return true;
     if (ctx.containerSolicitacoes.some((c) => c.solicitacao.clienteId === clienteId)) return true;
     if (ctx.unidades.some((u) => u.solicitacao?.clienteId === clienteId)) return true;
     if (ctx.patioUnidades.some((p) => p.solicitacao?.clienteId === clienteId)) return true;
@@ -153,7 +173,6 @@ export class ContainerTimelineService {
       unidadesRaw,
       agendamentos,
       patioUnidades,
-      tosContainer,
       agendamentosSolicitacao,
     ] = await Promise.all([
       this.prisma.containerSolicitacao.findMany({
@@ -220,15 +239,6 @@ export class ContainerTimelineService {
         },
         orderBy: { createdAt: 'asc' },
       }),
-      this.prisma.container.findUnique({
-        where: { numero: iso },
-        include: {
-          avarias: { orderBy: { createdAt: 'asc' } },
-          eventos: { orderBy: { createdAt: 'asc' } },
-          cliente: { select: { id: true, razaoSocial: true } },
-          agendamento: true,
-        },
-      }),
       this.prisma.agendamentoSolicitacao.findMany({
         where: {
           solicitacao: {
@@ -289,13 +299,22 @@ export class ContainerTimelineService {
       }
     }
 
+    const unidadeProcessos = await this.prisma.unidadeProcesso.findMany({
+      where: { unidadeIso: iso },
+      include: {
+        entradaSolicitacao: { select: { protocolo: true } },
+        saidaSolicitacao: { select: { protocolo: true } },
+      },
+      orderBy: { entradaEm: 'asc' },
+    });
+
     const hasData =
       containerSolicitacoes.length > 0 ||
       unidades.length > 0 ||
       agendamentos.length > 0 ||
       patioUnidades.length > 0 ||
-      !!tosContainer ||
-      gateCheckIns.length > 0;
+      gateCheckIns.length > 0 ||
+      unidadeProcessos.length > 0;
 
     return {
       hasData,
@@ -303,12 +322,12 @@ export class ContainerTimelineService {
       unidades,
       agendamentos,
       patioUnidades,
-      tosContainer,
       agendamentosSolicitacao,
       gateCheckIns,
       legacyGates,
       matchingSolicitacaoIds,
       internalNotes,
+      unidadeProcessos,
     };
   }
 
@@ -318,6 +337,31 @@ export class ContainerTimelineService {
     mode: 'admin' | 'client',
   ): ContainerTimelineResponse {
     const eventos: ContainerTimelineEvent[] = [];
+
+    for (const up of ctx.unidadeProcessos) {
+      eventos.push({
+        id: `up-in-${up.id}`,
+        tipo: 'UNIDADE_ENTRADA',
+        ocorridoEm: up.entradaEm.toISOString(),
+        titulo: `ID ${up.numero} aberto`,
+        resumo: `${up.unidadeIso} entrou em estoque`,
+        visibilidade: 'PUBLIC',
+        protocolo: up.entradaSolicitacao?.protocolo ?? `ID-${up.numero}`,
+        metadata: { unidadeProcessoNumero: up.numero, status: up.status },
+      });
+      if (up.saidaEm) {
+        eventos.push({
+          id: `up-out-${up.id}`,
+          tipo: 'UNIDADE_SAIDA',
+          ocorridoEm: up.saidaEm.toISOString(),
+          titulo: `ID ${up.numero} encerrado`,
+          resumo: `${up.unidadeIso} saiu do pátio`,
+          visibilidade: 'PUBLIC',
+          protocolo: up.saidaSolicitacao?.protocolo,
+          metadata: { unidadeProcessoNumero: up.numero, status: up.status },
+        });
+      }
+    }
 
     for (const ag of ctx.agendamentos) {
       eventos.push({
@@ -358,25 +402,6 @@ export class ContainerTimelineService {
           ...(mode === 'admin' ? { atendimentoEspecialTexto: ags.atendimentoEspecialTexto } : {}),
         },
       });
-    }
-
-    if (ctx.tosContainer) {
-      for (const av of ctx.tosContainer.avarias) {
-        const publicPhotos = av.momento === MomentoAvaria.GATE_OUT ? av.fotos : av.fotos;
-        eventos.push({
-          id: `av-${av.id}`,
-          tipo: 'VISTORIA_EIR',
-          ocorridoEm: av.createdAt.toISOString(),
-          titulo: av.momento === MomentoAvaria.GATE_IN ? 'Vistoria / EIR (entrada)' : 'Vistoria / EIR (saída)',
-          resumo: av.descricao,
-          visibilidade: 'PUBLIC',
-          fotos: publicPhotos,
-          metadata: {
-            momento: av.momento,
-            ...(mode === 'admin' ? { descricaoCompleta: av.descricao } : {}),
-          },
-        });
-      }
     }
 
     const gateInsSeen = new Set<string>();
@@ -537,6 +562,16 @@ export class ContainerTimelineService {
           : e,
       ),
       ...(mode === 'admin' && bloqueios.length ? { bloqueios } : {}),
+      ...(mode === 'admin'
+        ? {
+            unidadeProcessoAberto: (() => {
+              const abertos = ctx.unidadeProcessos.filter((p) => p.status === 'ABERTO');
+              const patio = abertos.find((p) => p.modalidade !== 'ALUGUEL');
+              const aberto = patio ?? abertos[0];
+              return aberto ? { id: aberto.id, numero: aberto.numero } : null;
+            })(),
+          }
+        : {}),
     };
   }
 }

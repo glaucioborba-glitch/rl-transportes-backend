@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import { Toaster } from "sonner";
 import { ClientStaffHydrator } from "@/components/staff/client-staff-hydrator";
+import { ThemeRoot } from "@/components/theme-root";
 import "./globals.css";
 
 const geistSans = localFont({
@@ -39,11 +39,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR" className="dark">
+    <html lang="pt-BR" className="dark" suppressHydrationWarning>
       <body className={`${geistSans.variable} ${geistMono.variable} min-h-screen font-sans antialiased`}>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{if((location.pathname||"/")==="/")return;var t=JSON.parse(localStorage.getItem("rl-portal-theme")||"{}");var m=t.state&&t.state.mode;if(m==="light"){var r=document.documentElement;r.classList.remove("dark");r.classList.add("light");r.dataset.theme="light";r.style.colorScheme="light";}}catch(e){}})();`,
+          }}
+        />
         <ClientStaffHydrator />
+        <ThemeRoot />
         {children}
-        <Toaster richColors position="top-center" theme="dark" />
       </body>
     </html>
   );

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SquareArrowOutUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   MODULOS_INTRANET,
@@ -29,14 +30,20 @@ export function IntranetMasterNav({ activeModule }: Props) {
           <Link
             key={mod.id}
             href={mod.href}
+            target={mod.openInNewTab ? "_blank" : undefined}
+            rel={mod.openInNewTab ? "noopener noreferrer" : undefined}
+            title={mod.openInNewTab ? `${mod.label} — abre em nova aba` : undefined}
             className={cn(
-              "relative whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              "relative inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium transition-colors",
               active
                 ? "text-[var(--accent)] after:absolute after:inset-x-2 after:-bottom-[13px] after:h-0.5 after:rounded-full after:bg-[var(--accent)]"
                 : "text-slate-400 hover:bg-white/5 hover:text-white",
             )}
           >
             {mod.label}
+            {mod.openInNewTab ? (
+              <SquareArrowOutUpRight className="h-3 w-3 opacity-70" aria-hidden />
+            ) : null}
           </Link>
         );
       })}

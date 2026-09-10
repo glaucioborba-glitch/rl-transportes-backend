@@ -3,7 +3,6 @@ import { OutboxEventStatus } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { ClsService } from 'nestjs-cls';
 import { AlertService } from '../alert/alert.service';
-import { BillingOutboxProcessor } from './billing-outbox.processor';
 import { OutboxService } from './outbox.service';
 import { NfseBoletoOutboxProcessor } from './nfse-boleto-outbox.processor';
 import { OUTBOX_WHATSAPP_NOTIFY } from '../notification/notification.constants';
@@ -11,6 +10,7 @@ import { WhatsappOutboxProcessor } from '../notification/whatsapp-outbox.process
 import { TRACE_ID_KEY } from '../common/observability/trace.constants';
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
 import { RetriableOutboxError } from './outbox.errors';
+import { UnidadeProcessoOutboxProcessor } from '../unidade-processo/unidade-processo-outbox.processor';
 
 const POLL_MS = 10_000;
 
@@ -22,12 +22,12 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly outbox: OutboxService,
-    private readonly billing: BillingOutboxProcessor,
     private readonly nfseBoleto: NfseBoletoOutboxProcessor,
     private readonly whatsappNotify: WhatsappOutboxProcessor,
     private readonly realtime: RealtimeEmitterService,
     private readonly cls: ClsService,
     private readonly alerts: AlertService,
+    private readonly unidadeProcessoOutbox: UnidadeProcessoOutboxProcessor,
   ) {}
 
   onModuleInit(): void {
@@ -69,12 +69,15 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
     traceId: string,
   ): Promise<void> {
     try {
-      if (eventType === 'BILLING_TRIGGERED') {
-        await this.billing.processBillingTriggered(id, payload);
-      } else if (eventType === 'EMITIR_NFSE_BOLETO') {
+      if (eventType === 'EMITIR_NFSE_BOLETO') {
         await this.nfseBoleto.processEmitirNfseBoleto(id, payload);
       } else if (eventType === OUTBOX_WHATSAPP_NOTIFY) {
         await this.whatsappNotify.processWhatsappNotify(id, payload);
+      } else if (
+        eventType === 'UNIDADE_PROCESSO_ABERTO' ||
+        eventType === 'UNIDADE_PROCESSO_ENCERRADO'
+      ) {
+        await this.unidadeProcessoOutbox.process(eventType, payload);
       } else {
         throw new Error(`Event type não suportado: ${eventType}`);
       }

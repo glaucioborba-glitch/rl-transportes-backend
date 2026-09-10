@@ -43,8 +43,8 @@ export async function motoristaRequest(path: string, init?: RequestInit): Promis
     } catch {
       clear();
       if (typeof window !== "undefined") {
-        const { clearMotoristaSessionCookie } = await import("@/lib/auth-motorista-cookie");
-        clearMotoristaSessionCookie();
+        const { revokeMotoristaSessionCookie } = await import("@/lib/auth-motorista-cookie");
+        await revokeMotoristaSessionCookie();
       }
       throw new ApiError("Sessão expirada", 401);
     }
@@ -58,8 +58,8 @@ export async function motoristaJson<T>(path: string, init?: RequestInit): Promis
   if (res.status === 401) {
     useMotoristaAuthStore.getState().clear();
     if (typeof window !== "undefined") {
-      const { clearMotoristaSessionCookie } = await import("@/lib/auth-motorista-cookie");
-      clearMotoristaSessionCookie();
+      const { revokeMotoristaSessionCookie } = await import("@/lib/auth-motorista-cookie");
+      await revokeMotoristaSessionCookie();
     }
     throw new ApiError("Não autorizado", 401);
   }

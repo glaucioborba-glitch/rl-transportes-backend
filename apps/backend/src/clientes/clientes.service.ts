@@ -17,6 +17,9 @@ import { CreateClienteDto } from './dto/create-cliente.dto';
 import { UpdateClienteDto } from './dto/update-cliente.dto';
 import { assertClienteDocumentoDisponivel } from './cliente-documento.util';
 import { clienteCreateInputFromDto, parseDataNascimentoPf } from './cliente-fiscal.mapper';
+import { normalizeClientePapeis } from '../cadastros/cliente-papeis.util';
+import { resolveBillingTabelaPrecoIdPadrao } from '../cadastros/cadastro-tabela-preco-vigente';
+import { resolveCadastroTabelaTransportePadraoId } from '../cadastros/cadastro-tabela-transporte';
 import { SessionService } from '../auth/session/session.service';
 import { AddressService } from '../common/address/address.service';
 import {
@@ -186,6 +189,18 @@ export class ClientesService {
     const normalizedAddr = await this.addressService.normalize(postalInputFromCreateDto(dtoNorm));
     applyNormalizedToCreateDto(dtoNorm, normalizedAddr);
     const data = clienteCreateInputFromDto(dtoNorm);
+    if (!data.tabelaPreco) {
+      const billingPadraoId = await resolveBillingTabelaPrecoIdPadrao(this.prisma, 'default');
+      if (billingPadraoId) {
+        data.tabelaPreco = { connect: { id: billingPadraoId } };
+      }
+    }
+    if (!data.cadastroTabelaTransporte) {
+      const tabelaTransporteId = await resolveCadastroTabelaTransportePadraoId(this.prisma, 'default');
+      if (tabelaTransporteId) {
+        data.cadastroTabelaTransporte = { connect: { id: tabelaTransporteId } };
+      }
+    }
     await assertClienteDocumentoDisponivel(this.prisma, data.cpfCnpj, {
       tipo: createClienteDto.tipo,
     });
@@ -445,6 +460,16 @@ export class ClientesService {
         assign('percentualJurosAoMes', (v) =>
           v == null || v === ('' as unknown) ? null : Number(v),
         );
+        assign('condicaoPagamento', (v) =>
+          v == null || String(v).trim() === '' ? null : String(v).trim(),
+        );
+        if (updateClienteDto.papeis !== undefined) {
+          const next = normalizeClientePapeis(updateClienteDto.papeis);
+          if (!next.length) {
+            throw new BadRequestException('Selecione Cliente e/ou Transportador.');
+          }
+          dadosAtualizacao.papeis = next;
+        }
 
         if (updateClienteDto.tabelaPrecoId !== undefined) {
           dadosAtualizacao.tabelaPreco = updateClienteDto.tabelaPrecoId

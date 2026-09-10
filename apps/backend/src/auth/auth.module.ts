@@ -37,6 +37,6 @@ import { SessionController } from './session/session.controller';
   ],
   controllers: [AuthController, SessionController],
   providers: [AuthService, JwtStrategy],
-  exports: [AuthService],
+  exports: [AuthService, JwtStrategy, PassportModule],
 })
 export class AuthModule {}

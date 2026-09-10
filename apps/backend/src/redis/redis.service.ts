@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { ChaosGateService } from '../chaos/chaos-gate.service';
+import { resolveIoredisTarget } from './redis-connection.util';
 
 type MemString = { kind: 'string'; value: string; expiresAt?: number };
 type MemList = { kind: 'list'; items: string[] };
@@ -25,22 +26,24 @@ export class RedisService implements OnModuleDestroy {
     private readonly configService: ConfigService,
     @Optional() private readonly chaosGate?: ChaosGateService,
   ) {
-    const host = this.configService.get<string>('REDIS_HOST', 'localhost');
-    const port = Number(this.configService.get<string>('REDIS_PORT', '6379'));
+    const target = resolveIoredisTarget({
+      REDIS_URL: this.configService.get<string>('REDIS_URL'),
+      REDIS_HOST: this.configService.get<string>('REDIS_HOST', 'localhost'),
+      REDIS_PORT: this.configService.get<string>('REDIS_PORT', '6379'),
+      REDIS_PASSWORD: this.configService.get<string>('REDIS_PASSWORD'),
+    });
     const explicit = this.configService.get<string>('REDIS_OPTIONAL');
     this.optional =
       explicit === '1' ||
       (explicit !== '0' &&
         (this.configService.get<string>('NODE_ENV') ?? 'development') !== 'production');
     /** Sem fila offline: comandos falham cedo se não houver conexão — com fallback em memória. */
-    this.client = new Redis({
-      host,
-      port,
+    const common = {
       maxRetriesPerRequest: 2,
       connectTimeout: 5_000,
       enableOfflineQueue: false,
       lazyConnect: true,
-      retryStrategy: (times) => {
+      retryStrategy: (times: number) => {
         if (times > 10) {
           this.logger.error('Redis: máximo de retentativas atingido, entrando em modo degradado');
           this.markDegraded();
@@ -48,7 +51,15 @@ export class RedisService implements OnModuleDestroy {
         }
         return Math.min(times * 200, 2_000);
       },
-    });
+    };
+    this.client = target.url
+      ? new Redis(target.url, common)
+      : new Redis({
+          host: target.host,
+          port: target.port,
+          password: target.password,
+          ...common,
+        });
 
     this.client.on('connect', () => {
       this.isConnected = true;

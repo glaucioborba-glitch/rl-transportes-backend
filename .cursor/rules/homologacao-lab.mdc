@@ -1,0 +1,24 @@
+---
+description: Lab de homologação — PC i5 3ª gen para demo a comprador
+alwaysApply: true
+---
+
+# Homologação — máquina de demo (chegar semana que vem)
+
+Hardware: **i5 3ª geração, 16 GB RAM, 1 TB**. Uso: apresentar o sistema **no fim do mês** a um possível comprador (2–3 operadores simultâneos). Se fechar, ir para **AWS**. Até lá, **não** tratar como produção.
+
+## Serve para essa demo?
+
+**Sim**, com 2–3 pessoas no gate/intranet, se for **Linux + build de produção** (não `next dev` / `nest start --watch`). 16 GB aguentam Postgres, Redis, MinIO, Nest e Next compilados.
+
+## Acesso “pelo site”
+
+Na LAN: URL no navegador (`http://ip-da-maquina` ou nome interno) já simula o produto.
+
+Se o comprador acessar **de fora**: domínio + HTTPS, só as portas do site, **Super Admin fechado**, internet estável (upload). Não expor o PC cru na internet sem túnel/VPN. CPU antiga não é firewall.
+
+## Quando for montar
+
+- Ubuntu Server; stack enxuta em produção; dados de demo prontos **antes** da reunião.
+- Disco HDD deixa foto de vistoria e Next mais lentos — avisar ou usar SSD se der.
+- Não rodar migrate/seed/build na hora da apresentação.

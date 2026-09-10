@@ -1,0 +1,15 @@
+---
+description: Pendências do Controle de Entrada e Saída (Gate CPO)
+alwaysApply: true
+---
+
+# Transportadora no dossiê / RIC
+
+Campo **opcional** no Controle E/S (dossiê) e na RIC, ligado ao cadastro MDM (`cadastros_transportadoras`). Sem digitação solta no Gate: a lista vem das transportadoras ativas.
+
+Ainda **não** misturar com o check-in da portaria.
+
+Quando for a hora de completar:
+
+- Puxar da **solicitação do cliente** quando o cliente informar a transportadora.
+- Quando o transporte for da **própria RL Transportes**, pré-selecionar a empresa do cadastro.

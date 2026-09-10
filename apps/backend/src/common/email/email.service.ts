@@ -9,6 +9,8 @@ export type SendPortalResetParams = {
   to: string;
   nomeCliente: string;
   resetUrl: string;
+  logoUrl?: string;
+  nomeEmpresa?: string;
 };
 
 export type SendFinanceiroNovoCadastroParams = {
@@ -44,9 +46,18 @@ export class EmailService {
   }
 
   /** HTML do e-mail de reset (útil para preview em desenvolvimento). */
-  renderResetPasswordHtml(nomeCliente: string, resetUrl: string): string {
+  renderResetPasswordHtml(
+    nomeCliente: string,
+    resetUrl: string,
+    extras?: { logoUrl?: string; nomeEmpresa?: string },
+  ): string {
     const compile = this.getCompiledTemplate();
-    return compile({ nomeCliente, resetUrl });
+    return compile({
+      nomeCliente,
+      resetUrl,
+      logoUrl: extras?.logoUrl ?? '',
+      nomeEmpresa: extras?.nomeEmpresa ?? 'RL Transportes',
+    });
   }
 
   async sendPortalPasswordReset(params: SendPortalResetParams): Promise<void> {
@@ -56,7 +67,10 @@ export class EmailService {
     const pass = this.config.get<string>('SMTP_PASS') ?? '';
     const from = this.config.get<string>('SMTP_FROM')?.trim() || 'RL Transportes <nao-responder@rl.com>';
 
-    const html = this.renderResetPasswordHtml(params.nomeCliente, params.resetUrl);
+    const html = this.renderResetPasswordHtml(params.nomeCliente, params.resetUrl, {
+      logoUrl: params.logoUrl,
+      nomeEmpresa: params.nomeEmpresa,
+    });
 
     if (!host) {
       this.logger.warn(
@@ -76,7 +90,7 @@ export class EmailService {
       await transporter.sendMail({
         from,
         to: params.to,
-        subject: 'RL Transportes — Redefinir senha do portal',
+        subject: `${params.nomeEmpresa || 'RL Transportes'} — Redefinir senha do portal`,
         html,
       });
       this.logger.log(`E-mail de recuperação enviado para ${params.to}`);
@@ -139,6 +153,7 @@ export class EmailService {
     const assunto = `Novo cadastro portal — ${params.empresa}`;
     const bodyText = [
       `Novo cliente ${params.empresa} realizou cadastro e aguarda análise financeira.`,
+      'Até a aprovação, o cliente já pode solicitar serviços com pagamento à vista (PIX).',
       '',
       `CNPJ/CPF: ${params.cnpj}`,
       `E-mail informado: ${params.email}`,

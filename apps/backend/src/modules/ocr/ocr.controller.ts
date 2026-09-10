@@ -64,9 +64,9 @@ export class OCRController {
   @Get('status')
   @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_PORTARIA, Role.OPERADOR_GATE)
   @Permissions('solicitacoes:ler')
-  status() {
+  async status() {
     return {
-      googleVision: this.ocrService.isGoogleVisionAvailable(),
+      googleVision: await this.ocrService.ensureGoogleVision(),
       tesseract: true,
     };
   }

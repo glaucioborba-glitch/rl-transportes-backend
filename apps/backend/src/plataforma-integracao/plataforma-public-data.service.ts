@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import type { PlataformaApiClient } from './plataforma.types';
 import { PlataformaTenantStore } from './stores/plataforma-tenant.store';
+import { mergePlataformaClienteIds } from './plataforma-cliente-scope.util';
 
 @Injectable()
 export class PlataformaPublicDataService {
@@ -10,19 +11,13 @@ export class PlataformaPublicDataService {
     private readonly tenants: PlataformaTenantStore,
   ) {}
 
-  /** `clienteIds` = restrict; undefined = todos os clientes ativos. */
+  /** `clienteIds` vazios = nenhum cliente (não é “todos os ativos”). */
   private async filtroCliente(
     tenantId: string | undefined,
     client: PlataformaApiClient,
-  ): Promise<{ in: string[] } | undefined> {
+  ): Promise<{ in: string[] }> {
     const t = await this.tenants.obter(tenantId ?? client.tenantId ?? 'default');
-    const tIds = t?.clienteIds?.length ? t.clienteIds : undefined;
-    const kIds = client.clienteIds?.length ? client.clienteIds : undefined;
-    let merged: string[] | undefined;
-    if (tIds && kIds) merged = kIds.filter((id) => tIds.includes(id));
-    else merged = tIds ?? kIds;
-    if (!merged?.length) return undefined;
-    return { in: merged };
+    return { in: mergePlataformaClienteIds(t?.clienteIds, client.clienteIds) };
   }
 
   async listarSolicitacoes(
@@ -34,9 +29,10 @@ export class PlataformaPublicDataService {
     const take = Math.min(Math.max(1, limit), 100);
     const skip = (Math.max(1, page) - 1) * take;
     const filtro = await this.filtroCliente(tenantId, client);
+    if (!filtro.in.length) return { total: 0, page, limit: take, itens: [] };
     const where = {
       deletedAt: null,
-      ...(filtro ? { clienteId: filtro } : {}),
+      clienteId: filtro,
     };
     const [total, rows] = await Promise.all([
       this.prisma.solicitacao.count({ where }),
@@ -60,11 +56,12 @@ export class PlataformaPublicDataService {
 
   async obterSolicitacao(id: string, client: PlataformaApiClient, tenantId: string | undefined) {
     const filtro = await this.filtroCliente(tenantId, client);
+    if (!filtro.in.length) return null;
     const row = await this.prisma.solicitacao.findFirst({
       where: {
         id,
         deletedAt: null,
-        ...(filtro ? { clienteId: filtro } : {}),
+        clienteId: filtro,
       },
       include: {
         portaria: true,
@@ -77,9 +74,23 @@ export class PlataformaPublicDataService {
     return row;
   }
 
-  async listarEventos(_client: PlataformaApiClient, _tenantId: string | undefined, take = 50) {
+  async listarEventos(client: PlataformaApiClient, tenantId: string | undefined, take = 50) {
     const lim = Math.min(take, 100);
+    const filtro = await this.filtroCliente(tenantId, client);
+    if (!filtro.in.length) {
+      return { fonte: 'auditoria_readonly_proxy', itens: [] };
+    }
+    const sols = await this.prisma.solicitacao.findMany({
+      where: { clienteId: filtro, deletedAt: null },
+      select: { id: true },
+      take: 2000,
+    });
+    const registroIds = sols.map((s) => s.id);
+    if (!registroIds.length) {
+      return { fonte: 'auditoria_readonly_proxy', itens: [] };
+    }
     const rows = await this.prisma.auditoria.findMany({
+      where: { registroId: { in: registroIds } },
       orderBy: { createdAt: 'desc' },
       take: lim,
       select: {
@@ -101,15 +112,23 @@ export class PlataformaPublicDataService {
     const desde = new Date();
     desde.setDate(desde.getDate() - 30);
     const filtro = await this.filtroCliente(tenantId, client);
+    if (!filtro.in.length) {
+      return {
+        janelaDias: 30,
+        slaConfigUsuario: t?.config.slasMinutosMeta ?? {},
+        taxaConclusaoProxy: 0,
+        observacao: 'SLA-as-a-service — métricas agregadas read-only (Fase 18).',
+      };
+    }
     const total = await this.prisma.solicitacao.count({
-      where: { deletedAt: null, updatedAt: { gte: desde }, ...(filtro ? { clienteId: filtro } : {}) },
+      where: { deletedAt: null, updatedAt: { gte: desde }, clienteId: filtro },
     });
     const concl = await this.prisma.solicitacao.count({
       where: {
         deletedAt: null,
         status: 'CONCLUIDO',
         updatedAt: { gte: desde },
-        ...(filtro ? { clienteId: filtro } : {}),
+        clienteId: filtro,
       },
     });
     return {
@@ -122,11 +141,12 @@ export class PlataformaPublicDataService {
 
   async listarContainers(client: PlataformaApiClient, tenantId: string | undefined, take = 40) {
     const filtro = await this.filtroCliente(tenantId, client);
+    if (!filtro.in.length) return { itens: [] };
     const unidades = await this.prisma.unidade.findMany({
       where: {
         solicitacao: {
           deletedAt: null,
-          ...(filtro ? { clienteId: filtro } : {}),
+          clienteId: filtro,
         },
       },
       take: Math.min(take, 150),
@@ -142,11 +162,14 @@ export class PlataformaPublicDataService {
 
   async patioTempoReal(client: PlataformaApiClient, tenantId: string | undefined) {
     const filtro = await this.filtroCliente(tenantId, client);
+    if (!filtro.in.length) {
+      return { geradoEm: new Date().toISOString(), ocupacaoSlots: 0, itens: [] };
+    }
     const patios = await this.prisma.patio.findMany({
       where: {
         solicitacao: {
           deletedAt: null,
-          ...(filtro ? { clienteId: filtro } : {}),
+          clienteId: filtro,
         },
       },
       take: 200,
@@ -164,9 +187,16 @@ export class PlataformaPublicDataService {
 
   async operacoesResumo(client: PlataformaApiClient, tenantId: string | undefined) {
     const filtro = await this.filtroCliente(tenantId, client);
-    const solWhere: { deletedAt: null; clienteId?: { in: string[] } } = {
+    if (!filtro.in.length) {
+      return {
+        contagemEtapas: { portaria: 0, gate: 0, patio: 0, saida: 0 },
+        cicloOperacionalMedioDiasProxy: 0,
+        produtividadeProxy: { throughputMixed: 0 },
+      };
+    }
+    const solWhere: { deletedAt: null; clienteId: { in: string[] } } = {
       deletedAt: null,
-      ...(filtro ? { clienteId: filtro } : {}),
+      clienteId: filtro,
     };
     const [portaria, gate, patio, saida, cicloRows] = await Promise.all([
       this.prisma.portaria.count({
@@ -200,7 +230,8 @@ export class PlataformaPublicDataService {
 
   async listarNfse(client: PlataformaApiClient, tenantId: string | undefined, take = 30) {
     const filtro = await this.filtroCliente(tenantId, client);
-    const where = filtro ? { faturamento: { clienteId: filtro } } : {};
+    if (!filtro.in.length) return { itens: [] };
+    const where = { faturamento: { clienteId: filtro } };
     const rows = await this.prisma.nfsEmitida.findMany({
       where,
       take: Math.min(take, 100),
@@ -219,9 +250,10 @@ export class PlataformaPublicDataService {
 
   async listarFaturamento(client: PlataformaApiClient, tenantId: string | undefined, take = 30) {
     const filtro = await this.filtroCliente(tenantId, client);
+    if (!filtro.in.length) return { itens: [] };
     const rows = await this.prisma.faturamento.findMany({
       where: {
-        ...(filtro ? { clienteId: filtro } : {}),
+        clienteId: filtro,
       },
       take: Math.min(take, 100),
       orderBy: { createdAt: 'desc' },

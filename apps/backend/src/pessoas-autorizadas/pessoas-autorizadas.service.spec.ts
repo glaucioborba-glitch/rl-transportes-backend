@@ -216,4 +216,15 @@ describe('PessoasAutorizadasService', () => {
       ForbiddenException,
     );
   });
+
+  it('STAFF de outro tenant não lista pessoas pelo clienteId', async () => {
+    prisma.cliente.findFirst.mockResolvedValue(null);
+    const cxStaff: CxPortalRequestUser = {
+      ...cxCliente,
+      portalPapel: 'STAFF',
+      clienteId: null,
+      auth: 'staff',
+    };
+    await expect(service.listarPorCliente(cxStaff, 'cli-1')).rejects.toBeInstanceOf(NotFoundException);
+  });
 });

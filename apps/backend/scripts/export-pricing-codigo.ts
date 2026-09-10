@@ -17,7 +17,6 @@ const PREFIXES = [
   'apps/backend/src/cadastros/dto/cadastros-tabela-preco',
   'apps/backend/src/cadastros/dto/cadastros-capacidade',
   'apps/backend/scripts/pricing-sync-seed.ts',
-  'apps/backend/scripts/migrate-tabela-tarifaria-to-regras.ts',
   'apps/backend/prisma/migrations/20260729120000_pricing_unificado/',
   'apps/web/app/cadastros/financeiro/tabelas-precos/',
   'apps/web/lib/api/cadastros-tabelas-precos-client.ts',

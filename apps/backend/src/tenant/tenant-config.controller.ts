@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
@@ -11,6 +11,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { UpdateParametrosGeraisDto } from './dto/update-parametros-gerais.dto';
 import { FeriadoMunicipalDto } from './dto/feriado-municipal.dto';
 import { UpdateReguaCobrancaDto } from './dto/update-regua-cobranca.dto';
+import { sanitizeTenantParametrosForClient } from './integration-credentials.util';
 import { TenantConfigService } from './tenant-config.service';
 import { DEFAULT_TENANT_ID } from './tenant.constants';
 
@@ -21,9 +22,19 @@ const PARAMETROS_ROLES: Role[] = [Role.ADMIN, Role.GERENTE];
 export class TenantConfigController {
   constructor(private readonly config: TenantConfigService) {}
 
-  @Get('turnos/:tenantId')
-  @ApiOperation({ summary: 'Turnos de agendamento configurados para o terminal' })
-  turnos(@Param('tenantId') tenantId: string) {
+  @Get('turnos')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Turnos de agendamento do tenant autenticado',
+    description: 'Tenant vem do JWT. SUPER_ADMIN pode passar ?tenantId=. Portal: GET /cliente/portal/turnos.',
+  })
+  turnos(@Req() req: Request & { tenantId?: string; user?: { role?: Role; tenantId?: string } }, @Query('tenantId') tenantQ?: string) {
+    const role = req.user?.role;
+    const tenantId =
+      role === Role.SUPER_ADMIN && tenantQ?.trim()
+        ? tenantQ.trim()
+        : (req.tenantId ?? req.user?.tenantId ?? DEFAULT_TENANT_ID);
     return this.config.getTurnosAgendamento(tenantId);
   }
 
@@ -32,7 +43,11 @@ export class TenantConfigController {
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Configuração do tenant do usuário autenticado' })
   async me(@Req() req: Request & { tenantId?: string }) {
-    return this.config.getParametros(req.tenantId ?? DEFAULT_TENANT_ID);
+    const raw = await this.config.getParametros(req.tenantId ?? DEFAULT_TENANT_ID);
+    return {
+      ...raw,
+      parametros: sanitizeTenantParametrosForClient(raw.parametros as Record<string, unknown>),
+    };
   }
 
   @Get('parametros-gerais')

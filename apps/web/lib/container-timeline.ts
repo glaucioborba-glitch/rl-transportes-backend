@@ -3,7 +3,9 @@ export type ContainerTimelineEventType =
   | "VISTORIA_EIR"
   | "GATE_IN"
   | "PATIO_MOVIMENTO"
-  | "GATE_OUT";
+  | "GATE_OUT"
+  | "UNIDADE_ENTRADA"
+  | "UNIDADE_SAIDA";
 
 export type ContainerTimelineEvent = {
   id: string;
@@ -28,6 +30,7 @@ export type ContainerTimelineResponse = {
   isoFormatado: string;
   geradoEm: string;
   eventos: ContainerTimelineEvent[];
+  unidadeProcessoAberto?: { id: string; numero: number } | null;
   bloqueios?: Array<{ tipo: string; motivo: string; origem: string }>;
 };
 
@@ -53,6 +56,8 @@ export type ContainerRicPayload = {
   observacoesInternas?: string[];
   assinaturaRicPresente?: boolean;
   hashPdfValidado?: string | null;
+  lacre?: string;
+  lacreObservacao?: string;
 };
 
 export const TIMELINE_EVENT_LABELS: Record<ContainerTimelineEventType, string> = {
@@ -61,4 +66,6 @@ export const TIMELINE_EVENT_LABELS: Record<ContainerTimelineEventType, string> =
   GATE_IN: "Gate-In",
   PATIO_MOVIMENTO: "Pátio",
   GATE_OUT: "Gate-Out",
+  UNIDADE_ENTRADA: "ID aberto",
+  UNIDADE_SAIDA: "ID encerrado",
 };

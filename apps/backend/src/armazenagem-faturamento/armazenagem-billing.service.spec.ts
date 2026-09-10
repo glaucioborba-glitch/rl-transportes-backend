@@ -17,11 +17,12 @@ describe('ArmazenagemBillingService', () => {
     $transaction: jest.fn(),
   };
   const outbox = { enqueue: jest.fn() };
-  const alerts = { fiscalIpmDown: jest.fn() };
+  const alerts = { fiscalIpmDown: jest.fn(), faturamentoReconcileFailed: jest.fn() };
   const ruleEngine = {
     resolvePricingForCliente: jest.fn(),
     loadContainerContext: jest.fn(),
     evaluateForContainerCycle: jest.fn(),
+    evaluateForContainerCycleWithTenant: jest.fn(),
     persistItens: jest.fn(),
     sumItensTotal: jest.fn(),
     cobrancaInicioEm: jest.fn(),
@@ -35,6 +36,12 @@ describe('ArmazenagemBillingService', () => {
       regras: [],
     });
     ruleEngine.loadContainerContext.mockResolvedValue({ tamanho: '40', tipo: 'DRY' });
+    ruleEngine.evaluateForContainerCycleWithTenant.mockResolvedValue({
+      valorTotal: 0,
+      diasFaturaveis: 0,
+      diasFreeTime: 5,
+      items: [],
+    });
     ruleEngine.evaluateForContainerCycle.mockReturnValue({
       valorTotal: 0,
       diasFaturaveis: 0,
@@ -65,6 +72,10 @@ describe('ArmazenagemBillingService', () => {
       preFatura: { ...prisma.preFatura, update: jest.fn() },
       cliente: { findUnique: jest.fn().mockResolvedValue({ tenantId: 'default' }) },
       fatura: { findFirst: jest.fn() },
+      itemFaturaArmazenagem: { deleteMany: jest.fn(), createMany: jest.fn() },
+      unidadeProcessoServico: { findMany: jest.fn().mockResolvedValue([]) },
+      frete: { findFirst: jest.fn().mockResolvedValue(null) },
+      unidadeProcesso: { findUnique: jest.fn().mockResolvedValue(null) },
     };
     const gateInAt = new Date('2026-06-01T10:00:00.000Z');
     await service.openPreFaturasForGateIn('gi1', 'c1', gateInAt, tx as never);
@@ -79,7 +90,8 @@ describe('ArmazenagemBillingService', () => {
         }),
       }),
     );
-    expect(ruleEngine.evaluateForContainerCycle).toHaveBeenCalledWith(
+    expect(ruleEngine.evaluateForContainerCycleWithTenant).toHaveBeenCalledWith(
+      'default',
       expect.objectContaining({ fase: 'GATE_IN' }),
     );
   });
@@ -106,15 +118,22 @@ describe('ArmazenagemBillingService', () => {
         findMany: jest.fn().mockResolvedValue([preFatura]),
         update: jest.fn().mockResolvedValue({ ...preFatura, status: StatusPreFatura.CONSOLIDADA }),
       },
-      tabelaTarifaria: {
-        findUnique: jest.fn().mockResolvedValue({ id: 't1', clienteId: 'c1' }),
-        create: jest.fn(),
-      },
+      cliente: { findUnique: jest.fn().mockResolvedValue({ tenantId: 'default' }) },
       fatura: {
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({ id: 'fat1' }),
       },
+      itemFaturaArmazenagem: { deleteMany: jest.fn(), createMany: jest.fn() },
+      unidadeProcessoServico: { findMany: jest.fn().mockResolvedValue([]) },
+      frete: { findFirst: jest.fn().mockResolvedValue(null) },
+      unidadeProcesso: { findUnique: jest.fn().mockResolvedValue(null) },
     };
+    ruleEngine.evaluateForContainerCycleWithTenant.mockResolvedValue({
+      valorTotal: 425,
+      diasFaturaveis: 4,
+      diasFreeTime: 5,
+      items: [{ eventoGatilho: 'DIARIA_ARMAZENAGEM', valorTotal: 340 }],
+    });
     await service.consolidateOnGateOut('gi1', gateOutAt, tx as never);
 
     expect(tx.fatura.create).toHaveBeenCalledWith(
@@ -143,5 +162,30 @@ describe('ArmazenagemBillingService', () => {
     await expect(service.consolidateOnGateOut('gi1', gateOutAt, tx as never)).rejects.toBeInstanceOf(
       ConflictException,
     );
+  });
+
+  it('reconcileClosedProcessoPrefaturas consolida ID encerrado com pré-fatura aberta', async () => {
+    const saidaEm = new Date('2026-08-26T12:00:00.000Z');
+    prisma.preFatura.findMany.mockResolvedValue([
+      {
+        id: 'pf-stale',
+        unidadeProcessoId: 'up1',
+        fatura: null,
+        unidadeProcesso: { id: 'up1', numero: 1284, saidaEm, updatedAt: saidaEm },
+      },
+    ]);
+    const tx = {
+      preFatura: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
+      fatura: { create: jest.fn() },
+      cliente: { findUnique: jest.fn() },
+    };
+    prisma.$transaction.mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx));
+    const spy = jest.spyOn(service, 'consolidateOnProcesso').mockResolvedValue(undefined as never);
+
+    const out = await service.reconcileClosedProcessoPrefaturas();
+    expect(out.consolidados).toBe(1);
+    expect(out.falhas).toBe(0);
+    expect(spy).toHaveBeenCalledWith('up1', saidaEm, tx);
+    spy.mockRestore();
   });
 });

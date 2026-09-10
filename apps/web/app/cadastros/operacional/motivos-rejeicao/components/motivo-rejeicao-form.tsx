@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Ban, Bell, Loader2, MessageSquare, Save, X } from "lucide-react";
-import { FormField, FormSection } from "@/components/cadastros/form-field";
+import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/staff-client";
@@ -94,10 +94,10 @@ export function MotivoRejeicaoForm({ motivoId }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-2xl space-y-8">
+    <form onSubmit={handleSubmit} className={CADASTRO_FORM_CLASS}>
       <FormSection title="Motivo de Rejeição" icon={Ban}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Código" required>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Código" required size="md">
             <Input
               value={formData.codigo}
               onChange={(e) =>
@@ -107,7 +107,7 @@ export function MotivoRejeicaoForm({ motivoId }: Props) {
               className="font-mono"
             />
           </FormField>
-          <FormField label="Tipo" required>
+          <FormField label="Tipo" required className="min-w-[14rem] flex-1">
             <select
               value={formData.tipo}
               onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
@@ -120,7 +120,7 @@ export function MotivoRejeicaoForm({ motivoId }: Props) {
               ))}
             </select>
           </FormField>
-          <FormField label="Descrição" required className="md:col-span-2">
+          <FormField label="Descrição" required className="min-w-[16rem] flex-[2]">
             <Input
               value={formData.descricao}
               onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
@@ -131,7 +131,7 @@ export function MotivoRejeicaoForm({ motivoId }: Props) {
       </FormSection>
 
       <FormSection title="Comportamento" icon={MessageSquare}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="flex flex-wrap gap-4">
           <FormField label="Exige Observação">
             <label className="flex cursor-pointer items-center gap-2 text-sm">
               <input

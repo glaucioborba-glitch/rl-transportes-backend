@@ -9,6 +9,11 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { GateOperacaoFlowService } from './gate-operacao-flow.service';
+import { UnidadeProcessoService } from '../unidade-processo/unidade-processo.service';
+import { AssinaturaRicDto } from './dto/assinatura-ric.dto';
+import { AutorizacaoGerenteDto, ExcluirRicDto } from './dto/autorizacao-gerente.dto';
+import { CorrecaoGateDto } from './dto/correcao-gate.dto';
+import { DevolverPortariaDto } from './dto/devolver-portaria.dto';
 
 const GATE_ROLES: Role[] = [
   Role.ADMIN,
@@ -23,7 +28,39 @@ const GATE_ROLES: Role[] = [
 @UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
 @Controller('v2/gate')
 export class GateOperacaoFlowController {
-  constructor(private readonly flow: GateOperacaoFlowService) {}
+  constructor(
+    private readonly flow: GateOperacaoFlowService,
+    private readonly unidadeProcesso: UnidadeProcessoService,
+  ) {}
+
+  @Get('consulta-ric')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_GATE)
+  @Permissions('solicitacoes:ler')
+  @ApiOperation({ summary: 'Consulta RIC — IDs com entrada/saída no período' })
+  consultaRic(
+    @CurrentUser() user: AuthUser,
+    @Query('q') q?: string,
+    @Query('direcao') direcao?: 'ENTRADA' | 'SAIDA' | 'TODAS',
+    @Query('de') de?: string,
+    @Query('ate') ate?: string,
+    @Query('status') status?: 'ABERTO' | 'ENCERRADO' | 'TODOS',
+  ) {
+    return this.unidadeProcesso.listConsultaRic(user.tenantId ?? 'default', {
+      q,
+      direcao,
+      de,
+      ate,
+      status,
+    });
+  }
+
+  @Get('estoque-legado')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('solicitacoes:ler')
+  @ApiOperation({ summary: 'Pátio ativo sem ID e coletas sem estoque do mesmo cliente' })
+  estoqueLegado(@CurrentUser() user: AuthUser) {
+    return this.unidadeProcesso.relatorioEstoqueLegado(user.tenantId ?? 'default');
+  }
 
   @Get('aguardando-chegada')
   @Roles(...GATE_ROLES)
@@ -53,12 +90,37 @@ export class GateOperacaoFlowController {
     return this.flow.countAguardandoReconfirmacao().then((count) => ({ count }));
   }
 
+  @Get('controle-entrada-saida')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_GATE)
+  @Permissions('solicitacoes:ler')
+  @ApiOperation({ summary: 'Fila do Controle de Entrada e Saída (conferência + RIC)' })
+  controleEntradaSaida() {
+    return this.flow.listControleEntradaSaida();
+  }
+
+  @Get('controle-entrada-saida/count')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_GATE)
+  @Permissions('solicitacoes:ler')
+  controleEntradaSaidaCount() {
+    return this.flow.countControleEntradaSaida();
+  }
+
   @Get('qr/:token/validate')
   @Roles(...GATE_ROLES)
   @Permissions('solicitacoes:ler')
   @ApiOperation({ summary: 'Validar QR token na portaria' })
   validateQr(@Param('token') token: string) {
     return this.flow.validateQrToken(token);
+  }
+
+  @Get('catalogos-conferencia')
+  @Roles(...GATE_ROLES)
+  @Permissions('solicitacoes:ler')
+  @ApiOperation({
+    summary: 'Catálogo do dossiê (tipos de contêiner e transportadoras MDM)',
+  })
+  catalogosConferencia(@CurrentUser() user: AuthUser) {
+    return this.flow.catalogosConferencia(user.tenantId ?? 'default');
   }
 
   @Get('operacoes/:protocolo')
@@ -97,15 +159,77 @@ export class GateOperacaoFlowController {
     return this.flow.getVistoria(protocolo);
   }
 
+  @Post('operacoes/:protocolo/correcoes')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_GATE)
+  @Permissions('solicitacoes:gate')
+  @ApiOperation({ summary: 'Corrigir dados na conferência do Gate (sem OCR ou OCR laranja)' })
+  correcoes(
+    @Param('protocolo') protocolo: string,
+    @Body() body: CorrecaoGateDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.flow.salvarCorrecoes(protocolo, body, user.id || user.sub);
+  }
+
+  @Post('operacoes/:protocolo/autorizacao-gerente')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_GATE)
+  @Permissions('solicitacoes:gate')
+  @ApiOperation({
+    summary: 'Confere CPF+senha de gerente sem trocar a sessão do operador',
+  })
+  autorizacaoGerente(
+    @Param('protocolo') protocolo: string,
+    @Body() body: AutorizacaoGerenteDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.flow.autorizarGerente(
+      protocolo,
+      body.documento,
+      body.password,
+      user.tenantId,
+    );
+  }
+
+  @Post('operacoes/:protocolo/excluir')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_GATE)
+  @Permissions('solicitacoes:gate')
+  @ApiOperation({ summary: 'Anula a RIC (entrada ou saída) com autorização de gerente' })
+  excluirRic(
+    @Param('protocolo') protocolo: string,
+    @Body() body: ExcluirRicDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.flow.excluirAposRic(protocolo, body, user.id || user.sub, user.tenantId);
+  }
+
   @Post('operacoes/:protocolo/reconfirmar')
   @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_GATE)
   @Permissions('solicitacoes:gate')
   reconfirmar(
     @Param('protocolo') protocolo: string,
-    @Body() body: { checklist: Record<string, boolean> },
+    @Body() body: { checklist?: Record<string, boolean> },
     @CurrentUser() user: AuthUser,
   ) {
-    return this.flow.reconfirmar(protocolo, body.checklist, user.id);
+    return this.flow.reconfirmar(protocolo, body?.checklist, user.id || user.sub);
+  }
+
+  @Post('operacoes/:protocolo/devolver-portaria')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_GATE)
+  @Permissions('solicitacoes:gate')
+  @ApiOperation({
+    summary: 'Devolver à portaria para complementar vistoria (não rejeita a operação)',
+  })
+  devolverPortaria(
+    @Param('protocolo') protocolo: string,
+    @Body() body: DevolverPortariaDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.flow.devolverPortaria(
+      protocolo,
+      body.motivo ?? 'FOTOS_REFAZER',
+      body.fotosRefazer,
+      user.id,
+    );
   }
 
   @Post('operacoes/:protocolo/rejeitar')
@@ -124,19 +248,23 @@ export class GateOperacaoFlowController {
   @Permissions('solicitacoes:gate')
   assinatura(
     @Param('protocolo') protocolo: string,
-    @Body() body: { assinatura: string },
+    @Body() body: AssinaturaRicDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.flow.saveAssinatura(protocolo, body.assinatura, user.id);
+    return this.flow.saveAssinatura(protocolo, body, user.id);
   }
 
   @Post('operacoes/:protocolo/ric-pdf')
   @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_GATE)
   @Permissions('solicitacoes:gate')
-  @ApiOperation({ summary: 'Gerar RIC (Relatório de Inspeção de Contêiner) em PDF' })
+  @ApiOperation({ summary: 'Gerar RIC (Recibo de Intercâmbio de Contêineres) em PDF' })
   @ApiProduces('application/pdf')
-  async ricPdf(@Param('protocolo') protocolo: string, @Res() res: Response) {
-    const pdfStream = await this.flow.streamRicPdf(protocolo);
+  async ricPdf(
+    @Param('protocolo') protocolo: string,
+    @CurrentUser() user: AuthUser,
+    @Res() res: Response,
+  ) {
+    const pdfStream = await this.flow.streamRicPdf(protocolo, user.id);
     const safeName = protocolo.replace(/[^\w.-]+/g, '_');
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="RIC-${safeName}.pdf"`);

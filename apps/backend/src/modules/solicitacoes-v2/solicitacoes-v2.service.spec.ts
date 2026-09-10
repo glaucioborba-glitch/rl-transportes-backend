@@ -16,6 +16,8 @@ import { SecurityEventsService } from '../../security-center/security-events.ser
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { SolicitacaoAnexoStorageService } from './solicitacao-anexo.storage';
 import { YardAllocationService } from '../../yard-allocation/yard-allocation.service';
+import { HoldReleaseService } from '../../hold-release/hold-release.service';
+import { UnidadeProcessoService } from '../../unidade-processo/unidade-processo.service';
 import type { CreateSolicitacaoV2Dto } from './dto/create-solicitacao-v2.dto';
 import type { CxPortalRequestUser } from '../../cx-portais/types/cx-portal.types';
 import { TipoOperacaoSolicitacaoIntent } from '@prisma/client';
@@ -73,7 +75,11 @@ describe('SolicitacoesV2Service', () => {
     agendamentoSolicitacao: { create: jest.fn() },
     solicitanteContato: { create: jest.fn() },
     unidade: { create: jest.fn() },
+    cadastroTipoContainer: {
+      findMany: jest.fn().mockResolvedValue([{ codigo: 'HC', tamanhos: ['20', '40'] }]),
+    },
     solicitacaoAnexo: { create: jest.fn(), findUnique: jest.fn(), delete: jest.fn() },
+    frete: { create: jest.fn() },
     auditoria: { findMany: jest.fn() },
     securityAlert: { findMany: jest.fn(), create: jest.fn() },
     $transaction: jest.fn(),
@@ -138,6 +144,14 @@ describe('SolicitacoesV2Service', () => {
         { provide: SecurityEventsService, useValue: securityEvents },
         { provide: SolicitacaoAnexoStorageService, useValue: storage },
         { provide: YardAllocationService, useValue: { applyGiroEstimado: jest.fn().mockResolvedValue(null) } },
+        { provide: HoldReleaseService, useValue: { assertSemBloqueioAtivo: jest.fn() } },
+        {
+          provide: UnidadeProcessoService,
+          useValue: {
+            assertPodeCriarSolicitacao: jest.fn().mockResolvedValue(undefined),
+            vincularSaidaNaTransacao: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 
@@ -276,7 +290,7 @@ describe('SolicitacoesV2Service', () => {
     prisma.solicitacao.findFirst.mockResolvedValue({
       id: 's1',
       status: StatusSolicitacao.PENDENTE,
-      anexosSolicitacao: [{ id: 'a1' }],
+      anexosSolicitacao: [],
       transporteSolicitacao: {},
     });
     prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));

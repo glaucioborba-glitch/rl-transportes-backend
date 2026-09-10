@@ -13,6 +13,7 @@ import { PdfOperacionalV2Service } from './pdf-operacional-v2.service';
 import { PdfSolicitacaoV2AccessGuard } from './pdf-solicitacao-v2-access.guard';
 import { PessoaPermissoesGuard } from '../common/guards/pessoa-permissoes.guard';
 import { PessoaPode } from '../common/decorators/pessoa-pode.decorator';
+import { Public } from '../common/decorators/public.decorator';
 
 @ApiTags('solicitacoes-v2-pdf')
 @ApiBearerAuth('access-token')
@@ -21,6 +22,7 @@ export class PdfOperacionalV2Controller {
   constructor(private readonly pdf: PdfOperacionalV2Service) {}
 
   @Get(':id/pdf')
+  @Public()
   @UseGuards(PdfSolicitacaoV2AccessGuard, PessoaPermissoesGuard)
   @PessoaPode('gerarPDF')
   @ApiOperation({ summary: 'PDF operacional A4 (Portal dono ou Staff autorizado)' })
@@ -36,6 +38,7 @@ export class PdfOperacionalV2Controller {
   }
 
   @Get(':id/verificar')
+  @Public()
   @ApiOperation({
     summary: 'Verificar autenticidade do PDF (hash) — público',
     description: 'Usado pelo QRCode; não exige autenticação.',

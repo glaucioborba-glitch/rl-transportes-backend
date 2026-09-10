@@ -120,11 +120,18 @@ export default function SolicitacaoDetailPage() {
     setPdfBusy(true);
     try {
       const blob = await portalDownloadSolicitacaoV2Pdf(id);
+      const protocolo = row?.protocolo?.replace(/[^\w.-]+/g, "_") || id;
+      const filename = `autorizacao-${protocolo}.pdf`;
       const url = URL.createObjectURL(blob);
-      const w = window.open(url, "_blank", "noopener,noreferrer");
-      if (w) setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      else URL.revokeObjectURL(url);
-      if (!w) toast.error("Permita pop-ups para visualizar o PDF");
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Falha ao gerar PDF");
     } finally {
@@ -150,7 +157,7 @@ export default function SolicitacaoDetailPage() {
 
   if (loading || !row) {
     return (
-      <main className="mx-auto max-w-7xl px-4 py-8">
+      <main className="mx-auto w-[90%] px-4 py-8">
         <Skeleton className="h-40 w-full" />
       </main>
     );
@@ -162,7 +169,7 @@ export default function SolicitacaoDetailPage() {
   const isos = collectSolicitacaoContainerISOs(row);
 
   return (
-    <main className="mx-auto max-w-7xl space-y-6 px-4 py-8">
+    <main className="mx-auto w-[90%] space-y-6 px-4 py-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1 space-y-2">
           <ContainerNumber value={isos[0] ?? "—"} size="lg" />

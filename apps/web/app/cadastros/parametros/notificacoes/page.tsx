@@ -113,7 +113,7 @@ export default function ParametrosNotificacoesPage() {
   };
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="space-y-6">
       <ParametrosBreadcrumb current="Notificações" />
       <div>
         <h1 className="text-2xl font-bold">Parâmetros Gerais</h1>

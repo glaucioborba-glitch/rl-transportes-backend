@@ -1,22 +1,13 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards, BadRequestException } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { EventoGatilhoTarifa, Role, StatusContainerTarifa, TipoContainerTarifa } from '@prisma/client';
-import { IsEnum, IsNumber, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { BillingEngineService } from './billing-engine.service';
 import { BillingRuleEngineService } from './billing-rule-engine.service';
-
-class CreateTabelaPrecoDto {
-  @IsString()
-  tenantId!: string;
-
-  @IsString()
-  @MinLength(2)
-  nome!: string;
-}
 
 class CreateRegraDto {
   @IsOptional()
@@ -75,21 +66,30 @@ export class BillingEngineController {
   @Get('tabelas/:tenantId')
   listTabelas(@Param('tenantId') tenantId: string) {
     return this.prisma.tabelaPreco.findMany({
-      where: { tenantId },
+      where: { tenantId, cadastroTabelaPreco: { isNot: null } },
       include: { regras: { where: { ativa: true } } },
       orderBy: { nome: 'asc' },
     });
   }
 
   @Post('tabelas')
-  createTabela(@Body() dto: CreateTabelaPrecoDto) {
-    return this.prisma.tabelaPreco.create({
-      data: { tenantId: dto.tenantId, nome: dto.nome.trim() },
-    });
+  createTabela() {
+    throw new BadRequestException(
+      'Tabelas de preço só podem ser criadas em Cadastros → Tabelas de preços.',
+    );
   }
 
   @Post('tabelas/:tabelaId/regras')
-  createRegra(@Param('tabelaId') tabelaId: string, @Body() dto: CreateRegraDto) {
+  async createRegra(@Param('tabelaId') tabelaId: string, @Body() dto: CreateRegraDto) {
+    const tabela = await this.prisma.tabelaPreco.findFirst({
+      where: { id: tabelaId, cadastroTabelaPreco: { isNot: null } },
+      select: { id: true },
+    });
+    if (!tabela) {
+      throw new BadRequestException(
+        'Tabela de billing sem cadastro. Edite a tabela em /cadastros/financeiro/tabelas-precos.',
+      );
+    }
     return this.prisma.regraTarifaria.create({
       data: {
         tabelaPrecoId: tabelaId,
@@ -130,3 +130,4 @@ export class BillingEngineController {
     };
   }
 }
+

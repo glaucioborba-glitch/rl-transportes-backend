@@ -1,17 +1,16 @@
 /**
  * Sincroniza tabela cadastral → TabelaPreco + RegraTarifaria (uso em seeds/scripts).
  */
-import {
-  CategoriaItemTabelaPreco,
-  EventoGatilhoTarifa,
-  Prisma,
-  PrismaClient,
-} from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import {
   isArmazenagemItem,
   mapArmazenagemItemToRegras,
   type CadastroArmazenagemItem,
 } from '../src/pricing-sync/pricing-sync.mapper';
+import {
+  ensureCadastroTabelaPadrao,
+  purgeOrphanBillingTables,
+} from '../src/pricing-sync/purge-orphan-billing-tables';
 
 export async function syncCadastroTabelaToBilling(
   prisma: PrismaClient,
@@ -73,6 +72,7 @@ export async function syncCadastroTabelaToBilling(
 }
 
 export async function ensureDefaultPricingSynced(prisma: PrismaClient, tenantId = 'default') {
+  await ensureCadastroTabelaPadrao(prisma, tenantId);
   const padrao = await prisma.cadastroTabelaPreco.findFirst({
     where: { tenantId, padrao: true, deletedAt: null, ativo: true },
   });
@@ -81,6 +81,12 @@ export async function ensureDefaultPricingSynced(prisma: PrismaClient, tenantId 
     return null;
   }
   const billingId = await syncCadastroTabelaToBilling(prisma, padrao.id);
+  const purged = await purgeOrphanBillingTables(prisma, tenantId);
+  if (purged.deleted.length) {
+    console.log(
+      `[pricing-sync-seed] Removidas tabelas de billing sem cadastro: ${purged.deleted.map((t) => t.nome).join(', ')}`,
+    );
+  }
   console.log(`[pricing-sync-seed] Tabela padrão sincronizada → billing ${billingId}`);
   return billingId;
 }

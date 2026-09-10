@@ -72,9 +72,10 @@ export class DispatchService {
     private readonly realtime: RealtimeEmitterService,
   ) {}
 
-  async listarPendentes() {
+  async listarPendentes(tenantId = 'default') {
     const rows = await this.prisma.agendamentoTerminal.findMany({
       where: {
+        tenantId,
         modalidadeTransporte: ModalidadeTransporte.FROTA_FL,
         status: { not: StatusAgendamentoTerminal.CANCELADO },
         ordensTransporte: { none: {} },
@@ -91,15 +92,18 @@ export class DispatchService {
     return rows.map(formatAgendamentoCard);
   }
 
-  async board() {
+  async board(tenantId = 'default') {
     const [pendentes, motoristas] = await Promise.all([
-      this.listarPendentes(),
+      this.listarPendentes(tenantId),
       this.prisma.motorista.findMany({
         where: { status: { in: [StatusMotorista.DISPONIVEL, StatusMotorista.EM_VIAGEM] } },
         orderBy: { nome: 'asc' },
         include: {
           ordensTransporte: {
-            where: { status: { not: StatusOrdemTransporte.CONCLUIDA } },
+            where: {
+              status: { not: StatusOrdemTransporte.CONCLUIDA },
+              agendamento: { tenantId },
+            },
             include: {
               agendamento: {
                 include: {
@@ -137,9 +141,9 @@ export class DispatchService {
     };
   }
 
-  async assign(dto: AssignDispatchDto, actorUserId: string) {
-    const agendamento = await this.prisma.agendamentoTerminal.findUnique({
-      where: { id: dto.agendamentoId },
+  async assign(dto: AssignDispatchDto, actorUserId: string, tenantId = 'default') {
+    const agendamento = await this.prisma.agendamentoTerminal.findFirst({
+      where: { id: dto.agendamentoId, tenantId },
       include: { ordensTransporte: true },
     });
     if (!agendamento) throw new NotFoundException('Agendamento não encontrado');
@@ -203,7 +207,7 @@ export class DispatchService {
       return created;
     }, PRISMA_SERIALIZABLE_TX);
 
-    const board = await this.board();
+    const board = await this.board(tenantId);
     this.realtime.emitDispatchUpdated({
       source: 'assign',
       ordemId: ot.id,
@@ -259,10 +263,11 @@ export class DispatchService {
     ordemId: string,
     dto: UpdateOrdemStatusDto,
     actorUserId: string,
-    opts?: { motoristaUsuarioId?: string; podFile?: Express.Multer.File },
+    opts?: { motoristaUsuarioId?: string; podFile?: Express.Multer.File; tenantId?: string },
   ) {
-    const ot = await this.prisma.ordemTransporte.findUnique({
-      where: { id: ordemId },
+    const tenantId = (opts?.tenantId ?? 'default').trim() || 'default';
+    const ot = await this.prisma.ordemTransporte.findFirst({
+      where: { id: ordemId, agendamento: { tenantId } },
       include: { motorista: true },
     });
     if (!ot) throw new NotFoundException('Ordem de transporte não encontrada');
@@ -317,7 +322,7 @@ export class DispatchService {
       return row;
     });
 
-    const board = await this.board();
+    const board = await this.board(tenantId);
     this.realtime.emitDispatchUpdated({
       source: 'status',
       ordemId,

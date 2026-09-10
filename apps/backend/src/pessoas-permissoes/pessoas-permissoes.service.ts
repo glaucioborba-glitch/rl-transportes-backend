@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { SecurityEventsService } from '../security-center/security-events.service';
 import type { CxPortalRequestUser } from '../cx-portais/types/cx-portal.types';
+import { assertClienteDoTenant } from '../cx-portais/portal-cliente-tenant.util';
 import type { PermissoesPessoaInputDto } from './dto/update-permissoes.dto';
 import {
   defaultPermissoesPessoa,
@@ -63,7 +64,9 @@ export class PessoasPermissoesService {
       include: { permissoes: true },
     });
     if (!pessoa) throw new NotFoundException('Pessoa autorizada não encontrada');
-    if (cx && cx.portalPapel !== 'STAFF' && cx.clienteId !== pessoa.clienteId) {
+    if (cx && cx.portalPapel === 'STAFF') {
+      await assertClienteDoTenant(this.prisma, cx.tenantId, pessoa.clienteId);
+    } else if (cx && cx.portalPapel !== 'STAFF' && cx.clienteId !== pessoa.clienteId) {
       throw new ForbiddenException('Acesso negado.');
     }
     if (!pessoa.permissoes) {
@@ -152,7 +155,10 @@ export class PessoasPermissoesService {
   private async assertPodeGerenciar(cx: CxPortalRequestUser, pessoaId: string) {
     const pessoa = await this.prisma.pessoaAutorizada.findUnique({ where: { id: pessoaId } });
     if (!pessoa) throw new NotFoundException('Pessoa autorizada não encontrada');
-    if (cx.portalPapel === 'STAFF') return;
+    if (cx.portalPapel === 'STAFF') {
+      await assertClienteDoTenant(this.prisma, cx.tenantId, pessoa.clienteId);
+      return;
+    }
     if (cx.portalPapel !== 'CLIENTE' || cx.clienteId !== pessoa.clienteId) {
       throw new ForbiddenException('Acesso negado.');
     }

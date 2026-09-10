@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerApiBase } from "@/lib/server-api-base";
+import { consumeIpRateLimit } from "@/lib/api/simple-ip-rate-limit";
 
 /** Proxy ViaCEP + IBGE via Nest (`GET /address/cep/:cep`) — evita CORS no browser. */
-export async function GET(_req: NextRequest, ctx: { params: { cep: string } }) {
+export async function GET(req: NextRequest, ctx: { params: { cep: string } }) {
+  if (!consumeIpRateLimit(req, "cep", 40)) {
+    return NextResponse.json(
+      { field: "endereco", message: "Muitas consultas de CEP. Tente novamente em instantes." },
+      { status: 429 },
+    );
+  }
   const raw = (ctx.params.cep ?? "").replace(/\D/g, "");
   if (raw.length !== 8) {
     return NextResponse.json(

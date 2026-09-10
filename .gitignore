@@ -11,11 +11,13 @@ logs/
 .env.local
 
 # Credenciais e dumps locais de dev (não commitar)
+secrets/
 credenciais-teste*.txt
 dados-teste*.txt
 CODIGO-*.txt
 RELATORIO-AUDITORIA-CORRECOES.md
 tmp-cookies.txt
+.tmp-oci/
 
 # Uploads locais (dev) — produção usa S3
 uploads/

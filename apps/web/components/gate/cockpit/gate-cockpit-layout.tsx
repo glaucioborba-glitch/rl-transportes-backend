@@ -11,6 +11,10 @@ import { GateCockpitTopbar } from "./gate-cockpit-topbar";
 const GATE_STANDALONE_ROUTES = [
   "/operador/gate/historico-container",
   "/operador/gate/previsao-navios",
+  "/operador/gate/controle-entrada-saida",
+  "/operador/gate/consulta-ric",
+  "/operador/gate/reconfirmar",
+  "/operador/gate/ric",
 ];
 
 function todayIso() {

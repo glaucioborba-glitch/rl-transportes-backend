@@ -207,7 +207,7 @@ async function bootstrap() {
     )
     .addTag(
       'integracao-financeira',
-      'Webhook de pagamentos (`/integracao/pagamentos/webhook`): opcionalmente assinado.',
+      'Webhook de pagamentos (`/integracao/pagamentos/webhook`): HMAC-SHA256 obrigatório.',
     )
     .addTag(
       'integracao-visao',

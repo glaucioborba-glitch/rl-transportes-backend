@@ -44,7 +44,7 @@ export default function LoginEquipamentoPage() {
     try {
       await vincularEquipamentoOperador(equipamentoId);
       toast.success("Equipamento vinculado com sucesso!");
-      router.push("/operador/gate/dashboard");
+      router.push("/operador/gate/controle-entrada-saida");
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Erro ao vincular equipamento.");
       setVinculando(null);
@@ -129,7 +129,7 @@ export default function LoginEquipamentoPage() {
             variant="link"
             size="sm"
             className="text-xs text-muted-foreground"
-            onClick={() => router.push("/operador/gate/dashboard")}
+            onClick={() => router.push("/operador/gate/controle-entrada-saida")}
           >
             Operar sem equipamento (apenas monitoramento) →
           </Button>

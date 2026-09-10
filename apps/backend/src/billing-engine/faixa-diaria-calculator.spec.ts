@@ -1,6 +1,13 @@
 import {
+  agruparDiasPorFaixa,
   calcularArmazenagemEscalonada,
+  calcularEnergiaEscalonada,
   FAIXAS_DIARIA_PADRAO,
+  formatarFaixasCobranca,
+  resolveFaixasEnergiaFromCadastroItem,
+  resolveFaixasFromCadastroItem,
+  SUBSTANTIVO_DIA_ENERGIA,
+  SUBSTANTIVO_DIARIA,
 } from './faixa-diaria-calculator';
 
 describe('FaixaDiariaCalculator', () => {
@@ -21,5 +28,45 @@ describe('FaixaDiariaCalculator', () => {
 
   it('sem faixas = R$ 0', () => {
     expect(calcularArmazenagemEscalonada(20, 7, [])).toBe(0);
+  });
+
+  it('cadastro sem faixas e sem diária plana não inventa faixa padrão', () => {
+    expect(resolveFaixasFromCadastroItem({})).toEqual([]);
+    expect(resolveFaixasFromCadastroItem({ faixasDiaria: [], tarifaDiariaArmazenagem: null })).toEqual([]);
+  });
+
+  it('energia: 16 dias conectados nas faixas 8–15 / 16+ = R$ 285', () => {
+    expect(calcularEnergiaEscalonada(16, faixas)).toBe(285);
+  });
+
+  it('energia: dias 1–7 sem faixa correspondente = R$ 0', () => {
+    expect(calcularEnergiaEscalonada(7, faixas)).toBe(0);
+  });
+
+  it('energia: tarifa plana vira faixa 1..∞', () => {
+    expect(resolveFaixasEnergiaFromCadastroItem({ tarifaEnergiaReeferDiaria: 220 })).toEqual([
+      { diaInicio: 1, diaFim: null, valorDiaria: 220 },
+    ]);
+    expect(calcularEnergiaEscalonada(16, resolveFaixasEnergiaFromCadastroItem({ tarifaEnergiaReeferDiaria: 220 }))).toBe(
+      3520,
+    );
+  });
+
+  it('agrupa e descreve diárias por faixa no padrão de fatura', () => {
+    const grupos = agruparDiasPorFaixa(8, 16, faixas);
+    expect(grupos).toEqual([
+      { quantidade: 8, valorUnitario: 30 },
+      { quantidade: 1, valorUnitario: 45 },
+    ]);
+    expect(formatarFaixasCobranca(grupos, SUBSTANTIVO_DIARIA)).toBe(
+      '08 diárias de R$ 30,00 e 01 de R$ 45,00',
+    );
+  });
+
+  it('descreve energia por faixa com o mesmo padrão', () => {
+    const grupos = agruparDiasPorFaixa(1, 16, faixas);
+    expect(formatarFaixasCobranca(grupos, SUBSTANTIVO_DIA_ENERGIA)).toBe(
+      '08 dias de R$ 30,00 e 01 de R$ 45,00',
+    );
   });
 });

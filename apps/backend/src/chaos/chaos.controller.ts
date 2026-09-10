@@ -18,7 +18,7 @@ import { ChaosTurbulenciaDto } from './dto/chaos-turbulencia.dto';
 @ApiBearerAuth('access-token')
 @Controller('admin/chaos')
 @UseGuards(AuthGuard('jwt'), RolesGuard, ObservabilityRateLimitGuard)
-@Roles(Role.ADMIN)
+@Roles(Role.ADMIN, Role.SUPER_ADMIN)
 export class ChaosController {
   constructor(
     private readonly chaos: ChaosService,

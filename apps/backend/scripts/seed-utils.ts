@@ -213,17 +213,8 @@ export async function cleanAll(): Promise<void> {
   }
 
   if (clientIds.length > 0) {
-    console.log('   Limpando TOS (agendamentos/containers)...');
-    const containers = await p.container.findMany({
-      where: { clienteId: { in: clientIds } },
-      select: { id: true },
-    });
-    if (containers.length) {
-      await p.containerEvent.deleteMany({ where: { containerId: { in: containers.map((c) => c.id) } } });
-      await p.container.deleteMany({ where: { id: { in: containers.map((c) => c.id) } } });
-    }
+    console.log('   Limpando agendamentos de seed...');
     await p.agendamentoTerminal.deleteMany({ where: { clienteId: { in: clientIds } } });
-    await p.tabelaTarifaria.deleteMany({ where: { clienteId: { in: clientIds } } });
     await p.user.deleteMany({
       where: { OR: [{ clienteId: { in: clientIds } }, { email: { endsWith: SEED_EMAIL_DOMAIN } }] },
     });

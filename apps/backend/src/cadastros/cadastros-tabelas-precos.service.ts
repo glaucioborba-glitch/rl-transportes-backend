@@ -153,6 +153,9 @@ export class CadastrosTabelasPrecosService {
             freeTimeDias: 7,
             faixasDiaria: FAIXAS_DIARIA_PADRAO.map((f) => ({ ...f })),
             tarifaEnergiaReeferDiaria: tipo.tomadaReefer ? 45 : undefined,
+            faixasEnergiaReefer: tipo.tomadaReefer
+              ? FAIXAS_DIARIA_PADRAO.map((f) => ({ ...f }))
+              : undefined,
           });
         }
       }
@@ -263,8 +266,6 @@ export class CadastrosTabelasPrecosService {
 
     this.assertItens(dto.itens);
 
-    await this.assertPadraoUnico(dto.padrao ?? false);
-
     const row = await this.prisma.$transaction(async (tx) => {
 
       const tabela = await tx.cadastroTabelaPreco.create({
@@ -312,10 +313,6 @@ export class CadastrosTabelasPrecosService {
     await this.getRowOrThrow(id);
 
     if (dto.itens) this.assertItens(dto.itens);
-
-    if (dto.padrao) await this.assertPadraoUnico(true, id);
-
-
 
     await this.prisma.$transaction(async (tx) => {
 
@@ -367,37 +364,6 @@ export class CadastrosTabelasPrecosService {
 
 
 
-  private async assertPadraoUnico(padrao: boolean, excludeId?: string) {
-
-    if (!padrao) return;
-
-    const existing = await this.prisma.cadastroTabelaPreco.findFirst({
-
-      where: {
-
-        tenantId: DEFAULT_TENANT,
-
-        padrao: true,
-
-        deletedAt: null,
-
-        ...(excludeId ? { NOT: { id: excludeId } } : {}),
-
-      },
-
-    });
-
-    if (existing) {
-
-      throw new BadRequestException(
-
-        `Já existe tabela padrão: "${existing.nome}". Desmarque-a antes de definir outra.`,
-
-      );
-
-    }
-
-  }
 
 
 
@@ -541,8 +507,6 @@ export class CadastrosTabelasPrecosService {
 
   private toTabelaData(dto: CadastrosTabelaPrecoFormDto) {
 
-    const clienteId = dto.clienteId?.trim();
-
     return {
 
       tenantId: DEFAULT_TENANT,
@@ -551,7 +515,7 @@ export class CadastrosTabelasPrecosService {
 
       descricao: dto.descricao?.trim() || null,
 
-      clienteId: clienteId || null,
+      clienteId: null,
 
       moeda: dto.moeda?.trim() || 'BRL',
 
@@ -647,7 +611,17 @@ export class CadastrosTabelasPrecosService {
 
           ? new Prisma.Decimal(item.tarifaEnergiaReeferDiaria)
 
-          : null,
+          : item.faixasEnergiaReefer?.[0]?.valorDiaria != null
+
+            ? new Prisma.Decimal(item.faixasEnergiaReefer[0].valorDiaria)
+
+            : null,
+
+      faixasEnergiaReefer: item.faixasEnergiaReefer?.length
+
+        ? (JSON.parse(JSON.stringify(item.faixasEnergiaReefer)) as Prisma.InputJsonValue)
+
+        : Prisma.JsonNull,
 
     };
 
@@ -819,6 +793,8 @@ export class CadastrosTabelasPrecosService {
 
     tarifaEnergiaReeferDiaria?: Prisma.Decimal | null;
 
+    faixasEnergiaReefer?: unknown;
+
   }) {
 
     return {
@@ -856,6 +832,8 @@ export class CadastrosTabelasPrecosService {
       tarifaEnergiaReeferDiaria:
 
         row.tarifaEnergiaReeferDiaria != null ? Number(row.tarifaEnergiaReeferDiaria) : null,
+
+      faixasEnergiaReefer: Array.isArray(row.faixasEnergiaReefer) ? row.faixasEnergiaReefer : [],
 
     };
 

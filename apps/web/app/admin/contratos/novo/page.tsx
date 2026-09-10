@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { staffJson } from "@/lib/api/staff-client";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import type { AdminContract } from "@/lib/admin/types";
@@ -82,9 +81,6 @@ export default function AdminContratoNovoPage() {
 
   return (
     <div className="space-y-6">
-      <Link href="/admin/contratos" className="text-sm text-sky-400 hover:underline">
-        ← Contratos
-      </Link>
       <div>
         <h1 className="font-serif text-3xl font-bold text-white">Novo contrato</h1>
         <p className="text-sm text-zinc-500">Formulário completo — persistência apenas no navegador.</p>

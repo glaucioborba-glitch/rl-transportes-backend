@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { forwardSetCookieHeaders } from "@/lib/forward-set-cookie";
 import { getServerApiBase } from "@/lib/server-api-base";
+import { isPortalProxyPathAllowed } from "@/lib/portal-proxy-allowlist";
 
 const HOP_BY_HOP = new Set([
   "connection",
@@ -19,6 +20,10 @@ const HOP_BY_HOP = new Set([
 const UPSTREAM_RESPONSE_SKIP = new Set(["content-encoding", "content-length", "transfer-encoding"]);
 
 async function proxy(req: NextRequest, pathSegments: string[]): Promise<NextResponse> {
+  if (!isPortalProxyPathAllowed(pathSegments ?? [])) {
+    return NextResponse.json({ message: "Not found" }, { status: 404 });
+  }
+
   const base = getServerApiBase();
   const subPath = pathSegments.join("/");
   const search = req.nextUrl.search;

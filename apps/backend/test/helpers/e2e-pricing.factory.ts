@@ -11,7 +11,7 @@ import {
   DEFAULT_VALOR_SERVICOS_EXTRAS,
 } from '../src/armazenagem-faturamento/armazenagem-billing.util';
 
-/** Cria tabela de preços billing para testes E2E (substitui TabelaTarifaria). */
+/** Cria tabela de preços billing para testes E2E. */
 export async function ensureE2ePricingTable(
   prisma: PrismaClient,
   opts?: {

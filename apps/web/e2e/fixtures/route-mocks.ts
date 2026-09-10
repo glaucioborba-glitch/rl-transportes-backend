@@ -91,6 +91,45 @@ export async function setupPortalApiMocks(page: Page, opts?: { solicitacao?: Ret
       return;
     }
 
+    if (path === "/cliente/portal/notificacoes/nao-lidas" && method === "GET") {
+      await fulfillJson(route, { count: 0 });
+      return;
+    }
+
+    if (path === "/cliente/portal/notificacoes" && method === "GET") {
+      await fulfillJson(route, []);
+      return;
+    }
+
+    if (path.startsWith("/cliente/portal/simulacao-valores") && method === "GET") {
+      await fulfillJson(route, { unidades: [], servicos: [], atualizadoEm: new Date().toISOString() });
+      return;
+    }
+
+    if (path === "/cliente/portal/simulacao-valores" && method === "POST") {
+      await fulfillJson(route, {
+        unidade: {
+          id: "u1",
+          unidadeIso: "ABCD1234567",
+          tipo: "DRYDC",
+          tamanho: "40",
+          statusContainer: "CHEIO",
+          refrigerado: false,
+          entradaEm: new Date().toISOString(),
+          protocolo: "SOL-1",
+        },
+        dataSaida: "2026-08-20",
+        diasNoPatio: 5,
+        diasFreeTime: 7,
+        diasFaturaveis: 0,
+        itens: [],
+        total: 0,
+        avisos: [],
+        estimativa: true,
+      });
+      return;
+    }
+
     if (path === "/health" && method === "GET") {
       await fulfillJson(route, {
         api: "ok",
@@ -214,6 +253,11 @@ export async function setupStaffTriagemMocks(page: Page) {
   });
 }
 
+const PRAZOS_PAGAMENTO_MOCK = [
+  { label: "À vista", value: "A_VISTA", formaVinculada: "AVISTA_PIX" },
+  { label: "30 dias", value: "30_DIAS", formaVinculada: "FATURAMENTO" },
+];
+
 const CONDICOES_PAGAMENTO_MOCK = [
   { label: "Faturamento", value: "FATURAMENTO" },
   { label: "À Vista PIX", value: "AVISTA_PIX" },
@@ -229,6 +273,11 @@ export async function setupStaffCadastrosPendentesMocks(page: Page) {
 
     if (path === "/financeiro/cadastros-pendentes/condicoes-pagamento" && method === "GET") {
       await fulfillJson(route, CONDICOES_PAGAMENTO_MOCK);
+      return;
+    }
+
+    if (path === "/financeiro/cadastros-pendentes/prazos-pagamento" && method === "GET") {
+      await fulfillJson(route, PRAZOS_PAGAMENTO_MOCK);
       return;
     }
 

@@ -118,7 +118,7 @@ Ordem de execução recomendada.
 | A.2.5 | Billing: **`FaixaDiariaCalculator`** — substitui `dias × valorUnitario` fixo |
 | A.2.6 | `RegraTarifaria` / JSONB `faixasDiaria` espelhando cadastro após sync |
 | A.2.7 | Handling runtime: evento **`HANDLING`** (valor cheio no gate-out) *ou* `GATE_IN` com valor + `GATE_OUT` zerado |
-| A.2.8 | Deprecar `TabelaTarifaria` |
+| A.2.8 | ~~Deprecar `TabelaTarifaria`~~ — removida |
 
 **ADR:** `docs/adr/004-pricing-unificado.md`
 
@@ -143,7 +143,7 @@ Ordem de execução recomendada.
 | A.4.4 | `calcularDiariasEscalonadas(diasPermanencia, freeTime, faixas)` + testes exemplo 7/18 dias |
 | A.4.5 | Atribuição cliente: update `cliente.tabelaPrecoId` ao vincular tabela comercial |
 | A.4.6 | Audit log categoria FINANCEIRO |
-| A.4.7 | Script `migrate-tabela-tarifaria-to-regras.ts` |
+| A.4.7 | ~~Script `migrate-tabela-tarifaria-to-regras.ts`~~ — removido com o legado |
 
 **Testes:** faixas (7 free + 18 dias = 375), handling cobrado uma vez, sync tabela padrão vs comercial.
 
@@ -165,9 +165,9 @@ function calcularArmazenagemEscalonada(diasPermanencia, freeTimeDias, faixas): n
 
 ### A.5 Desligar legado
 
-- [ ] Seed só cria tabela padrão + regras sync
-- [ ] Remover fallback `TabelaTarifaria` em `resolvePricingForCliente`
-- [ ] Migration arquivar `tabelas_tarifarias` (read-only → drop)
+- [x] Seed só cria tabela padrão + regras sync
+- [x] Remover fallback `TabelaTarifaria` em `resolvePricingForCliente`
+- [x] Migration arquivar `tabelas_tarifarias` (read-only → drop)
 
 ---
 
@@ -294,7 +294,7 @@ flowchart TD
 - [ ] Matriz **Tipo × Tamanho × Status** com handling + free time + diária; sync → billing
 - [ ] Tipos/tamanhos/status **parametrizados** e reused portal + gate + billing
 - [ ] **Zero** writes v1; código v1 removido ou arquivado
-- [ ] `TabelaTarifaria` legado desligado
+- [x] `TabelaTarifaria` legado desligado
 - [ ] CI: e2e real + billing service testado
 - [ ] Credenciais fora do git
 

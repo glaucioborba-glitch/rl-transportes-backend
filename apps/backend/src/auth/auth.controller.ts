@@ -17,6 +17,7 @@ import { AuthGuard } from '@nestjs/passport';
 import type { Response } from 'express';
 import type { Request as ExpressRequest } from 'express';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
+import { Public } from '../common/decorators/public.decorator';
 import { PortalIdentityService } from '../cx-portais/identity/portal-identity.service';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -50,6 +51,7 @@ export class AuthController {
   ) {}
 
   @Post('register')
+  @Public()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Cadastro portal (mesmo fluxo que POST /portal/register)' })
   async register(@Body(CpfCnpjValidationPipe) body: AuthRegisterDto) {
@@ -57,6 +59,7 @@ export class AuthController {
   }
 
   @Post('reset-password')
+  @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Redefinir senha com token (mesmo fluxo que POST /portal/redefinir-senha)' })
   async resetPassword(@Body() body: AuthResetPasswordDto) {
@@ -64,6 +67,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @Public()
   @HttpCode(HttpStatus.OK)
   async login(
     @Body(StaffLoginCpfPipe) dto: LoginDto,
@@ -88,6 +92,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Public()
   @HttpCode(HttpStatus.OK)
   async refresh(
     @Body() dto: RefreshDto,
@@ -112,6 +117,7 @@ export class AuthController {
   }
 
   @Get('health')
+  @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Heartbeat de sessão staff (cookie HttpOnly)',
@@ -170,7 +176,7 @@ export class AuthController {
   @Post('users')
   @ApiBearerAuth('access-token')
   @UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @Permissions('users:criar')
   createUser(@Body() dto: CreateUserDto, @Request() req: ExpressRequest & { user: AuthUser }) {
     const ip = req.ip || req.socket?.remoteAddress || 'unknown';

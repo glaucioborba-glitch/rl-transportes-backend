@@ -232,6 +232,20 @@ export class CadastrosTabelaPrecoItemDto {
 
   tarifaEnergiaReeferDiaria?: number;
 
+
+
+  @ApiPropertyOptional({ type: [FaixaDiariaDto] })
+
+  @IsOptional()
+
+  @IsArray()
+
+  @ValidateNested({ each: true })
+
+  @Type(() => FaixaDiariaDto)
+
+  faixasEnergiaReefer?: FaixaDiariaDto[];
+
 }
 
 

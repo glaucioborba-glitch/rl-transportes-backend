@@ -5,13 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CredencialMotoristaModal } from "@/components/portal/credencial-motorista-modal";
 import { StatusBadge } from "@/components/portal/status-badge";
 import { SolicitacaoEditModal } from "@/components/portal/solicitacao-edit-modal";
 import {
   ApiError,
   cancelarSolicitacaoPortal,
-  fetchSolicitacao,
+  portalDownloadSolicitacaoV2Pdf,
   type SolicitacaoRow,
 } from "@/lib/api/portal-client";
 import {
@@ -22,13 +21,11 @@ import {
   solicitacaoSolicitanteLabel,
   solicitacaoTransporteLabel,
 } from "@/lib/portal-tracking";
-import { solicitacaoContainerPrimary, collectSolicitacaoContainerISOs } from "@/lib/container-display";
+import { collectSolicitacaoContainerISOs } from "@/lib/container-display";
 import { ContainerNumber } from "@/components/ui/container-number";
-import { ContainerExtraUnitsBadge } from "@/components/shared/operation-identity";
 import { toast } from "@/lib/toast";
 import { confirmarAcaoJanelaExecucao } from "@/utils/janelaExecucao";
 import { usePessoaPermissoesStore } from "@/stores/pessoaPermissoesStore";
-import { buildCredencialMotoristaData, exibeCredencialMotorista } from "@/lib/credencial-motorista";
 
 function dataAgendamento(row: SolicitacaoRow): string {
   return row.agendamentoSolicitacao?.dataRef
@@ -36,9 +33,10 @@ function dataAgendamento(row: SolicitacaoRow): string {
     : row.createdAt.slice(0, 10);
 }
 
-function statusPermiteCredencial(status: string): boolean {
+function statusPermiteQr(status: string): boolean {
   return (
     status === "APROVADO" ||
+    status === "AGUARDANDO_GATE_IN" ||
     status === "EM_TRANSITO" ||
     status === "EM_PATIO" ||
     status === "EM_EXECUCAO"
@@ -69,33 +67,36 @@ export function SolicitacaoCompactCard({
 }) {
   const router = useRouter();
   const podeEditar = usePessoaPermissoesStore((s) => s.permissoes?.podeCriarSolicitacao ?? true);
+  const podeGerarPdf = usePessoaPermissoesStore((s) => s.permissoes?.podeGerarPDF ?? true);
   const [editOpen, setEditOpen] = useState(false);
   const [canceling, setCanceling] = useState(false);
-  const [credencialOpen, setCredencialOpen] = useState(false);
-  const [credencialRow, setCredencialRow] = useState<SolicitacaoRow>(row);
+  const [qrBusy, setQrBusy] = useState(false);
 
   const detailHref = `/portal/solicitacoes/${row.id}`;
   const acoesDisponiveis = podeEditar && statusPermiteEdicao(row.status);
-  const mostrarCredencial = statusPermiteCredencial(row.status) && exibeCredencialMotorista(row);
-  const credencialData = useMemo(
-    () => buildCredencialMotoristaData(credencialRow),
-    [credencialRow],
-  );
+  const mostrarQr =
+    podeGerarPdf && statusPermiteQr(row.status) && Boolean(row.transporteSolicitacao);
   const containerIsos = useMemo(() => collectSolicitacaoContainerISOs(row), [row]);
-  const containerDisplay = useMemo(() => solicitacaoContainerPrimary(row), [row]);
-  const containerDefinido = containerDisplay.primary !== "—";
+  const containerDefinido = containerIsos.length > 0;
 
-  async function abrirCredencial() {
+  async function baixarQrcode() {
+    setQrBusy(true);
     try {
-      const full = await fetchSolicitacao(row.id);
-      if (!buildCredencialMotoristaData(full)) {
-        toast.error("Credencial indisponível para esta solicitação.");
-        return;
-      }
-      setCredencialRow(full);
-      setCredencialOpen(true);
+      const blob = await portalDownloadSolicitacaoV2Pdf(row.id);
+      const protocolo = row.protocolo?.replace(/[^\w.-]+/g, "_") || row.id;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `autorizacao-${protocolo}.pdf`;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Erro ao carregar credencial");
+      toast.error(e instanceof ApiError ? e.message : "Falha ao baixar QRCode");
+    } finally {
+      setQrBusy(false);
     }
   }
 
@@ -141,18 +142,19 @@ export function SolicitacaoCompactCard({
           </div>
           <div className="flex shrink-0 flex-col items-end gap-2">
             <StatusBadge status={row.status} />
-            {mostrarCredencial || acoesDisponiveis ? (
+            {mostrarQr || acoesDisponiveis ? (
               <div className="flex flex-wrap justify-end gap-2">
-                {mostrarCredencial ? (
+                {mostrarQr ? (
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     className="gap-1"
-                    onClick={() => void abrirCredencial()}
+                    disabled={qrBusy}
+                    onClick={() => void baixarQrcode()}
                   >
                     <QrCode className="mr-1 h-3.5 w-3.5" />
-                    Credencial (QR Code)
+                    {qrBusy ? "Baixando…" : "Baixar QRcode"}
                   </Button>
                 ) : null}
                 {acoesDisponiveis ? (
@@ -179,11 +181,15 @@ export function SolicitacaoCompactCard({
 
         <div className="mb-3 mt-2 px-4 pb-1">
           {containerDefinido ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <ContainerNumber value={containerIsos[0] ?? "—"} />
-              {containerDisplay.extraCount > 0 ? (
-                <ContainerExtraUnitsBadge extraCount={containerDisplay.extraCount} />
-              ) : null}
+            <div className="space-y-1.5">
+              {containerIsos.map((iso, idx) => (
+                <div key={`${row.id}-${iso}-${idx}`} className="flex flex-wrap items-center gap-2">
+                  <ContainerNumber value={iso} showLabel={idx === 0} />
+                  {containerIsos.length > 1 ? (
+                    <span className="text-xs text-muted-foreground">Unidade #{idx + 1}</span>
+                  ) : null}
+                </div>
+              ))}
             </div>
           ) : (
             <>
@@ -215,12 +221,6 @@ export function SolicitacaoCompactCard({
         solicitacaoId={editOpen ? row.id : null}
         onClose={() => setEditOpen(false)}
         onUpdated={() => onChanged?.()}
-      />
-
-      <CredencialMotoristaModal
-        open={credencialOpen}
-        onClose={() => setCredencialOpen(false)}
-        credencial={credencialOpen ? credencialData : null}
       />
     </>
   );

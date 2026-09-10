@@ -36,6 +36,98 @@ export class PatioV2Service {
     private readonly yardSnapshot: YardSnapshotService,
   ) {}
 
+  /** Abre rastreio de pátio no ID da unidade (RIC/liberar de entrada). */
+  async provisionFromProcesso(
+    input: {
+      unidadeProcessoId: string;
+      solicitacaoId: string;
+      unidadeIso: string;
+      refrigerado: boolean;
+      setPoint?: number | null;
+      gateInId?: string | null;
+    },
+    tx?: Prisma.TransactionClient,
+  ): Promise<string> {
+    const db = tx ?? this.prisma;
+    const iso = normalizeContainerIso(input.unidadeIso).replace(/\s/g, '').toUpperCase();
+    const existing = await db.patioUnidade.findFirst({
+      where: {
+        OR: [
+          { unidadeProcessoId: input.unidadeProcessoId, unidadeIso: iso },
+          ...(input.gateInId ? [{ gateInId: input.gateInId, unidadeIso: iso }] : []),
+        ],
+      },
+    });
+    if (existing) {
+      await db.patioUnidade.update({
+        where: { id: existing.id },
+        data: {
+          unidadeProcessoId: input.unidadeProcessoId,
+          ...(input.gateInId ? { gateInId: input.gateInId } : {}),
+          status: existing.status === PatioStatus.AGUARDANDO_GATE_OUT ? PatioStatus.SEPARADO : existing.status,
+        },
+      });
+      return existing.id;
+    }
+
+    const unit = await db.patioUnidade.create({
+      data: {
+        unidadeIso: iso,
+        solicitacaoId: input.solicitacaoId,
+        unidadeProcessoId: input.unidadeProcessoId,
+        gateInId: input.gateInId ?? null,
+        status: PatioStatus.SEPARADO,
+        refrigerado: input.refrigerado,
+      },
+    });
+    if (input.refrigerado) {
+      await db.patioTomadaEvent.create({
+        data: {
+          patioUnidadeId: unit.id,
+          tipo: PatioTomadaEventType.CONECTADO,
+          setPoint: input.setPoint ?? null,
+          observacao: 'Conexão na abertura do ID da unidade',
+        },
+      });
+    }
+    return unit.id;
+  }
+
+  async attachGateInToProcesso(
+    gateInId: string,
+    solicitacaoId: string,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const db = tx ?? this.prisma;
+    const containers = await db.containerSolicitacao.findMany({
+      where: { solicitacaoId },
+      select: { unidade: true },
+    });
+    for (const c of containers) {
+      const iso = normalizeContainerIso(c.unidade).replace(/\s/g, '').toUpperCase();
+      await db.patioUnidade.updateMany({
+        where: { unidadeIso: iso, unidadeProcesso: { status: 'ABERTO' } },
+        data: { gateInId },
+      });
+    }
+  }
+
+  async finalizeFromProcesso(
+    unidadeProcessoId: string,
+    operadorId: string,
+    tx?: Prisma.TransactionClient,
+  ) {
+    const db = tx ?? this.prisma;
+    await db.patioUnidade.updateMany({
+      where: { unidadeProcessoId },
+      data: {
+        posicaoAtualId: null,
+        status: PatioStatus.AGUARDANDO_GATE_OUT,
+      },
+    });
+    this.emitPatio('PATIO_UNIDADE_PROCESSO_SAIDA', operadorId, undefined, { unidadeProcessoId });
+  }
+
   /** Após Gate Check-In: uma PatioUnidade por container da solicitação (status SEPARADO). */
   async provisionFromGateIn(
     gateInId: string,
@@ -484,14 +576,21 @@ export class PatioV2Service {
       }),
       this.prisma.patioUnidade.findMany({
         where: {
-          status: {
-            notIn: [PatioStatus.AGUARDANDO_GATE_OUT],
-          },
-          solicitacao: { status: { in: [StatusSolicitacao.EM_PATIO, StatusSolicitacao.AGUARDANDO_GATE_OUT] } },
+          OR: [
+            { unidadeProcesso: { status: 'ABERTO' } },
+            {
+              unidadeProcessoId: null,
+              status: { notIn: [PatioStatus.AGUARDANDO_GATE_OUT] },
+              solicitacao: {
+                status: { in: [StatusSolicitacao.EM_PATIO, StatusSolicitacao.AGUARDANDO_GATE_OUT] },
+              },
+            },
+          ],
         },
         include: {
           posicaoAtual: true,
           solicitacao: { select: { clienteId: true, protocolo: true } },
+          unidadeProcesso: { select: { numero: true, entradaEm: true } },
         },
       }),
       this.prisma.patioUnidade.findMany({
@@ -511,7 +610,8 @@ export class PatioV2Service {
 
     for (const u of unidades) {
       if (u.refrigerado) reefers++;
-      const h = (now - u.createdAt.getTime()) / 3_600_000;
+      const inicio = u.unidadeProcesso?.entradaEm ?? u.createdAt;
+      const h = (now - inicio.getTime()) / 3_600_000;
       if (h >= 0 && h < 24 * 90) {
         sumHoras += h;
         nTempo++;

@@ -16,6 +16,7 @@ export type CadastrosTransportadoraListItem = {
   motoristasAtivos: number;
   frotaTotal: number;
   solicitacoesMes: number;
+  clienteId?: string | null;
 };
 
 export type CadastrosTransportadoraFormData = {
@@ -127,13 +128,43 @@ export async function getCadastrosTransportadora(
   );
 }
 
+function blankToUndef(value: string): string | undefined {
+  const t = value.trim();
+  return t.length > 0 ? t : undefined;
+}
+
+function toTransportadoraWriteBody(
+  data: CadastrosTransportadoraFormData,
+): Record<string, unknown> {
+  const { id: _id, ...body } = data;
+  return {
+    ...body,
+    nomeFantasia: blankToUndef(body.nomeFantasia),
+    rntrc: blankToUndef(body.rntrc),
+    rntrcValidade: blankToUndef(body.rntrcValidade),
+    ie: blankToUndef(body.ie),
+    email: blankToUndef(body.email),
+    telefone: blankToUndef(body.telefone),
+    celular: blankToUndef(body.celular),
+    cep: blankToUndef(body.cep),
+    endereco: blankToUndef(body.endereco),
+    numero: blankToUndef(body.numero),
+    complemento: blankToUndef(body.complemento),
+    bairro: blankToUndef(body.bairro),
+    cidade: blankToUndef(body.cidade),
+    uf: blankToUndef(body.uf),
+    condicaoPagamento: blankToUndef(body.condicaoPagamento),
+    observacoes: blankToUndef(body.observacoes),
+  };
+}
+
 export async function createCadastrosTransportadora(
   data: CadastrosTransportadoraFormData,
 ): Promise<CadastrosTransportadoraFormData> {
   return staffJson<CadastrosTransportadoraFormData>("/v2/cadastros/transportadoras", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify(toTransportadoraWriteBody(data)),
   });
 }
 
@@ -146,7 +177,7 @@ export async function updateCadastrosTransportadora(
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: JSON.stringify(toTransportadoraWriteBody(data)),
     },
   );
 }

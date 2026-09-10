@@ -23,6 +23,7 @@ import { RlLogo } from "@/components/portal/rl-logo";
 import { DEFAULT_PORTAL_HOME, sanitizePortalPath } from "@/lib/portal-redirect";
 import { formatCpfCnpjBr } from "@/lib/format-cpf-cnpj-br";
 import { validateCnpjDigits, validateCpfDigits } from "@/lib/br-documents";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 type LoginFormProps = {
   redirectAfterLogin?: string;
@@ -164,9 +165,12 @@ export default function PortalLoginForm({ redirectAfterLogin = DEFAULT_PORTAL_HO
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[#080a0d] px-4 py-8">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-[#080a0d] px-4 py-8">
+      <div className="absolute right-4 top-4">
+        <ThemeToggle />
+      </div>
       <div className="mb-6 flex items-center gap-3">
-        <RlLogo className="h-10 w-10 text-lg" />
+        <RlLogo slot="portal" className="h-10 w-auto max-w-[180px] text-lg" />
         <div>
           <h1 className="text-xl font-bold text-white">Portal do cliente</h1>
           <p className="text-sm text-slate-500">RL Transportes</p>

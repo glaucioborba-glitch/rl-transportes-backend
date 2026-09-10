@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AcaoAuditoria, StatusPagamentoFatura } from '@prisma/client';
+import { AcaoAuditoria, StatusCadastroCliente, StatusPagamentoFatura } from '@prisma/client';
 import { toDecimal } from '../armazenagem-faturamento/armazenagem-billing.util';
 import { AlertService } from '../alert/alert.service';
 import { AuditoriaService } from '../auditoria/auditoria.service';
@@ -11,6 +11,9 @@ import { FeatureFlagService } from '../feature-flags/feature-flag.service';
 import { NotificationEnqueueService } from '../notification/notification-enqueue.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantConfigService } from '../tenant/tenant-config.service';
+import { DEFAULT_TENANT_ID } from '../tenant/tenant.constants';
+import { prazoEfetivoCadastro } from '../cadastro-financeiro/cadastro-operacao-inicial';
+import { montarParcelasFinanceiras, type ParcelaFinanceira } from '../cadastro-financeiro/prazo-parcelas.util';
 
 export type EmitirNfseBoletoPayload = {
   faturaId: string;
@@ -122,12 +125,30 @@ export class NfseBoletoOutboxProcessor {
     };
 
     let fiscalResult;
-    let boletoResult;
+    let boletoResults;
     try {
-      [fiscalResult, boletoResult] = await Promise.all([
+      const valorTotal = Number(fatura.valorTotal);
+      const [emissaoFiscal, parcelas] = await Promise.all([
         this.fiscal.emitirParaFatura(fatura, fatura.cliente, ctx),
-        this.banking.registrarBoleto(fatura, fatura.cliente, ctx),
+        this.obterParcelasCliente(fatura.cliente, gateOutAt, valorTotal),
       ]);
+      fiscalResult = emissaoFiscal;
+      if (parcelas.length) {
+        boletoResults = [];
+        for (const parcela of parcelas) {
+          const registrado = await this.banking.registrarBoleto(fatura, fatura.cliente, {
+            ...ctx,
+            diasVencimento: parcela.dias,
+            vencimento: parcela.vencimento,
+            valor: parcela.valor,
+            parcela: { indice: parcela.indice, total: parcela.totalParcelas },
+          });
+          boletoResults.push({ ...registrado, valor: parcela.valor });
+        }
+      } else {
+        const registrado = await this.banking.registrarBoleto(fatura, fatura.cliente, ctx);
+        boletoResults = [{ ...registrado, valor: valorTotal }];
+      }
     } catch (e) {
       await this.prisma.fatura.update({
         where: { id: fatura.id },
@@ -137,6 +158,10 @@ export class NfseBoletoOutboxProcessor {
         },
       });
       throw e;
+    }
+
+    if (!boletoResults?.length) {
+      throw new Error('Falha ao registrar boleto');
     }
 
     const periodo = `${gateOutAt.getFullYear()}-${String(gateOutAt.getMonth() + 1).padStart(2, '0')}`;
@@ -202,31 +227,34 @@ export class NfseBoletoOutboxProcessor {
         },
       });
 
-      await tx.boleto.create({
-        data: {
-          faturamentoId: faturamento.id,
-          numeroBoleto: boletoResult.numeroBoleto,
-          dataVencimento: boletoResult.dataVencimento,
-          valorBoleto: toDecimal(valorTotal),
-          valorAtualizado: toDecimal(valorTotal),
-          statusPagamento: 'pendente',
-          linkPdf: boletoResult.linkPdf,
-          pixCopiaCola: boletoResult.pixCopiaCola,
-          pixQrCodeUrl: boletoResult.pixQrCodeUrl,
-          provedor: boletoResult.provedor,
-          referenciaExterna: boletoResult.referenciaExterna,
-        },
-      });
+      for (const boleto of boletoResults) {
+        await tx.boleto.create({
+          data: {
+            faturamentoId: faturamento.id,
+            numeroBoleto: boleto.numeroBoleto,
+            dataVencimento: boleto.dataVencimento,
+            valorBoleto: toDecimal(boleto.valor),
+            valorAtualizado: toDecimal(boleto.valor),
+            statusPagamento: 'pendente',
+            linkPdf: boleto.linkPdf,
+            pixCopiaCola: boleto.pixCopiaCola,
+            pixQrCodeUrl: boleto.pixQrCodeUrl,
+            provedor: boleto.provedor,
+            referenciaExterna: boleto.referenciaExterna,
+          },
+        });
+      }
 
+      const primeiro = boletoResults[0]!;
       await tx.fatura.update({
         where: { id: fatura.id },
         data: {
           faturamentoId: faturamento.id,
-          dataVencimento: boletoResult.dataVencimento,
+          dataVencimento: primeiro.dataVencimento,
           valorAtualizado: toDecimal(valorTotal),
           linkNfse: linkNfse ?? null,
-          linkBoleto: boletoResult.linkPdf,
-          linkPix: boletoResult.pixQrCodeUrl || boletoResult.pixCopiaCola,
+          linkBoleto: primeiro.linkPdf,
+          linkPix: primeiro.pixQrCodeUrl || primeiro.pixCopiaCola,
           numeroRps: fiscalResult.rpsNumero,
           serieRps: fiscalResult.rpsSerie,
           statusPagamento: statusFinal,
@@ -234,7 +262,10 @@ export class NfseBoletoOutboxProcessor {
         },
       });
 
-      return { faturamentoId: faturamento.id, numeroBoleto: boletoResult.numeroBoleto };
+      return {
+        faturamentoId: faturamento.id,
+        numeroBoleto: boletoResults.map((b) => b.numeroBoleto).join(','),
+      };
     });
 
     await this.auditoria.registrar({
@@ -246,9 +277,10 @@ export class NfseBoletoOutboxProcessor {
         outboxId,
         faturamentoId,
         linkNfse,
-        linkBoleto: boletoResult.linkPdf,
-        linkPix: boletoResult.pixQrCodeUrl,
+        linkBoleto: boletoResults[0]?.linkPdf,
+        linkPix: boletoResults[0]?.pixQrCodeUrl,
         numeroBoleto,
+        parcelas: boletoResults.length,
         nfsePendente,
         valorTotal,
       },
@@ -267,6 +299,45 @@ export class NfseBoletoOutboxProcessor {
         dedupeKey: `financeiro:${outboxId}`,
       });
     }
+  }
+
+  /** Calendário de boletos do prazo efetivo (pendente opera à vista). */
+  private async obterParcelasCliente(
+    cliente: {
+      prazoPagamento: string | null;
+      tenantId: string;
+      statusCadastro?: StatusCadastroCliente | null;
+    },
+    emissao: Date,
+    valorTotal: number,
+  ): Promise<ParcelaFinanceira[]> {
+    const prazo = prazoEfetivoCadastro(cliente.statusCadastro, cliente.prazoPagamento);
+    if (!prazo) return [];
+    const config = await this.prisma.tenantConfig.findFirst({
+      where: {
+        OR: [
+          { tenantId: cliente.tenantId },
+          { tenantKey: cliente.tenantId === DEFAULT_TENANT_ID ? 'default' : cliente.tenantId },
+        ],
+      },
+      select: { id: true },
+    });
+    const row = config
+      ? await this.prisma.condicaoPagamentoPersonalizada.findFirst({
+          where: { tenantId: config.id, tipo: 'PRAZO', value: prazo, ativo: true },
+          select: { vencimentos: true, dias: true },
+        })
+      : null;
+    const vencimentos =
+      row?.vencimentos?.length
+        ? row.vencimentos
+        : row?.dias != null
+          ? [row.dias]
+          : prazo === 'A_VISTA'
+            ? [0]
+            : [];
+    if (!vencimentos.length) return [];
+    return montarParcelasFinanceiras({ emissao, valorTotal, vencimentos });
   }
 
   /** Valida certificado A1 no tenant ou variável NFSE_IPM_CERT_PATH (staging/produção). */

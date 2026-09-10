@@ -36,7 +36,7 @@ export class PlataformaTenantController {
   constructor(private readonly tenants: PlataformaTenantStore) {}
 
   @Post()
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @Permissions('plataforma:tenant:write')
   @ApiOperation({ summary: 'Criar terminal / tenant (memória — Fase 18)' })
   async criar(@Body() dto: CriarTenantDto) {
@@ -45,7 +45,7 @@ export class PlataformaTenantController {
   }
 
   @Get()
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @Permissions('plataforma:tenant:read')
   @ApiOperation({ summary: 'Listar tenants' })
   async listar() {
@@ -53,7 +53,7 @@ export class PlataformaTenantController {
   }
 
   @Get(':id/config')
-  @Roles(Role.ADMIN, Role.GERENTE)
+  @Roles(Role.ADMIN, Role.GERENTE, Role.SUPER_ADMIN)
   @Permissions('plataforma:tenant:read')
   @ApiOperation({ summary: 'Configuração isolada do terminal (SLA, horários, regras)' })
   async config(@Param('id') id: string) {

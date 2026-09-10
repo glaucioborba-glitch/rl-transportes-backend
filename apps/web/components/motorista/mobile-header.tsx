@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogOut, Menu } from "lucide-react";
 import { useState } from "react";
-import { clearMotoristaSessionCookie } from "@/lib/auth-motorista-cookie";
+import { revokeMotoristaSessionCookie } from "@/lib/auth-motorista-cookie";
 import { useMotoristaAuthStore } from "@/stores/motorista-auth-store";
 import { cn } from "@/lib/utils";
 
@@ -23,7 +23,7 @@ export function MobileHeader({ title, subtitle }: { title: string; subtitle?: st
 
   function logout() {
     clear();
-    clearMotoristaSessionCookie();
+    void revokeMotoristaSessionCookie();
     router.replace("/motorista/login");
   }
 

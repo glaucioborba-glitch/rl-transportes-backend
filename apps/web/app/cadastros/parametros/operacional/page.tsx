@@ -165,7 +165,7 @@ export default function ParametrosOperacionalPage() {
       <ParametrosTabs />
 
       <FormSection title="Capacidade e Horário" icon={Settings}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="flex flex-wrap gap-4">
           <FormField label="Capacidade total (slots)" required>
             <div className="flex gap-2">
               <Input
@@ -211,7 +211,7 @@ export default function ParametrosOperacionalPage() {
             </p>
           </FormField>
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="mt-4 flex flex-wrap gap-4">
           <FormField label="Horário de abertura" required>
             <Input
               type="time"
@@ -263,7 +263,7 @@ export default function ParametrosOperacionalPage() {
       </FormSection>
 
       <FormSection title="Free Time e TAT" icon={Timer}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="flex flex-wrap gap-4">
           <FormField label="Free time padrão (dias)" required>
             <Input
               type="number"
@@ -275,7 +275,7 @@ export default function ParametrosOperacionalPage() {
             />
           </FormField>
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="mt-4 flex flex-wrap gap-4">
           <FormField label="TAT alvo — Entrada (min)">
             <Input
               type="number"
@@ -312,7 +312,7 @@ export default function ParametrosOperacionalPage() {
       </FormSection>
 
       <FormSection title="Tolerância de chegada" icon={Timer}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="flex flex-wrap gap-4">
           <FormField label="Tipo">
             <select
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
@@ -367,7 +367,7 @@ export default function ParametrosOperacionalPage() {
       </FormSection>
 
       <FormSection title="Agendamentos" icon={Calendar}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="flex flex-wrap gap-4">
           <FormField label="Limite de agendamentos por turno (legado)" required>
             <Input
               type="number"
@@ -431,7 +431,7 @@ export default function ParametrosOperacionalPage() {
       </FormSection>
 
       {canEdit ? (
-        <div className="sticky bottom-0 flex justify-end gap-2 border-t border-border bg-background/95 py-4">
+        <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={() => setForm(data?.operacional ?? form)}>
             Cancelar
           </Button>

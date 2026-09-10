@@ -5,8 +5,6 @@ import {
   TipoOperacaoAgendamento,
 } from '@prisma/client';
 
-export const TRANSPORTE_SOLICITADO_EVENT = 'transporte.solicitado';
-
 export type TransporteSolicitadoPayload = {
   agendamentoId: string;
   clienteId: string;

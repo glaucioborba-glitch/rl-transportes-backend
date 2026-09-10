@@ -112,7 +112,7 @@ export default function SolicitacoesPage() {
   });
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8">
+    <main className="mx-auto w-[90%] px-4 py-8">
       <SectionTitle
         title="Solicitações"
         description="GET /cliente/portal/solicitacoes — paginação e filtros no backend (camada CX)."

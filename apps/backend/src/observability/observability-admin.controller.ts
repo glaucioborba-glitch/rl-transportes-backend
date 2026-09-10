@@ -17,7 +17,7 @@ import type { LatencySample } from './metrics.service';
 @ApiBearerAuth('access-token')
 @Controller('admin/observability')
 @UseGuards(AuthGuard('jwt'), RolesGuard, ObservabilityRateLimitGuard)
-@Roles(Role.ADMIN)
+@Roles(Role.ADMIN, Role.SUPER_ADMIN)
 export class ObservabilityAdminController {
   constructor(
     private readonly performance: ObservabilityPerformanceService,

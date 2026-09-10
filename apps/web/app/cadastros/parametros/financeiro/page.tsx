@@ -76,7 +76,7 @@ export default function ParametrosFinanceiroPage() {
   };
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="space-y-6">
       <ParametrosBreadcrumb current="Financeiro" />
       <div>
         <h1 className="text-2xl font-bold">Parâmetros Gerais</h1>
@@ -87,8 +87,8 @@ export default function ParametrosFinanceiroPage() {
       <ParametrosTabs />
 
       <FormSection title="Parâmetros Financeiros" icon={DollarSign}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Dias tolerância bloqueio padrão">
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Dias tolerância bloqueio padrão" size="md">
             <Input
               type="number"
               min={0}

@@ -13,9 +13,11 @@ import type { CxPortalRequestUser } from '../cx-portais/types/cx-portal.types';
 import { ContainerTimelineService } from './container-timeline.service';
 import { Iso6346ParamPipe } from './iso6346-param.pipe';
 import { ArmazenagemBillingService } from '../armazenagem-faturamento/armazenagem-billing.service';
+import { Public } from '../common/decorators/public.decorator';
 
 @ApiTags('Container Timeline (Portal Cliente)')
 @ApiBearerAuth()
+@Public()
 @Controller('client/container')
 @UseGuards(
   CxPortalPublicApiForbidGuard,

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { AcaoAuditoria, Prisma } from '@prisma/client';
@@ -9,6 +10,12 @@ import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { validateCnpjDigits } from '../common/utils/br-documents';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { clienteTemPapelTransportador, defaultClientePapeis } from './cliente-papeis.util';
+import {
+  mapClienteToTransportadoraStub,
+  mergeDadosTransportadoraFromCliente,
+  type ClienteParaTransportadora,
+} from './cliente-transportadora-sync.util';
 import { CadastrosTransportadoraFormDto } from './dto/cadastros-transportadora-form.dto';
 import { CadastrosTransportadoraQueryDto } from './dto/cadastros-transportadora-query.dto';
 
@@ -35,12 +42,16 @@ type TransportadoraRow = Prisma.CadastroTransportadoraGetPayload<{
 
 @Injectable()
 export class CadastrosTransportadorasService {
+  private readonly logger = new Logger(CadastrosTransportadorasService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditoriaService: AuditoriaService,
   ) {}
 
   async list(query: CadastrosTransportadoraQueryDto, _actor: AuthUser) {
+    await this.ensureFromClientesComPapelTransportador();
+
     const page = query.page && query.page > 0 ? query.page : 1;
     const pageSize = query.limit && query.limit > 0 ? query.limit : PAGE_SIZE;
     const status = query.status ?? 'ativas';
@@ -73,7 +84,7 @@ export class CadastrosTransportadorasService {
       ];
     }
 
-    const [rows, total] = await Promise.all([
+    const [rows, total, vinculos] = await Promise.all([
       this.prisma.cadastroTransportadora.findMany({
         where,
         skip,
@@ -88,10 +99,19 @@ export class CadastrosTransportadorasService {
         },
       }),
       this.prisma.cadastroTransportadora.count({ where }),
+      this.prisma.cliente.findMany({
+        where: {
+          deletedAt: null,
+          papeis: { has: 'TRANSPORTADOR' },
+        },
+        select: { id: true, cpfCnpj: true },
+      }),
     ]);
 
+    const clienteByCnpj = new Map(vinculos.map((c) => [c.cpfCnpj, c.id]));
+
     return {
-      items: rows.map((r) => this.toListItem(r)),
+      items: rows.map((r) => this.toListItem(r, clienteByCnpj.get(r.cnpj) ?? null)),
       total,
       page,
       pageSize,
@@ -167,6 +187,8 @@ export class CadastrosTransportadorasService {
       return row;
     });
 
+    await this.ensureClientePapelTransportador(cnpj);
+
     return this.toFormShape(await this.getRowOrThrow(created.id));
   }
 
@@ -209,6 +231,8 @@ export class CadastrosTransportadorasService {
       );
       return row;
     });
+
+    await this.ensureClientePapelTransportador(cnpj);
 
     return this.toFormShape(await this.getRowOrThrow(updated.id));
   }
@@ -262,6 +286,110 @@ export class CadastrosTransportadorasService {
           row.dadosDepois as Record<string, unknown> | null,
         ),
       };
+    });
+  }
+
+  /** Cliente com papel Transportador vira (ou atualiza) a ficha operacional, pelo CNPJ. */
+  async upsertFromCliente(
+    cliente: ClienteParaTransportadora & { papeis?: unknown },
+    opts?: { reativar?: boolean },
+  ) {
+    if (!clienteTemPapelTransportador(cliente.papeis)) {
+      return null;
+    }
+    const reativar = opts?.reativar !== false;
+    const stub = mapClienteToTransportadoraStub(cliente);
+    if (!stub.cnpj || stub.cnpj.length !== 14 || !stub.razaoSocial) return null;
+
+    const existing = await this.prisma.cadastroTransportadora.findFirst({
+      where: { tenantId: stub.tenantId, cnpj: stub.cnpj },
+    });
+
+    const dadosBase = existing
+      ? mergeDadosTransportadoraFromCliente(
+          (existing.dados as Record<string, unknown>) ?? {},
+          stub.dadosFromCliente,
+        )
+      : {
+          celular: stub.dadosFromCliente.celular,
+          cep: stub.dadosFromCliente.cep,
+          endereco: stub.dadosFromCliente.endereco,
+          numero: stub.dadosFromCliente.numero,
+          complemento: stub.dadosFromCliente.complemento,
+          bairro: stub.dadosFromCliente.bairro,
+          frotaTotal: 0,
+          tiposVeiculo: [],
+          rotasAutorizadas: [],
+          condicaoPagamento: stub.dadosFromCliente.condicaoPagamento,
+          observacoes: '',
+        };
+
+    if (!existing) {
+      return this.prisma.cadastroTransportadora.create({
+        data: {
+          tenantId: stub.tenantId,
+          razaoSocial: stub.razaoSocial,
+          nomeFantasia: stub.nomeFantasia,
+          cnpj: stub.cnpj,
+          ie: stub.ie,
+          email: stub.email,
+          telefone: stub.telefone,
+          cidade: stub.cidade,
+          uf: stub.uf,
+          ativo: true,
+          deletedAt: null,
+          dados: dadosBase as Prisma.InputJsonValue,
+        },
+      });
+    }
+
+    if (!reativar) return existing;
+
+    return this.prisma.cadastroTransportadora.update({
+      where: { id: existing.id },
+      data: {
+        razaoSocial: stub.razaoSocial,
+        nomeFantasia: stub.nomeFantasia ?? existing.nomeFantasia,
+        ie: stub.ie ?? existing.ie,
+        email: stub.email ?? existing.email,
+        telefone: stub.telefone ?? existing.telefone,
+        cidade: stub.cidade ?? existing.cidade,
+        uf: stub.uf ?? existing.uf,
+        ativo: true,
+        deletedAt: null,
+        dados: dadosBase as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  async ensureFromClientesComPapelTransportador() {
+    const clientes = await this.prisma.cliente.findMany({
+      where: { deletedAt: null, papeis: { has: 'TRANSPORTADOR' } },
+    });
+    for (const cliente of clientes) {
+      try {
+        await this.upsertFromCliente(cliente, { reativar: false });
+      } catch (err) {
+        this.logger.warn(
+          `Não foi possível espelhar cliente ${cliente.id} na aba Transportadoras: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+  }
+
+  private async ensureClientePapelTransportador(cnpj: string) {
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { cpfCnpj: cnpj, deletedAt: null },
+      select: { id: true, papeis: true },
+    });
+    if (!cliente) return;
+    const papeis = defaultClientePapeis(cliente.papeis);
+    if (papeis.includes('TRANSPORTADOR')) return;
+    await this.prisma.cliente.update({
+      where: { id: cliente.id },
+      data: { papeis: [...papeis, 'TRANSPORTADOR'] },
     });
   }
 
@@ -347,7 +475,7 @@ export class CadastrosTransportadorasService {
     };
   }
 
-  private toListItem(row: TransportadoraRow) {
+  private toListItem(row: TransportadoraRow, clienteId: string | null = null) {
     const dados = (row.dados ?? {}) as Record<string, unknown>;
     return {
       id: row.id,
@@ -363,6 +491,7 @@ export class CadastrosTransportadorasService {
       motoristasAtivos: row._count.motoristas,
       frotaTotal: (dados.frotaTotal as number) ?? 0,
       solicitacoesMes: 0,
+      clienteId,
     };
   }
 

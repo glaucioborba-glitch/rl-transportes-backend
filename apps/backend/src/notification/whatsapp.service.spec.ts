@@ -9,7 +9,18 @@ describe('WhatsappService.checkTemplateStatus', () => {
         return undefined;
       }),
     } as unknown as ConfigService;
-    const svc = new WhatsappService(config);
+    const integrationCreds = {
+      peekWhatsapp: () => ({ enabled: false }),
+      resolveWhatsapp: async () => ({
+        enabled: false,
+        configured: false,
+        origem: 'none',
+        lockedByEnv: false,
+        accessTokenPresent: false,
+        businessAccountIdPresent: false,
+      }),
+    };
+    const svc = new WhatsappService(config, integrationCreds as never);
     const r = await svc.checkTemplateStatus('dunning_pre_vencimento');
     expect(r.approved).toBe(true);
     expect(r.status).toBe('sandbox');

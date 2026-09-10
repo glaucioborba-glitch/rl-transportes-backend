@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Loader2, Save, X } from "lucide-react";
-import { FormField, FormSection } from "@/components/cadastros/form-field";
+import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/staff-client";
@@ -120,10 +120,10 @@ export function TurnoForm({ turnoId }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-2xl space-y-8">
+    <form onSubmit={handleSubmit} className={CADASTRO_FORM_CLASS}>
       <FormSection title="Turno de Operação" icon={Clock}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Código" required>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Código" required size="sm">
             <Input
               value={formData.codigo}
               onChange={(e) =>
@@ -133,28 +133,28 @@ export function TurnoForm({ turnoId }: Props) {
               className="font-mono"
             />
           </FormField>
-          <FormField label="Nome" required>
+          <FormField label="Nome" required className="min-w-[12rem] flex-1">
             <Input
               value={formData.nome}
               onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
               placeholder="Ex: Manhã, Tarde, Noite"
             />
           </FormField>
-          <FormField label="Hora Início" required>
+          <FormField label="Hora Início" required size="sm">
             <Input
               type="time"
               value={formData.horaInicio}
               onChange={(e) => setFormData({ ...formData, horaInicio: e.target.value })}
             />
           </FormField>
-          <FormField label="Hora Fim" required>
+          <FormField label="Hora Fim" required size="sm">
             <Input
               type="time"
               value={formData.horaFim}
               onChange={(e) => setFormData({ ...formData, horaFim: e.target.value })}
             />
           </FormField>
-          <FormField label="Capacidade Máxima">
+          <FormField label="Capacidade Máxima" size="sm">
             <Input
               type="number"
               min={1}
@@ -179,7 +179,7 @@ export function TurnoForm({ turnoId }: Props) {
               Turno ativo
             </label>
           </FormField>
-          <FormField label="Dias da Semana" required className="md:col-span-2">
+          <FormField label="Dias da Semana" required className="min-w-[16rem] flex-[2]">
             <div className="flex flex-wrap gap-2">
               {DIAS_SEMANA.map((dia) => {
                 const selected = formData.diasSemana.includes(dia.value);

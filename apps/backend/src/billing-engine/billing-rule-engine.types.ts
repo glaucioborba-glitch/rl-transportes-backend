@@ -13,6 +13,8 @@ export type ContainerBillingContext = {
   refrigerado?: boolean;
   setPoint?: number | null;
   statusContainer?: StatusContainerTarifa | null;
+  /** Após transbordo / troca cheio↔vazio, handling usa tarifa CHEIO. */
+  faturarHandlingComoCheio?: boolean;
 };
 
 export type BillingRuleEngineInput = {
@@ -31,8 +33,12 @@ export type BillingRuleEngineInput = {
   pricingOverrides?: {
     diasFreeTime?: number;
     valorDiaria?: number;
+    valorHandling?: number;
     valorEnergiaReefer?: number;
+    /** Quando a tarifa vem da tabela comercial, não aplica fator de set point. */
+    energiaUsaFatorSetPoint?: boolean;
     faixasDiaria?: FaixaDiaria[];
+    faixasEnergiaReefer?: FaixaDiaria[];
   };
   operacaoFimSemana?: boolean;
   feriadosDatas?: string[];
@@ -42,6 +48,8 @@ export type ItemFaturaCalculado = {
   regraTarifariaId: string | null;
   eventoGatilho: EventoGatilhoTarifa;
   descricao: string;
+  /** Detalhe por faixa, reutilizado em simulação e fatura. */
+  detalheCobranca?: string;
   quantidade: number;
   valorUnitario: number;
   valorTotal: number;
@@ -68,12 +76,6 @@ export type RegraTarifariaLike = Pick<
   | 'nome'
 > &
   Partial<Pick<RegraTarifaria, 'tipoContainerCodigo' | 'capacidadeCodigo' | 'containerTamanho' | 'faixasDiaria'>>;
-
-export type LegacyTarifaLike = {
-  freeTimeDias: number;
-  valorDiaria: number;
-  valorServicosExtras?: number;
-};
 
 export type ContainerMdmKeys = {
   tipoCodigo?: string | null;

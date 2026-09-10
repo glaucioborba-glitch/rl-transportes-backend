@@ -12,6 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SessionService } from '../auth/session/session.service';
 import { parseDurationToSeconds } from '../auth/session/session.util';
 import type { CxPortalRequestUser } from '../cx-portais/types/cx-portal.types';
+import { assertClienteDoTenant } from '../cx-portais/portal-cliente-tenant.util';
 import { CreatePessoaAutorizadaDto } from './dto/create-pessoa-autorizada.dto';
 import { UpdatePessoaAutorizadaDto } from './dto/update-pessoa-autorizada.dto';
 import { toPessoaSession } from './pessoa-context.util';
@@ -39,8 +40,11 @@ export class PessoasAutorizadasService {
     );
   }
 
-  assertClienteAccess(cx: CxPortalRequestUser, clienteId: string): void {
-    if (cx.portalPapel === 'STAFF') return;
+  async assertClienteAccess(cx: CxPortalRequestUser, clienteId: string): Promise<void> {
+    if (cx.portalPapel === 'STAFF') {
+      await assertClienteDoTenant(this.prisma, cx.tenantId, clienteId);
+      return;
+    }
     if (cx.portalPapel !== 'CLIENTE' || cx.clienteId !== clienteId) {
       throw new ForbiddenException('Acesso negado a pessoas autorizadas deste cliente.');
     }
@@ -76,7 +80,7 @@ export class PessoasAutorizadasService {
   }
 
   async listarPorCliente(cx: CxPortalRequestUser, clienteId: string, apenasAtivas = false) {
-    this.assertClienteAccess(cx, clienteId);
+    await this.assertClienteAccess(cx, clienteId);
     return this.prisma.pessoaAutorizada.findMany({
       where: {
         clienteId,
@@ -89,7 +93,7 @@ export class PessoasAutorizadasService {
   async remover(cx: CxPortalRequestUser, id: string) {
     const row = await this.prisma.pessoaAutorizada.findUnique({ where: { id } });
     if (!row) throw new NotFoundException('Pessoa autorizada não encontrada');
-    this.assertClienteAccess(cx, row.clienteId);
+    await this.assertClienteAccess(cx, row.clienteId);
     await this.prisma.pessoaAutorizada.delete({ where: { id } });
     return { ok: true as const };
   }
@@ -97,7 +101,7 @@ export class PessoasAutorizadasService {
   async atualizar(cx: CxPortalRequestUser, id: string, dto: UpdatePessoaAutorizadaDto) {
     const row = await this.prisma.pessoaAutorizada.findUnique({ where: { id } });
     if (!row) throw new NotFoundException('Pessoa autorizada não encontrada');
-    this.assertClienteAccess(cx, row.clienteId);
+    await this.assertClienteAccess(cx, row.clienteId);
 
     const data: { ativo?: boolean; email?: string; telefone?: string | null } = {};
     if (dto.ativo !== undefined) data.ativo = dto.ativo;

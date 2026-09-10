@@ -23,6 +23,7 @@ import { CxPortalRateLimitGuard } from './guards/cx-portal-rate-limit.guard';
 import { PortalCxInterceptor } from './interceptors/portal-cx.interceptor';
 import { PortalTicketsStore } from './stores/portal-tickets.store';
 import type { CxPortalRequestUser } from './types/cx-portal.types';
+import { assertTenantDaSessao } from './portal-cliente-tenant.util';
 
 class NovoTicketDto {
   @ApiProperty()
@@ -88,7 +89,7 @@ export class PortalComunicacaoController {
   ) {
     const cx = this.u(req);
     if (cx.portalPapel === 'STAFF') {
-      const tid = tenantId?.trim() || cx.tenantId;
+      const tid = assertTenantDaSessao(cx, tenantId);
       return await this.tickets.listar({ tenantId: tid });
     }
     return await this.tickets.listar({ tenantId: cx.tenantId, autorSub: cx.sub });
@@ -104,6 +105,9 @@ export class PortalComunicacaoController {
     const cx = this.u(req);
     const t = await this.tickets.obter(id);
     if (!t) throw new NotFoundException('Ticket não encontrado');
+    if (t.tenantId !== cx.tenantId) {
+      throw new NotFoundException('Ticket não encontrado');
+    }
     if (cx.portalPapel !== 'STAFF' && t.autorSub !== cx.sub) {
       throw new NotFoundException('Ticket não encontrado');
     }

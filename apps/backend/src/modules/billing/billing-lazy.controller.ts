@@ -10,7 +10,7 @@ import { BillingLazyLoaderService } from './billing-lazy-loader.service';
 @ApiBearerAuth('access-token')
 @Controller('admin/platform')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
-@Roles(Role.ADMIN)
+@Roles(Role.ADMIN, Role.SUPER_ADMIN)
 export class BillingLazyController {
   constructor(private readonly loader: BillingLazyLoaderService) {}
 

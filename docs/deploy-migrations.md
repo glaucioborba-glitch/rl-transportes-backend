@@ -15,7 +15,7 @@ Checklist para staging e produção. CI já executa `prisma migrate deploy` em D
 |-------|------------|---------|
 | Core | `20260415213744` … `20260522120000` | Base operacional |
 | Portal/CX | `20260515120000`, `20260628120000`, `20260629180000`, `20260909120000` | Cadastro financeiro |
-| Billing/TOS | `20260630120000`, `20260719120000`, `20260731120000` | Rule engine, hardening, dunning |
+| Billing | `20260630120000`, `20260719120000`, `20260731120000`, `20260907200000` | Rule engine, hardening, dunning, drop TOS legado |
 | Persistência | `20260720000000`, `20260720120000`, `20260727120000` | Stores, Datahub MVs, hold-release |
 | MDM/Cadastros | `20261103120000` … `20261118120000` | Colaboradores, operacional, financeiro |
 | Operacao fluxo | `20261106120000`, `20261028120000` | Gate CPO, onboarding |

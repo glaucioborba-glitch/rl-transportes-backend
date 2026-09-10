@@ -6,6 +6,7 @@ import { RedisService } from '../../redis/redis.service';
 import { PlataformaTenantStore } from '../../plataforma-integracao/stores/plataforma-tenant.store';
 import { HoldReleaseService } from '../../hold-release/hold-release.service';
 import type { CxPortalRequestUser } from '../types/cx-portal.types';
+import { assertClienteDoTenant } from '../portal-cliente-tenant.util';
 import {
   avaliarSlaOperacional,
   decToNumber,
@@ -17,6 +18,11 @@ import {
   prevMonthBoundsUtc,
   type SlaHorasOperacionais,
 } from './dashboard-portal-metrics.util';
+import {
+  cadastroPermiteSolicitacoes,
+  formaEfetivaCadastro,
+  prazoEfetivoCadastro,
+} from '../../cadastro-financeiro/cadastro-operacao-inicial';
 
 export type DashboardPortalOptions = {
   recentPage?: number;
@@ -123,6 +129,7 @@ export type DashboardPortalConsolidated = {
   statusCadastro: StatusCadastroCliente | null;
   validacaoDominio: ValidacaoDominio | null;
   condicaoPagamento: string | null;
+  prazoPagamento: string | null;
   cadastroOperacionalLiberado: boolean;
 };
 
@@ -155,12 +162,12 @@ export class DashboardPortalService {
     private readonly holdRelease: HoldReleaseService,
   ) {}
 
-  private clientScope(cx: CxPortalRequestUser, clienteIdParam?: string): string {
+  private async clientScope(cx: CxPortalRequestUser, clienteIdParam?: string): Promise<string> {
     if (cx.portalPapel === 'STAFF') {
       if (!clienteIdParam) {
         throw new BadRequestException('Parâmetro clienteId obrigatório para visão ADMIN/GERENTE');
       }
-      return clienteIdParam;
+      return assertClienteDoTenant(this.prisma, cx.tenantId, clienteIdParam);
     }
     if (!cx.clienteId) {
       throw new BadRequestException('Usuário portal sem vínculo de cliente');
@@ -597,6 +604,7 @@ export class DashboardPortalService {
       statusCadastro: null,
       validacaoDominio: null,
       condicaoPagamento: null,
+      prazoPagamento: null,
       cadastroOperacionalLiberado: false,
     };
   }
@@ -608,13 +616,15 @@ export class DashboardPortalService {
         statusCadastro: true,
         validacaoDominio: true,
         condicaoPagamento: true,
+        prazoPagamento: true,
       },
     });
     return {
       statusCadastro: c?.statusCadastro ?? null,
       validacaoDominio: c?.validacaoDominio ?? null,
-      condicaoPagamento: c?.condicaoPagamento ?? null,
-      cadastroOperacionalLiberado: c?.statusCadastro === StatusCadastroCliente.APROVADO,
+      condicaoPagamento: formaEfetivaCadastro(c?.statusCadastro, c?.condicaoPagamento),
+      prazoPagamento: prazoEfetivoCadastro(c?.statusCadastro, c?.prazoPagamento),
+      cadastroOperacionalLiberado: cadastroPermiteSolicitacoes(c?.statusCadastro),
     };
   }
 
@@ -623,13 +633,13 @@ export class DashboardPortalService {
     clienteIdParam?: string,
     opts?: DashboardPortalOptions,
   ): Promise<DashboardPortalConsolidated> {
-    const clienteId = this.clientScope(cx, clienteIdParam);
+    const clienteId = await this.clientScope(cx, clienteIdParam);
     const page = Math.max(1, opts?.recentPage ?? 1);
     const limit = Math.min(100, Math.max(1, opts?.recentLimit ?? 8));
     const skip = (page - 1) * limit;
 
     try {
-      const cacheKey = `cxportal:dash:v3:${clienteId}:${clienteIdParam ?? 'self'}:${page}:${limit}`;
+      const cacheKey = `cxportal:dash:v4:${clienteId}:${clienteIdParam ?? 'self'}:${page}:${limit}`;
       try {
         const hit = await this.redis.get(cacheKey);
         if (hit) {

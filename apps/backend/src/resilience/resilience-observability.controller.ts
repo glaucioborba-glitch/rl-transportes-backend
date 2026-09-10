@@ -12,7 +12,7 @@ import { ResilienceMetricsService } from './resilience-metrics.service';
 @ApiBearerAuth('access-token')
 @Controller('admin/observability')
 @UseGuards(AuthGuard('jwt'), RolesGuard, ObservabilityRateLimitGuard)
-@Roles(Role.ADMIN)
+@Roles(Role.ADMIN, Role.SUPER_ADMIN)
 export class ResilienceObservabilityController {
   constructor(
     private readonly circuit: CircuitBreakerService,

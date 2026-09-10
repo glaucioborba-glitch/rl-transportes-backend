@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Save, Wallet, X } from "lucide-react";
-import { FormField, FormSection } from "@/components/cadastros/form-field";
+import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/staff-client";
@@ -112,10 +112,10 @@ export function CentroCustoForm({ centroId }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mx-auto max-w-2xl space-y-8">
+    <form onSubmit={handleSubmit} className={CADASTRO_FORM_CLASS}>
       <FormSection title="Dados do Centro" icon={Wallet}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Código" required>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Código" required size="md">
             <Input
               value={formData.codigo}
               onChange={(e) =>
@@ -125,14 +125,14 @@ export function CentroCustoForm({ centroId }: Props) {
               className="font-mono"
             />
           </FormField>
-          <FormField label="Nome" required>
+          <FormField label="Nome" required className="min-w-[14rem] flex-1">
             <Input
               value={formData.nome}
               onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
               placeholder="Ex: Operacional, Gate CPO"
             />
           </FormField>
-          <FormField label="Tipo">
+          <FormField label="Tipo" className="min-w-[14rem] flex-1">
             <select
               className={SELECT_CLASS}
               value={formData.tipo}
@@ -142,7 +142,7 @@ export function CentroCustoForm({ centroId }: Props) {
               <option value="SINTETICO">Sintético (agrupa filhos)</option>
             </select>
           </FormField>
-          <FormField label="Centro Pai (opcional)">
+          <FormField label="Centro Pai (opcional)" className="min-w-[14rem] flex-1">
             <select
               className={SELECT_CLASS}
               value={formData.paiId}
@@ -156,7 +156,7 @@ export function CentroCustoForm({ centroId }: Props) {
               ))}
             </select>
           </FormField>
-          <FormField label="Descrição" className="md:col-span-2">
+          <FormField label="Descrição" className="min-w-[16rem] flex-[2]">
             <Input
               value={formData.descricao}
               onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
@@ -178,7 +178,7 @@ export function CentroCustoForm({ centroId }: Props) {
         </FormField>
       </FormSection>
 
-      <div className="sticky bottom-0 flex gap-3 border-t border-border bg-background/95 p-4 backdrop-blur">
+      <div className="flex gap-3">
         <Button type="button" variant="outline" onClick={() => router.back()}>
           <X className="mr-2 h-4 w-4" />
           Cancelar

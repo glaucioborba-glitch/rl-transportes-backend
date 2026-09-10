@@ -4,7 +4,13 @@ export const OPCOES_CONDICAO_PAGAMENTO = [
   { label: "À Vista PIX", value: "AVISTA_PIX" },
 ] as const;
 
-export type CondicaoPagamentoOption = { label: string; value: string };
+export type CondicaoPagamentoOption = {
+  label: string;
+  value: string;
+  dias?: number | null;
+  vencimentos?: number[];
+  formaVinculada?: string | null;
+};
 
 export async function fetchCondicoesPagamento(apiBase: string, token: string) {
   const res = await fetch(`${apiBase}/financeiro/cadastros-pendentes/condicoes-pagamento`, {
@@ -63,6 +69,32 @@ export function labelCondicaoPagamento(
   return fromApi ?? LABELS[value] ?? value;
 }
 
+export const PRAZOS_PAGAMENTO = [
+  { label: "À vista", value: "A_VISTA", dias: 0, vencimentos: [0], formaVinculada: "AVISTA_PIX" },
+  { label: "30 dias", value: "30_DIAS", dias: 30, vencimentos: [30], formaVinculada: "FATURAMENTO" },
+  { label: "30/60 dias", value: "30_60", dias: 30, vencimentos: [30, 60], formaVinculada: "FATURAMENTO" },
+  { label: "30/60/90 dias", value: "30_60_90", dias: 30, vencimentos: [30, 60, 90], formaVinculada: "FATURAMENTO" },
+  { label: "Personalizado", value: "PERSONALIZADO", dias: 30, vencimentos: [30], formaVinculada: "FATURAMENTO" },
+] as const;
+
+export function labelPrazoPagamento(value: string | null | undefined): string {
+  if (!value) return "—";
+  return PRAZOS_PAGAMENTO.find((o) => o.value === value)?.label ?? value;
+}
+
+/** Prazos cuja forma vinculada bate com a forma escolhida (cadastro financeiro). */
+export function prazosDaForma<T extends { formaVinculada?: string | null }>(
+  prazos: T[],
+  forma: string,
+): T[] {
+  const formaNorm = forma.trim();
+  if (!formaNorm || !prazos.length) return prazos;
+  const vinculados = prazos.filter((p) => (p.formaVinculada ?? "").trim() === formaNorm);
+  if (vinculados.length) return vinculados;
+  const semVinculo = prazos.filter((p) => !(p.formaVinculada ?? "").trim());
+  return semVinculo.length ? semVinculo : prazos;
+}
+
 export function descricaoCondicaoPagamento(value: string | null | undefined): string | null {
   if (value === "AVISTA_PIX" || value === "PIX" || value === "FATURAMENTO_PIX") {
     return "Pagamento via PIX à vista";
@@ -71,4 +103,35 @@ export function descricaoCondicaoPagamento(value: string | null | undefined): st
     return "Faturamento conforme condições contratuais";
   }
   return null;
+}
+
+export function textoCondicaoVigente(opts: {
+  statusCadastro?: "PENDENTE_ANALISE_FINANCEIRA" | "APROVADO" | "REJEITADO" | null;
+  condicaoPagamento?: string | null;
+  prazoPagamento?: string | null;
+}): { titulo: string; descricao: string } {
+  const status = opts.statusCadastro ?? null;
+  if (status === "PENDENTE_ANALISE_FINANCEIRA") {
+    return {
+      titulo: "À vista · PIX",
+      descricao:
+        "Seu cadastro está em análise pela área financeira (prazo de até 48 horas). Até a conclusão, as solicitações seguem com pagamento à vista via PIX, com quitação antes da coleta.",
+    };
+  }
+  if (status === "REJEITADO") {
+    return {
+      titulo: "Cadastro não aprovado",
+      descricao:
+        "A análise financeira não aprovou o cadastro neste momento. Entre em contato com o financeiro da RL Transportes.",
+    };
+  }
+  const formaL = labelCondicaoPagamento(opts.condicaoPagamento);
+  const prazoL = labelPrazoPagamento(opts.prazoPagamento);
+  const titulo = prazoL !== "—" ? `${formaL} · ${prazoL}` : formaL;
+  const descricao =
+    descricaoCondicaoPagamento(opts.condicaoPagamento) ??
+    (status === "APROVADO"
+      ? "Condição comercial aprovada pela área financeira da RL Transportes."
+      : "Condição de pagamento vigente para as suas solicitações.");
+  return { titulo, descricao };
 }

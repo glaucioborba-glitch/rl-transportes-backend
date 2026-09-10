@@ -1,6 +1,8 @@
-/** Modo cookies HttpOnly portal (rl_pat / rl_prt) via BFF Next `/api/portal/*`. */
+/** Cookies HttpOnly do portal (rl_pat / rl_prt) via BFF Next `/api/portal/*`. */
 export function isPortalCookieAuthMode(): boolean {
-  return process.env.NEXT_PUBLIC_PORTAL_COOKIE_AUTH === "1";
+  if (process.env.NEXT_PUBLIC_PORTAL_COOKIE_AUTH === "0") return false;
+  if (process.env.NEXT_PUBLIC_PORTAL_COOKIE_AUTH === "1") return true;
+  return process.env.NODE_ENV === "production";
 }
 
 /** Sessão válida: JWT em memória ou cookie HttpOnly + user hidratado. */

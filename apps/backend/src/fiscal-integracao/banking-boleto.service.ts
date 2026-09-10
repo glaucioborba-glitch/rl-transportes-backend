@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Cliente, Fatura } from '@prisma/client';
+import { IntegrationCredentialsService } from '../tenant/integration-credentials.service';
 import { RetriableOutboxError } from '../outbox/outbox.errors';
 import type { BoletoRegistroResult } from './fiscal-integracao.types';
 
@@ -8,21 +9,21 @@ import type { BoletoRegistroResult } from './fiscal-integracao.types';
 export class BankingBoletoService {
   private readonly logger = new Logger(BankingBoletoService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly integrationCreds: IntegrationCredentialsService,
+  ) {}
 
   isConfigured(): boolean {
-    const provider = this.config.get<string>('banking.provider', { infer: true }) ?? 'sandbox';
-    if (provider === 'sandbox') return false;
-    const base = this.config.get<string>('banking.apiBaseUrl', { infer: true }) ?? '';
-    const token = this.config.get<string>('banking.apiToken', { infer: true }) ?? '';
-    return base.length > 0 && token.length > 0;
+    return this.integrationCreds.peekBanking().configured;
   }
 
   async testConnection(): Promise<{ ok: boolean; message: string; latencyMs?: number }> {
-    if (!this.isConfigured()) {
+    const banking = await this.integrationCreds.resolveBanking();
+    if (!banking.configured) {
       return { ok: false, message: 'Banking API não configurada (modo sandbox)' };
     }
-    const baseUrl = this.config.get<string>('banking.apiBaseUrl', { infer: true })!;
+    const baseUrl = banking.apiBaseUrl!;
     const start = Date.now();
     try {
       const res = await fetch(`${baseUrl.replace(/\/$/, '')}/health`, {
@@ -44,48 +45,69 @@ export class BankingBoletoService {
     }
   }
 
-  private sandboxResult(fatura: Fatura, vencimento: Date): BoletoRegistroResult {
+  private sandboxResult(
+    fatura: Fatura,
+    vencimento: Date,
+    parcela?: { indice: number; total: number },
+  ): BoletoRegistroResult {
     const base = this.config.get<string>('banking.sandboxPublicBaseUrl', { infer: true }) ?? '/portal/financeiro';
     const ref = fatura.id.slice(0, 8).toUpperCase();
+    const parcelaTag = parcela ? `${parcela.indice}de${parcela.total}` : Date.now().toString().slice(-6);
     return {
-      numeroBoleto: `SBX-${ref}-${Date.now().toString().slice(-6)}`,
+      numeroBoleto: `SBX-${ref}-${parcelaTag}-${Date.now().toString().slice(-6)}`,
       linkPdf: `${base}?boleto=${fatura.id}`,
       pixCopiaCola: `00020126580014br.gov.bcb.pix0136${fatura.id.replace(/-/g, '')}5204000053039865802BR5913RL Transportes6009Navegantes62070503***6304ABCD`,
       pixQrCodeUrl: `${base}?pix=${fatura.id}`,
       dataVencimento: vencimento,
       provedor: 'sandbox',
-      referenciaExterna: fatura.id,
+      referenciaExterna: parcela ? `${fatura.id}-${parcela.indice}` : fatura.id,
     };
   }
 
   async registrarBoleto(
     fatura: Fatura,
     cliente: Cliente,
-    ctx: { gateOutAt: Date; containerIso: string },
+    ctx: {
+      gateOutAt: Date;
+      containerIso: string;
+      diasVencimento?: number;
+      vencimento?: Date;
+      valor?: number;
+      parcela?: { indice: number; total: number };
+    },
   ): Promise<BoletoRegistroResult> {
-    const dias = Number(this.config.get<number>('banking.vencimentoDias', { infer: true }) ?? 7) || 7;
-    const vencimento = new Date(ctx.gateOutAt);
-    vencimento.setDate(vencimento.getDate() + dias);
+    const dias = Number(ctx.diasVencimento ?? this.config.get<number>('banking.vencimentoDias', { infer: true }) ?? 7) || 7;
+    const vencimento = ctx.vencimento
+      ? new Date(ctx.vencimento)
+      : (() => {
+          const d = new Date(ctx.gateOutAt);
+          d.setUTCDate(d.getUTCDate() + dias);
+          return d;
+        })();
+    const valor = ctx.valor ?? Number(fatura.valorTotal);
 
-    if (!this.isConfigured()) {
+    const banking = await this.integrationCreds.resolveBanking();
+    if (!banking.configured) {
       this.logger.warn('Banking API não configurada — sandbox boleto/PIX');
-      return this.sandboxResult(fatura, vencimento);
+      return this.sandboxResult(fatura, vencimento, ctx.parcela);
     }
 
-    const baseUrl = this.config.get<string>('banking.apiBaseUrl', { infer: true })!;
-    const token = this.config.get<string>('banking.apiToken', { infer: true })!;
-    const provider = this.config.get<string>('banking.provider', { infer: true }) ?? 'api';
+    const baseUrl = banking.apiBaseUrl!;
+    const token = banking.apiToken!;
+    const provider = banking.provider || 'api';
 
     const body = {
       referencia: fatura.id,
-      valor: Number(fatura.valorTotal),
+      valor,
       vencimento: vencimento.toISOString().slice(0, 10),
       pagador: {
         nome: cliente.razaoSocial,
         documento: cliente.cpfCnpj.replace(/\D/g, ''),
         email: cliente.emailNfse ?? cliente.email,
       },
-      descricao: `Armazenagem ${ctx.containerIso}`,
+      descricao: ctx.parcela
+        ? `Armazenagem ${ctx.containerIso} (${ctx.parcela.indice}/${ctx.parcela.total})`
+        : `Armazenagem ${ctx.containerIso}`,
       pix: true,
     };
 

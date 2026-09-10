@@ -9,6 +9,7 @@ import { Role, TenantStatus } from '@prisma/client';
 import { Observable } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantContextService } from './tenant-context.service';
+import { resolveRequestTenant } from './resolve-request-tenant.util';
 
 type AuthUser = {
   role?: Role;
@@ -24,10 +25,12 @@ export class TenantInterceptor implements NestInterceptor {
   ) {}
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
-    const req = context.switchToHttp().getRequest<{ user?: AuthUser; tenantId?: string }>();
-    const user = req.user;
-    const role = user?.role;
-    const tenantId = user?.tenantId ?? req.tenantId ?? 'default';
+    const req = context.switchToHttp().getRequest<{
+      user?: AuthUser;
+      cxUser?: { tenantId?: string; staffRole?: Role; portalPapel?: string };
+      tenantId?: string;
+    }>();
+    const { tenantId, role } = resolveRequestTenant(req);
 
     if (role && role !== Role.SUPER_ADMIN) {
       const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });

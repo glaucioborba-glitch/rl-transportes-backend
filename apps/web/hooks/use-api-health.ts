@@ -14,7 +14,7 @@ const HEALTH_TIMEOUT_MS = 5_000;
 export async function pingApiHealth(): Promise<boolean> {
   const base = getApiBase();
   try {
-    const res = await fetch(`${base}/health/diagnostic`, {
+    const res = await fetch(`${base}/health`, {
       method: "GET",
       signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
       cache: "no-store",

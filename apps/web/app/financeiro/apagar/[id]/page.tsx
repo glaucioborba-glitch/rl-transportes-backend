@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
@@ -86,9 +85,6 @@ export default function ApagarDetalhePage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
-        <Link href="/financeiro/apagar" className="text-sm text-amber-500 hover:underline">
-          ← Voltar
-        </Link>
         <h1 className="text-xl font-bold text-white">Lançamento {fat.periodo}</h1>
         <FinanceStatusBadge status={fat.statusBoleto} />
       </div>

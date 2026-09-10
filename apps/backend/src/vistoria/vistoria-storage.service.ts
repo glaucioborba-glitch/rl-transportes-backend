@@ -45,6 +45,14 @@ export class VistoriaStorageService {
     return this.storage.readLocal(NAMESPACE, storageKey);
   }
 
+  verifyLocalMediaAccess(storageKey: string, exp?: string, sig?: string): boolean {
+    return this.storage.verifyLocalMediaAccess(storageKey, exp, sig);
+  }
+
+  refreshReadUrl(storageKey: string): Promise<string> {
+    return this.storage.resolveReadUrl(storageKey);
+  }
+
   async deleteObjects(storageKeys: string[]): Promise<void> {
     await this.storage.deleteKeys(storageKeys);
   }

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { IntegrationCredentialsService } from '../tenant/integration-credentials.service';
 import { RetriableOutboxError } from '../outbox/outbox.errors';
 import { maskPhoneE164 } from './whatsapp-phone.util';
 import type { WhatsappSendResult, WhatsappTemplateSendParams } from './whatsapp.types';
@@ -8,7 +9,10 @@ import type { WhatsappSendResult, WhatsappTemplateSendParams } from './whatsapp.
 export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly integrationCreds: IntegrationCredentialsService,
+  ) {}
 
   /** Templates de dunning exigidos quando WhatsApp está habilitado. */
   static readonly DUNNING_TEMPLATES = [
@@ -19,7 +23,7 @@ export class WhatsappService {
   ] as const;
 
   isEnabled(): boolean {
-    return this.config.get<boolean>('whatsapp.enabled') === true;
+    return this.integrationCreds.peekWhatsapp().enabled;
   }
 
   /**
@@ -27,9 +31,10 @@ export class WhatsappService {
    * Quando desabilitado, registra em log (sandbox) sem falhar o fluxo.
    */
   async sendTemplate(params: WhatsappTemplateSendParams): Promise<WhatsappSendResult> {
-    const enabled = this.isEnabled();
-    const token = this.config.get<string>('whatsapp.accessToken')?.trim() ?? '';
-    const phoneNumberId = this.config.get<string>('whatsapp.phoneNumberId')?.trim() ?? '';
+    const wa = await this.integrationCreds.resolveWhatsapp();
+    const enabled = wa.enabled;
+    const token = wa.accessToken ?? '';
+    const phoneNumberId = wa.phoneNumberId ?? '';
     const provider = this.config.get<string>('whatsapp.provider') ?? 'meta';
 
     const preview = `[${params.templateName}] → ${maskPhoneE164(params.toE164)} | ${params.bodyParameters.join(' | ')}`;
@@ -101,13 +106,14 @@ export class WhatsappService {
 
   /** Verifica conectividade / credenciais Meta. */
   async probeHealth(): Promise<{ ok: boolean; message: string }> {
-    if (!this.isEnabled()) {
+    const wa = await this.integrationCreds.resolveWhatsapp();
+    if (!wa.enabled) {
       return { ok: false, message: 'WhatsApp desabilitado' };
     }
-    const token = this.config.get<string>('whatsapp.accessToken')?.trim() ?? '';
-    const phoneNumberId = this.config.get<string>('whatsapp.phoneNumberId')?.trim() ?? '';
+    const token = wa.accessToken ?? '';
+    const phoneNumberId = wa.phoneNumberId ?? '';
     if (!token || !phoneNumberId) {
-      return { ok: false, message: 'WHATSAPP_ACCESS_TOKEN ou WHATSAPP_PHONE_NUMBER_ID ausente' };
+      return { ok: false, message: 'Token ou Phone Number ID do WhatsApp ausente' };
     }
     const tpl = await this.checkTemplateStatus(WhatsappService.DUNNING_TEMPLATES[0]);
     return {
@@ -120,14 +126,15 @@ export class WhatsappService {
   async checkTemplateStatus(
     templateName: string,
   ): Promise<{ approved: boolean; status?: string; reason?: string }> {
-    if (!this.isEnabled()) {
+    const wa = await this.integrationCreds.resolveWhatsapp();
+    if (!wa.enabled) {
       return { approved: true, status: 'sandbox', reason: 'WhatsApp desabilitado' };
     }
 
-    const token = this.config.get<string>('whatsapp.accessToken')?.trim() ?? '';
-    const wabaId = this.config.get<string>('whatsapp.businessAccountId')?.trim() ?? '';
+    const token = wa.accessToken ?? '';
+    const wabaId = wa.businessAccountId ?? '';
     if (!token || !wabaId) {
-      return { approved: false, reason: 'WHATSAPP_ACCESS_TOKEN ou WHATSAPP_BUSINESS_ACCOUNT_ID ausente' };
+      return { approved: false, reason: 'Token ou Business Account ID do WhatsApp ausente' };
     }
 
     const base = this.config.get<string>('whatsapp.apiBaseUrl') ?? 'https://graph.facebook.com/v19.0';

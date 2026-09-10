@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Calendar, Forklift, Loader2, Save, Wrench, X } from "lucide-react";
-import { FormField, FormSection } from "@/components/cadastros/form-field";
+import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/staff-client";
@@ -80,14 +80,14 @@ export function EquipamentoForm({ equipamentoId }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-3xl space-y-8">
+    <form onSubmit={handleSubmit} className={CADASTRO_FORM_CLASS}>
       <p className="text-sm text-muted-foreground">
         O vínculo com o operador é feito no login do operador, não neste cadastro.
       </p>
 
       <FormSection title="Identificação" icon={Forklift}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <FormField label="Código Interno" required>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Código Interno" required size="md">
             <Input
               value={formData.codigo}
               onChange={(e) =>
@@ -97,7 +97,7 @@ export function EquipamentoForm({ equipamentoId }: Props) {
               className="font-mono"
             />
           </FormField>
-          <FormField label="Tipo" required>
+          <FormField label="Tipo" required className="min-w-[14rem] flex-1">
             <select
               value={formData.tipo}
               onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
@@ -110,7 +110,7 @@ export function EquipamentoForm({ equipamentoId }: Props) {
               <option value="EMPILHADEIRA_LATERAL">Empilhadeira Lateral</option>
             </select>
           </FormField>
-          <FormField label="Status">
+          <FormField label="Status" size="md">
             <select
               value={formData.status}
               onChange={(e) => setFormData({ ...formData, status: e.target.value })}
@@ -122,21 +122,21 @@ export function EquipamentoForm({ equipamentoId }: Props) {
               <option value="INATIVO">Inativo</option>
             </select>
           </FormField>
-          <FormField label="Marca">
+          <FormField label="Marca" className="min-w-[10rem] flex-1">
             <Input
               value={formData.marca}
               onChange={(e) => setFormData({ ...formData, marca: e.target.value })}
               placeholder="Ex: Toyota, Kalmar"
             />
           </FormField>
-          <FormField label="Modelo">
+          <FormField label="Modelo" className="min-w-[10rem] flex-1">
             <Input
               value={formData.modelo}
               onChange={(e) => setFormData({ ...formData, modelo: e.target.value })}
               placeholder="Ex: 8FDU15"
             />
           </FormField>
-          <FormField label="Centro de Custo">
+          <FormField label="Centro de Custo" size="md">
             <Input
               value={formData.centroCusto}
               onChange={(e) => setFormData({ ...formData, centroCusto: e.target.value })}
@@ -147,8 +147,8 @@ export function EquipamentoForm({ equipamentoId }: Props) {
       </FormSection>
 
       <FormSection title="Especificações Técnicas" icon={Wrench}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <FormField label="Capacidade Máxima (t)">
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Capacidade Máxima (t)" size="sm">
             <Input
               type="number"
               step="0.5"
@@ -157,7 +157,7 @@ export function EquipamentoForm({ equipamentoId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Altura Máxima (m)">
+          <FormField label="Altura Máxima (m)" size="sm">
             <Input
               type="number"
               step="0.1"
@@ -166,7 +166,7 @@ export function EquipamentoForm({ equipamentoId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Horímetro Atual (h)">
+          <FormField label="Horímetro Atual (h)" size="sm">
             <Input
               type="number"
               value={formData.horimetro}
@@ -183,15 +183,15 @@ export function EquipamentoForm({ equipamentoId }: Props) {
       </FormSection>
 
       <FormSection title="Manutenção" icon={Calendar}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Última Manutenção">
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Última Manutenção" size="md">
             <Input
               type="date"
               value={formData.ultimaManutencao}
               onChange={(e) => setFormData({ ...formData, ultimaManutencao: e.target.value })}
             />
           </FormField>
-          <FormField label="Próxima Manutenção Preventiva">
+          <FormField label="Próxima Manutenção Preventiva" size="md">
             <Input
               type="date"
               value={formData.proximaManutencao}

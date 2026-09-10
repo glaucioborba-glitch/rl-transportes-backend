@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { staffJson } from "@/lib/api/staff-client";
 import { fetchRhColaboradorById } from "@/lib/rh/merge-directory";
@@ -77,9 +76,6 @@ export default function RhColaboradorDetailPage() {
   if (!row) {
     return (
       <div className="space-y-4">
-        <Link href="/rh/colaboradores" className="text-sm text-cyan-400 hover:underline">
-          ← Voltar
-        </Link>
         <p className="text-zinc-400">Colaborador não encontrado.</p>
       </div>
     );
@@ -93,9 +89,6 @@ export default function RhColaboradorDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link href="/rh/colaboradores" className="text-sm text-cyan-400 hover:underline">
-        ← Colaboradores
-      </Link>
       <div>
         <h1 className="text-2xl font-bold text-white">{row.nome}</h1>
         <p className="text-sm text-zinc-500">

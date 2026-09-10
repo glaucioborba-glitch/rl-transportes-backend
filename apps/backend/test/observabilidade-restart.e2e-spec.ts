@@ -8,7 +8,7 @@ process.env.REDIS_OPTIONAL = '0';
 import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
+import request = require('supertest');
 import * as bcrypt from 'bcrypt';
 import { Role } from '@prisma/client';
 import { AppModule } from '../src/app.module';

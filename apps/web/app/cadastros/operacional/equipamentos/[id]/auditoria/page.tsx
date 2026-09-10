@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Edit, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useWidgetData, WidgetError } from "@/components/ui/widget-error";
@@ -13,7 +12,6 @@ type Props = {
 };
 
 export default function AuditoriaEquipamentoPage({ params }: Props) {
-  const router = useRouter();
   const { data: historico, loading, error, refetch } = useWidgetData(
     () => fetchCadastrosEquipamentoAuditoria(params.id),
     [params.id],
@@ -21,9 +19,6 @@ export default function AuditoriaEquipamentoPage({ params }: Props) {
 
   return (
     <div className="space-y-6">
-      <Button type="button" variant="ghost" size="sm" onClick={() => router.back()}>
-        ← Voltar
-      </Button>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Auditoria do Equipamento</h1>

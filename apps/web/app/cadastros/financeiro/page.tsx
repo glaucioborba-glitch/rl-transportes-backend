@@ -10,7 +10,7 @@ export default function FinanceiroPage() {
       <div>
         <h1 className="text-2xl font-bold">Financeiro</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Bloco 3 completo — Bancos, Centros de Custo, Plano de Contas e Tabelas de Preços
+          Bancos, centros de custo, plano de contas, tabelas de preços, tabela de transportes, serviços, aluguel e forma/prazo
         </p>
       </div>
 
@@ -30,6 +30,18 @@ export default function FinanceiroPage() {
             className="text-[var(--accent)] hover:underline"
           >
             Tabelas de Preços
+          </Link>{" "}
+          ou{" "}
+          <Link href="/cadastros/financeiro/transportes" className="text-[var(--accent)] hover:underline">
+            Tabela de transportes
+          </Link>{" "}
+          ou{" "}
+          <Link href="/cadastros/financeiro/servicos" className="text-[var(--accent)] hover:underline">
+            Serviços
+          </Link>{" "}
+          ou{" "}
+          <Link href="/cadastros/financeiro/aluguel" className="text-[var(--accent)] hover:underline">
+            Aluguel
           </Link>
           .
         </p>

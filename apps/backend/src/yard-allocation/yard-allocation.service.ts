@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { EventoGatilhoTarifa, GiroEstimado, Prisma, TipoOperacaoSolicitacaoIntent } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { resolveBillingTabelaPrecoIdPadrao } from '../cadastros/cadastro-tabela-preco-vigente';
 
 const MS_PER_DAY = 86_400_000;
 const DEFAULT_FREE_TIME_DIAS = 7;
@@ -72,17 +73,24 @@ export class YardAllocationService {
       return cliente.tabelaPreco.regras[0].diasFreeTime;
     }
 
-    const padrao = await db.tabelaPreco.findFirst({
-      where: { tenantId: cliente?.tenantId ?? 'default', padrao: true, ativa: true },
-      include: {
-        regras: {
-          where: { ativa: true, eventoGatilho: EventoGatilhoTarifa.DIARIA_ARMAZENAGEM },
-          take: 1,
+    const billingId = await resolveBillingTabelaPrecoIdPadrao(
+      this.prisma,
+      cliente?.tenantId ?? 'default',
+    );
+    if (billingId) {
+      const padrao = await db.tabelaPreco.findFirst({
+        where: { id: billingId, ativa: true },
+        include: {
+          regras: {
+            where: { ativa: true, eventoGatilho: EventoGatilhoTarifa.DIARIA_ARMAZENAGEM },
+            take: 1,
+          },
         },
-      },
-    });
+      });
+      return padrao?.regras[0]?.diasFreeTime ?? DEFAULT_FREE_TIME_DIAS;
+    }
 
-    return padrao?.regras[0]?.diasFreeTime ?? DEFAULT_FREE_TIME_DIAS;
+    return DEFAULT_FREE_TIME_DIAS;
   }
 
   async applyGiroEstimado(

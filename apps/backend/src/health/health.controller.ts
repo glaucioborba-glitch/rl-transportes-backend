@@ -1,5 +1,10 @@
-import { Controller, Get, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
+import { Public } from '../common/decorators/public.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { RolesGuard } from '../common/guards/roles.guard';
 import {
   HealthCheck,
   HealthCheckResult,
@@ -35,6 +40,7 @@ export class HealthController {
    * Retorna 503 se alguma dependência crítica estiver down (load balancer / K8s).
    */
   @Get()
+  @Public()
   @HealthCheck()
   @ApiOperation({ summary: 'Health check Terminus (DB, Redis, IPM)' })
   async check(): Promise<HealthCheckResult> {
@@ -47,6 +53,7 @@ export class HealthController {
 
   /** Health check proativo PostgreSQL (latência + conexões ativas). */
   @Get('db')
+  @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Saúde do pool PostgreSQL (latência e conexões)' })
   async dbPoolHealth() {
@@ -54,10 +61,13 @@ export class HealthController {
     return { timestamp: new Date().toISOString(), ...result };
   }
 
-  /** Payload legado + security engine — sempre 200 (diagnóstico operacional). */
+  /** Diagnóstico operacional — só staff (não usar em probe de load balancer). */
   @Get('diagnostic')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @ApiBearerAuth('access-token')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.SUPER_ADMIN)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Diagnóstico estendido (não derruba load balancer)' })
+  @ApiOperation({ summary: 'Diagnóstico estendido (autenticado)' })
   async diagnostic(): Promise<UnifiedHealthResponse> {
     const timestamp = new Date().toISOString();
     let database: 'ok' | 'offline' = 'offline';
@@ -110,10 +120,12 @@ export class HealthController {
     };
   }
 
-  /** Status dos CRONs monitorados (última execução por jobId). */
   @Get('crons')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @ApiBearerAuth('access-token')
+  @Roles(Role.ADMIN, Role.GERENTE, Role.SUPER_ADMIN)
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Última execução dos CRONs (Redis-backed)' })
+  @ApiOperation({ summary: 'Última execução dos CRONs (autenticado)' })
   async crons() {
     return { timestamp: new Date().toISOString(), jobs: await this.cronAlert.getStatuses() };
   }

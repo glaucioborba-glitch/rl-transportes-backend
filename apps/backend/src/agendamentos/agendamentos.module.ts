@@ -4,7 +4,6 @@ import { AuditoriaModule } from '../auditoria/auditoria.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ServicosLogisticosModule } from '../servicos-logisticos/servicos-logisticos.module';
 import { TenantModule } from '../tenant/tenant.module';
-import { TosEventsModule } from '../tos/tos-events.module';
 import { AgendamentosController } from './agendamentos.controller';
 import { AgendamentosService } from './agendamentos.service';
 
@@ -14,7 +13,6 @@ import { AgendamentosService } from './agendamentos.service';
     AuditoriaModule,
     AuditContextModule,
     ServicosLogisticosModule,
-    TosEventsModule,
     TenantModule,
   ],
   controllers: [AgendamentosController],

@@ -168,6 +168,7 @@ async function main() {
     'LADO_TRASEIRO',
     'LADO_DIREITO',
     'LADO_ESQUERDO',
+    'LACRE',
   ].map((tipo) => ({
     tipo,
     imagem: MINIMAL_PNG,

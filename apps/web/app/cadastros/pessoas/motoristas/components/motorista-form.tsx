@@ -14,7 +14,7 @@ import {
   User,
   X,
 } from "lucide-react";
-import { FormField, FormSection } from "@/components/cadastros/form-field";
+import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/staff-client";
@@ -165,24 +165,24 @@ export function MotoristaForm({ motoristaId }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-4xl space-y-8">
+    <form onSubmit={handleSubmit} className={CADASTRO_FORM_CLASS}>
       <FormSection title="Dados Pessoais" icon={User}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <FormField label="Nome Completo" required className="md:col-span-2">
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Nome Completo" required className="min-w-[16rem] flex-[2]">
             <Input
               value={formData.nome}
               onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
               placeholder="Ex: Carlos Eduardo Ferreira"
             />
           </FormField>
-          <FormField label="Data de Nascimento">
+          <FormField label="Data de Nascimento" size="md">
             <Input
               type="date"
               value={formData.dataNascimento}
               onChange={(e) => setFormData({ ...formData, dataNascimento: e.target.value })}
             />
           </FormField>
-          <FormField label="CPF" required>
+          <FormField label="CPF" required size="md">
             <div className="flex gap-2">
               <Input
                 value={formatCPF(formData.cpf)}
@@ -198,7 +198,7 @@ export function MotoristaForm({ motoristaId }: Props) {
               ) : null}
             </div>
           </FormField>
-          <FormField label="RG">
+          <FormField label="RG" size="md">
             <Input
               value={formData.rg}
               onChange={(e) => setFormData({ ...formData, rg: e.target.value })}
@@ -210,8 +210,8 @@ export function MotoristaForm({ motoristaId }: Props) {
       </FormSection>
 
       <FormSection title="Transportadora" icon={Truck}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Transportadora Vinculada" required>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Transportadora Vinculada" required className="min-w-[16rem] flex-1">
             <select
               value={formData.transportadoraId}
               onChange={(e) =>
@@ -236,8 +236,8 @@ export function MotoristaForm({ motoristaId }: Props) {
       </FormSection>
 
       <FormSection title="Carteira Nacional de Habilitação (CNH)" icon={IdCard}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <FormField label="Número da CNH" required>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Número da CNH" required size="md">
             <Input
               value={formData.cnhNumero}
               onChange={(e) => setFormData({ ...formData, cnhNumero: e.target.value })}
@@ -245,7 +245,7 @@ export function MotoristaForm({ motoristaId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Categoria" required>
+          <FormField label="Categoria" required size="sm">
             <select
               value={formData.cnhCategoria}
               onChange={(e) => setFormData({ ...formData, cnhCategoria: e.target.value })}
@@ -263,14 +263,14 @@ export function MotoristaForm({ motoristaId }: Props) {
               <option value="AE">AE</option>
             </select>
           </FormField>
-          <FormField label="Validade" required>
+          <FormField label="Validade" required size="md">
             <Input
               type="date"
               value={formData.cnhValidade}
               onChange={(e) => setFormData({ ...formData, cnhValidade: e.target.value })}
             />
           </FormField>
-          <FormField label="UF Emissão">
+          <FormField label="UF Emissão" size="xs">
             <Input
               value={formData.cnhUfEmissao}
               onChange={(e) =>
@@ -297,8 +297,9 @@ export function MotoristaForm({ motoristaId }: Props) {
       </FormSection>
 
       <FormSection title="Endereço" icon={MapPin}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <FormField label="CEP">
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-4">
+          <FormField label="CEP" size="sm">
             <Input
               value={formatCEP(formData.cep)}
               onChange={(e) => setFormData({ ...formData, cep: e.target.value.replace(/\D/g, "") })}
@@ -307,49 +308,52 @@ export function MotoristaForm({ motoristaId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Endereço" className="md:col-span-2">
+          <FormField label="Endereço" className="min-w-[16rem] flex-[3]">
             <Input
               value={formData.endereco}
               onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
             />
           </FormField>
-          <FormField label="Número">
+          <FormField label="Número" size="sm">
             <Input
               value={formData.numero}
               onChange={(e) => setFormData({ ...formData, numero: e.target.value })}
             />
           </FormField>
-          <FormField label="Complemento">
+          </div>
+          <div className="flex flex-wrap gap-4">
+          <FormField label="Complemento" className="min-w-[10rem] flex-1">
             <Input
               value={formData.complemento}
               onChange={(e) => setFormData({ ...formData, complemento: e.target.value })}
             />
           </FormField>
-          <FormField label="Bairro">
+          <FormField label="Bairro" className="min-w-[10rem] flex-1">
             <Input
               value={formData.bairro}
               onChange={(e) => setFormData({ ...formData, bairro: e.target.value })}
             />
           </FormField>
-          <FormField label="Cidade">
+          <FormField label="Cidade" className="min-w-[10rem] flex-1">
             <Input
               value={formData.cidade}
               onChange={(e) => setFormData({ ...formData, cidade: e.target.value })}
             />
           </FormField>
-          <FormField label="UF">
+          <FormField label="UF" size="xs">
             <Input
               value={formData.uf}
               onChange={(e) => setFormData({ ...formData, uf: e.target.value.toUpperCase() })}
               maxLength={2}
             />
           </FormField>
+          </div>
         </div>
       </FormSection>
 
       <FormSection title="Contato" icon={Phone}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Celular">
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Celular" size="md">
             <Input
               value={formatPhone(formData.celular)}
               onChange={(e) =>
@@ -359,7 +363,7 @@ export function MotoristaForm({ motoristaId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Telefone">
+          <FormField label="Telefone" size="md">
             <Input
               value={formatPhone(formData.telefone)}
               onChange={(e) =>
@@ -369,7 +373,7 @@ export function MotoristaForm({ motoristaId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="E-mail">
+          <FormField label="E-mail" className="min-w-[16rem] flex-[2]">
             <Input
               type="email"
               value={formData.email}
@@ -402,7 +406,7 @@ export function MotoristaForm({ motoristaId }: Props) {
         </label>
       </div>
 
-      <div className="sticky bottom-0 -mx-6 flex gap-3 border-t border-border bg-background/95 p-4 backdrop-blur">
+      <div className="flex gap-3">
         <Button type="button" variant="outline" onClick={() => router.back()}>
           <X className="mr-2 h-4 w-4" /> Cancelar
         </Button>

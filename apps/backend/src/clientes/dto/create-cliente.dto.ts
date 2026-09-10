@@ -15,6 +15,8 @@ import {
   Min,
   Max,
   IsNumber,
+  IsArray,
+  IsIn,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { TipoCliente } from '@prisma/client';
@@ -270,4 +272,21 @@ export class CreateClienteDto {
   @Transform(({ value }) => (value === '' || value === null ? null : value))
   @IsString()
   tabelaPrecoId?: string | null;
+
+  @ApiProperty({
+    required: false,
+    type: [String],
+    example: ['CLIENTE'],
+    description: 'Relação comercial: CLIENTE e/ou TRANSPORTADOR.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsIn(['CLIENTE', 'TRANSPORTADOR'], { each: true })
+  papeis?: string[];
+
+  @ApiProperty({ required: false, description: 'Condição comercial de pagamento.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  condicaoPagamento?: string;
 }

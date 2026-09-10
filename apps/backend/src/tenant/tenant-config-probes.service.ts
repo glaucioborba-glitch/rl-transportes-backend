@@ -5,6 +5,7 @@ import { BankingBoletoService } from '../fiscal-integracao/banking-boleto.servic
 import { ObjectStorageService } from '../common/storage/object-storage.service';
 import { OCRService } from '../modules/ocr/ocr.service';
 import { WhatsappService } from '../notification/whatsapp.service';
+import { IntegrationCredentialsService } from './integration-credentials.service';
 import type { TenantParametrosIntegracoes, WhatsAppTemplateStatus } from './tenant-config.types';
 
 export type IntegrationTestResult = {
@@ -22,34 +23,50 @@ export class TenantConfigProbesService {
     private readonly storage: ObjectStorageService,
     private readonly ocr: OCRService,
     private readonly whatsapp: WhatsappService,
+    private readonly integrationCreds: IntegrationCredentialsService,
   ) {}
 
   buildIntegracoesStatus(): TenantParametrosIntegracoes {
-    const waEnabled = this.whatsapp.isEnabled();
-    const phoneNumberId = this.config.get<string>('whatsapp.phoneNumberId')?.trim();
-    const bankingProvider = this.config.get<string>('banking.provider') ?? 'sandbox';
-    const bucket = process.env.AWS_S3_BUCKET?.trim();
-    const endpoint =
-      process.env.STORAGE_ENDPOINT ?? process.env.S3_ENDPOINT ?? process.env.R2_ENDPOINT;
+    const google = this.integrationCreds.peekGoogleVision();
+    const wa = this.integrationCreds.peekWhatsapp();
+    const banking = this.integrationCreds.peekBanking();
+    const s3 = this.integrationCreds.peekS3();
 
     return {
       whatsapp: {
-        enabled: waEnabled && Boolean(this.config.get<string>('whatsapp.accessToken')?.trim()),
-        phoneNumberId: phoneNumberId || undefined,
+        enabled: wa.configured,
+        configured: wa.configured,
+        origem: wa.origem,
+        lockedByEnv: wa.lockedByEnv,
+        phoneNumberId: wa.phoneNumberId,
         templatesAprovados: 0,
+        accessTokenPresent: wa.accessTokenPresent,
+        businessAccountIdPresent: wa.businessAccountIdPresent,
       },
       googleVision: {
-        enabled: this.ocr.isGoogleVisionAvailable(),
-        apiKeyPresent: this.ocr.isGoogleVisionAvailable(),
+        enabled: google.configured,
+        configured: google.configured,
+        origem: google.origem,
+        lockedByEnv: google.lockedByEnv,
+        apiKeyPresent: google.configured,
+        clientEmail: google.clientEmail ?? (google.apiKey ? 'API key' : undefined),
       },
       banking: {
-        enabled: this.banking.isConfigured(),
-        provider: bankingProvider,
+        enabled: banking.configured,
+        configured: banking.configured,
+        origem: banking.origem,
+        lockedByEnv: banking.lockedByEnv,
+        provider: banking.provider,
+        apiBaseUrl: banking.apiBaseUrl,
       },
       s3: {
-        enabled: this.storage.usesS3(),
-        bucket: bucket || undefined,
-        endpoint: endpoint || undefined,
+        enabled: s3.configured || this.storage.usesS3(),
+        configured: s3.configured || this.storage.usesS3(),
+        origem: s3.origem !== 'none' ? s3.origem : this.storage.usesS3() ? 'env' : 'none',
+        lockedByEnv: s3.lockedByEnv || this.storage.usesS3(),
+        bucket: s3.bucket,
+        endpoint: s3.endpoint,
+        region: s3.region,
       },
     };
   }

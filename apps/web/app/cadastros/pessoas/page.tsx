@@ -1,55 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { Database } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-
-const TABS = [
-  { label: "Clientes", href: "/cadastros/pessoas/clientes", implemented: true },
-  { label: "Colaboradores", href: "/cadastros/pessoas/colaboradores", implemented: true },
-  { label: "Transportadoras", href: "/cadastros/pessoas/transportadoras", implemented: true },
-  { label: "Motoristas", href: "/cadastros/pessoas/motoristas", implemented: true },
-  { label: "Fornecedores", href: null, implemented: false },
-  { label: "Visitantes", href: null, implemented: false },
-] as const;
+import { PessoasTabs } from "./components/pessoas-tabs";
 
 export default function PessoasPage() {
-  const pathname = usePathname();
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Pessoas & Entidades</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Clientes, Colaboradores, Motoristas, Transportadoras, Fornecedores, Visitantes
+          Clientes, Colaboradores, Motoristas, Transportadoras, Terceiros, Fornecedores, Visitantes
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2 border-b border-border pb-2">
-        {TABS.map((tab) => {
-          const active = tab.href ? pathname.startsWith(tab.href) : false;
-          if (tab.implemented && tab.href) {
-            return (
-              <Button
-                key={tab.label}
-                variant="ghost"
-                size="sm"
-                className={cn("text-sm", active && "bg-[var(--accent)]/10 text-[var(--accent)]")}
-                asChild
-              >
-                <Link href={tab.href}>{tab.label}</Link>
-              </Button>
-            );
-          }
-          return (
-            <Button key={tab.label} variant="ghost" size="sm" className="text-sm" disabled>
-              {tab.label}
-            </Button>
-          );
-        })}
-      </div>
+      <PessoasTabs />
 
       <div className="flex h-[50vh] flex-col items-center justify-center gap-3">
         <Database className="h-12 w-12 text-muted-foreground/30" />
@@ -57,27 +22,31 @@ export default function PessoasPage() {
           Selecione uma sub-entidade acima ou acesse{" "}
           <Link href="/cadastros/pessoas/clientes" className="text-[var(--accent)] hover:underline">
             Clientes
-          </Link>{" "}
-          /{" "}
+          </Link>
+          {", "}
           <Link
             href="/cadastros/pessoas/colaboradores"
             className="text-[var(--accent)] hover:underline"
           >
             Colaboradores
           </Link>
-          ,{" "}
+          {", "}
           <Link
             href="/cadastros/pessoas/transportadoras"
             className="text-[var(--accent)] hover:underline"
           >
             Transportadoras
-          </Link>{" "}
-          ou{" "}
+          </Link>
+          {", "}
           <Link
             href="/cadastros/pessoas/motoristas"
             className="text-[var(--accent)] hover:underline"
           >
             Motoristas
+          </Link>{" "}
+          ou{" "}
+          <Link href="/cadastros/pessoas/terceiros" className="text-[var(--accent)] hover:underline">
+            Terceiros
           </Link>
           .
         </p>

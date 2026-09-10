@@ -28,11 +28,19 @@ import { formatContainerISO } from "@/utils/containerFormatter";
 import { isJanelaExecucao } from "@/utils/janelaExecucao";
 import { usePortalTiposContainer } from "@/hooks/use-portal-tipos-container";
 import { formatTamanhoContainerDisplay, normalizeTamanhoContainer } from "@/lib/cadastros/tipo-container-tamanhos";
+import {
+  SOLICITACAO_CARD_C as CARD_C,
+  SOLICITACAO_CARD_H as CARD_H,
+  SOLICITACAO_FORM_GRID as GRID,
+  SOLICITACAO_SELECT_CLS as SELECT_CLS,
+  SOLICITACAO_SPAN2 as SPAN2,
+} from "@/components/portal/solicitacao-form-layout";
 
 type ContainerDraft = {
   unidade: string;
   booking: string;
   processo: string;
+  navio: string;
   tamanho: string;
   tipo: string;
   status: "CHEIO" | "VAZIO";
@@ -80,8 +88,7 @@ export function SolicitacaoEditModal({
 
   const isFrotaFL = useMemo(() => intentUsesFlFrete(intent), [intent]);
   const { tipos: tiposContainer, loading: loadingTipos } = usePortalTiposContainer(open);
-  const selectCls =
-    "flex h-10 w-full rounded-md border border-white/10 bg-black/40 px-3 text-sm text-white";
+  const selectCls = SELECT_CLS;
 
   useEffect(() => {
     if (!open || !solicitacaoId) return;
@@ -105,6 +112,7 @@ export function SolicitacaoEditModal({
             unidade: formatContainerISO(c.unidade),
             booking: c.booking ?? "",
             processo: c.processo ?? "",
+            navio: c.navio ?? "",
             tamanho: c.tamanho ?? "",
             tipo: c.tipo ?? "",
             status: c.status as "CHEIO" | "VAZIO",
@@ -189,6 +197,7 @@ export function SolicitacaoEditModal({
           ordem: c.ordem,
           booking: c.booking.trim() || undefined,
           processo: c.processo.trim() || undefined,
+          navio: c.navio.trim() || undefined,
           tamanho: formatTamanhoContainerDisplay(c.tamanho),
           tipo: c.tipo.trim().toUpperCase(),
           status: c.status,
@@ -243,7 +252,7 @@ export function SolicitacaoEditModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-h-[92vh] w-[min(1440px,95vw)] max-w-[min(1440px,95vw)] overflow-y-auto sm:max-w-[min(1440px,95vw)]">
+      <DialogContent className="max-h-[92vh] w-[min(1440px,95vw)] max-w-[min(1440px,95vw)] gap-3 overflow-y-auto p-4 sm:max-w-[min(1440px,95vw)]">
         <OperationDialogHeader
           isos={containers.map((c) => c.unidade)}
           protocolo={protocolo || undefined}
@@ -258,14 +267,14 @@ export function SolicitacaoEditModal({
         {loading ? (
           <p className="text-sm text-slate-500">Carregando dados…</p>
         ) : (
-          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
+          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-3">
             {containers.map((c, idx) => (
               <Card key={c.ordem} className="border-white/10 bg-black/25">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base text-white">Contêiner #{c.ordem}</CardTitle>
+                <CardHeader className={CARD_H}>
+                  <CardTitle className="text-sm text-white">Contêiner #{c.ordem}</CardTitle>
                 </CardHeader>
-                <CardContent className="grid gap-3 sm:grid-cols-2">
-                  <div className="sm:col-span-2">
+                <CardContent className={`${GRID} ${CARD_C}`}>
+                  <div>
                     <label className="mb-1 block text-xs text-slate-500">Contêiner (ISO) — imutável</label>
                     <ContainerIsoInput
                       value={c.unidade}
@@ -287,6 +296,14 @@ export function SolicitacaoEditModal({
                     <Input
                       value={c.processo}
                       onChange={(e) => updateContainer(idx, { processo: e.target.value })}
+                      className="bg-black/40"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">Navio (opcional)</label>
+                    <Input
+                      value={c.navio}
+                      onChange={(e) => updateContainer(idx, { navio: e.target.value })}
                       className="bg-black/40"
                     />
                   </div>
@@ -317,10 +334,10 @@ export function SolicitacaoEditModal({
             ))}
 
             <Card className="border-white/10 bg-black/25">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base text-white">Agendamento</CardTitle>
+              <CardHeader className={CARD_H}>
+                <CardTitle className="text-sm text-white">Agendamento</CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-3 sm:grid-cols-2">
+              <CardContent className={`${GRID} ${CARD_C}`}>
                 <div>
                   <label className="mb-1 block text-xs text-slate-500">Data</label>
                   <Input
@@ -331,7 +348,7 @@ export function SolicitacaoEditModal({
                     className="bg-black/40"
                   />
                 </div>
-                <div>
+                <div className={SPAN2}>
                   <label className="mb-1 block text-xs text-slate-500">Turno</label>
                   <select
                     className={selectCls}
@@ -347,11 +364,11 @@ export function SolicitacaoEditModal({
 
             {!isFrotaFL ? (
               <Card className="border-white/10 bg-black/25">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base text-white">Transporte</CardTitle>
+                <CardHeader className={CARD_H}>
+                  <CardTitle className="text-sm text-white">Transporte</CardTitle>
                 </CardHeader>
-                <CardContent className="grid gap-3 sm:grid-cols-2">
-                  <div>
+                <CardContent className={`${GRID} ${CARD_C}`}>
+                  <div className={SPAN2}>
                     <label className="mb-1 block text-xs text-slate-500">Motorista</label>
                     <Input
                       value={nomeMotorista}
@@ -387,16 +404,27 @@ export function SolicitacaoEditModal({
                       className="bg-black/40"
                     />
                   </div>
+                  {containers.length > 1 ? (
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-500">Placa carreta 02</label>
+                      <Input
+                        value={placaCarreta02}
+                        onChange={(e) => setPlacaCarreta02(e.target.value.toUpperCase())}
+                        required
+                        className="bg-black/40"
+                      />
+                    </div>
+                  ) : null}
                 </CardContent>
               </Card>
             ) : null}
 
             <Card className="border-white/10 bg-black/25">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base text-white">Solicitante</CardTitle>
+              <CardHeader className={CARD_H}>
+                <CardTitle className="text-sm text-white">Solicitante</CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-3 sm:grid-cols-2">
-                <div>
+              <CardContent className={`${GRID} ${CARD_C}`}>
+                <div className={SPAN2}>
                   <label className="mb-1 block text-xs text-slate-500">Nome</label>
                   <Input
                     value={solNome}
@@ -414,7 +442,7 @@ export function SolicitacaoEditModal({
                     className="bg-black/40"
                   />
                 </div>
-                <div className="sm:col-span-2">
+                <div>
                   <label className="mb-1 block text-xs text-slate-500">E-mail</label>
                   <Input
                     type="email"
@@ -427,7 +455,7 @@ export function SolicitacaoEditModal({
               </CardContent>
             </Card>
 
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-2 pt-1">
               <Button type="button" variant="outline" onClick={onClose}>
                 Fechar
               </Button>

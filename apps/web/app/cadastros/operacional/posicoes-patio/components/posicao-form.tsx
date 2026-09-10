@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, MapPin, Save, Snowflake, X } from "lucide-react";
-import { FormField, FormSection } from "@/components/cadastros/form-field";
+import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/staff-client";
@@ -133,15 +133,15 @@ export function PosicaoForm({ posicaoId }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-3xl space-y-8">
+    <form onSubmit={handleSubmit} className={CADASTRO_FORM_CLASS}>
       <div>
         <h1 className="text-2xl font-bold">{posicaoId ? "Editar Posição" : "Nova Posição de Pátio"}</h1>
         <p className="mt-1 text-sm text-muted-foreground">Estrutura: Zona → Baia → Slot → Stack</p>
       </div>
 
       <FormSection title="Zona" icon={MapPin}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <FormField label="Zona" required>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Zona" required className="min-w-[14rem] flex-1">
             <select
               className={selectClass}
               value={formData.zonaId}
@@ -164,7 +164,7 @@ export function PosicaoForm({ posicaoId }: Props) {
               ))}
             </select>
           </FormField>
-          <FormField label="Ou criar nova zona">
+          <FormField label="Ou criar nova zona" className="min-w-[12rem] flex-1">
             <Input
               placeholder="Ex: REEFER, DANGEROSO"
               value={formData.zonaNome}
@@ -177,7 +177,7 @@ export function PosicaoForm({ posicaoId }: Props) {
               }
             />
           </FormField>
-          <FormField label="Cor da Zona">
+          <FormField label="Cor da Zona" size="sm">
             <input
               type="color"
               value={formData.zonaCor}
@@ -189,8 +189,8 @@ export function PosicaoForm({ posicaoId }: Props) {
       </FormSection>
 
       <FormSection title="Posição" icon={MapPin}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <FormField label="Código da Baia" required>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Código da Baia" required size="sm">
             <Input
               value={formData.baiaCodigo}
               onChange={(e) => setFormData({ ...formData, baiaCodigo: e.target.value.toUpperCase() })}
@@ -198,7 +198,7 @@ export function PosicaoForm({ posicaoId }: Props) {
               className="font-mono"
             />
           </FormField>
-          <FormField label="Número do Slot" required>
+          <FormField label="Número do Slot" required size="sm">
             <Input
               type="number"
               value={formData.slotNumero}
@@ -206,7 +206,7 @@ export function PosicaoForm({ posicaoId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Altura (Stack)">
+          <FormField label="Altura (Stack)" size="sm">
             <Input
               type="number"
               min={1}
@@ -218,7 +218,7 @@ export function PosicaoForm({ posicaoId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Capacidade (t)">
+          <FormField label="Capacidade (t)" size="sm">
             <Input
               type="number"
               step="0.5"
@@ -228,8 +228,8 @@ export function PosicaoForm({ posicaoId }: Props) {
             />
           </FormField>
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
-          <FormField label="Tipo Aceito">
+        <div className="mt-4 flex flex-wrap gap-4">
+          <FormField label="Tipo Aceito" size="md">
             <select
               className={selectClass}
               value={formData.tipoAceito}
@@ -277,7 +277,7 @@ export function PosicaoForm({ posicaoId }: Props) {
         </FormField>
       </FormSection>
 
-      <div className="sticky bottom-0 flex gap-3 border-t border-border bg-background/95 p-4 backdrop-blur">
+      <div className="flex gap-3">
         <Button type="button" variant="outline" onClick={() => router.back()}>
           <X className="mr-2 h-4 w-4" /> Cancelar
         </Button>

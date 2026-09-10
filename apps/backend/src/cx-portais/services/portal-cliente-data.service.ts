@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { StatusAgendamentoTerminal, StatusSolicitacao, type Prisma } from '@prisma/client';
+import { PatioStatus, StatusAgendamentoTerminal, StatusSolicitacao, type Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PlataformaTenantStore } from '../../plataforma-integracao/stores/plataforma-tenant.store';
 import type { CxPortalRequestUser } from '../types/cx-portal.types';
@@ -9,6 +9,8 @@ import { DashboardPortalService } from '../dashboard/dashboard-portal.service';
 import { AgendamentosService } from '../../agendamentos/agendamentos.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { stripContainerIsoCanonical } from '../../common/utils/data-sanitize';
+import { assertClienteDoTenant } from '../portal-cliente-tenant.util';
+import { estoqueClienteMatchesQuery } from '../estoque-cliente-query.util';
 import {
   diffSolicitacaoAuditSnapshots,
   resolveAuditActor,
@@ -42,12 +44,12 @@ export class PortalClienteDataService {
     private readonly auditLog: AuditLogService,
   ) {}
 
-  private clientScope(cx: CxPortalRequestUser, clienteIdParam?: string): string {
+  private async clientScope(cx: CxPortalRequestUser, clienteIdParam?: string): Promise<string> {
     if (cx.portalPapel === 'STAFF') {
       if (!clienteIdParam) {
         throw new BadRequestException('Parâmetro clienteId obrigatório para visão ADMIN/GERENTE');
       }
-      return clienteIdParam;
+      return assertClienteDoTenant(this.prisma, cx.tenantId, clienteIdParam);
     }
     if (!cx.clienteId) {
       throw new BadRequestException('Usuário portal sem vínculo de cliente');
@@ -62,7 +64,7 @@ export class PortalClienteDataService {
   private readonly orderFields = new Set(['createdAt', 'updatedAt', 'protocolo', 'status']);
 
   async listarSolicitacoesPaginado(cx: CxPortalRequestUser, q: PortalClienteSolicitacoesQueryDto) {
-    const clienteId = this.clientScope(cx, q.clienteId);
+    const clienteId = await this.clientScope(cx, q.clienteId);
     const page = q.page ?? 1;
     const rawLimit = q.limit ?? 10;
     const limit = Math.min(Math.max(1, rawLimit), 100);
@@ -73,6 +75,7 @@ export class PortalClienteDataService {
 
     const where: Prisma.SolicitacaoWhereInput = {
       deletedAt: null,
+      tenantId: cx.tenantId,
       clienteId,
       ...(q.status ? { status: q.status } : {}),
     };
@@ -182,7 +185,12 @@ export class PortalClienteDataService {
 
   async obterSolicitacao(cx: CxPortalRequestUser, id: string) {
     const s = await this.prisma.solicitacao.findFirst({
-      where: { id, deletedAt: null },
+      where: {
+        id,
+        deletedAt: null,
+        tenantId: cx.tenantId,
+        ...(cx.portalPapel === 'STAFF' ? {} : { clienteId: await this.clientScope(cx) }),
+      },
       include: {
         portaria: true,
         gate: true,
@@ -198,16 +206,13 @@ export class PortalClienteDataService {
       },
     });
     if (!s) return null;
-    if (cx.portalPapel !== 'STAFF') {
-      if (s.clienteId !== this.clientScope(cx)) return null;
-    }
     return s;
   }
 
   async eventos(cx: CxPortalRequestUser, clienteIdParam?: string) {
-    const clienteId = this.clientScope(cx, clienteIdParam);
+    const clienteId = await this.clientScope(cx, clienteIdParam);
     const sols = await this.prisma.solicitacao.findMany({
-      where: { clienteId, deletedAt: null },
+      where: { clienteId, tenantId: cx.tenantId, deletedAt: null },
       orderBy: { updatedAt: 'desc' },
       take: 80,
       select: { id: true, protocolo: true, status: true, updatedAt: true },
@@ -221,7 +226,7 @@ export class PortalClienteDataService {
   }
 
   async faturas(cx: CxPortalRequestUser, clienteIdParam?: string) {
-    const clienteId = this.clientScope(cx, clienteIdParam);
+    const clienteId = await this.clientScope(cx, clienteIdParam);
     return this.prisma.faturamento.findMany({
       where: { clienteId },
       orderBy: { createdAt: 'desc' },
@@ -232,7 +237,7 @@ export class PortalClienteDataService {
 
   /** Faturas de armazenagem (Gate-Out) com links NFS-e / boleto / PIX. */
   async faturasArmazenagem(cx: CxPortalRequestUser, clienteIdParam?: string) {
-    const clienteId = this.clientScope(cx, clienteIdParam);
+    const clienteId = await this.clientScope(cx, clienteIdParam);
     return this.prisma.fatura.findMany({
       where: { clienteId },
       orderBy: { dataEmissao: 'desc' },
@@ -253,7 +258,7 @@ export class PortalClienteDataService {
   }
 
   async boletos(cx: CxPortalRequestUser, clienteIdParam?: string) {
-    const clienteId = this.clientScope(cx, clienteIdParam);
+    const clienteId = await this.clientScope(cx, clienteIdParam);
     return this.prisma.boleto.findMany({
       where: { faturamento: { clienteId } },
       orderBy: { dataVencimento: 'desc' },
@@ -263,7 +268,7 @@ export class PortalClienteDataService {
   }
 
   async nfses(cx: CxPortalRequestUser, clienteIdParam?: string) {
-    const clienteId = this.clientScope(cx, clienteIdParam);
+    const clienteId = await this.clientScope(cx, clienteIdParam);
     return this.prisma.nfsEmitida.findMany({
       where: { faturamento: { clienteId } },
       orderBy: { createdAt: 'desc' },
@@ -291,7 +296,7 @@ export class PortalClienteDataService {
   }
 
   async kpis(cx: CxPortalRequestUser, clienteIdParam?: string) {
-    const clienteId = this.clientScope(cx, clienteIdParam);
+    const clienteId = await this.clientScope(cx, clienteIdParam);
     const [cicloMedioHorasProxy, containersAtivos] = await Promise.all([
       this.prisma.solicitacao
         .findMany({
@@ -373,7 +378,7 @@ export class PortalClienteDataService {
 
   async atualizarSolicitacaoPortal(cx: CxPortalRequestUser, id: string, dto: UpdatePortalSolicitacaoDto) {
     const sol = await this.prisma.solicitacao.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, deletedAt: null, tenantId: cx.tenantId },
       include: {
         containersSolicitacao: { orderBy: { ordem: 'asc' } },
         agendamentoSolicitacao: true,
@@ -382,7 +387,7 @@ export class PortalClienteDataService {
       },
     });
     if (!sol) throw new NotFoundException('Solicitação não encontrada');
-    if (cx.portalPapel !== 'STAFF' && sol.clienteId !== this.clientScope(cx)) {
+    if (cx.portalPapel !== 'STAFF' && sol.clienteId !== (await this.clientScope(cx))) {
       throw new NotFoundException('Solicitação não encontrada');
     }
     if (STATUS_TERMINAL.has(sol.status)) {
@@ -392,7 +397,7 @@ export class PortalClienteDataService {
       throw new BadRequestException('Solicitação sem agendamento vinculado.');
     }
 
-    const dataRef = new Date(`${dto.agendamento.dataRef}T00:00:00.000Z`);
+    const dataRef = new Date(`${dto.agendamento.dataRef}T12:00:00.000Z`);
     if (Number.isNaN(dataRef.getTime())) {
       throw new BadRequestException('Data de agendamento inválida');
     }
@@ -492,6 +497,7 @@ export class PortalClienteDataService {
           data: {
             booking: (c.booking ?? '').trim(),
             processo: (c.processo ?? '').trim(),
+            navio: (c.navio ?? '').trim(),
             tamanho: c.tamanho.trim(),
             tipo: c.tipo.trim(),
             status: c.status,
@@ -563,4 +569,156 @@ export class PortalClienteDataService {
     const logs = await this.auditLog.listBySolicitacao(id, { cx });
     return { solicitacaoId: id, items: this.auditLog.serializeForUi(logs) };
   }
+
+  /**
+   * Única lista de estoque do portal: ID aberto deste cliente.
+   * Saldo no pátio, lupa de coleta/exportação e simulação leem isto.
+   */
+  private async unidadesComIdAberto(clienteId: string, tenantId: string) {
+    const agora = Date.now();
+    const processos = await this.prisma.unidadeProcesso.findMany({
+      where: { clienteId, tenantId, status: 'ABERTO', modalidade: 'PATIO' },
+      include: {
+        entradaSolicitacao: {
+          select: {
+            id: true,
+            protocolo: true,
+            containersSolicitacao: {
+              select: {
+                unidade: true,
+                booking: true,
+                processo: true,
+                navio: true,
+                tamanho: true,
+                tipo: true,
+                status: true,
+                refrigerado: true,
+              },
+            },
+          },
+        },
+        patioUnidades: {
+          select: { id: true, refrigerado: true, status: true },
+          take: 1,
+        },
+      },
+      orderBy: { entradaEm: 'asc' },
+    });
+
+    return processos.map((p) => {
+      const patio = p.patioUnidades[0];
+      return mapSaldoPatioItem({
+        id: patio?.id ?? p.id,
+        unidadeIso: p.unidadeIso,
+        entradaEm: p.entradaEm,
+        agora,
+        refrigerado: patio?.refrigerado ?? false,
+        statusPatioCodigo: patio?.status ?? PatioStatus.ESTOCADO,
+        protocolo: p.entradaSolicitacao?.protocolo ?? `ID-${p.numero}`,
+        solicitacaoId: p.entradaSolicitacao?.id ?? p.id,
+        containers: p.entradaSolicitacao?.containersSolicitacao ?? [],
+        unidadeProcessoNumero: p.numero,
+      });
+    });
+  }
+
+  /** Unidades depositadas no pátio (ID aberto). */
+  async saldoPatio(cx: CxPortalRequestUser, clienteIdParam?: string) {
+    const clienteId = await this.clientScope(cx, clienteIdParam);
+    const items = await this.unidadesComIdAberto(clienteId, cx.tenantId);
+    return {
+      total: items.length,
+      cheios: items.filter((i) => i.statusContainer === 'CHEIO').length,
+      vazios: items.filter((i) => i.statusContainer === 'VAZIO').length,
+      refrigerados: items.filter((i) => i.refrigerado).length,
+      atualizadoEm: new Date().toISOString(),
+      items,
+    };
+  }
+
+  /**
+   * Estoque para coleta/exportação: a mesma lista do saldo no pátio (ID aberto).
+   * Operador/pessoa autorizada não amplia o conjunto.
+   */
+  async listarEstoqueDoCliente(cx: CxPortalRequestUser, q?: string, clienteIdParam?: string) {
+    const clienteId =
+      cx.portalPapel === 'STAFF'
+        ? await this.clientScope(cx, clienteIdParam)
+        : await this.clientScope(cx);
+
+    const items = (await this.unidadesComIdAberto(clienteId, cx.tenantId)).filter((item) =>
+      estoqueClienteMatchesQuery(
+        {
+          unidadeIso: item.unidadeIso,
+          numero: item.unidadeProcessoNumero ?? 0,
+          protocolo: item.protocolo,
+          booking: item.booking,
+          processo: item.processo,
+          navio: item.navio,
+        },
+        q ?? '',
+      ),
+    );
+
+    return { total: items.length, atualizadoEm: new Date().toISOString(), items };
+  }
+}
+
+type SaldoPatioContainerRef = {
+  unidade: string;
+  booking: string;
+  processo: string;
+  navio?: string;
+  tamanho: string;
+  tipo: string;
+  status: string;
+  refrigerado: boolean;
+};
+
+function matchContainerByIso(iso: string, containers: SaldoPatioContainerRef[]) {
+  const key = stripContainerIsoCanonical(iso);
+  return containers.find((c) => stripContainerIsoCanonical(c.unidade) === key);
+}
+
+function labelStatusPatioCliente(status: PatioStatus): string {
+  if (status === PatioStatus.MOVIMENTANDO) return 'Em movimentação';
+  if (status === PatioStatus.AGUARDANDO_GATE_OUT) return 'Aguardando saída';
+  return 'Depositado';
+}
+
+function mapSaldoPatioItem(input: {
+  id: string;
+  unidadeIso: string;
+  entradaEm: Date;
+  agora: number;
+  refrigerado: boolean;
+  statusPatioCodigo: PatioStatus;
+  protocolo: string;
+  solicitacaoId: string;
+  containers: SaldoPatioContainerRef[];
+  unidadeProcessoNumero?: number;
+}) {
+  const c = matchContainerByIso(input.unidadeIso, input.containers);
+  const statusContainer = c?.status === 'VAZIO' ? 'VAZIO' : c?.status === 'CHEIO' ? 'CHEIO' : null;
+  return {
+    id: input.id,
+    unidadeIso: input.unidadeIso,
+    tipo: c?.tipo?.trim() || (input.refrigerado || c?.refrigerado ? 'REEFER' : 'DRY'),
+    tamanho: c?.tamanho?.trim() || null,
+    statusContainer,
+    refrigerado: Boolean(input.refrigerado || c?.refrigerado),
+    booking: c?.booking?.trim() || null,
+    processo: c?.processo?.trim() || null,
+    navio: c?.navio?.trim() || null,
+    unidadeProcessoNumero: input.unidadeProcessoNumero ?? null,
+    unidadeProcessoLabel: input.unidadeProcessoNumero
+      ? `ID ${input.unidadeProcessoNumero}`
+      : null,
+    protocolo: input.protocolo,
+    solicitacaoId: input.solicitacaoId,
+    statusPatio: labelStatusPatioCliente(input.statusPatioCodigo),
+    statusPatioCodigo: input.statusPatioCodigo,
+    entradaEm: input.entradaEm.toISOString(),
+    diasNoPatio: Math.max(0, Math.floor((input.agora - input.entradaEm.getTime()) / 86_400_000)),
+  };
 }

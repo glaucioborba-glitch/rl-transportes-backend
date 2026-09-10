@@ -25,11 +25,9 @@ import { ServicosLogisticosService } from '../servicos-logisticos/servicos-logis
 import { TenantConfigService } from '../tenant/tenant-config.service';
 import { DEFAULT_TENANT_ID } from '../tenant/tenant.constants';
 import { normalizeContainerIso } from '../common/utils/data-sanitize';
-import { TosEventEmitter } from '../tos/tos-event-emitter';
 import {
   assertAgendamentoTransporte,
   normalizeLocalEndereco,
-  TRANSPORTE_SOLICITADO_EVENT,
   type TransporteSolicitadoPayload,
 } from './agendamento-transporte.util';
 import { diaSemanaCodigo, isFimDeSemana, parseHoraMinutos, resolveTurnoConfig, turnoAtual, turnoAtualFromConfig } from './agendamentos-turno.util';
@@ -44,14 +42,13 @@ export class AgendamentosService {
     private readonly prisma: PrismaService,
     private readonly auditoria: AuditoriaService,
     private readonly servicosLogisticos: ServicosLogisticosService,
-    private readonly eventEmitter: TosEventEmitter,
     private readonly flags: FeatureFlagService,
     private readonly tenantConfig: TenantConfigService,
     private readonly auditContext: AuditContextService,
   ) {}
 
   private parseDataRef(isoDate: string): Date {
-    const d = new Date(`${isoDate}T00:00:00.000Z`);
+    const d = new Date(`${isoDate}T12:00:00.000Z`);
     if (Number.isNaN(d.getTime())) {
       throw new BadRequestException('dataRef inválida (use ISO yyyy-mm-dd)');
     }
@@ -226,9 +223,8 @@ export class AgendamentosService {
 
   dispararTransporteSolicitado(payload: TransporteSolicitadoPayload): void {
     this.logger.log(
-      `Disparando ${TRANSPORTE_SOLICITADO_EVENT} — ${payload.numeroIso} (${payload.tipoOperacao})`,
+      `Transporte solicitado — ${payload.numeroIso} (${payload.tipoOperacao})`,
     );
-    this.eventEmitter.emit(TRANSPORTE_SOLICITADO_EVENT, payload);
   }
 
   private buildTransporteSolicitadoPayload(

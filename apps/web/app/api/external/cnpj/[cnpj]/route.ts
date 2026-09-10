@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { consumeIpRateLimit } from "@/lib/api/simple-ip-rate-limit";
 
 const BRASILAPI_CNPJ_URL = "https://brasilapi.com.br/api/cnpj/v1";
 const UPSTREAM_TIMEOUT_MS = 8000;
 
 /** Proxy BrasilAPI CNPJ — evita bloqueio Cloudflare/CORS no browser. */
-export async function GET(_req: NextRequest, ctx: { params: { cnpj: string } }) {
+export async function GET(req: NextRequest, ctx: { params: { cnpj: string } }) {
+  if (!consumeIpRateLimit(req, "cnpj", 30)) {
+    return NextResponse.json({ message: "Muitas consultas. Tente novamente em instantes." }, { status: 429 });
+  }
   const digits = (ctx.params.cnpj ?? "").replace(/\D/g, "");
   if (digits.length !== 14) {
     return NextResponse.json({ message: "CNPJ deve ter 14 dígitos." }, { status: 400 });

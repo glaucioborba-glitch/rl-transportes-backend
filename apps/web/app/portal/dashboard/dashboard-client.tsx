@@ -107,7 +107,7 @@ export function PortalDashboardClient() {
 
   if (awaitingPessoa || (loading && !data)) {
     return (
-      <main className="mx-auto max-w-7xl space-y-6 px-4 py-8">
+      <main className="mx-auto w-[90%] space-y-6 px-4 py-8">
         <Skeleton className="h-10 w-64" />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -120,7 +120,7 @@ export function PortalDashboardClient() {
 
   if (error || !data) {
     return (
-      <main className="mx-auto max-w-7xl px-4 py-8">
+      <main className="mx-auto w-[90%] px-4 py-8">
         <Card className="border-red-500/30 bg-red-500/5">
           <CardHeader>
             <CardTitle className="text-red-200">Erro no painel</CardTitle>
@@ -141,7 +141,7 @@ export function PortalDashboardClient() {
   const recentTotalPages = Math.max(1, Math.ceil(data.recent.total / recentLimit));
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8">
+    <main className="mx-auto w-[90%] px-4 py-8">
       {secOffline ? (
         <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-950/35 px-4 py-3 text-sm text-amber-100">
           Serviço de segurança indisponível — exibindo informações essenciais (cliente, agendamentos e

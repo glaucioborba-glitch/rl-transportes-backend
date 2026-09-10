@@ -27,7 +27,7 @@ export function resolveAgendamentoFromTipoOperacao(
   switch (intent) {
     case TipoOperacaoSolicitacaoIntent.SOLICITAR_BAIXA:
       return {
-        tipoOperacao: TipoOperacaoAgendamento.GATE_OUT,
+        tipoOperacao: TipoOperacaoAgendamento.GATE_IN,
         modalidadeTransporte: ModalidadeTransporte.FROTA_CLIENTE,
         exigeTransporteCliente: true,
         exigeLocalOrigem: false,
@@ -35,7 +35,7 @@ export function resolveAgendamentoFromTipoOperacao(
       };
     case TipoOperacaoSolicitacaoIntent.SOLICITAR_COLETA:
       return {
-        tipoOperacao: TipoOperacaoAgendamento.GATE_IN,
+        tipoOperacao: TipoOperacaoAgendamento.GATE_OUT,
         modalidadeTransporte: ModalidadeTransporte.FROTA_CLIENTE,
         exigeTransporteCliente: true,
         exigeLocalOrigem: false,

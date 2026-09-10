@@ -10,7 +10,7 @@ import { AnalyticsLazyLoaderService } from './analytics-lazy-loader.service';
 @ApiBearerAuth('access-token')
 @Controller('admin/platform')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
-@Roles(Role.ADMIN)
+@Roles(Role.ADMIN, Role.SUPER_ADMIN)
 export class AnalyticsLazyController {
   constructor(private readonly loader: AnalyticsLazyLoaderService) {}
 

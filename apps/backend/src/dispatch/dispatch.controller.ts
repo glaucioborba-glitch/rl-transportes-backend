@@ -40,8 +40,8 @@ export class DispatchController {
   @Roles(...DISPATCH_ROLES)
   @Permissions('dispatch:ler')
   @ApiOperation({ summary: 'Agendamentos FROTA_FL sem ordem de transporte' })
-  pendentes() {
-    return this.dispatch.listarPendentes();
+  pendentes(@CurrentUser() user: AuthUser) {
+    return this.dispatch.listarPendentes(user.tenantId || 'default');
   }
 
   @Get('board')
@@ -49,8 +49,8 @@ export class DispatchController {
   @Roles(...DISPATCH_ROLES)
   @Permissions('dispatch:ler')
   @ApiOperation({ summary: 'Kanban — backlog + motoristas com OT ativa' })
-  board() {
-    return this.dispatch.board();
+  board(@CurrentUser() user: AuthUser) {
+    return this.dispatch.board(user.tenantId || 'default');
   }
 
   @Get('veiculos')
@@ -67,7 +67,7 @@ export class DispatchController {
   @Permissions('dispatch:operar')
   @ApiOperation({ summary: 'Despachar agendamento para motorista + veículo' })
   assign(@Body() dto: AssignDispatchDto, @CurrentUser() user: AuthUser) {
-    return this.dispatch.assign(dto, user.sub);
+    return this.dispatch.assign(dto, user.sub, user.tenantId || 'default');
   }
 
   @Get('motorista/viagem-ativa')
@@ -97,6 +97,7 @@ export class DispatchController {
     return this.dispatch.atualizarStatus(id, dto, user.sub, {
       motoristaUsuarioId: isDispatchStaff ? undefined : user.sub,
       podFile: podFoto,
+      tenantId: user.tenantId || 'default',
     });
   }
 }

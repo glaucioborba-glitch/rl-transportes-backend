@@ -5,11 +5,8 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
 import { Role } from '@prisma/client';
 import type { Request } from 'express';
-import type { JwtPayload } from '../../auth/strategies/jwt.strategy';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PortalFornecedorIdentitiesStore } from '../stores/portal-fornecedor-identities.store';
 import { PortalJwtService } from '../identity/portal-jwt.service';
@@ -19,7 +16,6 @@ import { SessionService } from '../../auth/session/session.service';
 import { extractPortalAccessToken } from '../identity/portal-cookie.util';
 import {
   canPortalClienteLogin,
-  isPortalPrincipalRole,
   isTransportadoraTerceiraRole,
 } from '../../common/constants/portal-tenant-roles.util';
 import { TRANSPORTADORA_PERMISSOES_FIXAS } from '../../common/constants/transportadora-permissoes.constants';
@@ -31,7 +27,7 @@ export class CxPortalPublicApiForbidGuard implements CanActivate {
     const hasPublic = !!(req.headers['x-public-api-key'] ?? req.headers['X-Public-Api-Key']);
     const auth = req.headers.authorization ?? '';
     if (hasPublic && !auth.startsWith('Bearer ')) {
-      throw new ForbiddenException('Portais CX não aceitam apenas API Key pública (Fase 18). Use JWT portal ou JWT staff.');
+      throw new ForbiddenException('Portais CX não aceitam apenas API Key pública. Use JWT portal.');
     }
     return true;
   }
@@ -43,8 +39,6 @@ export class CxPortalAuthGuard implements CanActivate {
     private readonly portalJwt: PortalJwtService,
     private readonly prisma: PrismaService,
     private readonly fornecedores: PortalFornecedorIdentitiesStore,
-    private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
     private readonly session: SessionService,
   ) {}
 
@@ -85,7 +79,7 @@ export class CxPortalAuthGuard implements CanActivate {
           cpfCnpj: user.cpfCnpj,
           portalPapel: 'CLIENTE',
           portalTenantRole: user.role,
-          tenantId: pl.tenantId,
+          tenantId: user.tenantId || pl.tenantId || 'default',
           clienteId: clienteIdMerged,
           tokenVersion: user.tokenVersion,
           auth: 'portal',
@@ -125,38 +119,6 @@ export class CxPortalAuthGuard implements CanActivate {
       if (e instanceof UnauthorizedException) throw e;
     }
 
-    try {
-      const secret =
-        this.configService.get<string>('secrets.jwtSecret') ??
-        this.configService.getOrThrow<string>('JWT_SECRET');
-      const corp = this.jwtService.verify<JwtPayload>(token, { secret });
-      if (corp.role === Role.CLIENTE || isPortalPrincipalRole(corp.role) || isTransportadoraTerceiraRole(corp.role)) {
-        const user = await this.prisma.user.findUnique({ where: { id: corp.sub } });
-        if (!user || user.tokenVersion !== (corp.tv ?? 0)) {
-          throw new UnauthorizedException('Sessão inválida');
-        }
-        const clienteIdMerged = user.clienteId ?? corp.clienteId ?? null;
-        if (!clienteIdMerged) {
-          throw new ForbiddenException('Conta sem vínculo a cadastro de cliente.');
-        }
-        req.cxUser = {
-          sub: user.id,
-          email: user.email,
-          cpfCnpj: user.cpfCnpj,
-          portalPapel: 'CLIENTE',
-          tenantId: 'default',
-          clienteId: clienteIdMerged,
-          tokenVersion: user.tokenVersion,
-          auth: 'portal',
-          sid: corp.sid,
-        };
-        await this.hydratePessoaAutorizada(req);
-        return true;
-      }
-    } catch (e) {
-      if (e instanceof UnauthorizedException || e instanceof ForbiddenException) throw e;
-    }
-
     let staffPayload: { sub: string; email: string; role: Role; tv?: number; sid?: string };
     try {
       staffPayload = this.portalJwt.verifyStaffAccess(token) as typeof staffPayload;
@@ -170,10 +132,12 @@ export class CxPortalAuthGuard implements CanActivate {
       throw new UnauthorizedException('Sessão inválida');
     }
     if (user.role !== Role.ADMIN && user.role !== Role.GERENTE) {
-      throw new ForbiddenException('Portais CX: somente CLIENTE/FORNECEDOR (JWT portal) ou ADMIN/GERENTE (JWT corporativo).');
+      throw new ForbiddenException(
+        'Portais CX: JWT portal (CLIENTE/FORNECEDOR) ou JWT corporativo de ADMIN/GERENTE.',
+      );
     }
 
-    const tenantId = (req.headers['x-tenant-id'] as string | undefined)?.trim() || 'default';
+    const tenantId = user.tenantId || 'default';
     req.cxUser = {
       sub: user.id,
       email: user.email,

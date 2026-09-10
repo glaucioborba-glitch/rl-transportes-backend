@@ -7,6 +7,7 @@ import {
   mapArmazenagemItemToRegras,
   type CadastroArmazenagemItem,
 } from './pricing-sync.mapper';
+import { ensureCadastroTabelaPadrao, purgeOrphanBillingTables } from './purge-orphan-billing-tables';
 
 const DEFAULT_TENANT = 'default';
 
@@ -110,16 +111,31 @@ export class PricingSyncService {
       });
     }
 
+    await ensureCadastroTabelaPadrao(this.prisma, cadastro.tenantId ?? DEFAULT_TENANT);
+    const purged = await purgeOrphanBillingTables(
+      this.prisma,
+      cadastro.tenantId ?? DEFAULT_TENANT,
+    );
+    if (purged.deleted.length) {
+      this.logger.warn(
+        `Removidas ${purged.deleted.length} tabela(s) de billing sem cadastro: ${purged.deleted.map((t) => t.nome).join(', ')}`,
+      );
+    }
+
     return { billingTabelaPrecoId: billingId, regrasCount: regrasPayload.length };
   }
 
   async ensureDefaultTableSynced(tenantId = DEFAULT_TENANT) {
+    await ensureCadastroTabelaPadrao(this.prisma, tenantId);
     const padrao = await this.prisma.cadastroTabelaPreco.findFirst({
       where: { tenantId, padrao: true, deletedAt: null, ativo: true },
     });
     if (!padrao) return null;
-    if (padrao.billingTabelaPrecoId && padrao.syncedAt) return padrao.billingTabelaPrecoId;
-    const result = await this.syncFromCadastro(padrao.id);
-    return result.billingTabelaPrecoId;
+    if (!padrao.billingTabelaPrecoId || !padrao.syncedAt) {
+      const result = await this.syncFromCadastro(padrao.id);
+      return result.billingTabelaPrecoId;
+    }
+    await purgeOrphanBillingTables(this.prisma, tenantId);
+    return padrao.billingTabelaPrecoId;
   }
 }

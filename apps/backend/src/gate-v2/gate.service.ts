@@ -28,8 +28,6 @@ import { SecurityEventsService } from '../security-center/security-events.servic
 import { SolicitacaoAnexoStorageService } from '../modules/solicitacoes-v2/solicitacao-anexo.storage';
 import { SolicitacoesV2Service } from '../modules/solicitacoes-v2/solicitacoes-v2.service';
 import { PatioV2Service } from '../patio-v2/patio.service';
-import { ArmazenagemBillingService } from '../armazenagem-faturamento/armazenagem-billing.service';
-import { isBillingEligibleIntent } from '../billing-engine/billing-eligible-intents.util';
 import { YardAllocationService } from '../yard-allocation/yard-allocation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { VistoriaService, type VistoriaPhotoUpload } from '../vistoria/vistoria.service';
@@ -69,7 +67,6 @@ export class GateV2Service {
     private readonly securityEvents: SecurityEventsService,
     private readonly solicitacoesV2: SolicitacoesV2Service,
     private readonly patioV2: PatioV2Service,
-    private readonly armazenagemBilling: ArmazenagemBillingService,
     private readonly yardAllocation: YardAllocationService,
     private readonly vistoria: VistoriaService,
     private readonly holdRelease: HoldReleaseService,
@@ -349,19 +346,24 @@ export class GateV2Service {
           },
           tx,
         );
-        await this.patioV2.provisionFromGateIn(gi.id, solicitacaoId, tx);
+        await this.patioV2.attachGateInToProcesso(gi.id, solicitacaoId, tx);
+        await tx.preFatura.updateMany({
+          where: {
+            status: 'ABERTA',
+            unidadeProcesso: {
+              status: 'ABERTO',
+              OR: [
+                { entradaSolicitacaoId: solicitacaoId },
+                { saidaSolicitacaoId: solicitacaoId },
+              ],
+            },
+          },
+          data: { gateInId: gi.id },
+        });
         await this.yardAllocation.applyGiroEstimado(solicitacaoId, {
           referenceAt: gi.dataHora,
           tx,
         });
-        if (isBillingEligibleIntent(sol.tipoOperacao)) {
-          await this.armazenagemBilling.openPreFaturasForGateIn(
-            gi.id,
-            sol.clienteId,
-            gi.dataHora,
-            tx,
-          );
-        }
         return gi;
       });
     } catch (err) {
@@ -521,10 +523,6 @@ export class GateV2Service {
           },
           tx,
         );
-        await this.patioV2.finalizeFromGateOut(gateInId, operadorId, tx);
-        if (isBillingEligibleIntent(gi.solicitacao.tipoOperacao)) {
-          await this.armazenagemBilling.consolidateOnGateOut(gateInId, now, tx);
-        }
       });
     } catch (err) {
       if (vistoriaStorageKeys.length) {

@@ -11,7 +11,7 @@ import { FeatureFlagService } from './feature-flag.service';
 @ApiBearerAuth('access-token')
 @Controller('admin/feature-flags')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
-@Roles(Role.ADMIN, Role.GERENTE)
+@Roles(Role.ADMIN, Role.GERENTE, Role.SUPER_ADMIN)
 export class FeatureFlagsController {
   constructor(private readonly flags: FeatureFlagService) {}
 

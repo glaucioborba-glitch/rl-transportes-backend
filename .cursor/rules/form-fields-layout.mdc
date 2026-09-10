@@ -1,0 +1,21 @@
+---
+description: Largura e simetria de campos em formulários da intranet
+globs: apps/web/**/*.tsx
+alwaysApply: false
+---
+
+# Formulários — tamanho dos campos
+
+- A área útil da intranet já é **90% centralizada** no `IntranetShell` (exceto `flush`). Não empilhar outro `w-[90%]`/`max-w-*` no formulário.
+- Use `CADASTRO_FORM_CLASS` (`w-full space-y-8 pb-8`).
+- CEP, UF, número, placa, CPF, CNPJ e RNTRC usam `size` (xs/sm/md) com **2–3 dígitos a mais** que o conteúdo. Os demais crescem (`flex-1`).
+- Agrupe campos curtos na mesma linha. Evite um input isolado esticado.
+- Botões Cancelar/Salvar ficam no fluxo do documento. **Nunca** `sticky`/`fixed` sobre o conteúdo.
+
+```tsx
+<div className="flex flex-wrap gap-4">
+  <FormField label="CEP" size="sm"><Input /></FormField>
+  <FormField label="Endereço" className="min-w-[16rem] flex-[2]"><Input /></FormField>
+  <FormField label="UF" size="xs"><Input maxLength={2} /></FormField>
+</div>
+```

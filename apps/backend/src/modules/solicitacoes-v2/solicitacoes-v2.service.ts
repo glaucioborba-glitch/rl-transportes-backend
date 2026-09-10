@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
   AcaoAuditoria,
+  ModalidadeTransporte,
   Prisma,
   Role,
   StatusAgendamentoTerminal,
@@ -41,6 +42,8 @@ import type { CxPortalRequestUser } from '../../cx-portais/types/cx-portal.types
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { buildPessoaAuditMeta } from '../../pessoas-autorizadas/pessoa-context.util';
 import { HoldReleaseService } from '../../hold-release/hold-release.service';
+import { UnidadeProcessoService } from '../../unidade-processo/unidade-processo.service';
+import { freteUncheckedCreateFromAgendamento } from '../../fretes/frete-from-agendamento';
 import { CreateBloqueioDto } from '../../hold-release/dto/create-bloqueio.dto';
 import {
   formatTamanhoContainerMatrix,
@@ -72,6 +75,7 @@ export class SolicitacoesV2Service {
     private readonly storage: SolicitacaoAnexoStorageService,
     private readonly yardAllocation: YardAllocationService,
     private readonly holdRelease: HoldReleaseService,
+    private readonly unidadeProcesso: UnidadeProcessoService,
   ) {}
 
   /** Rótulo para PDF/relatório sem mudar o enum PostgreSQL (`APROVADO` → `APROVADA`). */
@@ -421,6 +425,14 @@ export class SolicitacoesV2Service {
     }
     this.validateDto(dto);
     await this.assertContainersAgainstCatalog(dto.containers);
+    await this.unidadeProcesso.assertPodeCriarSolicitacao({
+      clienteId: cx.clienteId,
+      tenantId: cx.tenantId,
+      intent: dto.tipoOperacao,
+      localOrigem: dto.localOrigem,
+      localDestino: dto.localDestino,
+      containers: dto.containers.map((c) => ({ unidade: c.unidade, status: c.status })),
+    });
     const transporte = dto.transporte!;
     if (opts?.anexos !== undefined && !opts.anexos.length) {
       throw new BadRequestException('Anexo obrigatório: envie ao menos um arquivo (JPG/PDF).');
@@ -444,8 +456,11 @@ export class SolicitacoesV2Service {
     }
     // Faturamento: sempre o tenant principal (cx.clienteId), nunca o CNPJ da transportadora.
     const clienteIdFaturamento = cx.clienteId;
+    if (!clienteIdFaturamento) {
+      throw new ForbiddenException('Somente cliente autenticado no portal pode criar solicitação v2');
+    }
 
-    const dataRef = new Date(`${dto.agendamento.dataRef}T00:00:00.000Z`);
+    const dataRef = new Date(`${dto.agendamento.dataRef}T12:00:00.000Z`);
     if (Number.isNaN(dataRef.getTime())) {
       throw new BadRequestException('Data de agendamento inválida');
     }
@@ -507,6 +522,7 @@ export class SolicitacoesV2Service {
                   unidade: unidadeNorm,
                   booking: (c.booking ?? '').trim(),
                   processo: (c.processo ?? '').trim(),
+                  navio: (c.navio ?? '').trim(),
                   tamanho: c.tamanho.trim(),
                   tipo: c.tipo.trim(),
                   status: c.status,
@@ -530,7 +546,7 @@ export class SolicitacoesV2Service {
                 } catch (e) {
                   if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
                     throw new ConflictException(
-                      'Número ISO já vinculado a outra operação. Ajuste o campo Unidade.',
+                      'Número ISO duplicado nesta solicitação. Ajuste o campo Unidade.',
                     );
                   }
                   throw e;
@@ -585,9 +601,31 @@ export class SolicitacoesV2Service {
                 cx.sub,
               );
               agendamentoIdsPos.push(agRow.id);
+              if (agRow.modalidadeTransporte === ModalidadeTransporte.FROTA_FL) {
+                await tx.frete.create({
+                  data: freteUncheckedCreateFromAgendamento(
+                    {
+                      ...agRow,
+                      cliente: {
+                        razaoSocial: cliente.razaoSocial,
+                        nomeFantasia: cliente.nomeFantasia,
+                      },
+                    },
+                    container.booking,
+                    cx.tenantId || 'default',
+                  ),
+                });
+              }
             }
 
             await this.yardAllocation.applyGiroEstimado(sol.id, { tx });
+            await this.unidadeProcesso.vincularSaidaNaTransacao(
+              tx,
+              sol.id,
+              dto.tipoOperacao,
+              dto.containers.map((c) => c.unidade),
+              clienteIdFaturamento,
+            );
 
             const full = await tx.solicitacao.findUniqueOrThrow({
               where: { id: sol.id },
@@ -1102,9 +1140,6 @@ export class SolicitacoesV2Service {
     if (!s?.transporteSolicitacao) throw new NotFoundException('Solicitação v2 não encontrada');
     if (s.status !== StatusSolicitacao.PENDENTE && s.status !== StatusSolicitacao.EM_ANALISE) {
       throw new BadRequestException('Somente pendente ou em análise pode ser aprovada');
-    }
-    if (!s.anexosSolicitacao.length) {
-      throw new BadRequestException('Anexos obrigatórios — nenhum arquivo registrado');
     }
     const container = s.containersSolicitacao?.[0]?.unidade?.trim() ?? '';
     const qr = buildQrOnApproval({}, s.protocolo, s.clienteId, container);

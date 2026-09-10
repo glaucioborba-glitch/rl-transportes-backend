@@ -40,6 +40,12 @@ export class UpdatePortalContainerDto {
   @MaxLength(120)
   processo?: string;
 
+  @ApiPropertyOptional({ description: 'Nome do navio (opcional)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  navio?: string;
+
   @ApiProperty()
   @IsString()
   @MaxLength(32)

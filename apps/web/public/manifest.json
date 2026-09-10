@@ -2,7 +2,7 @@
   "name": "RL Transportes Gate",
   "short_name": "RL Gate",
   "description": "Vistoria fotográfica e operação de portaria RL Transportes",
-  "start_url": "/staff/gate",
+  "start_url": "/operador/gate/dashboard",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",

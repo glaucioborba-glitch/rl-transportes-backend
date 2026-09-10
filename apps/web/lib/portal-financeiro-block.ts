@@ -2,7 +2,6 @@
 export const PORTAL_AGENDAMENTO_BLOCKED_PATHS = [
   "/portal/solicitacoes/nova",
   "/portal/agendar",
-  "/cliente/portal/patiamento",
 ] as const;
 
 export function isPortalAgendamentoPath(pathname: string): boolean {

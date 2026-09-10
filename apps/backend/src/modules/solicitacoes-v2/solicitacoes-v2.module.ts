@@ -10,9 +10,10 @@ import { SolicitacaoAnexoStorageService } from './solicitacao-anexo.storage';
 import { SolicitacoesV2Controller } from './solicitacoes-v2.controller';
 import { YardAllocationModule } from '../../yard-allocation/yard-allocation.module';
 import { HoldReleaseModule } from '../../hold-release/hold-release.module';
+import { UnidadeProcessoModule } from '../../unidade-processo/unidade-processo.module';
 
 @Module({
-  imports: [PrismaModule, AuditoriaModule, AuditLogModule, AgendamentosModule, RedisModule, SecurityEventsModule, YardAllocationModule, HoldReleaseModule],
+  imports: [PrismaModule, AuditoriaModule, AuditLogModule, AgendamentosModule, RedisModule, SecurityEventsModule, YardAllocationModule, HoldReleaseModule, UnidadeProcessoModule],
   controllers: [SolicitacoesV2Controller],
   providers: [SolicitacoesV2Service, SolicitacaoAnexoStorageService],
   exports: [SolicitacoesV2Service, SolicitacaoAnexoStorageService],

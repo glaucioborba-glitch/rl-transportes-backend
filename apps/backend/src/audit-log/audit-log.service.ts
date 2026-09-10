@@ -103,15 +103,25 @@ export class AuditLogService {
   ): Promise<void> {
     const sol = await this.prisma.solicitacao.findFirst({
       where: { id: solicitacaoId, deletedAt: null },
-      select: { id: true, clienteId: true },
+      select: { id: true, clienteId: true, tenantId: true },
     });
     if (!sol) throw new NotFoundException('Solicitação não encontrada');
 
-    if (staff) return;
+    if (staff) {
+      if (staff.tenantId && sol.tenantId !== staff.tenantId) {
+        throw new ForbiddenException('Sem permissão para consultar o histórico desta solicitação.');
+      }
+      return;
+    }
 
     if (cx) {
-      if (cx.portalPapel === 'STAFF') return;
-      if (cx.clienteId && cx.clienteId === sol.clienteId) return;
+      if (cx.portalPapel === 'STAFF') {
+        if (sol.tenantId !== cx.tenantId) {
+          throw new ForbiddenException('Sem permissão para consultar o histórico desta solicitação.');
+        }
+        return;
+      }
+      if (cx.clienteId && cx.clienteId === sol.clienteId && sol.tenantId === cx.tenantId) return;
     }
 
     throw new ForbiddenException('Sem permissão para consultar o histórico desta solicitação.');

@@ -2,24 +2,25 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { normalizeContainerIso } from '../common/utils/data-sanitize';
 
-/** Evita double-charge Gate-v2 (PreFatura) vs TOS (BILLING_TRIGGERED) no mesmo ISO/período. */
+/** Evita double-charge no mesmo ISO enquanto há pré-fatura ABERTA. Histórico CONSOLIDADA não bloqueia novo ID. */
 export async function assertNoConflictingBilling(
   db: Prisma.TransactionClient | { preFatura: Prisma.PreFaturaDelegate; fatura: Prisma.FaturaDelegate },
-  input: { containerIso: string; clienteId: string; gateInId?: string },
+  input: { containerIso: string; clienteId: string; gateInId?: string | null; unidadeProcessoId?: string | null },
 ): Promise<void> {
   const iso = normalizeContainerIso(input.containerIso).replace(/\s/g, '').toUpperCase();
   const open = await db.preFatura.findFirst({
     where: {
       containerIso: iso,
       clienteId: input.clienteId,
-      status: 'CONSOLIDADA',
+      status: 'ABERTA',
+      ...(input.unidadeProcessoId ? { NOT: { unidadeProcessoId: input.unidadeProcessoId } } : {}),
       ...(input.gateInId ? { NOT: { gateInId: input.gateInId } } : {}),
     },
-    include: { fatura: true },
+    select: { id: true, unidadeProcessoId: true },
   });
-  if (open?.fatura) {
+  if (open) {
     throw new ConflictException(
-      `Cobrança já consolidada para ISO ${iso} (fatura ${open.fatura.id}). Abortando duplicata.`,
+      `Já existe pré-fatura aberta para ISO ${iso} (${open.id}). Encerre o ID atual antes de nova cobrança.`,
     );
   }
 }
@@ -31,8 +32,8 @@ export async function hasConsolidatedPreFaturaForIso(
 ): Promise<boolean> {
   const iso = normalizeContainerIso(containerIso).replace(/\s/g, '').toUpperCase();
   const hit = await db.preFatura.findFirst({
-    where: { containerIso: iso, clienteId, status: 'CONSOLIDADA' },
-    select: { id: true },
+    where: { containerIso: iso, clienteId, status: { in: ['ABERTA', 'CONSOLIDADA'] } },
+    select: { id: true, status: true, unidadeProcessoId: true },
   });
-  return Boolean(hit);
+  return Boolean(hit?.status === 'ABERTA' || hit?.unidadeProcessoId);
 }

@@ -1,4 +1,5 @@
 import { mergeReguaCobranca, type ReguaCobrancaConfig } from '../common/finance/regua-cobranca.util';
+import type { IntegracaoOrigem, TenantIntegracoesCredenciais } from './integration-credentials.util';
 
 export type { ReguaCobrancaConfig };
 
@@ -7,6 +8,8 @@ export type TenantTurnoConfig = {
   nome: string;
   inicio: string;
   fim: string;
+  /** Slot persistido no agendamento (MANHA/TARDE), independente do código MDM. */
+  slot?: 'MANHA' | 'TARDE';
 };
 
 export type TenantFeriadoMunicipal = {
@@ -116,6 +119,11 @@ export type TenantParametros = {
   fiscal?: Partial<TenantParametrosFiscal>;
   seguranca?: Partial<TenantParametrosSeguranca>;
   notificacoes?: Partial<TenantParametrosNotificacoes>;
+  /** Segredos de integração — nunca devolver no GET. */
+  integracoesCredenciais?: TenantIntegracoesCredenciais;
+  empresa?: Record<string, unknown>;
+  clienteLogos?: Record<string, unknown>;
+  empresaEncargosHistorico?: unknown[];
 };
 
 export type CertificadoStatus = 'VALIDO' | 'VENCIDO' | 'AUSENTE' | 'DESCONHECIDO';
@@ -144,19 +152,31 @@ export type TenantParametrosSeguranca = {
 
 export type TenantIntegracaoStatus = {
   enabled: boolean;
+  configured: boolean;
+  origem: IntegracaoOrigem;
+  lockedByEnv: boolean;
   phoneNumberId?: string;
   templatesAprovados?: number;
   apiKeyPresent?: boolean;
+  clientEmail?: string;
   provider?: string;
   bucket?: string;
   endpoint?: string;
+  region?: string;
+  accessTokenPresent?: boolean;
+  businessAccountIdPresent?: boolean;
 };
 
 export type TenantParametrosIntegracoes = {
-  whatsapp: TenantIntegracaoStatus & { phoneNumberId?: string; templatesAprovados: number };
-  googleVision: TenantIntegracaoStatus & { apiKeyPresent: boolean };
-  banking: TenantIntegracaoStatus & { provider?: string };
-  s3: TenantIntegracaoStatus & { bucket?: string; endpoint?: string };
+  whatsapp: TenantIntegracaoStatus & {
+    phoneNumberId?: string;
+    templatesAprovados: number;
+    accessTokenPresent: boolean;
+    businessAccountIdPresent: boolean;
+  };
+  googleVision: TenantIntegracaoStatus & { apiKeyPresent: boolean; clientEmail?: string };
+  banking: TenantIntegracaoStatus & { provider?: string; apiBaseUrl?: string };
+  s3: TenantIntegracaoStatus & { bucket?: string; endpoint?: string; region?: string };
 };
 
 export type WhatsAppTemplateStatus = 'APPROVED' | 'PENDING' | 'REJECTED' | 'DISABLED';
@@ -411,6 +431,7 @@ export function turnosOperacionaisToLegacy(
       nome: t.nome,
       inicio: t.horaInicio,
       fim: t.horaFim,
+      slot: t.slot ?? inferSlotFromHorario(t.horaInicio),
     }));
 }
 
@@ -453,6 +474,25 @@ export function mergeTenantParametros(raw: unknown): TenantParametros {
     },
     reguaCobranca: mergeReguaCobranca(r.reguaCobranca),
     nfse: r.nfse ? { ...r.nfse } : undefined,
+    integracoesCredenciais: r.integracoesCredenciais
+      ? {
+          googleVision: r.integracoesCredenciais.googleVision
+            ? { ...r.integracoesCredenciais.googleVision }
+            : undefined,
+          whatsapp: r.integracoesCredenciais.whatsapp
+            ? { ...r.integracoesCredenciais.whatsapp }
+            : undefined,
+          banking: r.integracoesCredenciais.banking
+            ? { ...r.integracoesCredenciais.banking }
+            : undefined,
+          s3: r.integracoesCredenciais.s3 ? { ...r.integracoesCredenciais.s3 } : undefined,
+        }
+      : undefined,
+    empresa: r.empresa ? { ...r.empresa } : undefined,
+    clienteLogos: r.clienteLogos ? { ...r.clienteLogos } : undefined,
+    empresaEncargosHistorico: Array.isArray(r.empresaEncargosHistorico)
+      ? [...r.empresaEncargosHistorico]
+      : undefined,
   };
   return syncLegacyOperacaoFields(merged);
 }

@@ -18,18 +18,22 @@ const ssrSafeJsonStorage = createJSONStorage(() =>
   typeof window === "undefined" ? noopStorage : window.localStorage,
 );
 
+type ThemeMode = "dark" | "light";
+
 type ThemeState = {
-  mode: "dark";
+  mode: ThemeMode;
   locale: "pt-BR";
-  setMode: (m: "dark") => void;
+  setMode: (m: ThemeMode) => void;
+  toggleMode: () => void;
 };
 
 export const useThemeStore = create<ThemeState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       mode: "dark",
       locale: "pt-BR",
       setMode: (m) => set({ mode: m }),
+      toggleMode: () => set({ mode: get().mode === "light" ? "dark" : "light" }),
     }),
     { name: "rl-portal-theme", storage: ssrSafeJsonStorage },
   ),

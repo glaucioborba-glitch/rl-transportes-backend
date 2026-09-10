@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -11,7 +12,10 @@ import type { User } from '@prisma/client';
 import { AcaoAuditoria } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { permissionsForRole } from '../common/constants/role-permissions';
-import { canIntranetStaffLogin } from '../common/constants/intranet-staff-roles.util';
+import {
+  canIntranetStaffLogin,
+  isGerenteMinimo,
+} from '../common/constants/intranet-staff-roles.util';
 import { maskCpfDisplay, onlyDigits } from '../common/utils/br-documents';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -562,5 +566,111 @@ export class AuthService {
     );
     const { password: _p, ...safe } = user;
     return safe;
+  }
+
+  /**
+   * Confere CPF + senha de gerente/admin sem abrir sessão nova
+   * (não revoga o operador logado no Gate).
+   */
+  async verifyGerenteCredentials(tenantId: string, documento: string, password: string) {
+    const normalized = this.resolveLoginDocumento(documento);
+    const tenant = tenantId.trim() || DEFAULT_TENANT_ID;
+    await this.assertBruteForceNotLocked(tenant, normalized);
+    const user = await this.validateUser(tenant, normalized, password);
+    if (!user) {
+      return this.recordBruteForceFailure(tenant, normalized);
+    }
+    if (!isGerenteMinimo(user.role)) {
+      throw new ForbiddenException(
+        'Esta ação exige login de gerente ou administrador.',
+      );
+    }
+    await this.clearBruteForceCounter(tenant, normalized);
+    return user;
+  }
+
+  issueRicSupervisorToken(user: { id: string; email: string; role: User['role'] }, protocolo: string) {
+    const expiresIn = '10m';
+    const token = this.jwtService.sign(
+      {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        purpose: 'gate-ric-supervisor',
+        protocolo,
+      },
+      { expiresIn: expiresIn as StringValue, audience: 'gate-ric-supervisor' },
+    );
+    return { token, expiresIn, email: user.email, role: user.role, gerenteId: user.id };
+  }
+
+  assertRicSupervisorToken(token: string, protocolo: string): {
+    gerenteId: string;
+    email: string;
+    role: User['role'];
+  } {
+    let payload: {
+      sub?: string;
+      email?: string;
+      role?: User['role'];
+      purpose?: string;
+      protocolo?: string;
+    };
+    try {
+      payload = this.jwtService.verify(token, { audience: 'gate-ric-supervisor' });
+    } catch {
+      throw new UnauthorizedException('Autorização de gerente expirada ou inválida.');
+    }
+    if (payload.purpose !== 'gate-ric-supervisor' || payload.protocolo !== protocolo) {
+      throw new UnauthorizedException('Autorização de gerente não vale para esta RIC.');
+    }
+    if (!payload.sub || !payload.role || !isGerenteMinimo(payload.role)) {
+      throw new ForbiddenException('Autorização de gerente inválida.');
+    }
+    return { gerenteId: payload.sub, email: payload.email ?? '', role: payload.role };
+  }
+
+  issueCessaoSupervisorToken(
+    user: { id: string; email: string; role: User['role'] },
+    unidadeProcessoId: string,
+  ) {
+    const expiresIn = '10m';
+    const token = this.jwtService.sign(
+      {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        purpose: 'cessao-titularidade',
+        subject: unidadeProcessoId,
+      },
+      { expiresIn: expiresIn as StringValue, audience: 'cessao-titularidade' },
+    );
+    return { token, expiresIn, email: user.email, role: user.role, gerenteId: user.id };
+  }
+
+  assertCessaoSupervisorToken(token: string, unidadeProcessoId: string): {
+    gerenteId: string;
+    email: string;
+    role: User['role'];
+  } {
+    let payload: {
+      sub?: string;
+      email?: string;
+      role?: User['role'];
+      purpose?: string;
+      subject?: string;
+    };
+    try {
+      payload = this.jwtService.verify(token, { audience: 'cessao-titularidade' });
+    } catch {
+      throw new UnauthorizedException('Autorização de gerente expirada ou inválida.');
+    }
+    if (payload.purpose !== 'cessao-titularidade' || payload.subject !== unidadeProcessoId) {
+      throw new UnauthorizedException('Autorização de gerente não vale para esta cessão.');
+    }
+    if (!payload.sub || !payload.role || !isGerenteMinimo(payload.role)) {
+      throw new ForbiddenException('Autorização de gerente inválida.');
+    }
+    return { gerenteId: payload.sub, email: payload.email ?? '', role: payload.role };
   }
 }

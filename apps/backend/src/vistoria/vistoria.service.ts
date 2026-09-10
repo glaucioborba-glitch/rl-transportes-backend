@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   AnguloFotoVistoria,
   Prisma,
@@ -115,23 +115,43 @@ export class VistoriaService {
     return { vistoria, fotos: fotoRows, publicUrls };
   }
 
-  async listBySolicitacao(solicitacaoId: string) {
+  async listBySolicitacao(
+    solicitacaoId: string,
+    scope?: { clienteId?: string; tenantId?: string },
+  ) {
+    if (scope?.clienteId || scope?.tenantId) {
+      const sol = await this.prisma.solicitacao.findFirst({
+        where: {
+          id: solicitacaoId,
+          deletedAt: null,
+          ...(scope.clienteId ? { clienteId: scope.clienteId } : {}),
+          ...(scope.tenantId ? { tenantId: scope.tenantId } : {}),
+        },
+        select: { id: true },
+      });
+      if (!sol) throw new NotFoundException('Solicitação não encontrada');
+    }
+
     const rows = await this.prisma.vistoria.findMany({
       where: { solicitacaoId },
       orderBy: { criadoEm: 'asc' },
       include: { fotos: { orderBy: { angulo: 'asc' } } },
     });
-    return rows.map((v) => ({
-      id: v.id,
-      tipo: v.tipo,
-      criadoEm: v.criadoEm.toISOString(),
-      avarias: Array.isArray(v.avarias) ? (v.avarias as string[]) : [],
-      fotos: v.fotos.map((f) => ({
-        id: f.id,
-        angulo: f.angulo,
-        url: f.url,
+    return Promise.all(
+      rows.map(async (v) => ({
+        id: v.id,
+        tipo: v.tipo,
+        criadoEm: v.criadoEm.toISOString(),
+        avarias: Array.isArray(v.avarias) ? (v.avarias as string[]) : [],
+        fotos: await Promise.all(
+          v.fotos.map(async (f) => ({
+            id: f.id,
+            angulo: f.angulo,
+            url: f.storageKey ? await this.storage.refreshReadUrl(f.storageKey) : f.url,
+          })),
+        ),
       })),
-    }));
+    );
   }
 
   async rollbackUploaded(storageKeys: string[]) {

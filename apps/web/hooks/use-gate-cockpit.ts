@@ -8,7 +8,7 @@ import { ApiError, staffGateCockpit } from "@/lib/api/staff-client";
 
 import type { GateCockpitPayload } from "@/lib/gate/gate-cockpit-types";
 
-import { useTosSocket } from "@/lib/realtime/use-tos-socket";
+import { useRealtimeSocket } from "@/lib/realtime/use-realtime-socket";
 
 import { GATE_POLLING_INTERVAL_MS, GATE_WEBSOCKET_ENABLED } from "@/lib/dev-performance";
 
@@ -126,7 +126,7 @@ export function useGateCockpit(dataRef?: string) {
 
 
 
-  useTosSocket({
+  useRealtimeSocket({
 
     namespace: "/ws/yard",
 

@@ -1,0 +1,237 @@
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { Prisma, StatusContainer, StatusContainerTarifa, StatusUnidadeProcesso } from '@prisma/client';
+import { ArmazenagemBillingService } from '../armazenagem-faturamento/armazenagem-billing.service';
+import {
+  observacaoLacreRic,
+  parseEfeitoConfig,
+  parseOrigemLacre,
+  parseServicoEfeito,
+  PATIO_STATUS_ARMAZENADA,
+  type ServicoEfeitoPayload,
+  type LancarServicoEfeitoInput,
+} from '../cadastros/servico-efeito';
+import { stripContainerIsoCanonical } from '../common/utils/data-sanitize';
+import { PrismaService } from '../prisma/prisma.service';
+
+@Injectable()
+export class ServicoEfeitoAplicarService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly billing: ArmazenagemBillingService,
+  ) {}
+
+  async aplicar(params: {
+    processoId: string;
+    item: { id: string; tabelaId: string; codigo: string; nome: string; efeito?: string; efeitoConfig?: unknown };
+    input: LancarServicoEfeitoInput;
+  }): Promise<{ payload: ServicoEfeitoPayload; linhasExtras: Prisma.UnidadeProcessoServicoCreateManyInput[] }> {
+    const efeito = parseServicoEfeito(params.item.efeito);
+    const config = parseEfeitoConfig(params.item.efeitoConfig);
+    if (efeito === 'NENHUM') return { payload: { efeito }, linhasExtras: [] };
+
+    if (efeito === 'SUBSTITUIR_LACRE_SAIDA') {
+      return this.aplicarLacreSaida(params.processoId, params.item, params.input, config);
+    }
+    return this.aplicarTransbordo(params.processoId, params.item, params.input);
+  }
+
+  private async aplicarLacreSaida(
+    processoId: string,
+    item: { tabelaId: string; nome: string },
+    input: LancarServicoEfeitoInput,
+    config: ReturnType<typeof parseEfeitoConfig>,
+  ) {
+    const origem = parseOrigemLacre(input.origemLacre)!;
+    const lacre = String(input.lacre ?? '').trim();
+    const observacaoRic = observacaoLacreRic(item.nome, config);
+    await this.prisma.unidadeProcesso.update({
+      where: { id: processoId },
+      data: {
+        lacreSaida: lacre,
+        lacreSaidaOrigem: origem,
+        lacreSaidaObservacao: observacaoRic,
+      },
+    });
+
+    const linhasExtras: Prisma.UnidadeProcessoServicoCreateManyInput[] = [];
+    if (origem === 'TERMINAL' && config.servicoLacreTerminalCodigo) {
+      const cobrado = await this.prisma.cadastroServicoItem.findFirst({
+        where: {
+          tabelaId: item.tabelaId,
+          codigo: config.servicoLacreTerminalCodigo,
+          deletedAt: null,
+          ativo: true,
+        },
+      });
+      if (!cobrado) {
+        throw new BadRequestException(
+          `Serviço de lacre da empresa (${config.servicoLacreTerminalCodigo}) não encontrado na tabela.`,
+        );
+      }
+      const valor = Number(cobrado.valor);
+      linhasExtras.push({
+        unidadeProcessoId: processoId,
+        cadastroServicoItemId: cobrado.id,
+        codigo: cobrado.codigo,
+        nome: cobrado.nome,
+        quantidade: new Prisma.Decimal('1.00'),
+        valorUnitario: new Prisma.Decimal(valor.toFixed(2)),
+        valorTotal: new Prisma.Decimal(valor.toFixed(2)),
+        payload: { efeito: 'NENHUM', vinculado: true, origemLacre: origem } as Prisma.InputJsonValue,
+      });
+    }
+
+    return {
+      payload: { efeito: 'SUBSTITUIR_LACRE_SAIDA' as const, lacre, origemLacre: origem, observacaoRic },
+      linhasExtras,
+    };
+  }
+
+  private async aplicarTransbordo(
+    processoOrigemId: string,
+    item: { nome: string },
+    input: LancarServicoEfeitoInput,
+  ) {
+    const origem = await this.prisma.unidadeProcesso.findUnique({ where: { id: processoOrigemId } });
+    if (!origem) throw new BadRequestException('ID de origem não encontrado.');
+
+    const isoDestino = stripContainerIsoCanonical(input.isoDestino ?? '');
+    if (isoDestino === origem.unidadeIso) {
+      throw new BadRequestException('O container de destino (B) deve ser diferente da origem (A).');
+    }
+
+    const destino = await this.prisma.unidadeProcesso.findFirst({
+      where: {
+        tenantId: origem.tenantId,
+        unidadeIso: isoDestino,
+        status: StatusUnidadeProcesso.ABERTO,
+        modalidade: 'PATIO',
+      },
+    });
+    if (!destino) {
+      throw new BadRequestException(`Unidade ${isoDestino} sem ID aberto. Abra o ID de B antes do transbordo.`);
+    }
+    if (destino.clienteId !== origem.clienteId) {
+      throw new BadRequestException('Transbordo só é permitido entre unidades do mesmo cliente.');
+    }
+
+    await this.assertArmazenadaNoPatio(origem.unidadeIso, origem.id, origem.tenantId, 'A');
+    await this.assertArmazenadaNoPatio(destino.unidadeIso, destino.id, destino.tenantId, 'B');
+
+    const statusA = await this.lerStatusOperacional(origem.id, origem.unidadeIso);
+    const statusB = await this.lerStatusOperacional(destino.id, destino.unidadeIso);
+    if (statusA !== 'CHEIO') {
+      throw new BadRequestException('A unidade de origem (A) precisa estar CHEIA para transbordo.');
+    }
+    if (statusB !== 'VAZIO') {
+      throw new BadRequestException('A unidade de destino (B) precisa estar VAZIA para transbordo.');
+    }
+
+    await this.gravarStatusOperacional(origem.id, origem.unidadeIso, 'VAZIO');
+    await this.gravarStatusOperacional(destino.id, destino.unidadeIso, 'CHEIO');
+
+    const lacre = String(input.lacre ?? '').trim();
+    await this.prisma.unidadeProcesso.update({
+      where: { id: origem.id },
+      data: { faturarHandlingComoCheio: true },
+    });
+    await this.prisma.unidadeProcesso.update({
+      where: { id: destino.id },
+      data: {
+        faturarHandlingComoCheio: true,
+        ...(lacre
+          ? {
+              lacreSaida: lacre,
+              lacreSaidaObservacao: `Lacre informado no transbordo a partir de ${origem.unidadeIso}.`,
+            }
+          : {}),
+      },
+    });
+
+    await this.billing.persistHandlingCheio(origem.id);
+    await this.billing.persistHandlingCheio(destino.id);
+
+    return {
+      payload: {
+        efeito: 'TRANSBORDO_CARGA' as const,
+        isoDestino,
+        unidadeProcessoDestinoId: destino.id,
+        ...(lacre ? { lacre } : {}),
+      },
+      linhasExtras: [],
+    };
+  }
+
+  private async assertArmazenadaNoPatio(
+    iso: string,
+    unidadeProcessoId: string,
+    tenantId: string,
+    papel: 'A' | 'B',
+  ) {
+    const patio = await this.prisma.patioUnidade.findFirst({
+      where: {
+        unidadeIso: iso,
+        status: { in: PATIO_STATUS_ARMAZENADA },
+        OR: [{ unidadeProcessoId }, { solicitacao: { tenantId } }],
+      },
+      select: { id: true, status: true },
+    });
+    if (!patio) {
+      throw new BadRequestException(
+        `Unidade ${papel} (${iso}) não está armazenada no pátio. Transbordo só entre unidades já recebidas pela empresa — não é possível criar unidade do nada.`,
+      );
+    }
+  }
+
+  private async lerStatusOperacional(
+    unidadeProcessoId: string,
+    iso: string,
+  ): Promise<'CHEIO' | 'VAZIO' | null> {
+    const patio = await this.prisma.patioUnidade.findFirst({
+      where: { unidadeProcessoId, unidadeIso: iso },
+      select: { statusContainer: true, solicitacaoId: true },
+    });
+    if (patio?.statusContainer === StatusContainerTarifa.CHEIO) return 'CHEIO';
+    if (patio?.statusContainer === StatusContainerTarifa.VAZIO) return 'VAZIO';
+
+    const processo = await this.prisma.unidadeProcesso.findUnique({
+      where: { id: unidadeProcessoId },
+      select: { entradaSolicitacaoId: true },
+    });
+    const solicitacaoId = patio?.solicitacaoId ?? processo?.entradaSolicitacaoId;
+    const form = solicitacaoId
+      ? await this.prisma.containerSolicitacao.findFirst({
+          where: { solicitacaoId, unidade: { equals: iso, mode: 'insensitive' } },
+          select: { status: true },
+        })
+      : null;
+    if (form?.status === StatusContainer.CHEIO) return 'CHEIO';
+    if (form?.status === StatusContainer.VAZIO) return 'VAZIO';
+    return null;
+  }
+
+  private async gravarStatusOperacional(
+    unidadeProcessoId: string,
+    iso: string,
+    status: 'CHEIO' | 'VAZIO',
+  ) {
+    await this.prisma.patioUnidade.updateMany({
+      where: { unidadeProcessoId, unidadeIso: iso },
+      data: { statusContainer: status === 'CHEIO' ? StatusContainerTarifa.CHEIO : StatusContainerTarifa.VAZIO },
+    });
+    const patio = await this.prisma.patioUnidade.findFirst({
+      where: { unidadeProcessoId, unidadeIso: iso },
+      select: { solicitacaoId: true },
+    });
+    const processo = await this.prisma.unidadeProcesso.findUnique({
+      where: { id: unidadeProcessoId },
+      select: { entradaSolicitacaoId: true },
+    });
+    const solicitacaoId = patio?.solicitacaoId ?? processo?.entradaSolicitacaoId;
+    if (!solicitacaoId) return;
+    await this.prisma.containerSolicitacao.updateMany({
+      where: { solicitacaoId, unidade: { equals: iso, mode: 'insensitive' } },
+      data: { status: status === 'CHEIO' ? StatusContainer.CHEIO : StatusContainer.VAZIO },
+    });
+  }
+}

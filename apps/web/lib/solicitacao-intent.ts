@@ -1,4 +1,5 @@
 import type { TipoOperacaoSolicitacaoIntent } from "@/lib/api/portal-client";
+import { stripContainerISO } from "@/utils/containerFormatter";
 
 export const SOLICITACAO_INTENT_OPTIONS: Array<{
   value: TipoOperacaoSolicitacaoIntent;
@@ -10,6 +11,33 @@ export const SOLICITACAO_INTENT_OPTIONS: Array<{
   { value: "SOLICITAR_EXPORTACAO_ENTREGA_DEPOT", label: "Solicitar Exportação/Entrega Depot" },
 ];
 
+export function intentUsesEstoqueDoCliente(intent: TipoOperacaoSolicitacaoIntent | null): boolean {
+  return intent === "SOLICITAR_COLETA" || intent === "SOLICITAR_EXPORTACAO_ENTREGA_DEPOT";
+}
+
+export const SOLICITACAO_SAIDA_OPTIONS: Array<{
+  value: TipoOperacaoSolicitacaoIntent;
+  label: string;
+}> = [
+  { value: "SOLICITAR_COLETA", label: "Solicitar Coleta" },
+  { value: "SOLICITAR_EXPORTACAO_ENTREGA_DEPOT", label: "Solicitar Exportação/Entrega Depot" },
+];
+
+export function isSolicitacaoSaidaIntent(
+  value: string | null,
+): value is "SOLICITAR_COLETA" | "SOLICITAR_EXPORTACAO_ENTREGA_DEPOT" {
+  return value === "SOLICITAR_COLETA" || value === "SOLICITAR_EXPORTACAO_ENTREGA_DEPOT";
+}
+
+export function portalSolicitacaoSaidaHref(
+  intent: TipoOperacaoSolicitacaoIntent,
+  unidadeIso: string,
+): string {
+  const iso = stripContainerISO(unidadeIso);
+  const q = new URLSearchParams({ saida: intent, iso });
+  return `/portal/solicitacoes?${q.toString()}`;
+}
+
 export function intentUsesFlFrete(intent: TipoOperacaoSolicitacaoIntent | null): boolean {
   return (
     intent === "SOLICITAR_IMPORTACAO_COLETA_DEPOT" ||
@@ -17,12 +45,9 @@ export function intentUsesFlFrete(intent: TipoOperacaoSolicitacaoIntent | null):
   );
 }
 
-/** Import/coleta depot e coleta avulsa — permanência estimada no pátio. */
+/** Só na entrada (importação/coleta depot) — na saída a unidade já está no pátio. */
 export function intentUsesPrevisaoRetirada(intent: TipoOperacaoSolicitacaoIntent | null): boolean {
-  return (
-    intent === "SOLICITAR_COLETA" ||
-    intent === "SOLICITAR_IMPORTACAO_COLETA_DEPOT"
-  );
+  return intent === "SOLICITAR_IMPORTACAO_COLETA_DEPOT";
 }
 
 /** Export/entrega depot — deadline navio/booking. */

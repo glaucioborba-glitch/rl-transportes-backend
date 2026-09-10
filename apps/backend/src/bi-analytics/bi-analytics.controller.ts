@@ -20,7 +20,7 @@ export class BiAnalyticsController {
   ) {}
 
   @Get('torre-de-controle')
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @Permissions('bi:torre:read')
   @ApiOperation({ summary: 'Torre de Controle — visão 360º (ADMIN, dados financeiros + operacionais)' })
   getTorreControle(): Promise<TorreControleResponse> {
@@ -28,7 +28,7 @@ export class BiAnalyticsController {
   }
 
   @Get('visao-operacional')
-  @Roles(Role.ADMIN, Role.GERENTE)
+  @Roles(Role.ADMIN, Role.GERENTE, Role.SUPER_ADMIN)
   @Permissions('bi:operacional:read')
   @ApiOperation({
     summary: 'Visão Operacional — projeções e gargalos (sem valores monetários)',
@@ -38,7 +38,7 @@ export class BiAnalyticsController {
   }
 
   @Post('refresh')
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @Permissions('bi:torre:read')
   @ApiOperation({ summary: 'Refresh manual das materialized views (ADMIN)' })
   refreshViews() {

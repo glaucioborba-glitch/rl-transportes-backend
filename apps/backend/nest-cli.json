@@ -7,17 +7,17 @@
     "assets": [
       {
         "include": "common/email/templates/**/*.hbs",
-        "outDir": "dist",
+        "outDir": "dist/src",
         "watchAssets": true
       },
       {
         "include": "pdf-operacional-v2/templates/**/*.hbs",
-        "outDir": "dist",
+        "outDir": "dist/src",
         "watchAssets": true
       },
       {
         "include": "pdf-operacional-v2/assets/**/*",
-        "outDir": "dist",
+        "outDir": "dist/src",
         "watchAssets": true
       }
     ]

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Box, Loader2, Save, Snowflake, X } from "lucide-react";
-import { FormField, FormSection } from "@/components/cadastros/form-field";
+import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/staff-client";
@@ -101,10 +101,10 @@ export function TipoContainerForm({ tipoId }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-2xl space-y-8">
+    <form onSubmit={handleSubmit} className={CADASTRO_FORM_CLASS}>
       <FormSection title="Tipo de Contêiner" icon={Box}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Código" required>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Código" required size="md">
             <Input
               value={formData.codigo}
               onChange={(e) =>
@@ -114,14 +114,14 @@ export function TipoContainerForm({ tipoId }: Props) {
               className="font-mono"
             />
           </FormField>
-          <FormField label="Nome" required>
+          <FormField label="Nome" required className="min-w-[14rem] flex-1">
             <Input
               value={formData.nome}
               onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
               placeholder="Ex: Dry Container"
             />
           </FormField>
-          <FormField label="Tamanhos Aceitos" className="md:col-span-2">
+          <FormField label="Tamanhos Aceitos" className="min-w-[16rem] flex-[2]">
             <div className="flex flex-wrap gap-3">
               {TAMANHOS_CONTAINER_OPCOES.map((tam) => (
                 <label key={tam} className="flex cursor-pointer items-center gap-2 text-sm">

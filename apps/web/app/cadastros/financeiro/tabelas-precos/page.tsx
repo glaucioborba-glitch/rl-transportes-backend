@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Calendar,
+  Copy,
   DollarSign,
   Edit2,
   FileText,
@@ -49,7 +50,11 @@ export default function TabelasPrecosPage() {
         <div>
           <h1 className="text-2xl font-bold">Tabelas de Preços</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Pricing por tipo de operação × tipo de contêiner · Vigência com validade
+            Catálogo de pricing por operação × contêiner. Qual tabela vale para cada cliente é definida em{" "}
+            <a href="/financeiro/condicoes-clientes" className="text-primary underline-offset-2 hover:underline">
+              Financeiro → Forma e prazo
+            </a>
+            .
           </p>
         </div>
         {canCreate ? (
@@ -136,8 +141,8 @@ export default function TabelasPrecosPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs uppercase tracking-wider text-muted-foreground">Cliente</p>
-                    <p className="font-medium">{tabela.cliente?.nome ?? "Tabela geral"}</p>
+                    <p className="text-xs uppercase tracking-wider text-muted-foreground">Uso</p>
+                    <p className="font-medium">{tabela.padrao ? "Padrão do terminal" : "Catálogo"}</p>
                   </div>
                   <div>
                     <p className="text-xs uppercase tracking-wider text-muted-foreground">Moeda</p>
@@ -152,8 +157,9 @@ export default function TabelasPrecosPage() {
                   </div>
                 ) : null}
 
-                {canEdit ? (
-                  <div className="mt-2 flex gap-2">
+                {canEdit || canCreate ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {canEdit ? (
                     <Button
                       variant="outline"
                       size="sm"
@@ -164,6 +170,21 @@ export default function TabelasPrecosPage() {
                       <Edit2 className="mr-1 h-3 w-3" />
                       Editar / Ver Itens
                     </Button>
+                    ) : null}
+                    {canCreate ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        router.push(
+                          `/cadastros/financeiro/tabelas-precos/novo?duplicar=${encodeURIComponent(tabela.id)}`,
+                        )
+                      }
+                    >
+                      <Copy className="mr-1 h-3 w-3" />
+                      Duplicar tabela
+                    </Button>
+                    ) : null}
                   </div>
                 ) : null}
               </div>

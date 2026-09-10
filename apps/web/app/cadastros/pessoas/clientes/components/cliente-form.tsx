@@ -2,8 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, FileText, Loader2, MapPin, Phone, Save, X } from "lucide-react";
-import { FormField, FormSection } from "@/components/cadastros/form-field";
+import { Building2, FileText, ImagePlus, Loader2, MapPin, Phone, Save, X } from "lucide-react";
+import { LogoUploadCard } from "@/components/cadastros/logo-upload-card";
+import {
+  deleteClienteLogo,
+  fetchClienteLogo,
+  fetchEmpresaOperadora,
+  uploadClienteLogo,
+  type ClienteLogoMeta,
+  type EmpresaOperadora,
+} from "@/lib/api/empresa-client";
+import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/staff-client";
@@ -12,10 +21,17 @@ import {
   createCadastrosCliente,
   EMPTY_CLIENTE_FORM,
   getCadastrosCliente,
+  mapCadastrosClienteForm,
   updateCadastrosCliente,
   validateCadastrosCnpj,
   type CadastrosClienteFormData,
 } from "@/lib/api/cadastros-clientes-client";
+import {
+  CLIENTE_PAPEL_LABEL,
+  CLIENTE_PAPEIS_OPCOES,
+  clientePapelSelecionado,
+  normalizeClientePapeis,
+} from "@/lib/cadastros/cliente-papeis";
 import { formatCEP, formatCNPJ, formatPhone, isValidCNPJ } from "@/lib/cadastros/formatters";
 import { toast } from "@/lib/toast";
 
@@ -33,16 +49,35 @@ export function ClienteForm({ clienteId }: Props) {
   const [validatingCnpj, setValidatingCnpj] = useState(false);
   const [validatingCep, setValidatingCep] = useState(false);
   const [formData, setFormData] = useState<CadastrosClienteFormData>(EMPTY_CLIENTE_FORM);
+  const [clienteLogo, setClienteLogo] = useState<ClienteLogoMeta | null>(null);
+  const [clienteLogoSpec, setClienteLogoSpec] = useState<EmpresaOperadora["clienteLogoSpec"] | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!clienteId) return;
     let on = true;
+    setLoading(true);
     void (async () => {
       try {
         const data = await getCadastrosCliente(clienteId);
-        if (on) setFormData(data);
-      } catch {
-        toast.error("Erro ao carregar cliente.");
+        if (!on) return;
+        const mapped = mapCadastrosClienteForm(data);
+        if (!mapped.razaoSocial && !mapped.cnpj) {
+          throw new Error("A API devolveu o cadastro sem razão social/CNPJ.");
+        }
+        setFormData(mapped);
+        const [logo, empresa] = await Promise.all([
+          fetchClienteLogo(clienteId).catch(() => null),
+          fetchEmpresaOperadora().catch(() => null),
+        ]);
+        if (!on) return;
+        setClienteLogo(logo);
+        if (empresa?.clienteLogoSpec) setClienteLogoSpec(empresa.clienteLogoSpec);
+      } catch (err) {
+        if (on) {
+          toast.error(err instanceof ApiError ? err.message : "Erro ao carregar cliente.");
+        }
       } finally {
         if (on) setLoading(false);
       }
@@ -51,6 +86,15 @@ export function ClienteForm({ clienteId }: Props) {
       on = false;
     };
   }, [clienteId]);
+
+  const togglePapel = (papel: (typeof CLIENTE_PAPEIS_OPCOES)[number], checked: boolean) => {
+    setFormData((prev) => {
+      const next = checked
+        ? normalizeClientePapeis([...prev.papeis, papel])
+        : normalizeClientePapeis(prev.papeis.filter((p) => p !== papel));
+      return { ...prev, papeis: next };
+    });
+  };
 
   const validateCnpj = async (cnpj: string) => {
     const clean = cnpj.replace(/\D/g, "");
@@ -120,19 +164,25 @@ export function ClienteForm({ clienteId }: Props) {
       toast.error("Razão Social e CNPJ são obrigatórios.");
       return;
     }
+    const papeis = normalizeClientePapeis(formData.papeis);
+    if (!papeis.length) {
+      toast.error("Selecione Cliente e/ou Transportador.");
+      return;
+    }
 
     setSaving(true);
     try {
+      const payload = { ...formData, papeis };
       if (clienteId) {
-        await updateCadastrosCliente(clienteId, formData);
-        toast.success("Cliente atualizado com sucesso!");
+        await updateCadastrosCliente(clienteId, payload);
+        toast.success("Cadastro atualizado com sucesso!");
       } else {
-        await createCadastrosCliente(formData);
-        toast.success("Cliente cadastrado com sucesso!");
+        await createCadastrosCliente(payload);
+        toast.success("Cadastro criado com sucesso!");
       }
       router.push("/cadastros/pessoas/clientes");
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Erro ao salvar cliente.");
+      toast.error(err instanceof ApiError ? err.message : "Erro ao salvar cadastro.");
     } finally {
       setSaving(false);
     }
@@ -148,152 +198,156 @@ export function ClienteForm({ clienteId }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-4xl space-y-8">
+    <form onSubmit={handleSubmit} className={CADASTRO_FORM_CLASS}>
       <FormSection title="Dados Cadastrais" icon={Building2}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Razão Social" required>
-            <Input
-              value={formData.razaoSocial}
-              onChange={(e) => setFormData({ ...formData, razaoSocial: e.target.value })}
-              placeholder="Ex: RL Transportes, Carga e Descarga LTDA"
-            />
-          </FormField>
-
-          <FormField label="Nome Fantasia">
-            <Input
-              value={formData.nomeFantasia}
-              onChange={(e) => setFormData({ ...formData, nomeFantasia: e.target.value })}
-              placeholder="Ex: RL Transportes"
-            />
-          </FormField>
-
-          <FormField label="CNPJ" required>
-            <div className="flex gap-2">
-              <Input
-                value={formatCNPJ(formData.cnpj)}
-                onChange={(e) =>
-                  setFormData({ ...formData, cnpj: e.target.value.replace(/\D/g, "") })
-                }
-                onBlur={(e) => void validateCnpj(e.target.value)}
-                placeholder="00.000.000/0000-00"
-                className="tabular-nums"
-                disabled={Boolean(clienteId)}
-              />
-              {validatingCnpj ? (
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin self-center text-muted-foreground" />
-              ) : null}
+        <div className="space-y-4">
+          <FormField label="Tipo de cadastro" required>
+            <div className="flex min-h-10 flex-wrap items-center gap-4">
+              {CLIENTE_PAPEIS_OPCOES.map((papel) => (
+                <label key={papel} className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={clientePapelSelecionado(formData.papeis, papel)}
+                    onChange={(e) => togglePapel(papel, e.target.checked)}
+                    className="h-4 w-4 rounded border-border"
+                  />
+                  {CLIENTE_PAPEL_LABEL[papel]}
+                </label>
+              ))}
             </div>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              A mesma empresa pode ser cliente e transportador. Com Transportador marcado, ela
+              aparece na aba Transportadoras — não é preciso cadastrar de novo.
+            </p>
           </FormField>
 
-          <FormField label="Inscrição Estadual (IE)">
-            <Input
-              value={formData.ie}
-              onChange={(e) => setFormData({ ...formData, ie: e.target.value })}
-              placeholder="000.000.000.000"
-              className="tabular-nums"
-            />
-          </FormField>
+          <div className="flex flex-wrap gap-4">
+            <FormField label="Razão Social" required className="min-w-[16rem] flex-1">
+              <Input
+                value={formData.razaoSocial}
+                onChange={(e) => setFormData({ ...formData, razaoSocial: e.target.value })}
+                placeholder="Ex: RL Transportes, Carga e Descarga LTDA"
+              />
+            </FormField>
+            <FormField label="Nome Fantasia" className="min-w-[14rem] flex-1">
+              <Input
+                value={formData.nomeFantasia}
+                onChange={(e) => setFormData({ ...formData, nomeFantasia: e.target.value })}
+                placeholder="Ex: RL Transportes"
+              />
+            </FormField>
+          </div>
 
-          <FormField label="Inscrição Municipal (IM)">
-            <Input
-              value={formData.im}
-              onChange={(e) => setFormData({ ...formData, im: e.target.value })}
-              placeholder="0000000"
-              className="tabular-nums"
-            />
-          </FormField>
-
-          <FormField label="Segmento">
-            <select
-              value={formData.segmento}
-              onChange={(e) => setFormData({ ...formData, segmento: e.target.value })}
-              className={SELECT_CLASS}
-            >
-              <option value="">Selecione...</option>
-              <option value="EXPORTACAO">Exportação</option>
-              <option value="IMPORTACAO">Importação</option>
-              <option value="ARMAZENAGEM">Armazenagem</option>
-              <option value="DISTRIBUICAO">Distribuição</option>
-              <option value="CABOTAGEM">Cabotagem</option>
-              <option value="OUTROS">Outros</option>
-            </select>
-          </FormField>
+          <div className="flex flex-wrap gap-4">
+            <FormField label="CNPJ" required size="md">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={formatCNPJ(formData.cnpj)}
+                  onChange={(e) =>
+                    setFormData({ ...formData, cnpj: e.target.value.replace(/\D/g, "") })
+                  }
+                  onBlur={(e) => void validateCnpj(e.target.value)}
+                  placeholder="00.000.000/0000-00"
+                  className="tabular-nums"
+                  disabled={Boolean(clienteId)}
+                />
+                {validatingCnpj ? (
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                ) : null}
+              </div>
+            </FormField>
+            <FormField label="Inscrição Estadual (IE)" size="md">
+              <Input
+                value={formData.ie}
+                onChange={(e) => setFormData({ ...formData, ie: e.target.value })}
+                placeholder="000.000.000.000"
+                className="tabular-nums"
+              />
+            </FormField>
+            <FormField label="Inscrição Municipal (IM)" size="md">
+              <Input
+                value={formData.im}
+                onChange={(e) => setFormData({ ...formData, im: e.target.value })}
+                placeholder="0000000"
+                className="tabular-nums"
+              />
+            </FormField>
+          </div>
         </div>
       </FormSection>
 
       <FormSection title="Endereço" icon={MapPin}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <FormField label="CEP">
-            <div className="flex gap-2">
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-4">
+            <FormField label="CEP" size="sm">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={formatCEP(formData.cep)}
+                  onChange={(e) => setFormData({ ...formData, cep: e.target.value.replace(/\D/g, "") })}
+                  onBlur={(e) => void buscaCep(e.target.value)}
+                  placeholder="00000-000"
+                  className="tabular-nums"
+                />
+                {validatingCep ? (
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                ) : null}
+              </div>
+            </FormField>
+            <FormField label="Endereço" className="min-w-[16rem] flex-[3]">
               <Input
-                value={formatCEP(formData.cep)}
-                onChange={(e) => setFormData({ ...formData, cep: e.target.value.replace(/\D/g, "") })}
-                onBlur={(e) => void buscaCep(e.target.value)}
-                placeholder="00000-000"
-                className="tabular-nums"
+                value={formData.endereco}
+                onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
+                placeholder="Rua, Avenida..."
               />
-              {validatingCep ? (
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin self-center text-muted-foreground" />
-              ) : null}
-            </div>
-          </FormField>
+            </FormField>
+            <FormField label="Número" size="sm">
+              <Input
+                value={formData.numero}
+                onChange={(e) => setFormData({ ...formData, numero: e.target.value })}
+                placeholder="123"
+              />
+            </FormField>
+          </div>
 
-          <FormField label="Endereço" className="md:col-span-2">
-            <Input
-              value={formData.endereco}
-              onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
-              placeholder="Rua, Avenida..."
-            />
-          </FormField>
-
-          <FormField label="Número">
-            <Input
-              value={formData.numero}
-              onChange={(e) => setFormData({ ...formData, numero: e.target.value })}
-              placeholder="123"
-            />
-          </FormField>
-
-          <FormField label="Complemento">
-            <Input
-              value={formData.complemento}
-              onChange={(e) => setFormData({ ...formData, complemento: e.target.value })}
-              placeholder="Sala, Andar..."
-            />
-          </FormField>
-
-          <FormField label="Bairro">
-            <Input
-              value={formData.bairro}
-              onChange={(e) => setFormData({ ...formData, bairro: e.target.value })}
-              placeholder="Centro"
-            />
-          </FormField>
-
-          <FormField label="Cidade">
-            <Input
-              value={formData.cidade}
-              onChange={(e) => setFormData({ ...formData, cidade: e.target.value })}
-              placeholder="São Paulo"
-            />
-          </FormField>
-
-          <FormField label="UF">
-            <Input
-              value={formData.uf}
-              onChange={(e) =>
-                setFormData({ ...formData, uf: e.target.value.toUpperCase().slice(0, 2) })
-              }
-              placeholder="SP"
-              maxLength={2}
-            />
-          </FormField>
+          <div className="flex flex-wrap gap-4">
+            <FormField label="Complemento" className="min-w-[10rem] flex-1">
+              <Input
+                value={formData.complemento}
+                onChange={(e) => setFormData({ ...formData, complemento: e.target.value })}
+                placeholder="Sala, Andar..."
+              />
+            </FormField>
+            <FormField label="Bairro" className="min-w-[10rem] flex-1">
+              <Input
+                value={formData.bairro}
+                onChange={(e) => setFormData({ ...formData, bairro: e.target.value })}
+                placeholder="Centro"
+              />
+            </FormField>
+            <FormField label="Cidade" className="min-w-[10rem] flex-1">
+              <Input
+                value={formData.cidade}
+                onChange={(e) => setFormData({ ...formData, cidade: e.target.value })}
+                placeholder="São Paulo"
+              />
+            </FormField>
+            <FormField label="UF" size="xs">
+              <Input
+                value={formData.uf}
+                onChange={(e) =>
+                  setFormData({ ...formData, uf: e.target.value.toUpperCase().slice(0, 2) })
+                }
+                placeholder="SP"
+                maxLength={2}
+              />
+            </FormField>
+          </div>
         </div>
       </FormSection>
 
       <FormSection title="Contato" icon={Phone}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="E-mail" required>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="E-mail" required className="min-w-[16rem] flex-[2]">
             <Input
               type="email"
               value={formData.email}
@@ -301,8 +355,7 @@ export function ClienteForm({ clienteId }: Props) {
               placeholder="contato@empresa.com.br"
             />
           </FormField>
-
-          <FormField label="Telefone">
+          <FormField label="Telefone" size="md">
             <Input
               value={formatPhone(formData.telefone)}
               onChange={(e) =>
@@ -312,8 +365,7 @@ export function ClienteForm({ clienteId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-
-          <FormField label="Celular">
+          <FormField label="Celular" size="md">
             <Input
               value={formatPhone(formData.celular)}
               onChange={(e) =>
@@ -327,8 +379,8 @@ export function ClienteForm({ clienteId }: Props) {
       </FormSection>
 
       <FormSection title="Dados Financeiros" icon={FileText}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Condição de Pagamento">
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Condição de Pagamento" className="min-w-[14rem] flex-1">
             <select
               value={formData.condicaoPagamento}
               onChange={(e) => setFormData({ ...formData, condicaoPagamento: e.target.value })}
@@ -342,8 +394,7 @@ export function ClienteForm({ clienteId }: Props) {
               <option value="PERSONALIZADO">Personalizado</option>
             </select>
           </FormField>
-
-          <FormField label="Limite de Crédito (R$)">
+          <FormField label="Limite de Crédito (R$)" className="min-w-[12rem] flex-1">
             <Input
               type="number"
               value={formData.limiteCredito}
@@ -355,17 +406,58 @@ export function ClienteForm({ clienteId }: Props) {
         </div>
       </FormSection>
 
+      {clienteId ? (
+        <FormSection title="Logo do cliente (portal)" icon={ImagePlus}>
+          <LogoUploadCard
+            spec={
+              clienteLogoSpec ?? {
+                titulo: "Logo do cliente",
+                ondeAparece: "Portal do cliente, ao lado do nome da empresa logada",
+                descricao: "Marca do cliente (não da RL). Fundo transparente.",
+                formatos: "PNG, WEBP ou SVG",
+                dimensoes: "512 × 512 px (aceita 256–1024)",
+                tamanhoMax: "400 KB",
+              }
+            }
+            previewUrl={clienteLogo?.url}
+            onUpload={async (file) => {
+              try {
+                const out = await uploadClienteLogo(clienteId, file);
+                setClienteLogo(out);
+                toast.success("Logo do cliente atualizada.");
+              } catch (err) {
+                toast.error(err instanceof ApiError ? err.message : "Falha no upload da logo.");
+                throw err;
+              }
+            }}
+            onRemove={async () => {
+              try {
+                await deleteClienteLogo(clienteId);
+                setClienteLogo(null);
+                toast.success("Logo do cliente removida.");
+              } catch (err) {
+                toast.error(err instanceof ApiError ? err.message : "Não foi possível remover.");
+              }
+            }}
+          />
+        </FormSection>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Salve o cadastro primeiro para anexar a logo que aparece no portal.
+        </p>
+      )}
+
       <FormSection title="Observações" icon={FileText}>
         <textarea
           value={formData.observacoes}
           onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })}
-          placeholder="Anotações gerais sobre o cliente..."
-          rows={4}
+          placeholder="Anotações gerais..."
+          rows={3}
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
         />
       </FormSection>
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <label className="flex cursor-pointer items-center gap-2">
           <input
             type="checkbox"
@@ -373,17 +465,17 @@ export function ClienteForm({ clienteId }: Props) {
             onChange={(e) => setFormData({ ...formData, ativo: e.target.checked })}
             className="h-4 w-4 rounded border-border"
           />
-          <span className="text-sm">Cliente ativo</span>
+          <span className="text-sm">Cadastro ativo</span>
         </label>
         {!formData.ativo ? (
           <p className="text-xs text-amber-400">
-            Clientes inativos não aparecem em novas solicitações, mas mantêm histórico.
+            Inativos não aparecem em novas solicitações, mas mantêm histórico.
           </p>
         ) : null}
       </div>
 
-      <div className="sticky bottom-0 -mx-4 flex gap-3 border-t border-border bg-[#080a0d]/95 p-4 backdrop-blur lg:-mx-6">
-        <Button type="button" variant="outline" onClick={() => router.back()}>
+      <div className="flex gap-3">
+        <Button type="button" variant="outline" onClick={() => router.push("/cadastros/pessoas/clientes")}>
           <X className="mr-2 h-4 w-4" />
           Cancelar
         </Button>
@@ -394,7 +486,7 @@ export function ClienteForm({ clienteId }: Props) {
             </>
           ) : (
             <>
-              <Save className="mr-2 h-4 w-4" /> {clienteId ? "Atualizar" : "Cadastrar"} Cliente
+              <Save className="mr-2 h-4 w-4" /> {clienteId ? "Atualizar" : "Cadastrar"}
             </>
           )}
         </Button>

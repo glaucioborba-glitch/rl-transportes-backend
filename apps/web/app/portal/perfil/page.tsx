@@ -107,7 +107,7 @@ export default function PerfilPage() {
   }
 
   return (
-    <main className="mx-auto max-w-7xl px-4 py-8">
+    <main className="mx-auto w-[90%] px-4 py-8">
       <SectionTitle
         title="Perfil"
         description="Dados da sessão, cadastro da empresa e gestão de equipe."

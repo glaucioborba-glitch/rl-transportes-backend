@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
+import { Role, TipoOpcaoPagamento } from '@prisma/client';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -32,6 +32,14 @@ export class CadastroFinanceiroController {
     return this.condicoes.listarAtivas();
   }
 
+  @Get('prazos-pagamento')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('cadastro-financeiro:analisar')
+  @ApiOperation({ summary: 'Opções de prazo comercial do tenant (dinâmico)' })
+  listarPrazos() {
+    return this.condicoes.listarAtivas(TipoOpcaoPagamento.PRAZO);
+  }
+
   @Get()
   @Roles(Role.ADMIN, Role.GERENTE)
   @Permissions('cadastro-financeiro:analisar')
@@ -44,13 +52,13 @@ export class CadastroFinanceiroController {
   @Roles(Role.ADMIN, Role.GERENTE)
   @Permissions('cadastro-financeiro:analisar')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Aprovar cadastro e definir condição de pagamento' })
+  @ApiOperation({ summary: 'Aprovar cadastro com forma e prazo (calendário de boletos)' })
   aprovar(
     @Param('id') id: string,
     @Body() body: AprovarCadastroFinanceiroDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.cadastroFinanceiro.aprovar(id, body.condicaoPagamento, user.sub);
+    return this.cadastroFinanceiro.aprovar(id, body.condicaoPagamento, body.prazoPagamento, user.sub);
   }
 
   @Post(':id/rejeitar')

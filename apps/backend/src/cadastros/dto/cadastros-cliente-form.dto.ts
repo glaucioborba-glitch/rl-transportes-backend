@@ -1,8 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsEmail,
+  IsIn,
   IsOptional,
   IsString,
   Matches,
@@ -127,16 +129,16 @@ export class CadastrosClienteFormDto {
   @IsString()
   limiteCredito?: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  segmento?: string;
-
   @ApiPropertyOptional({ default: 'PJ' })
   @IsOptional()
   @IsString()
   tipoCliente?: string;
+
+  @ApiPropertyOptional({ type: [String], example: ['CLIENTE'] })
+  @IsOptional()
+  @IsArray()
+  @IsIn(['CLIENTE', 'TRANSPORTADOR'], { each: true })
+  papeis?: string[];
 
   @ApiPropertyOptional({ default: true })
   @IsOptional()

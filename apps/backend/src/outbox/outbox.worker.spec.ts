@@ -2,12 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { OutboxEventStatus } from '@prisma/client';
 import { OutboxWorker } from './outbox.worker';
 import { OutboxService } from './outbox.service';
-import { BillingOutboxProcessor } from './billing-outbox.processor';
 import { NfseBoletoOutboxProcessor } from './nfse-boleto-outbox.processor';
 import { WhatsappOutboxProcessor } from '../notification/whatsapp-outbox.processor';
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
 import { ClsService } from 'nestjs-cls';
 import { AlertService } from '../alert/alert.service';
+import { UnidadeProcessoOutboxProcessor } from '../unidade-processo/unidade-processo-outbox.processor';
 
 describe('OutboxWorker', () => {
   let worker: OutboxWorker;
@@ -16,7 +16,6 @@ describe('OutboxWorker', () => {
     markProcessed: jest.fn(),
     markFailed: jest.fn(),
   };
-  const billing = { processBillingTriggered: jest.fn() };
   const nfseBoleto = { processEmitirNfseBoleto: jest.fn() };
   const whatsappNotify = { processWhatsappNotify: jest.fn() };
   const realtime = { emitDispatchUpdated: jest.fn() };
@@ -34,23 +33,23 @@ describe('OutboxWorker', () => {
       providers: [
         OutboxWorker,
         { provide: OutboxService, useValue: outbox },
-        { provide: BillingOutboxProcessor, useValue: billing },
         { provide: NfseBoletoOutboxProcessor, useValue: nfseBoleto },
         { provide: WhatsappOutboxProcessor, useValue: whatsappNotify },
         { provide: RealtimeEmitterService, useValue: realtime },
         { provide: ClsService, useValue: cls },
         { provide: AlertService, useValue: alerts },
+        { provide: UnidadeProcessoOutboxProcessor, useValue: { process: jest.fn() } },
       ],
     }).compile();
     worker = module.get(OutboxWorker);
   });
 
-  it('roteia BILLING_TRIGGERED para billing processor', async () => {
+  it('roteia EMITIR_NFSE_BOLETO para o processor fiscal', async () => {
     outbox.claimPending.mockResolvedValue([
       {
         id: 'e1',
-        eventType: 'BILLING_TRIGGERED',
-        payload: { containerId: 'c1' },
+        eventType: 'EMITIR_NFSE_BOLETO',
+        payload: { faturaId: 'f1' },
         aggregateId: 'agg1',
       },
     ]);
@@ -58,7 +57,7 @@ describe('OutboxWorker', () => {
 
     await worker.tick();
 
-    expect(billing.processBillingTriggered).toHaveBeenCalledWith('e1', { containerId: 'c1' });
+    expect(nfseBoleto.processEmitirNfseBoleto).toHaveBeenCalledWith('e1', { faturaId: 'f1' });
     expect(outbox.markProcessed).toHaveBeenCalledWith('e1');
     expect(realtime.emitDispatchUpdated).toHaveBeenCalledWith(
       expect.objectContaining({ status: OutboxEventStatus.PROCESSED }),

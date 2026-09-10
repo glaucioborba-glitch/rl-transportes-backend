@@ -73,7 +73,8 @@ describe('PatioV2Service', () => {
 
   it('provisionFromGateIn cria PatioUnidade SEPARADO por container', async () => {
     const tx = {
-      patioUnidade: { count: jest.fn().mockResolvedValue(0), create: jest.fn() },
+      patioUnidade: { count: jest.fn().mockResolvedValue(0), create: jest.fn().mockResolvedValue({ id: 'u1' }) },
+      patioTomadaEvent: { create: jest.fn() },
       containerSolicitacao: {
         findMany: jest.fn().mockResolvedValue([{ unidade: 'TEMU6079348', refrigerado: true, ordem: 1 }]),
       },

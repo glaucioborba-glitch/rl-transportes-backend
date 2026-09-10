@@ -216,7 +216,11 @@ export default function ApagarPage() {
         <h1 className="text-2xl font-bold text-white">Contas a pagar · Tesouraria</h1>
         <p className="text-sm text-zinc-500">
           Dados: relatórios financeiros, faturamento, boletos e dashboard executivo. Alteração de status: PATCH{" "}
-          <code className="text-zinc-400">/faturamento/boletos/:id</code>.
+          <code className="text-zinc-400">/faturamento/boletos/:id</code>. Impostos da RL ficam em{" "}
+          <Link href="/financeiro/provisao-encargos" className="text-amber-300 underline">
+            Provisão de encargos
+          </Link>{" "}
+          — não entram nesta lista até virar guia confirmada.
         </p>
       </div>
 

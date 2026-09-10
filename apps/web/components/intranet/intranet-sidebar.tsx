@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { ChevronDown, ChevronUp, Settings } from "lucide-react";
+import { ChevronDown, ChevronUp, Settings, SquareArrowOutUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   ADVANCED_MODULES,
@@ -58,6 +58,9 @@ export function IntranetSidebar({ moduleId }: Props) {
             <Link
               key={item.href}
               href={item.href}
+              target={item.openInNewTab ? "_blank" : undefined}
+              rel={item.openInNewTab ? "noopener noreferrer" : undefined}
+              title={item.openInNewTab ? `${item.label} — abre em nova aba` : undefined}
               className={cn(
                 "flex min-h-10 items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
                 active
@@ -67,7 +70,12 @@ export function IntranetSidebar({ moduleId }: Props) {
             >
               <Icon className="h-4 w-4 shrink-0 opacity-80" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate">{item.label}</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="block truncate">{item.label}</span>
+                  {item.openInNewTab ? (
+                    <SquareArrowOutUpRight className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
+                  ) : null}
+                </span>
                 {item.description ? (
                   <span className="block truncate text-[10px] font-normal text-zinc-500">
                     {item.description}

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, staffGateCockpit } from "@/lib/api/staff-client";
-import { fetchReconfirmacoesCount } from "@/lib/gate/operacao-api";
+import { fetchControleEntradaSaidaCount } from "@/lib/gate/operacao-api";
 import { GATE_POLLING_INTERVAL_MS } from "@/lib/dev-performance";
 import type { IntranetModuleId } from "@/lib/intranet/intranet-nav-config";
 import { usePendenciasCadastroCount } from "@/stores/pendencias-cadastro-store";
@@ -14,9 +14,9 @@ export function useIntranetSidebarBadges(moduleId: IntranetModuleId) {
   const refreshGate = useCallback(async () => {
     if (moduleId !== "gate") return;
     try {
-      const [data, reconf] = await Promise.all([
+      const [data, controle] = await Promise.all([
         staffGateCockpit(),
-        fetchReconfirmacoesCount().catch(() => ({ count: 0 })),
+        fetchControleEntradaSaidaCount().catch(() => ({ count: 0 })),
       ]);
       setGateBadges({
         "gate.fila": data.filaChegada.length,
@@ -25,7 +25,7 @@ export function useIntranetSidebarBadges(moduleId: IntranetModuleId) {
         "gate.despacho": data.despacho.length,
         "gate.os": data.ordensServico.length,
         "gate.autorizacoes": data.dashboard.autorizacoesPendentes.total,
-        "gate.reconfirmacoes": reconf.count,
+        "gate.controle": controle.count,
       });
     } catch (e) {
       if (!(e instanceof ApiError)) return;

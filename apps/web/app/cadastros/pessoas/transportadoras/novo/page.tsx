@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { TransportadoraForm } from "../components/transportadora-form";
+import { CADASTRO_PAGE_CLASS } from "@/components/cadastros/form-field";
 
 export default function NovaTransportadoraPage() {
   return (
-    <div className="space-y-6">
+    <div className={CADASTRO_PAGE_CLASS}>
       <div>
         <div className="mb-1 flex items-center gap-2 text-sm text-muted-foreground">
           <Link href="/cadastros/pessoas" className="hover:text-white">

@@ -1,4 +1,5 @@
 import { staffJson } from "@/lib/api/staff-client";
+import { defaultClientePapeisSafe } from "@/lib/cadastros/cliente-papeis";
 
 export type CadastrosClienteListItem = {
   id: string;
@@ -9,6 +10,7 @@ export type CadastrosClienteListItem = {
   telefone: string;
   cidade: string;
   uf: string;
+  papeis?: string[];
   ativo: boolean;
   contratosAtivos: number;
   solicitacoes: number;
@@ -34,8 +36,8 @@ export type CadastrosClienteFormData = {
   observacoes: string;
   condicaoPagamento: string;
   limiteCredito: string;
-  segmento: string;
   tipoCliente: string;
+  papeis: string[];
   ativo: boolean;
 };
 
@@ -101,7 +103,13 @@ export async function listCadastrosClientes(params: {
 }
 
 export async function getCadastrosCliente(id: string): Promise<CadastrosClienteFormData> {
-  return staffJson<CadastrosClienteFormData>(`/v2/cadastros/clientes/${encodeURIComponent(id)}`);
+  const raw = await staffJson<unknown>(`/v2/cadastros/clientes/${encodeURIComponent(id)}`);
+  return mapCadastrosClienteForm(raw);
+}
+
+function toClienteWriteBody(data: CadastrosClienteFormData): Omit<CadastrosClienteFormData, "id"> {
+  const { id: _id, ...body } = data;
+  return body;
 }
 
 export async function createCadastrosCliente(
@@ -110,7 +118,7 @@ export async function createCadastrosCliente(
   return staffJson<CadastrosClienteFormData>("/v2/cadastros/clientes", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify(toClienteWriteBody(data)),
   });
 }
 
@@ -121,7 +129,7 @@ export async function updateCadastrosCliente(
   return staffJson<CadastrosClienteFormData>(`/v2/cadastros/clientes/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: JSON.stringify(toClienteWriteBody(data)),
   });
 }
 
@@ -168,7 +176,42 @@ export const EMPTY_CLIENTE_FORM: CadastrosClienteFormData = {
   observacoes: "",
   condicaoPagamento: "",
   limiteCredito: "",
-  segmento: "",
   tipoCliente: "PJ",
+  papeis: ["CLIENTE"],
   ativo: true,
 };
+
+function str(value: unknown): string {
+  if (value == null) return "";
+  return String(value);
+}
+
+/** Aceita o shape da API de cadastros e o objeto bruto do Prisma (cpfCnpj, enderecoCep, …). */
+export function mapCadastrosClienteForm(raw: unknown): CadastrosClienteFormData {
+  const data = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  return {
+    ...EMPTY_CLIENTE_FORM,
+    id: str(data.id) || undefined,
+    razaoSocial: str(data.razaoSocial ?? data.nome),
+    nomeFantasia: str(data.nomeFantasia),
+    cnpj: str(data.cnpj ?? data.cpfCnpj).replace(/\D/g, ""),
+    ie: str(data.ie ?? data.inscricaoEstadual),
+    im: str(data.im ?? data.inscricaoMunicipal),
+    email: str(data.email),
+    telefone: str(data.telefone).replace(/\D/g, ""),
+    celular: str(data.celular ?? data.responsavelTelefone).replace(/\D/g, ""),
+    cep: str(data.cep ?? data.enderecoCep).replace(/\D/g, ""),
+    endereco: str(data.endereco ?? data.enderecoLogradouro),
+    numero: str(data.numero ?? data.enderecoNumero),
+    complemento: str(data.complemento ?? data.enderecoComplemento),
+    bairro: str(data.bairro ?? data.enderecoBairro),
+    cidade: str(data.cidade ?? data.enderecoCidade),
+    uf: str(data.uf ?? data.enderecoUf).toUpperCase().slice(0, 2),
+    observacoes: str(data.observacoes),
+    condicaoPagamento: str(data.condicaoPagamento),
+    limiteCredito: str(data.limiteCredito),
+    tipoCliente: str(data.tipoCliente ?? data.tipo) || "PJ",
+    papeis: defaultClientePapeisSafe(data.papeis),
+    ativo: data.ativo == null ? data.deletedAt == null : Boolean(data.ativo),
+  };
+}

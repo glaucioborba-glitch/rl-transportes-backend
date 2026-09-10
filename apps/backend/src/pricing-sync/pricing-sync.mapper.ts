@@ -6,7 +6,7 @@ import {
   TipoContainerTarifa,
 } from '@prisma/client';
 import type { FaixaDiaria } from '../billing-engine/faixa-diaria.types';
-import { resolveFaixasFromCadastroItem } from '../billing-engine/faixa-diaria-calculator';
+import { resolveFaixasFromCadastroItem, resolveFaixasEnergiaFromCadastroItem } from '../billing-engine/faixa-diaria-calculator';
 
 export type CadastroArmazenagemItem = {
   id: string;
@@ -19,6 +19,7 @@ export type CadastroArmazenagemItem = {
   faixasDiaria: unknown;
   tarifaDiariaArmazenagem: Prisma.Decimal | null;
   tarifaEnergiaReeferDiaria: Prisma.Decimal | null;
+  faixasEnergiaReefer?: unknown;
 };
 
 export function inferTipoContainerTarifa(
@@ -92,9 +93,13 @@ export function mapArmazenagemItemToRegras(
     ativa: true,
   });
 
-  const energia =
-    item.tarifaEnergiaReeferDiaria != null ? Number(item.tarifaEnergiaReeferDiaria) : 0;
-  if (tipoContainer === TipoContainerTarifa.REEFER && energia > 0) {
+  const faixasEnergia = resolveFaixasEnergiaFromCadastroItem({
+    faixasEnergiaReefer: item.faixasEnergiaReefer,
+    tarifaEnergiaReeferDiaria:
+      item.tarifaEnergiaReeferDiaria != null ? Number(item.tarifaEnergiaReeferDiaria) : null,
+  });
+  const energia = faixasEnergia[0]?.valorDiaria ?? 0;
+  if (tipoContainer === TipoContainerTarifa.REEFER && (energia > 0 || faixasEnergia.length)) {
     regras.push({
       tabelaPrecoId,
       nome: `Energia reefer ${labelBase}`,
@@ -104,9 +109,11 @@ export function mapArmazenagemItemToRegras(
       capacidadeCodigo: capacidade,
       containerTamanho: tamanho,
       statusContainer: item.statusContainer,
-      valor: new Prisma.Decimal(energia.toFixed(2)),
+      valor: new Prisma.Decimal((energia || 0).toFixed(2)),
       diasFreeTime: 0,
-      faixasDiaria: Prisma.JsonNull,
+      faixasDiaria: faixasEnergia.length
+        ? (faixasEnergia as unknown as Prisma.InputJsonValue)
+        : Prisma.JsonNull,
       ativa: true,
     });
   }

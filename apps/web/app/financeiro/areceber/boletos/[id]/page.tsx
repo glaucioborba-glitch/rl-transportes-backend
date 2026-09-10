@@ -1,7 +1,6 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
@@ -77,9 +76,6 @@ function BoletosDetalheInner() {
 
   return (
     <div className="space-y-6">
-      <Link href="/financeiro/areceber" className="text-sm text-amber-500 hover:underline">
-        ← AR
-      </Link>
       <h1 className="text-xl font-bold text-white">Boleto {boleto.numeroBoleto}</h1>
 
       <Card className="border-zinc-800 bg-zinc-900/70">

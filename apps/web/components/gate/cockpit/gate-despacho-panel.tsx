@@ -101,7 +101,7 @@ export function GateDespachoPanel({ items }: Props) {
               </Button>
               {row.gateInId ? (
                 <Button size="sm" className="bg-violet-700 hover:bg-violet-600" asChild>
-                  <Link href={`/staff/gate/checkout/${row.gateInId}`}>
+                  <Link href={`/operador/gate/checkout/${row.gateInId}`}>
                     <LogOut className="mr-1.5 h-4 w-4" />
                     Liberar saída
                   </Link>

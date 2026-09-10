@@ -34,7 +34,7 @@ export class ClientesController {
   constructor(private readonly clientesService: ClientesService) {}
 
   @Post()
-  @Roles(Role.ADMIN, Role.GERENTE)
+  @Roles(Role.ADMIN, Role.GERENTE, Role.SUPER_ADMIN)
   @Permissions('clientes:criar')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Criar novo cliente' })
@@ -54,7 +54,7 @@ export class ClientesController {
   }
 
   @Get()
-  @Roles(Role.ADMIN, Role.GERENTE, Role.CLIENTE)
+  @Roles(Role.ADMIN, Role.GERENTE, Role.CLIENTE, Role.SUPER_ADMIN)
   @Permissions('clientes:ler')
   @ApiOperation({ summary: 'Listar clientes com paginação e filtro de busca' })
   async findAll(
@@ -65,7 +65,7 @@ export class ClientesController {
   }
 
   @Get(':id')
-  @Roles(Role.ADMIN, Role.GERENTE, Role.CLIENTE)
+  @Roles(Role.ADMIN, Role.GERENTE, Role.CLIENTE, Role.SUPER_ADMIN)
   @Permissions('clientes:ler')
   @ApiOperation({ summary: 'Obter cliente por ID' })
   async findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
@@ -73,7 +73,7 @@ export class ClientesController {
   }
 
   @Patch(':id')
-  @Roles(Role.ADMIN, Role.GERENTE)
+  @Roles(Role.ADMIN, Role.GERENTE, Role.SUPER_ADMIN)
   @Permissions('clientes:atualizar')
   @ApiOperation({ summary: 'Atualizar cliente' })
   async update(
@@ -96,7 +96,7 @@ export class ClientesController {
   }
 
   @Delete(':id')
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @Permissions('clientes:excluir')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Deletar cliente (soft delete)' })

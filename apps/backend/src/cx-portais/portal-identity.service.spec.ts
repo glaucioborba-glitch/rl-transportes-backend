@@ -51,6 +51,12 @@ function makeSvc(
   const tenantConfig = {
     getParametrosSeguranca: jest.fn().mockResolvedValue({ validarDominioCorporativo: true }),
   } as unknown as import('../tenant/tenant-config.service').TenantConfigService;
+  const empresa = {
+    brandingPublico: jest.fn().mockResolvedValue({ nome: 'RL Transportes', logos: {} }),
+  } as unknown as import('../tenant/empresa-operadora.service').EmpresaOperadoraService;
+  const notificacoes = {
+    criarCadastroEmAnalise: jest.fn().mockResolvedValue({ id: 'n1' }),
+  } as unknown as import('../portal-notificacoes/portal-notificacao.service').PortalNotificacaoService;
   return new PortalIdentityService(
     prisma,
     fornecedores,
@@ -67,6 +73,8 @@ function makeSvc(
     dominioValidator,
     transportadorasAutorizadas,
     tenantConfig,
+    empresa,
+    notificacoes,
   );
 }
 

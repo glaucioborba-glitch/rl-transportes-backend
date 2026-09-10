@@ -4,11 +4,11 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { StatusCadastroCliente } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { CxPortalRequestUser } from '../types/cx-portal.types';
+import { cadastroPermiteSolicitacoes } from '../../cadastro-financeiro/cadastro-operacao-inicial';
 
-/** Bloqueia mutações operacionais enquanto cadastro aguarda análise financeira. */
+/** Bloqueia mutações só se o cadastro foi rejeitado. Pendente opera à vista. */
 @Injectable()
 export class PortalCadastroAprovadoGuard implements CanActivate {
   constructor(private readonly prisma: PrismaService) {}
@@ -26,14 +26,8 @@ export class PortalCadastroAprovadoGuard implements CanActivate {
       select: { statusCadastro: true },
     });
     if (!cliente) return true;
-    if (cliente.statusCadastro === StatusCadastroCliente.APROVADO) return true;
+    if (cadastroPermiteSolicitacoes(cliente.statusCadastro)) return true;
 
-    if (cliente.statusCadastro === StatusCadastroCliente.REJEITADO) {
-      throw new ForbiddenException('Cadastro rejeitado pela análise financeira.');
-    }
-
-    throw new ForbiddenException(
-      'Cadastro pendente de análise financeira. Você pode visualizar informações, mas não criar solicitações.',
-    );
+    throw new ForbiddenException('Cadastro rejeitado pela análise financeira.');
   }
 }

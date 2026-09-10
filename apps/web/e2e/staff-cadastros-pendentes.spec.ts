@@ -16,7 +16,8 @@ test.describe("Cenário 4 — Cadastros financeiros pendentes", () => {
     await expect(page.getByRole("heading", { name: "Novos cadastros pendentes" })).toBeVisible();
     await expect(page.getByText("Nova Empresa E2E LTDA")).toBeVisible();
 
-    await page.getByLabel("Condição de pagamento").selectOption({ label: "À Vista PIX" });
+    await page.getByLabel("Forma de pagamento").selectOption({ label: "À Vista PIX" });
+    await page.getByLabel("Prazo de pagamento").selectOption({ label: "À vista" });
     await page.getByRole("button", { name: "Aprovar" }).click();
 
     await expect(page.getByText(/aprovado/i)).toBeVisible({ timeout: 10_000 });

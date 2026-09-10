@@ -14,15 +14,12 @@ import {
   fetchFaturamentoPaginated,
   fetchFaturasArmazenagemPaginated,
   fetchNfsePaginated,
+  fetchPortalDashboard,
   type FaturaArmazenagemPortal,
 } from "@/lib/api/portal-client";
 import { toast } from "@/lib/toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  descricaoCondicaoPagamento,
-  labelCondicaoPagamento,
-} from "@/lib/condicao-pagamento-portal";
-import { fetchPortalDashboard } from "@/lib/api/portal-client";
+import { textoCondicaoVigente } from "@/lib/condicao-pagamento-portal";
 
 export default function FinanceiroPage() {
   const [loading, setLoading] = useState(true);
@@ -34,6 +31,10 @@ export default function FinanceiroPage() {
   const [pendenteVal, setPendenteVal] = useState(0);
   const [faturamentoLista, setFaturamentoLista] = useState(0);
   const [condicaoPagamento, setCondicaoPagamento] = useState<string | null>(null);
+  const [prazoPagamento, setPrazoPagamento] = useState<string | null>(null);
+  const [statusCadastro, setStatusCadastro] = useState<
+    "PENDENTE_ANALISE_FINANCEIRA" | "APROVADO" | "REJEITADO" | null
+  >(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -66,6 +67,8 @@ export default function FinanceiroPage() {
       setVencidos(v);
       setPendenteVal(pend);
       setCondicaoPagamento(dash.condicaoPagamento ?? null);
+      setPrazoPagamento(dash.prazoPagamento ?? null);
+      setStatusCadastro(dash.statusCadastro ?? null);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Erro ao carregar financeiro");
     } finally {
@@ -79,18 +82,21 @@ export default function FinanceiroPage() {
 
   if (loading) {
     return (
-      <main className="mx-auto max-w-7xl px-4 py-8">
+      <main className="mx-auto w-[90%] px-4 py-8">
         <Skeleton className="h-40 w-full" />
       </main>
     );
   }
 
   const inad = boletos.length ? Math.round((vencidos / boletos.length) * 100) : 0;
-  const condicaoLabel = labelCondicaoPagamento(condicaoPagamento);
-  const condicaoDescricao = descricaoCondicaoPagamento(condicaoPagamento);
+  const condicao = textoCondicaoVigente({
+    statusCadastro,
+    condicaoPagamento,
+    prazoPagamento,
+  });
 
   return (
-    <main className="mx-auto max-w-7xl space-y-8 px-4 py-8">
+    <main className="mx-auto w-[90%] space-y-8 px-4 py-8">
       <SectionTitle
         title="Financeiro"
         description="Faturamento mensal, armazenagem Gate-Out (NFS-e + boleto/PIX), boletos e NFS-e."
@@ -104,10 +110,8 @@ export default function FinanceiroPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm font-medium text-white">{condicaoLabel}</p>
-          {condicaoDescricao ? (
-            <p className="mt-1 text-sm text-muted-foreground">{condicaoDescricao}</p>
-          ) : null}
+          <p className="text-sm font-medium text-white">{condicao.titulo}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{condicao.descricao}</p>
         </CardContent>
       </Card>
 

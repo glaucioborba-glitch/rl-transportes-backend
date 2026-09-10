@@ -4,7 +4,13 @@ import type { IntranetModuleId } from "./intranet-nav-config";
 export function resolveIntranetModule(pathname: string): IntranetModuleId {
   if (pathname.startsWith("/operador/gate")) return "gate";
   if (pathname.startsWith("/cadastros")) return "cadastros";
-  if (pathname.startsWith("/operador/dispatch")) return "dispatch";
+  if (
+    pathname.startsWith("/operador/transportes") ||
+    pathname.startsWith("/operador/fretes") ||
+    pathname.startsWith("/operador/dispatch")
+  ) {
+    return "dispatch";
+  }
   if (pathname.startsWith("/operador/patio")) return "patio";
   if (pathname.startsWith("/operador/dashboard") || pathname === "/operador") return "dashboard";
   if (pathname.startsWith("/financeiro")) return "financeiro";
@@ -30,6 +36,8 @@ export function resolveIntranetModule(pathname: string): IntranetModuleId {
 export function isIntranetDesktopPath(pathname: string): boolean {
   const prefixes = [
     "/operador/dashboard",
+    "/operador/transportes",
+    "/operador/fretes",
     "/operador/dispatch",
     "/operador/gate",
     "/operador/patio",
@@ -53,4 +61,9 @@ export function isIntranetDesktopPath(pathname: string): boolean {
     if (pathname.startsWith("/operador/login")) return false;
   }
   return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
+/** Quadro de Fretes: sem menu/sidebar da intranet (abre em nova aba). */
+export function isFretesFocusPath(pathname: string): boolean {
+  return pathname === "/operador/fretes" || pathname.startsWith("/operador/fretes/");
 }

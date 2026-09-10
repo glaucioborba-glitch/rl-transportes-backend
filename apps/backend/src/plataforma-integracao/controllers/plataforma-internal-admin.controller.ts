@@ -53,7 +53,7 @@ export class PlataformaInternalAdminController {
   constructor(private readonly clients: PlataformaApiClientStore) {}
 
   @Get('api-clients')
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @Permissions('plataforma:api:write')
   @ApiOperation({ summary: 'Listar API Keys corporativas (sem exibir secret)' })
   async listarKeys() {
@@ -62,7 +62,7 @@ export class PlataformaInternalAdminController {
   }
 
   @Post('api-clients')
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @Permissions('plataforma:api:write')
   @ApiOperation({ summary: 'Criar novo par API Key + secret para parceiro externo' })
   async criar(@Body() dto: CriarApiClientePlataformaDto) {

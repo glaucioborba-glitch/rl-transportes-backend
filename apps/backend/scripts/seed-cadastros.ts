@@ -499,6 +499,50 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
     });
   }
 
+  // ========== LOCAIS DE TRANSPORTE (origens/destinos) ==========
+  const locaisTransporte = [
+    { codigo: 'FL', nome: 'FL', tipo: 'TERMINAL', cidade: 'Navegantes', uf: 'SC', ativo: true },
+    { codigo: 'PORTONAVE', nome: 'Portonave', tipo: 'PORTO', cidade: 'Navegantes', uf: 'SC', ativo: true },
+    { codigo: 'ITAPOA', nome: 'Itapoá', tipo: 'PORTO', cidade: 'Itapoá', uf: 'SC', ativo: true },
+    { codigo: 'TECON', nome: 'Tecon Santa Catarina', tipo: 'PORTO', cidade: 'Itajaí', uf: 'SC', ativo: true },
+  ];
+  for (const local of locaisTransporte) {
+    await prisma.cadastroLocalTransporte.upsert({
+      where: { tenantId_codigo: { tenantId: DEFAULT_TENANT, codigo: local.codigo } },
+      update: { ...local, deletedAt: null },
+      create: { tenantId: DEFAULT_TENANT, ...local },
+    });
+  }
+
+  const tabelaTransporteExistente = await prisma.cadastroTabelaTransporte.findFirst({
+    where: {
+      tenantId: DEFAULT_TENANT,
+      deletedAt: null,
+      OR: [{ padrao: true }, { nome: 'Tabela de transportes padrão' }],
+    },
+    orderBy: [{ padrao: 'desc' }, { createdAt: 'asc' }],
+  });
+  const tabelaTransporte =
+    tabelaTransporteExistente ??
+    (await prisma.cadastroTabelaTransporte.create({
+      data: {
+        tenantId: DEFAULT_TENANT,
+        nome: 'Tabela de transportes padrão',
+        descricao: 'Tabela inicial aplicada a novos cadastros',
+        dataInicio: new Date(),
+        ativo: true,
+        padrao: true,
+      },
+    }));
+  await prisma.cadastroTabelaTransporte.update({
+    where: { id: tabelaTransporte.id },
+    data: { padrao: true, ativo: true, deletedAt: null },
+  });
+  await prisma.cadastroTabelaTransporte.updateMany({
+    where: { tenantId: DEFAULT_TENANT, padrao: true, NOT: { id: tabelaTransporte.id } },
+    data: { padrao: false },
+  });
+
   // ========== BANCOS ==========
   const bancos = [
     { codigo: '001', nome: 'Banco do Brasil S.A.', cnpj: '00000000000191', site: 'www.bb.com.br', ativo: true },
@@ -605,14 +649,22 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
 
   // ========== TABELAS DE PREÇOS ==========
   const tabelaExistente = await prisma.cadastroTabelaPreco.findFirst({
-    where: { tenantId: DEFAULT_TENANT, nome: 'Tabela Padrão 2026', deletedAt: null },
+    where: {
+      tenantId: DEFAULT_TENANT,
+      deletedAt: null,
+      OR: [
+        { padrao: true },
+        { nome: { in: ['TABELA PADRÃO', 'Tabela Padrão 2026', 'Tabela Padrão'] } },
+      ],
+    },
+    orderBy: [{ padrao: 'desc' }, { createdAt: 'asc' }],
   });
   const tabelaGeral =
     tabelaExistente ??
     (await prisma.cadastroTabelaPreco.create({
       data: {
         tenantId: DEFAULT_TENANT,
-        nome: 'Tabela Padrão 2026',
+        nome: 'TABELA PADRÃO',
         descricao: 'Tabela padrão do terminal — armazenagem + operações',
         clienteId: null,
         moeda: 'BRL',
@@ -657,6 +709,11 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
         freeTimeDias: m.free,
         faixasDiaria: faixasPadrao,
         tarifaEnergiaReeferDiaria: m.reefer ?? null,
+        faixasEnergiaReefer: m.reefer
+          ? [
+              { diaInicio: 1, diaFim: null, valorDiaria: m.reefer },
+            ]
+          : undefined,
       },
     });
   }
@@ -682,6 +739,34 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
   }
 
   await ensureDefaultPricingSynced(prisma, DEFAULT_TENANT);
+
+  await prisma.cadastroTabelaServico.upsert({
+    where: { id: 'seed-tabela-servico-padrao' },
+    create: {
+      id: 'seed-tabela-servico-padrao',
+      tenantId: DEFAULT_TENANT,
+      nome: 'TABELA PADRÃO — Serviços',
+      descricao: 'Serviços adicionais lançáveis no ID. Inclua os valores comerciais da RL nesta tabela.',
+      dataInicio: new Date('2026-01-01T12:00:00.000Z'),
+      ativo: true,
+      padrao: true,
+    },
+    update: { ativo: true, padrao: true, deletedAt: null },
+  });
+
+  await prisma.cadastroTabelaAluguel.upsert({
+    where: { id: 'seed-tabela-aluguel-padrao' },
+    create: {
+      id: 'seed-tabela-aluguel-padrao',
+      tenantId: DEFAULT_TENANT,
+      nome: 'TABELA PADRÃO — Aluguel',
+      descricao: 'Diária de aluguel a partir da saída da unidade. Inclua os valores comerciais da RL nesta tabela.',
+      dataInicio: new Date('2026-01-01T12:00:00.000Z'),
+      ativo: true,
+      padrao: true,
+    },
+    update: { ativo: true, padrao: true, deletedAt: null },
+  });
 
   return ids;
 }

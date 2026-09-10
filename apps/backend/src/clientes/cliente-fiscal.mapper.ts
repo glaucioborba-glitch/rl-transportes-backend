@@ -1,4 +1,5 @@
 import { Prisma, TipoCliente } from '@prisma/client';
+import { defaultClientePapeis } from '../cadastros/cliente-papeis.util';
 import { CreateClienteDto } from './dto/create-cliente.dto';
 
 function normalizeCpfCnpjDigits(dto: CreateClienteDto): string {
@@ -58,6 +59,8 @@ export function clienteCreateInputFromDto(dto: CreateClienteDto): Prisma.Cliente
       responsavel: null,
       responsavelTelefone: null,
       responsavelEmail: null,
+      papeis: defaultClientePapeis(dto.papeis),
+      condicaoPagamento: dto.condicaoPagamento?.trim() || null,
       ...tabelaPrecoConnect(dto),
     };
   }
@@ -88,6 +91,8 @@ export function clienteCreateInputFromDto(dto: CreateClienteDto): Prisma.Cliente
     responsavel: dto.responsavel!.trim(),
     responsavelTelefone: dto.responsavelTelefone!.replace(/\D/g, ''),
     responsavelEmail: dto.responsavelEmail!.trim().toLowerCase(),
+    papeis: defaultClientePapeis(dto.papeis),
+    condicaoPagamento: dto.condicaoPagamento?.trim() || null,
     ...tabelaPrecoConnect(dto),
   };
 }

@@ -1,6 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import * as request from 'supertest';
+import request = require('supertest');
 import * as bcrypt from 'bcrypt';
 import {
   Role,
@@ -205,6 +205,7 @@ describe('Gate operacao-fluxo FSM (e2e)', () => {
       'LADO_TRASEIRO',
       'LADO_DIREITO',
       'LADO_ESQUERDO',
+      'LACRE',
     ].map((tipo) => ({
       tipo,
       imagem: MINIMAL_PNG,

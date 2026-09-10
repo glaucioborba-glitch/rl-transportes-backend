@@ -162,7 +162,7 @@ export function GateFilaChegadaPanel({ items, onAction }: Props) {
                     </>
                   ) : null}
                   <Button size="sm" variant="outline" className="border-zinc-600" asChild>
-                    <Link href={`/staff/gate/checkin/${row.id}`}>Check-in completo</Link>
+                    <Link href={`/operador/gate/checkin/${row.id}`}>Check-in completo</Link>
                   </Button>
                 </div>
               </CardContent>

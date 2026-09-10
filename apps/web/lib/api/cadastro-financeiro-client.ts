@@ -44,16 +44,40 @@ export async function fetchPendenciasCadastroCount(): Promise<number> {
   return typeof res.count === "number" ? res.count : 0;
 }
 
-export async function listarCondicoesPagamento(): Promise<Array<{ label: string; value: string }>> {
+export async function listarCondicoesPagamento(): Promise<
+  Array<{
+    label: string;
+    value: string;
+    dias?: number | null;
+    vencimentos?: number[];
+    formaVinculada?: string | null;
+  }>
+> {
   return staffJson("/financeiro/cadastros-pendentes/condicoes-pagamento");
 }
 
-export async function aprovarCadastroFinanceiro(id: string, condicaoPagamento: string) {
+export async function listarPrazosPagamento(): Promise<
+  Array<{
+    label: string;
+    value: string;
+    dias?: number | null;
+    vencimentos?: number[];
+    formaVinculada?: string | null;
+  }>
+> {
+  return staffJson("/financeiro/cadastros-pendentes/prazos-pagamento");
+}
+
+export async function aprovarCadastroFinanceiro(
+  id: string,
+  condicaoPagamento: string,
+  prazoPagamento: string,
+) {
   const apiValue = toCondicaoPagamentoApiValue(condicaoPagamento);
   return staffJson(`/financeiro/cadastros-pendentes/${encodeURIComponent(id)}/aprovar`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ condicaoPagamento: apiValue }),
+    body: JSON.stringify({ condicaoPagamento: apiValue, prazoPagamento }),
   });
 }
 
@@ -62,6 +86,60 @@ export async function rejeitarCadastroFinanceiro(id: string, motivo: string) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ motivo }),
+  });
+}
+
+export type ClienteCondicaoRow = {
+  id: string;
+  razaoSocial: string;
+  nomeFantasia: string | null;
+  cpfCnpj: string;
+  condicaoPagamento: string | null;
+  prazoPagamento: string | null;
+  analisadoEm: string | null;
+  cadastroTabelaPrecoId: string | null;
+  cadastroTabelaTransporteId: string | null;
+};
+
+export type TabelaPrecoAtribuicao = {
+  id: string;
+  nome: string;
+  padrao: boolean;
+  billingTabelaPrecoId: string | null;
+};
+
+export async function listarClientesCondicoes(q?: string): Promise<ClienteCondicaoRow[]> {
+  const qs = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+  return staffJson<ClienteCondicaoRow[]>(`/financeiro/clientes-condicoes${qs}`);
+}
+
+export async function listarTabelasPrecoAtribuicao() {
+  return staffJson<TabelaPrecoAtribuicao[]>("/financeiro/clientes-condicoes/tabelas-precos");
+}
+
+export type TabelaTransporteAtribuicao = {
+  id: string;
+  nome: string;
+  padrao: boolean;
+};
+
+export async function listarTabelasTransporteAtribuicao() {
+  return staffJson<TabelaTransporteAtribuicao[]>("/financeiro/clientes-condicoes/tabelas-transporte");
+}
+
+export async function atualizarClienteCondicao(
+  id: string,
+  body: {
+    condicaoPagamento: string;
+    prazoPagamento: string;
+    cadastroTabelaPrecoId?: string;
+    cadastroTabelaTransporteId?: string;
+  },
+) {
+  return staffJson(`/financeiro/clientes-condicoes/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
 }
 

@@ -51,6 +51,7 @@ import { YardSnapshotService } from '../yard-read/yard-snapshot.service';
 import { CadastrosTiposContainerService } from '../cadastros/cadastros-tipos-container.service';
 import { PatioV2Service } from '../patio-v2/patio.service';
 import { PortalSolicitarTomadaDto } from '../patio-v2/dto/tomada.dto';
+import { TenantConfigService } from '../tenant/tenant-config.service';
 
 class ChamadoDto {
   @ApiProperty()
@@ -98,12 +99,20 @@ export class PortalClienteController {
     private readonly yardSnapshot: YardSnapshotService,
     private readonly tiposContainer: CadastrosTiposContainerService,
     private readonly patio: PatioV2Service,
+    private readonly tenantConfig: TenantConfigService,
   ) {}
 
   private cx(req: Request & { cxUser?: CxPortalRequestUser }) {
     const u = req.cxUser;
     if (!u) throw new NotFoundException();
     return u;
+  }
+
+  @Get('turnos')
+  @ApiOperation({ summary: 'Turnos de agendamento do terminal do cliente autenticado' })
+  async turnos(@Req() req: Request & { cxUser?: CxPortalRequestUser }) {
+    const u = this.cx(req);
+    return this.tenantConfig.getTurnosAgendamento(u.tenantId);
   }
 
   @Get('sessoes-ativas/auditoria')
@@ -331,6 +340,33 @@ export class PortalClienteController {
     const u = this.cx(req);
     await this.audPortal(u, 'GET /cliente/portal/kpis');
     return this.data.kpis(u, clienteId);
+  }
+
+  @Get('patio/saldo')
+  @PessoaPode('verOS')
+  @ApiOperation({ summary: 'Saldo de unidades depositadas no pátio' })
+  async saldoPatio(
+    @Req() req: Request & { cxUser?: CxPortalRequestUser },
+    @Query('clienteId') clienteIdParam?: string,
+  ) {
+    const u = this.cx(req);
+    await this.audPortal(u, 'GET /cliente/portal/patio/saldo');
+    return this.data.saldoPatio(u, clienteIdParam);
+  }
+
+  @Get('patio/unidades-estoque')
+  @PessoaPode('criarSolicitacao')
+  @ApiOperation({
+    summary: 'Estoque do cliente (ID aberto) para coleta/exportação — só unidades desta empresa',
+  })
+  async unidadesEstoque(
+    @Req() req: Request & { cxUser?: CxPortalRequestUser },
+    @Query('q') q?: string,
+    @Query('clienteId') clienteIdParam?: string,
+  ) {
+    const u = this.cx(req);
+    await this.audPortal(u, 'GET /cliente/portal/patio/unidades-estoque');
+    return this.data.listarEstoqueDoCliente(u, q, clienteIdParam);
   }
 
   @Get('pilhas')

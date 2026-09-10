@@ -11,8 +11,8 @@ export function PortalCadastroPendenteBanner() {
       role="alert"
       className="border-b border-sky-500/40 bg-sky-950/80 px-4 py-3 text-center text-sm text-sky-100"
     >
-      Seu cadastro está em análise pelo financeiro da RL Transportes. Você pode navegar no portal, mas
-      a criação de solicitações ficará disponível após a liberação comercial.
+      Seu cadastro está em análise pelo financeiro da RL Transportes. Você já pode criar solicitações;
+      até a liberação comercial, o pagamento é à vista (PIX), com recebimento antes da coleta.
     </div>
   );
 }

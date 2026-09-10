@@ -3,13 +3,19 @@ import { ConfigModule } from '@nestjs/config';
 import whatsappConfig from '../config/whatsapp.config';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { IntegrationCredentialsModule } from '../tenant/integration-credentials.module';
 import { NotificationEnqueueService } from './notification-enqueue.service';
 import { NotificationRecipientService } from './notification-recipient.service';
 import { WhatsappOutboxProcessor } from './whatsapp-outbox.processor';
 import { WhatsappService } from './whatsapp.service';
 
 @Module({
-  imports: [PrismaModule, AuditLogModule, ConfigModule.forFeature(whatsappConfig)],
+  imports: [
+    PrismaModule,
+    AuditLogModule,
+    ConfigModule.forFeature(whatsappConfig),
+    IntegrationCredentialsModule,
+  ],
   providers: [
     WhatsappService,
     NotificationRecipientService,

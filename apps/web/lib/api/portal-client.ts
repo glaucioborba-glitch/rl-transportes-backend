@@ -1000,6 +1000,113 @@ export async function bootstrapPortalPessoaIdentidade(opts: {
   return boot(portalPessoaSessionDeps(), opts);
 }
 
+export type PortalPatioSaldoItem = {
+  id: string;
+  unidadeIso: string;
+  tipo: string;
+  tamanho: string | null;
+  statusContainer: "CHEIO" | "VAZIO" | null;
+  refrigerado: boolean;
+  booking: string | null;
+  processo: string | null;
+  navio?: string | null;
+  protocolo: string;
+  solicitacaoId: string;
+  unidadeProcessoNumero?: number | null;
+  unidadeProcessoLabel?: string | null;
+  statusPatio: string;
+  statusPatioCodigo: string;
+  entradaEm: string;
+  diasNoPatio: number;
+};
+
+export type PortalPatioSaldoResponse = {
+  total: number;
+  cheios: number;
+  vazios: number;
+  refrigerados: number;
+  atualizadoEm: string;
+  items: PortalPatioSaldoItem[];
+};
+
+export function fetchPatioSaldo() {
+  return portalJson<PortalPatioSaldoResponse>("/cliente/portal/patio/saldo");
+}
+
+export type PortalEstoqueClienteResponse = {
+  total: number;
+  atualizadoEm: string;
+  items: PortalPatioSaldoItem[];
+};
+
+/** Só unidades com ID aberto desta empresa (coleta / exportação). */
+export function fetchPatioUnidadesEstoque(q?: string) {
+  const query = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+  return portalJson<PortalEstoqueClienteResponse>(`/cliente/portal/patio/unidades-estoque${query}`);
+}
+
+export type PortalSimulacaoServico = {
+  codigo: string;
+  nome: string;
+  descricao: string | null;
+  unidadeCobranca: string;
+  unidadeCobrancaLabel: string;
+  valorEstimado: number | null;
+};
+
+export type PortalSimulacaoCatalogo = {
+  unidades: PortalPatioSaldoItem[];
+  servicos: PortalSimulacaoServico[];
+  atualizadoEm: string;
+};
+
+export type PortalSimulacaoItem = {
+  descricao: string;
+  detalheCobranca?: string;
+  quantidade: number;
+  valorUnitario: number;
+  valorTotal: number;
+  origem: "ARMAZENAGEM" | "SERVICO_ADICIONAL";
+};
+
+export type PortalSimulacaoResultado = {
+  unidade: {
+    id: string;
+    unidadeIso: string;
+    tipo: string;
+    tamanho: string | null;
+    statusContainer: "CHEIO" | "VAZIO" | null;
+    refrigerado: boolean;
+    entradaEm: string;
+    protocolo: string;
+  };
+  dataSaida: string;
+  diasNoPatio: number;
+  diasFreeTime: number;
+  diasFaturaveis: number;
+  itens: PortalSimulacaoItem[];
+  total: number;
+  avisos: string[];
+  estimativa: boolean;
+};
+
+export function fetchSimulacaoValoresCatalogo(unidadeId?: string) {
+  const q = unidadeId ? `?unidadeId=${encodeURIComponent(unidadeId)}` : "";
+  return portalJson<PortalSimulacaoCatalogo>(`/cliente/portal/simulacao-valores${q}`);
+}
+
+export function simularValoresPortal(payload: {
+  unidadeId: string;
+  dataSaida: string;
+  servicos?: string[];
+}) {
+  return portalJson<PortalSimulacaoResultado>("/cliente/portal/simulacao-valores", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function fetchKpis() {
   return portalJson<KpisResponse>("/cliente/portal/kpis");
 }
@@ -1039,6 +1146,7 @@ export type SolicitacaoRow = {
     unidade: string;
     booking: string;
     processo: string;
+    navio?: string;
     tamanho: string;
     tipo: string;
     status: string;
@@ -1130,6 +1238,12 @@ export function listPortalTiposContainer() {
   );
 }
 
+export function fetchPortalTurnos() {
+  return portalJson<
+    Array<{ id: string; nome: string; inicio: string; fim: string; slot?: "MANHA" | "TARDE" }>
+  >("/cliente/portal/turnos");
+}
+
 export type PortalTomadaStatus = {
   unidadeId: string;
   unidadeIso: string;
@@ -1197,6 +1311,7 @@ export type UpdatePortalSolicitacaoPayload = {
     ordem: number;
     booking?: string;
     processo?: string;
+    navio?: string;
     tamanho: string;
     tipo: string;
     status: "CHEIO" | "VAZIO";
@@ -1291,6 +1406,7 @@ export type CreateSolicitacaoV2Payload = {
     unidade: string;
     booking?: string;
     processo?: string;
+    navio?: string;
     tamanho: string;
     tipo: string;
     status: "CHEIO" | "VAZIO";
@@ -1503,6 +1619,7 @@ export type PortalDashboardConsolidatedResponse = {
   statusCadastro?: "PENDENTE_ANALISE_FINANCEIRA" | "APROVADO" | "REJEITADO" | null;
   validacaoDominio?: "APROVADO" | "DIVERGENTE" | "INDISPONIVEL" | null;
   condicaoPagamento?: string | null;
+  prazoPagamento?: string | null;
   cadastroOperacionalLiberado?: boolean;
 };
 
@@ -1525,6 +1642,37 @@ export function fetchPortalDashboard(
   return portalJson<PortalDashboardConsolidatedResponse>(
     `/cliente/portal/dashboard${q ? `?${q}` : ""}`,
   ).then(normalizePortalDashboard);
+}
+
+export type PortalNotificacao = {
+  id: string;
+  tipo: "CADASTRO_EM_ANALISE" | "CADASTRO_APROVADO" | "CADASTRO_REJEITADO" | "CONDICAO_PAGAMENTO_ALTERADA" | "UNIDADE_PROCESSO_ABERTO" | "UNIDADE_PROCESSO_ENCERRADO";
+  titulo: string;
+  corpo: string;
+  link: string | null;
+  lidaEm: string | null;
+  createdAt: string;
+};
+
+export function fetchPortalNotificacoes() {
+  return portalJson<PortalNotificacao[]>("/cliente/portal/notificacoes");
+}
+
+export function fetchPortalNotificacoesNaoLidas() {
+  return portalJson<{ count: number }>("/cliente/portal/notificacoes/nao-lidas");
+}
+
+export function marcarPortalNotificacaoLida(id: string) {
+  return portalJson<PortalNotificacao>(
+    `/cliente/portal/notificacoes/${encodeURIComponent(id)}/lida`,
+    { method: "PATCH" },
+  );
+}
+
+export function marcarTodasPortalNotificacoesLidas() {
+  return portalJson<{ atualizadas: number }>("/cliente/portal/notificacoes/marcar-todas-lidas", {
+    method: "POST",
+  });
 }
 
 function portalOnboardingHeaders(extra?: HeadersInit): Headers {

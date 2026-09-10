@@ -1,6 +1,6 @@
 import { ConflictException, INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import * as request from 'supertest';
+import request = require('supertest');
 import * as bcrypt from 'bcrypt';
 import {
   OutboxEventStatus,
@@ -17,7 +17,6 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
 import { OutboxWorker } from '../src/outbox/outbox.worker';
-import { BillingOutboxProcessor } from '../src/outbox/billing-outbox.processor';
 import { ArmazenagemBillingService } from '../src/armazenagem-faturamento/armazenagem-billing.service';
 import { calculateReeferSurcharge } from '../src/billing-engine/billing-rule-engine.util';
 import { BILLING_ELIGIBLE_INTENTS } from '../src/billing-engine/billing-eligible-intents.util';
@@ -49,7 +48,6 @@ describe('Billing Engine E2E (e2e)', () => {
   let prisma: PrismaService;
   let auth: AuthService;
   let worker: OutboxWorker;
-  let billingProcessor: BillingOutboxProcessor;
   let armazenagemBilling: ArmazenagemBillingService;
   let tenantContext: TenantContextService;
 
@@ -81,7 +79,6 @@ describe('Billing Engine E2E (e2e)', () => {
     prisma = app.get(PrismaService);
     auth = app.get(AuthService);
     worker = app.get(OutboxWorker);
-    billingProcessor = app.get(BillingOutboxProcessor);
     armazenagemBilling = app.get(ArmazenagemBillingService);
     tenantContext = app.get(TenantContextService);
 
@@ -233,42 +230,6 @@ describe('Billing Engine E2E (e2e)', () => {
     await expect(
       prisma.$transaction(async (tx) => armazenagemBilling.consolidateOnGateOut(gateInId, new Date(), tx)),
     ).rejects.toBeInstanceOf(ConflictException);
-  });
-
-  it('idempotência outbox BILLING_TRIGGERED — reprocessamento não duplica auditoria', async () => {
-    const outboxId = `e2e-billing-idem-${suffix}`;
-    await prisma.auditoria.create({
-      data: {
-        tabela: 'faturamentos',
-        registroId: 'dummy',
-        acao: 'INSERT',
-        usuario: 'system:tos-billing',
-        dadosDepois: { outboxId, valorTotal: 1, itens: 1 },
-      },
-    });
-
-    await billingProcessor.processBillingTriggered(outboxId, {
-      containerId: 'ctr-dummy',
-      clienteId,
-      agendamentoId: 'ag-dummy',
-      gateInAt: new Date(),
-      gateOutAt: new Date(),
-      diasEstadia: 1,
-      tipo: 'DRY',
-      numero: `DUM${suffix}`.slice(0, 11).toUpperCase(),
-      solicitacaoId: null,
-    });
-
-    const dupCount = await prisma.auditoria.count({
-      where: {
-        tabela: 'faturamentos',
-        usuario: 'system:tos-billing',
-        dadosDepois: { path: ['outboxId'], equals: outboxId },
-      },
-    });
-    expect(dupCount).toBe(1);
-
-    await prisma.auditoria.deleteMany({ where: { registroId: 'dummy' } });
   });
 
   it('tenant sem tabela de preço — CRON não crasha e retorna skippedTenants', async () => {

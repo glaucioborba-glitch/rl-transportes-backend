@@ -3,11 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DollarSign, FileText, Layers, Loader2, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
-import { FormField, FormSection } from "@/components/cadastros/form-field";
+import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/staff-client";
-import { listCadastrosClientes } from "@/lib/api/cadastros-clientes-client";
 import { listCadastrosTiposContainer } from "@/lib/api/cadastros-tipos-container-client";
 import { listCadastrosTiposOperacao } from "@/lib/api/cadastros-tipos-operacao-client";
 import {
@@ -24,6 +23,7 @@ import {
   TabelaPrecoMatrixGrid,
   type MatrixItemForm,
 } from "./tabela-preco-matrix-grid";
+import type { FaixaDiariaForm } from "./faixas-diaria-editor";
 
 const SELECT_CLASS =
   "flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm";
@@ -31,7 +31,6 @@ const SELECT_CLASS =
 type FormState = {
   nome: string;
   descricao: string;
-  clienteId: string;
   moeda: string;
   dataInicio: string;
   dataFim: string;
@@ -42,7 +41,6 @@ type FormState = {
 const EMPTY_FORM: FormState = {
   nome: "",
   descricao: "",
-  clienteId: "",
   moeda: "BRL",
   dataInicio: new Date().toISOString().split("T")[0],
   dataFim: "",
@@ -70,7 +68,29 @@ const EMPTY_OPERACAO: OperacaoItemForm = {
   valorMinimo: "",
 };
 
-type Props = { tabelaId?: string };
+type Props = { tabelaId?: string; duplicarId?: string };
+
+function nomeCopia(nome: string): string {
+  const trimmed = nome.trim();
+  return trimmed.startsWith("Cópia de ") ? `${trimmed} (2)` : `Cópia de ${trimmed}`;
+}
+
+function toFaixaForms(
+  faixas?: { diaInicio: number; diaFim: number | null; valorDiaria: number }[] | null,
+  fallbackValor?: number | null,
+): FaixaDiariaForm[] {
+  if (faixas?.length) {
+    return faixas.map((f) => ({
+      diaInicio: String(f.diaInicio),
+      diaFim: f.diaFim != null ? String(f.diaFim) : "",
+      valorDiaria: String(f.valorDiaria),
+    }));
+  }
+  if (fallbackValor != null && fallbackValor > 0) {
+    return [{ diaInicio: "1", diaFim: "", valorDiaria: String(fallbackValor) }];
+  }
+  return [];
+}
 
 function toMatrixItem(i: CadastroTabelaPrecoItem): MatrixItemForm {
   return {
@@ -82,11 +102,8 @@ function toMatrixItem(i: CadastroTabelaPrecoItem): MatrixItemForm {
     statusContainer: i.statusContainer ?? "CHEIO",
     valorHandling: i.valorHandling != null ? String(i.valorHandling) : "150",
     freeTimeDias: i.freeTimeDias != null ? String(i.freeTimeDias) : "7",
-    faixasDiaria: (i.faixasDiaria ?? []).map((f) => ({
-      diaInicio: String(f.diaInicio),
-      diaFim: f.diaFim != null ? String(f.diaFim) : "",
-      valorDiaria: String(f.valorDiaria),
-    })),
+    faixasDiaria: toFaixaForms(i.faixasDiaria),
+    faixasEnergiaReefer: toFaixaForms(i.faixasEnergiaReefer, i.tarifaEnergiaReeferDiaria),
     tarifaEnergiaReeferDiaria:
       i.tarifaEnergiaReeferDiaria != null ? String(i.tarifaEnergiaReeferDiaria) : "",
     valor: 0,
@@ -94,17 +111,18 @@ function toMatrixItem(i: CadastroTabelaPrecoItem): MatrixItemForm {
   };
 }
 
-export function TabelaPrecoForm({ tabelaId }: Props) {
+export function TabelaPrecoForm({ tabelaId, duplicarId }: Props) {
   const router = useRouter();
+  const origemId = tabelaId ?? duplicarId;
+  const isCopia = Boolean(duplicarId) && !tabelaId;
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [loading, setLoading] = useState(Boolean(tabelaId));
+  const [loading, setLoading] = useState(Boolean(origemId));
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [tiposOperacao, setTiposOperacao] = useState<{ id: string; codigo: string; nome: string }[]>(
     [],
   );
   const [tiposContainer, setTiposContainer] = useState<{ id: string; codigo: string }[]>([]);
-  const [clientes, setClientes] = useState<{ id: string; razaoSocial: string }[]>([]);
   const [formData, setFormData] = useState<FormState>(EMPTY_FORM);
   const [matriz, setMatriz] = useState<MatrixItemForm[]>([]);
   const [operacoes, setOperacoes] = useState<OperacaoItemForm[]>([]);
@@ -113,35 +131,32 @@ export function TabelaPrecoForm({ tabelaId }: Props) {
     void Promise.all([
       listCadastrosTiposOperacao(),
       listCadastrosTiposContainer(),
-      listCadastrosClientes({ page: 1, status: "ativos" }),
-    ]).then(([op, tc, cli]) => {
+    ]).then(([op, tc]) => {
       setTiposOperacao(op.items ?? []);
       setTiposContainer(tc.items ?? []);
-      setClientes((cli.items ?? []).map((c) => ({ id: c.id, razaoSocial: c.razaoSocial })));
     });
   }, []);
 
   useEffect(() => {
-    if (!tabelaId) return;
+    if (!origemId) return;
     let on = true;
     void (async () => {
       try {
         const [tab, its] = await Promise.all([
-          getCadastroTabelaPreco(tabelaId),
-          listCadastroTabelaPrecoItens(tabelaId),
+          getCadastroTabelaPreco(origemId),
+          listCadastroTabelaPrecoItens(origemId),
         ]);
         if (!on) return;
         setFormData({
-          nome: tab.nome,
+          nome: isCopia ? nomeCopia(tab.nome) : tab.nome,
           descricao: tab.descricao ?? "",
-          clienteId: tab.clienteId ?? "",
           moeda: tab.moeda ?? "BRL",
           dataInicio: tab.dataInicio,
           dataFim: tab.dataFim ?? "",
-          ativo: tab.ativo,
-          padrao: tab.padrao ?? false,
+          ativo: isCopia ? true : tab.ativo,
+          padrao: isCopia ? false : (tab.padrao ?? false),
         });
-        setSyncedAt(tab.syncedAt ?? null);
+        setSyncedAt(isCopia ? null : (tab.syncedAt ?? null));
         const all = its.items ?? [];
         setMatriz(
           all
@@ -170,7 +185,7 @@ export function TabelaPrecoForm({ tabelaId }: Props) {
     return () => {
       on = false;
     };
-  }, [tabelaId]);
+  }, [origemId, isCopia]);
 
   const totalItens = useMemo(() => matriz.length + operacoes.length, [matriz.length, operacoes.length]);
 
@@ -217,9 +232,18 @@ export function TabelaPrecoForm({ tabelaId }: Props) {
           diaFim: f.diaFim ? Number(f.diaFim) : null,
           valorDiaria: Number(f.valorDiaria),
         })),
-      tarifaEnergiaReeferDiaria: m.tarifaEnergiaReeferDiaria
-        ? Number(m.tarifaEnergiaReeferDiaria)
-        : undefined,
+      faixasEnergiaReefer: m.faixasEnergiaReefer
+        .filter((f) => f.diaInicio && f.valorDiaria)
+        .map((f) => ({
+          diaInicio: Number(f.diaInicio),
+          diaFim: f.diaFim ? Number(f.diaFim) : null,
+          valorDiaria: Number(f.valorDiaria),
+        })),
+      tarifaEnergiaReeferDiaria: m.faixasEnergiaReefer.find((f) => f.valorDiaria)
+        ? Number(m.faixasEnergiaReefer.find((f) => f.valorDiaria)!.valorDiaria)
+        : m.tarifaEnergiaReeferDiaria
+          ? Number(m.tarifaEnergiaReeferDiaria)
+          : undefined,
     }));
 
     const opPayload = operacoes.map((i) => ({
@@ -254,7 +278,6 @@ export function TabelaPrecoForm({ tabelaId }: Props) {
     try {
       const payload = {
         ...formData,
-        clienteId: formData.clienteId || undefined,
         dataFim: formData.dataFim || undefined,
         descricao: formData.descricao.trim() || undefined,
         itens: buildPayloadItens(),
@@ -264,7 +287,7 @@ export function TabelaPrecoForm({ tabelaId }: Props) {
         toast.success("Tabela atualizada e sincronizada!");
       } else {
         await createCadastroTabelaPreco(payload);
-        toast.success("Tabela cadastrada!");
+        toast.success(isCopia ? "Cópia da tabela cadastrada!" : "Tabela cadastrada!");
       }
       router.push("/cadastros/financeiro/tabelas-precos");
     } catch (err) {
@@ -279,39 +302,37 @@ export function TabelaPrecoForm({ tabelaId }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mx-auto max-w-6xl space-y-8">
+    <form onSubmit={handleSubmit} className={CADASTRO_FORM_CLASS}>
+      {isCopia ? (
+        <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+          Cópia da matriz e das operações. Ajuste nome, vigência e os valores diferentes. Nada é gravado até
+          Salvar.
+        </p>
+      ) : null}
       <FormSection title="Dados da Tabela" icon={DollarSign}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Nome" required>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Nome" required className="min-w-[16rem] flex-1">
             <Input
               value={formData.nome}
               onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
               placeholder="Ex: Tabela Padrão 2026"
             />
           </FormField>
-          <FormField label="Cliente (opcional — tabela comercial)">
-            <select
-              className={SELECT_CLASS}
-              value={formData.clienteId}
-              onChange={(e) => setFormData({ ...formData, clienteId: e.target.value })}
-              disabled={formData.padrao}
-            >
-              <option value="">Tabela geral (sem vínculo)</option>
-              {clientes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.razaoSocial}
-                </option>
-              ))}
-            </select>
+          <FormField label="Descrição" className="min-w-[14rem] flex-1">
+            <Input
+              value={formData.descricao}
+              onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
+              placeholder="Descrição da tabela"
+            />
           </FormField>
-          <FormField label="Data de Início (opcional)">
+          <FormField label="Data de Início (opcional)" size="md">
             <Input
               type="date"
               value={formData.dataInicio}
               onChange={(e) => setFormData({ ...formData, dataInicio: e.target.value })}
             />
           </FormField>
-          <FormField label="Data de Fim (opcional)">
+          <FormField label="Data de Fim (opcional)" size="md">
             <Input
               type="date"
               value={formData.dataFim}
@@ -329,13 +350,6 @@ export function TabelaPrecoForm({ tabelaId }: Props) {
               <option value="EUR">EUR (Euro)</option>
             </select>
           </FormField>
-          <FormField label="Descrição">
-            <Input
-              value={formData.descricao}
-              onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
-              placeholder="Descrição da tabela"
-            />
-          </FormField>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-6">
@@ -347,7 +361,6 @@ export function TabelaPrecoForm({ tabelaId }: Props) {
                 setFormData({
                   ...formData,
                   padrao: e.target.checked,
-                  clienteId: e.target.checked ? "" : formData.clienteId,
                 })
               }
             />

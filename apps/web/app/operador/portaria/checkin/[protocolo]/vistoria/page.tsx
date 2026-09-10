@@ -29,6 +29,7 @@ type FotoTipo =
   | "LADO_DIREITO"
   | "LADO_ESQUERDO"
   | "LACRE"
+  | "CABO_TOMADA"
   | "AVARIA";
 
 type FotoVistoria = {
@@ -52,6 +53,71 @@ const FOTOS_OBRIGATORIAS: FotoVistoria[] = [
   { tipo: "LACRE", label: "Lacre", obrigatoria: false },
 ];
 
+function tiposEquivalentes(tipo: string): string[] {
+  if (tipo === "LACRE" || tipo === "LACRE_OCR") return ["LACRE", "LACRE_OCR"];
+  if (tipo === "CABO_TOMADA" || tipo === "CABO_REEFER" || tipo === "TOMADA_REEFER") {
+    return ["CABO_TOMADA", "CABO_REEFER", "TOMADA_REEFER"];
+  }
+  return [tipo];
+}
+
+function hidratarFotos(op: OperacaoDto): FotoVistoria[] {
+  const existentes = op.vistoria?.fotos ?? [];
+  const refazer = new Set(
+    (op.devolucaoPortaria?.fotosRefazer ?? []).flatMap((tipo) => tiposEquivalentes(tipo)),
+  );
+  const achar = (tipo: FotoTipo) => {
+    if (tiposEquivalentes(tipo).some((t) => refazer.has(t))) return undefined;
+    return existentes.find((f) => tiposEquivalentes(tipo).includes(f.tipo) && String(f.imagem ?? "").trim());
+  };
+
+  const mapped = FOTOS_OBRIGATORIAS.map((slot) => {
+    const hit = achar(slot.tipo);
+    let next: FotoVistoria = hit
+      ? {
+          ...slot,
+          foto: hit.imagem,
+          ocrResult: hit.ocrResult,
+          ocrMatch: hit.ocrMatch,
+          ocrConfianca: hit.ocrConfianca,
+          ocrProvider: hit.ocrProvider,
+        }
+      : { ...slot };
+    if (slot.tipo === "LACRE") {
+      const obrigatoria = Boolean(op.lacreFotoObrigatoria);
+      const cheio = String(op.containerSituacao ?? "").toUpperCase() === "CHEIO";
+      next = {
+        ...next,
+        obrigatoria,
+        label: obrigatoria
+          ? "Lacre (obrigatório — contêiner cheio)"
+          : cheio
+            ? "Lacre (não exigido no IsoTank)"
+            : "Lacre",
+      };
+    }
+    return next;
+  });
+
+  if (!op.caboTomadaFotoObrigatoria) return mapped;
+  const hitCabo = achar("CABO_TOMADA");
+  const cabo: FotoVistoria = {
+    tipo: "CABO_TOMADA",
+    label: "Cabo da tomada (obrigatório — reefer)",
+    obrigatoria: true,
+    foto: hitCabo?.imagem,
+    ocrResult: hitCabo?.ocrResult,
+    ocrMatch: hitCabo?.ocrMatch,
+    ocrConfianca: hitCabo?.ocrConfianca,
+    ocrProvider: hitCabo?.ocrProvider,
+  };
+  const lacreIdx = mapped.findIndex((f) => f.tipo === "LACRE");
+  if (lacreIdx >= 0) {
+    return [...mapped.slice(0, lacreIdx + 1), cabo, ...mapped.slice(lacreIdx + 1)];
+  }
+  return [...mapped, cabo];
+}
+
 export default function VistoriaPage({ params }: { params: { protocolo: string } }) {
   const router = useRouter();
   const protocolo = decodeURIComponent(params.protocolo);
@@ -68,7 +134,19 @@ export default function VistoriaPage({ params }: { params: { protocolo: string }
 
   useEffect(() => {
     void fetchOperacao(protocolo)
-      .then(setOperacao)
+      .then((op) => {
+        setOperacao(op);
+        setFotos(hidratarFotos(op));
+        if (op.vistoria?.avarias?.length) {
+          setAvarias(
+            op.vistoria.avarias.map((a) => ({
+              foto: a.foto,
+              descricao: a.descricao,
+              localizacao: a.localizacao,
+            })),
+          );
+        }
+      })
       .catch(() => router.push("/operador/portaria"));
   }, [protocolo, router]);
 
@@ -168,9 +246,16 @@ export default function VistoriaPage({ params }: { params: { protocolo: string }
       <div className="pt-2">
         <h1 className="text-xl font-bold text-white">Vistoria Fotográfica</h1>
         <p className="mt-1 text-sm text-slate-400">
-          {protocolo} · Tire as fotos obrigatórias
+          {protocolo} · {operacao?.devolucaoPortaria ? "Complemente a foto que o Gate pediu" : "Tire as fotos obrigatórias"}
         </p>
       </div>
+
+      {operacao?.devolucaoPortaria ? (
+        <div className="flex items-start gap-2 rounded-lg border border-orange-500/40 bg-orange-500/10 p-3">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-orange-300" />
+          <p className="text-sm text-orange-200">{operacao.devolucaoPortaria.mensagem}</p>
+        </div>
+      ) : null}
 
       <div className="rounded-lg border border-white/10 bg-black/30 p-3">
         <div className="mb-2 flex items-center justify-between">
@@ -196,7 +281,11 @@ export default function VistoriaPage({ params }: { params: { protocolo: string }
             type="button"
             onClick={() => setFotoAtual(foto)}
             className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors ${
-              foto.foto ? "border-green-500/30 bg-green-500/5" : "border-white/10 bg-black/20"
+              foto.foto
+                ? "border-green-500/30 bg-green-500/5"
+                : foto.obrigatoria
+                  ? "border-orange-500/40 bg-orange-500/10"
+                  : "border-white/10 bg-black/20"
             }`}
           >
             <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white/5">
@@ -228,8 +317,8 @@ export default function VistoriaPage({ params }: { params: { protocolo: string }
                     )}
                   </>
                 ) : (
-                  <span className="text-xs text-slate-500">
-                    {foto.obrigatoria ? "Obrigatória" : "Opcional"}
+                  <span className={`text-xs ${foto.obrigatoria ? "text-orange-300" : "text-slate-500"}`}>
+                    {foto.obrigatoria ? "Obrigatória — falta fotografar" : "Opcional"}
                   </span>
                 )}
               </div>

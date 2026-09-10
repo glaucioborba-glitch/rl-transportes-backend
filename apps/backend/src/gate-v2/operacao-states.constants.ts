@@ -1,6 +1,7 @@
 /**
  * Estados sequenciais do fluxo operacional.
- * Cada estado só pode ser atingido se o anterior foi concluído.
+ * Cada estado só pode ser atingido se o anterior foi concluído,
+ * exceto a devolução à portaria (reabre só a vistoria, sem rejeitar).
  */
 export type OperacaoState =
   | 'SOLICITADA'
@@ -22,7 +23,7 @@ export const TRANSICOES_VALIDAS: Record<OperacaoState, OperacaoState[]> = {
   AGUARDANDO_CHEGADA: ['CHECKIN_PORTARIA', 'REJEITADA'],
   CHECKIN_PORTARIA: ['VISTORIA_FOTOGRAFICA', 'REJEITADA'],
   VISTORIA_FOTOGRAFICA: ['AGUARDANDO_RECONFIRMACAO'],
-  AGUARDANDO_RECONFIRMACAO: ['RECONFIRMADA', 'REJEITADA'],
+  AGUARDANDO_RECONFIRMACAO: ['RECONFIRMADA', 'REJEITADA', 'VISTORIA_FOTOGRAFICA'],
   RECONFIRMADA: ['RIC_GERADO'],
   RIC_GERADO: ['LIBERADA_OPERACAO'],
   LIBERADA_OPERACAO: ['EM_OPERACAO'],
@@ -95,9 +96,31 @@ export type OperacaoFluxoJson = {
     operadorId?: string;
   };
   assinatura?: string;
+  /** DIGITAL = canvas na tela; MANUAL = motorista e operador assinam o papel. */
+  assinaturaModo?: 'DIGITAL' | 'MANUAL';
+  assinaturaOperadorId?: string;
   ricGeradoEm?: string;
   tatInicio?: string;
   tatFim?: string;
   equipamentoId?: string;
   rejeicao?: { motivo: string; etapa: string; rejeitadaEm: string };
+  /** Gate devolveu para complementar fotos — não é rejeição. */
+  devolucaoPortaria?: {
+    motivo: string;
+    mensagem: string;
+    devolvidaEm: string;
+    operadorId?: string;
+    fotosRefazer?: string[];
+  } | null;
+  correcoesGate?: {
+    confirmados: string[];
+    originais?: Record<string, string>;
+    alteradoEm?: string;
+    operadorId?: string;
+    motivo?: string;
+    gerenteId?: string;
+    gerenteEmail?: string;
+  };
+  /** Anotação livre do Gate na conferência (não é dado da solicitação do cliente). */
+  observacaoGate?: string;
 };

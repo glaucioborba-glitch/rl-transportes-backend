@@ -18,7 +18,7 @@ export type DunningNotifyStage =
 
 export type WhatsappNotifyPayload = {
   kind: WhatsappNotifyKind;
-  /** Chave de idempotência (containerEventId, faturaId+outboxId, etc.). */
+  /** Chave de idempotência (faturaId+outboxId, etc.). */
   dedupeKey: string;
   solicitacaoId?: string;
   clienteId?: string;

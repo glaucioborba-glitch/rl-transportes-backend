@@ -111,7 +111,7 @@ export default function AdminAuditoriaPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 print:max-w-none">
+    <div className="space-y-6">
       <div className="print:hidden">
         <h1 className="font-serif text-3xl font-bold text-white">Auditoria</h1>
         <p className="mt-1 text-sm text-zinc-500">

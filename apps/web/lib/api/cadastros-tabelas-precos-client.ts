@@ -20,6 +20,7 @@ export type CadastroTabelaPrecoItem = {
   valorHandling?: number | null;
   freeTimeDias?: number | null;
   faixasDiaria?: FaixaDiaria[];
+  faixasEnergiaReefer?: FaixaDiaria[];
   tarifaDiariaArmazenagem?: number | null;
   tarifaEnergiaReeferDiaria?: number | null;
 };
@@ -91,6 +92,7 @@ export type CadastroTabelaPrecoItemInput = {
   valorHandling?: number;
   freeTimeDias?: number;
   faixasDiaria?: FaixaDiaria[];
+  faixasEnergiaReefer?: FaixaDiaria[];
   tarifaDiariaArmazenagem?: number;
   tarifaEnergiaReeferDiaria?: number;
 };

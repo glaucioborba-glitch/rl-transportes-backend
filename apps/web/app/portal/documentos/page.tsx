@@ -47,14 +47,14 @@ export default function PortalDocumentosPage() {
 
   if (loading) {
     return (
-      <main className="mx-auto max-w-7xl px-4 py-8">
+      <main className="mx-auto w-[90%] px-4 py-8">
         <Skeleton className="h-40 w-full" />
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-7xl space-y-8 px-4 py-8">
+    <main className="mx-auto w-[90%] space-y-8 px-4 py-8">
       <SectionTitle
         title="Documentos"
         description="Links para abrir cada registro no portal (XML/PDF de NFS-e na tela de detalhe quando disponível)."

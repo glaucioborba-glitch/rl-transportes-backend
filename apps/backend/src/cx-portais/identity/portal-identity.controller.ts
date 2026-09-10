@@ -16,6 +16,7 @@ import {
   wantsPortalCookieAuth,
 } from './portal-cookie.util';
 import { CxPortalAuthGuard } from '../guards/cx-portal-auth.guard';
+import { Public } from '../../common/decorators/public.decorator';
 import { CurrentCxUser } from '../decorators/current-cx-user.decorator';
 import type { CxPortalRequestUser } from '../types/cx-portal.types';
 import { resolveLoginTenantId } from '../../tenant/resolve-login-tenant.util';
@@ -54,6 +55,7 @@ class PortalRedefinirSenhaDto {
 }
 
 @ApiTags('cx-portal-iam')
+@Public()
 @Controller('portal')
 export class PortalIdentityController {
   constructor(private readonly identity: PortalIdentityService) {}

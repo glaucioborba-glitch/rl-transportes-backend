@@ -1,6 +1,6 @@
 import type { PilhasResponse } from "./types";
 
-/** Mock inicial — substituível por integração TOS / pátio v2. */
+/** Mock inicial — substituível por integração pátio v2. */
 export const MOCK_PILHAS: PilhasResponse = {
   atualizadoEm: new Date().toISOString(),
   pilhas: [

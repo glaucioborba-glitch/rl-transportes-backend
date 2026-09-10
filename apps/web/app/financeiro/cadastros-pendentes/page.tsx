@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { ApiError } from "@/lib/api/staff-client";
 import {
@@ -12,6 +12,7 @@ import {
   formatEnderecoLinha,
   listarCadastrosPendentes,
   listarCondicoesPagamento,
+  listarPrazosPagamento,
   rejeitarCadastroFinanceiro,
   validacaoDominioBadge,
   type CadastroPendenteRow,
@@ -19,8 +20,8 @@ import {
 } from "@/lib/api/cadastro-financeiro-client";
 import {
   isCondicaoPagamentoApiValue,
-  labelCondicaoPagamento,
   OPCOES_CONDICAO_PAGAMENTO,
+  prazosDaForma,
   toCondicaoPagamentoApiValue,
   type CondicaoPagamentoOption,
 } from "@/lib/condicao-pagamento-portal";
@@ -103,9 +104,13 @@ export default function CadastrosPendentesPage() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [condicaoSelecionada, setCondicaoSelecionada] =
     useState<CondicaoPagamentoAprovacao>(CONDICAO_PAGAMENTO_PADRAO);
+  const [prazoSelecionado, setPrazoSelecionado] = useState("30_DIAS");
   const [opcoesCondicao, setOpcoesCondicao] = useState<CondicaoPagamentoOption[]>([
     ...OPCOES_CONDICAO_PAGAMENTO,
   ]);
+  const [opcoesPrazo, setOpcoesPrazo] = useState<
+    Array<{ label: string; value: string; formaVinculada?: string | null }>
+  >([]);
   const decrementPendencias = usePendenciasCadastroStore((s) => s.decrement);
   const setPendenciasCount = usePendenciasCadastroStore((s) => s.setCount);
 
@@ -125,13 +130,17 @@ export default function CadastrosPendentesPage() {
 
   useEffect(() => {
     if (!ok) return;
-    void listarCondicoesPagamento()
-      .then((opcoes) => {
+    void Promise.all([listarCondicoesPagamento(), listarPrazosPagamento()])
+      .then(([opcoes, prazos]) => {
         if (opcoes.length) {
           setOpcoesCondicao(opcoes);
           setCondicaoSelecionada((prev) =>
             isCondicaoPagamentoApiValue(prev, opcoes) ? prev : toCondicaoPagamentoApiValue(prev, opcoes),
           );
+        }
+        if (prazos.length) {
+          setOpcoesPrazo(prazos);
+          setPrazoSelecionado((prev) => (prazos.some((p) => p.value === prev) ? prev : prazos[0].value));
         }
       })
       .catch(() => {
@@ -143,6 +152,19 @@ export default function CadastrosPendentesPage() {
     void load();
   }, [load]);
 
+  const prazosFiltrados = useMemo(() => {
+    const base = opcoesPrazo.length
+      ? opcoesPrazo
+      : [{ label: "30 dias", value: "30_DIAS", formaVinculada: "FATURAMENTO" }];
+    return prazosDaForma(base, condicaoSelecionada);
+  }, [opcoesPrazo, condicaoSelecionada]);
+
+  useEffect(() => {
+    if (!prazosFiltrados.length) return;
+    if (prazosFiltrados.some((p) => p.value === prazoSelecionado)) return;
+    setPrazoSelecionado(prazosFiltrados[0].value);
+  }, [prazosFiltrados, prazoSelecionado]);
+
   function toggleExpanded(id: string) {
     setExpandedIds((prev) => {
       const next = new Set(prev);
@@ -153,13 +175,22 @@ export default function CadastrosPendentesPage() {
   }
 
   async function onAprovar(row: CadastroPendenteRow) {
-    const condicaoApi = toCondicaoPagamentoApiValue(condicaoSelecionada, opcoesCondicao);
+    const prazo = prazoSelecionado.trim();
+    if (!prazo) {
+      toast.error("Selecione o prazo comercial (calendário de boletos).");
+      return;
+    }
+    const vinculo = opcoesPrazo.find((p) => p.value === prazo)?.formaVinculada;
+    const condicaoApi = toCondicaoPagamentoApiValue(
+      vinculo && isCondicaoPagamentoApiValue(vinculo, opcoesCondicao) ? vinculo : condicaoSelecionada,
+      opcoesCondicao,
+    );
     setActionId(row.id);
     try {
-      await aprovarCadastroFinanceiro(row.id, condicaoApi);
+      await aprovarCadastroFinanceiro(row.id, condicaoApi, prazo);
       decrementPendencias();
       toast.success(
-        `Cliente ${row.razaoSocial} aprovado. Condição: ${labelCondicaoPagamento(condicaoApi, opcoesCondicao)}.`,
+        `Cliente ${row.razaoSocial} aprovado. Prazo: ${opcoesPrazo.find((p) => p.value === prazo)?.label ?? prazo}.`,
       );
       await load();
     } catch (e) {
@@ -193,18 +224,19 @@ export default function CadastrosPendentesPage() {
 
   if (!ok) {
     return (
-      <main className="mx-auto max-w-[1400px] px-4 py-8">
+      <div>
         <p className="text-amber-400">Área restrita a gestão (ADMIN / GERENTE).</p>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="mx-auto max-w-[1400px] space-y-6 px-4 py-8">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-white">Novos cadastros pendentes</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Analise cadastros do portal do cliente e libere a operação com condição padrão de pagamento.
+          O cliente já opera à vista (PIX) enquanto aguarda análise. A aprovação define prazo e forma
+          de faturamento (parcelas do boleto).
         </p>
       </div>
 
@@ -265,26 +297,48 @@ export default function CadastrosPendentesPage() {
                         <td className="px-2 py-3 text-zinc-400">{formatDate(row.createdAt)}</td>
                         <td className="px-2 py-3 text-zinc-300">{validacaoDominioBadge(row.validacaoDominio)}</td>
                         <td className="px-2 py-3">
-                          <div className="flex min-w-[280px] flex-col gap-2 sm:flex-row sm:items-center">
-                            <select
-                              className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-white"
-                              value={condicaoSelecionada}
-                              onChange={(e) => {
-                                const next = e.target.value;
-                                setCondicaoSelecionada(
-                                  isCondicaoPagamentoApiValue(next, opcoesCondicao)
-                                    ? next
-                                    : toCondicaoPagamentoApiValue(next, opcoesCondicao),
-                                );
-                              }}
-                              aria-label="Condição de pagamento"
-                            >
-                              {opcoesCondicao.map((item) => (
-                                <option key={item.value} value={item.value}>
-                                  {item.label}
-                                </option>
-                              ))}
-                            </select>
+                          <div className="flex min-w-[280px] flex-col gap-2 sm:flex-row sm:items-end">
+                            <label className="flex min-w-[140px] flex-col gap-1">
+                              <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                                Forma
+                              </span>
+                              <select
+                                className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-white"
+                                value={condicaoSelecionada}
+                                onChange={(e) => {
+                                  const next = e.target.value;
+                                  setCondicaoSelecionada(
+                                    isCondicaoPagamentoApiValue(next, opcoesCondicao)
+                                      ? next
+                                      : toCondicaoPagamentoApiValue(next, opcoesCondicao),
+                                  );
+                                }}
+                                aria-label="Forma de pagamento"
+                              >
+                                {opcoesCondicao.map((item) => (
+                                  <option key={item.value} value={item.value}>
+                                    {item.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="flex min-w-[140px] flex-col gap-1">
+                              <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                                Prazo
+                              </span>
+                              <select
+                                className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-white"
+                                value={prazoSelecionado}
+                                onChange={(e) => setPrazoSelecionado(e.target.value)}
+                                aria-label="Prazo de pagamento"
+                              >
+                                {prazosFiltrados.map((item) => (
+                                  <option key={item.value} value={item.value}>
+                                    {item.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
                             <Button
                               type="button"
                               size="sm"
@@ -373,6 +427,6 @@ export default function CadastrosPendentesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </main>
+    </div>
   );
 }

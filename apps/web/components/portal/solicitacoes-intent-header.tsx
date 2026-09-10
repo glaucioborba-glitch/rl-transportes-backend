@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SolicitacaoFormModal } from "@/components/portal/solicitacao-form-modal";
-import { SOLICITACAO_INTENT_OPTIONS } from "@/lib/solicitacao-intent";
+import { SOLICITACAO_INTENT_OPTIONS, isSolicitacaoSaidaIntent } from "@/lib/solicitacao-intent";
 import type { TipoOperacaoSolicitacaoIntent } from "@/lib/api/portal-client";
 import { PORTAL_SCHEDULING_DISABLED_CLASS } from "@/lib/portal-financeiro-block";
 import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
@@ -19,8 +19,22 @@ export function SolicitacoesIntentHeader({ onCreated }: { onCreated?: () => void
   const [modal, setModal] = useState<{
     open: boolean;
     intent: TipoOperacaoSolicitacaoIntent | null;
+    prefillIso?: string | null;
   }>({ open: false, intent: null });
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const saida = params.get("saida");
+    const iso = params.get("iso");
+    if (!isSolicitacaoSaidaIntent(saida)) return;
+    if (bloqueadoFin) return;
+    setModal({ open: true, intent: saida, prefillIso: iso });
+    params.delete("saida");
+    params.delete("iso");
+    const qs = params.toString();
+    window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  }, [bloqueadoFin]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -36,7 +50,7 @@ export function SolicitacoesIntentHeader({ onCreated }: { onCreated?: () => void
   if (!podeCriar) return null;
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div className="relative z-50" ref={menuRef}>
       <Button
         data-tour="nova-solicitacao"
         onClick={() => !bloqueadoFin && setMenuOpen((o) => !o)}
@@ -47,15 +61,19 @@ export function SolicitacoesIntentHeader({ onCreated }: { onCreated?: () => void
         <ChevronDown className="h-4 w-4" />
       </Button>
       {menuOpen && !bloqueadoFin ? (
-        <div className="absolute right-0 z-40 mt-2 w-72 overflow-hidden rounded-lg border border-white/10 bg-[#12151a] shadow-xl">
+        <div className="absolute right-0 z-[100] mt-2 w-72 overflow-hidden rounded-lg border border-white/10 bg-[#12151a] shadow-xl">
           {SOLICITACAO_INTENT_OPTIONS.map((op) => (
             <button
               key={op.value}
               type="button"
               className="block w-full px-4 py-3 text-left text-sm text-slate-200 transition hover:bg-white/5"
+              onMouseDown={(e) => e.stopPropagation()}
               onClick={() => {
-                setModal({ open: true, intent: op.value });
+                const intent = op.value;
                 setMenuOpen(false);
+                window.setTimeout(() => {
+                  setModal({ open: true, intent });
+                }, 50);
               }}
             >
               {op.label}
@@ -66,7 +84,8 @@ export function SolicitacoesIntentHeader({ onCreated }: { onCreated?: () => void
       <SolicitacaoFormModal
         open={modal.open}
         intent={modal.intent}
-        onClose={() => setModal({ open: false, intent: null })}
+        prefillIso={modal.prefillIso}
+        onClose={() => setModal({ open: false, intent: null, prefillIso: null })}
         onCreated={onCreated}
       />
     </div>

@@ -121,6 +121,8 @@ export function buildPortalDashboardResponse() {
       totalFaturadoPeriodo: 0,
     },
     condicaoPagamento: "FATURAMENTO",
+    prazoPagamento: "30_DIAS",
+    statusCadastro: "APROVADO" as const,
     slas: { cumpridos: 0, violados: 0, desempenho: 100 },
     slasCx: {
       tenantId: "default",

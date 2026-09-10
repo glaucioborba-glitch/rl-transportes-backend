@@ -58,7 +58,7 @@ describe('SolicitacoesService.addContainer', () => {
   const tx = {
     solicitacao: { findFirst: jest.fn() },
     unidade: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       create: jest.fn(),
     },
   };
@@ -76,7 +76,7 @@ describe('SolicitacoesService.addContainer', () => {
 
   it('cria container quando solicitação existe e ISO livre', async () => {
     tx.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
-    tx.unidade.findUnique.mockResolvedValue(null);
+    tx.unidade.findFirst.mockResolvedValue(null);
     tx.unidade.create.mockResolvedValue({
       id: 'u1',
       solicitacaoId: 's1',
@@ -110,9 +110,9 @@ describe('SolicitacoesService.addContainer', () => {
     ).rejects.toThrow(NotFoundException);
   });
 
-  it('conflito quando ISO já existe', async () => {
+  it('conflito quando ISO já existe nesta solicitação', async () => {
     tx.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
-    tx.unidade.findUnique.mockResolvedValue({ id: 'other' });
+    tx.unidade.findFirst.mockResolvedValue({ id: 'other' });
     await expect(
       service.addContainer(
         {

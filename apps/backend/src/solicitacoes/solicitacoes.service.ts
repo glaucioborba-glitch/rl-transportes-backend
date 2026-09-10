@@ -158,15 +158,10 @@ export class SolicitacoesService {
         if (!solicitacao) {
           throw new NotFoundException('Solicitação não encontrada');
         }
-        const dup = await tx.unidade.findUnique({
-          where: { numeroIso: dto.numeroIso },
+        const dup = await tx.unidade.findFirst({
+          where: { solicitacaoId: dto.solicitacaoId, numeroIso: dto.numeroIso },
         });
         if (dup) {
-          if (dup.solicitacaoId !== dto.solicitacaoId) {
-            throw new ConflictException(
-              'Número ISO já vinculado a outra solicitação; o contêiner pertence a um único cliente/operação.',
-            );
-          }
           throw new ConflictException('Número ISO já cadastrado nesta solicitação.');
         }
         const unit = await tx.unidade.create({

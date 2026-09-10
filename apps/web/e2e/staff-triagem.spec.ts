@@ -9,12 +9,12 @@ test.describe("Cenário 3 — Triagem intranet (Admin)", () => {
     await setupStaffAuthMock(page);
     await setupStaffTriagemMocks(page);
 
-    await page.goto("/login/staff?next=/staff/triagem");
+    await page.goto("/login/staff?next=/operador/gate/triagem");
     await page.locator("#documento").fill(E2E_STAFF_CNPJ);
     await page.locator("#password").fill(E2E_STAFF_PASSWORD);
     await page.getByRole("button", { name: "Acessar" }).click();
 
-    await page.waitForURL("**/staff/triagem**");
+    await page.waitForURL("**/operador/gate/triagem**");
     await expect(page.getByRole("heading", { name: "Triagem de agendamentos" })).toBeVisible();
     await expect(page.getByText("TRI-E2E-001")).toBeVisible();
     const row = page.getByRole("row").filter({ hasText: "TRI-E2E-001" });

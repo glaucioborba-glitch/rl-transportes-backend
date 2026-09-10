@@ -7,7 +7,6 @@ import {
   evaluateBillingRules,
   computeDiasEnergiaFromTomadaEvents,
   inferTipoContainer,
-  legacyTarifaToRegras,
   pickRegra,
   reeferEnergyFactor,
 } from './billing-rule-engine.util';
@@ -133,6 +132,23 @@ describe('billing-rule-engine.util', () => {
     expect(diaria?.valorTotal).toBe(135);
   });
 
+  it('cobra diária só com override, sem regra de pátio', () => {
+    const asOf = new Date('2026-06-04T10:00:00.000Z');
+    const result = evaluateBillingRules({
+      gateInAt: gateIn,
+      asOf,
+      regras: [],
+      container: { tamanho: '40', tipo: 'DRY' },
+      incluirGateIn: false,
+      incluirGateOut: false,
+      pricingOverrides: { diasFreeTime: 0, valorDiaria: 80 },
+    });
+    const diaria = result.items.find((i) => i.eventoGatilho === EventoGatilhoTarifa.DIARIA_ARMAZENAGEM);
+    expect(diaria?.descricao).toMatch(/aluguel/i);
+    expect(diaria?.valorTotal).toBe(240);
+    expect(diaria?.regraTarifariaId).toBeNull();
+  });
+
   it('não cobra diária dentro do free time', () => {
     const asOf = new Date('2026-06-05T10:00:00.000Z');
     const result = evaluateBillingRules({
@@ -166,12 +182,6 @@ describe('billing-rule-engine.util', () => {
     expect(diaria?.quantidade).toBe(4);
     expect(diaria?.valorTotal).toBe(340);
     expect(result.valorTotal).toBe(610);
-  });
-
-  it('legacyTarifaToRegras gera diária sintética', () => {
-    const legacy = legacyTarifaToRegras({ freeTimeDias: 5, valorDiaria: 85, valorServicosExtras: 120 });
-    expect(legacy).toHaveLength(2);
-    expect(legacy[0].eventoGatilho).toBe(EventoGatilhoTarifa.DIARIA_ARMAZENAGEM);
   });
 
   it('calculateReeferSurcharge aplica fator por set point', () => {
@@ -225,6 +235,78 @@ describe('billing-rule-engine.util', () => {
     });
     const energia = result.items.find((i) => i.eventoGatilho === EventoGatilhoTarifa.ENERGIA_REEFER);
     expect(energia?.quantidade).toBe(3);
+  });
+
+  it('pricingOverrides usam handling e energia cadastrais sem fator de set point', () => {
+    const asOf = new Date('2026-08-28T23:59:59.999Z');
+    const gateInAt = new Date('2026-08-13T10:00:00.000Z');
+    const result = evaluateBillingRules({
+      gateInAt,
+      asOf,
+      regras: regras as never,
+      container: {
+        tamanho: '40',
+        tipo: 'REEFER',
+        refrigerado: true,
+        setPoint: -18,
+        statusContainer: StatusContainerTarifa.CHEIO,
+      },
+      incluirGateIn: false,
+      incluirGateOut: true,
+      pricingOverrides: {
+        diasFreeTime: 7,
+        valorHandling: 300,
+        valorEnergiaReefer: 220,
+        energiaUsaFatorSetPoint: false,
+        faixasDiaria: [
+          { diaInicio: 8, diaFim: 15, valorDiaria: 30 },
+          { diaInicio: 16, diaFim: null, valorDiaria: 45 },
+        ],
+      },
+    });
+    const handling = result.items.find((i) => i.eventoGatilho === EventoGatilhoTarifa.HANDLING);
+    const energia = result.items.find((i) => i.eventoGatilho === EventoGatilhoTarifa.ENERGIA_REEFER);
+    const diaria = result.items.find((i) => i.eventoGatilho === EventoGatilhoTarifa.DIARIA_ARMAZENAGEM);
+    expect(result.diasNoPatio).toBe(16);
+    expect(result.diasFreeTime).toBe(7);
+    expect(handling?.valorTotal).toBe(300);
+    expect(diaria?.valorTotal).toBe(285);
+    expect(diaria?.detalheCobranca).toBe('08 diárias de R$ 30,00 e 01 de R$ 45,00');
+    expect(energia?.valorUnitario).toBe(220);
+    expect(energia?.quantidade).toBe(16);
+    expect(energia?.valorTotal).toBe(3520);
+    expect(energia?.detalheCobranca).toBe('16 dias de R$ 220,00');
+  });
+
+  it('energia reefer usa faixas por dias conectados (8–15 / 16+)', () => {
+    const asOf = new Date('2026-08-28T23:59:59.999Z');
+    const gateInAt = new Date('2026-08-13T10:00:00.000Z');
+    const result = evaluateBillingRules({
+      gateInAt,
+      asOf,
+      regras: regras as never,
+      container: {
+        tamanho: '40',
+        tipo: 'REEFER',
+        refrigerado: true,
+        setPoint: -18,
+        statusContainer: StatusContainerTarifa.CHEIO,
+      },
+      incluirGateIn: false,
+      incluirGateOut: false,
+      pricingOverrides: {
+        diasFreeTime: 7,
+        energiaUsaFatorSetPoint: false,
+        faixasEnergiaReefer: [
+          { diaInicio: 8, diaFim: 15, valorDiaria: 30 },
+          { diaInicio: 16, diaFim: null, valorDiaria: 45 },
+        ],
+      },
+    });
+    const energia = result.items.find((i) => i.eventoGatilho === EventoGatilhoTarifa.ENERGIA_REEFER);
+    expect(energia?.quantidade).toBe(16);
+    expect(energia?.valorTotal).toBe(285);
+    expect(energia?.detalheCobranca).toBe('08 dias de R$ 30,00 e 01 de R$ 45,00');
   });
 
   it('assertTabelaPrecoConfigurada exige diária ativa', () => {

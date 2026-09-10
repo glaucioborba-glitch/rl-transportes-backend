@@ -21,14 +21,12 @@ import {
   StatusSolicitacao,
   TipoCaminhao,
   TipoCliente,
-  TipoContainerTos,
   TipoFluxoLogistico,
   TipoOperacaoAgendamento,
   TipoOperacaoSolicitacaoIntent,
   TipoUnidade,
   TurnoAgendamento,
   PatioStatus,
-  ContainerEventType,
   ModalidadeTransporte,
 } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -207,20 +205,9 @@ async function cleanupDemo() {
   const clientIds = demoClients.map((c) => c.id);
   if (clientIds.length === 0) return;
 
-  const containers = await prisma.container.findMany({
-    where: { clienteId: { in: clientIds } },
-    select: { id: true },
-  });
-  if (containers.length) {
-    await prisma.containerEvent.deleteMany({ where: { containerId: { in: containers.map((c) => c.id) } } });
-    await prisma.avariaRecord.deleteMany({ where: { containerId: { in: containers.map((c) => c.id) } } });
-    await prisma.container.deleteMany({ where: { id: { in: containers.map((c) => c.id) } } });
-  }
-
   await prisma.agendamentoTerminal.deleteMany({ where: { clienteId: { in: clientIds } } });
   await prisma.user.deleteMany({ where: { OR: [{ clienteId: { in: clientIds } }, { email: { endsWith: DEMO_EMAIL_DOMAIN } }] } });
   await prisma.solicitacao.deleteMany({ where: { clienteId: { in: clientIds } } });
-  await prisma.tabelaTarifaria.deleteMany({ where: { clienteId: { in: clientIds } } });
   await prisma.regraTarifaria.deleteMany({
     where: { tabelaPreco: { clientes: { some: { id: { in: clientIds } } } } },
   });
@@ -480,7 +467,7 @@ async function createAgendamentosEstoque(clienteId: string, clienteIdx: number, 
     const dataRef = new Date();
     dataRef.setDate(dataRef.getDate() + i);
     const dataRefOnly = new Date(dataRef.toISOString().slice(0, 10) + 'T12:00:00.000Z');
-    const ag = await prisma.agendamentoTerminal.create({
+    await prisma.agendamentoTerminal.create({
       data: {
         tenantId: DEFAULT_TENANT,
         clienteId,
@@ -495,32 +482,6 @@ async function createAgendamentosEstoque(clienteId: string, clienteIdx: number, 
         localDestino: `Terminal RL — Baia ${String.fromCharCode(65 + (i % 4))}${(i % 4) + 1}`,
       },
     });
-
-    const container = await prisma.container.create({
-      data: {
-        numero: iso,
-        tipo: i % 3 === 0 ? TipoContainerTos.REEFER : TipoContainerTos.DRY,
-        clienteId,
-        agendamentoId: ag.id,
-      },
-    });
-
-    const events: ContainerEventType[] = [
-      ContainerEventType.SCHEDULED,
-      ContainerEventType.GATE_IN_COMPLETED,
-      ContainerEventType.YARD_ALLOCATED,
-    ];
-    if (i % 2 === 1) events.push(ContainerEventType.GATE_OUT_COMPLETED);
-
-    for (const [ord, eventType] of events.entries()) {
-      await prisma.containerEvent.create({
-        data: {
-          containerId: container.id,
-          eventType,
-          payload: { demo: true, ordem: ord, clienteIdx },
-        },
-      });
-    }
   }
 }
 

@@ -35,6 +35,11 @@ describe('RolesGuard', () => {
     expect(guard.canActivate(ctx(user(Role.GERENTE)))).toBe(true);
   });
 
+  it('SUPER_ADMIN passa mesmo sem o papel na lista', () => {
+    (reflector.getAllAndOverride as jest.Mock).mockReturnValue([Role.ADMIN]);
+    expect(guard.canActivate(ctx(user(Role.SUPER_ADMIN)))).toBe(true);
+  });
+
   it('nega quando o papel não está na lista', () => {
     (reflector.getAllAndOverride as jest.Mock).mockReturnValue([Role.ADMIN]);
     expect(guard.canActivate(ctx(user(Role.CLIENTE)))).toBe(false);

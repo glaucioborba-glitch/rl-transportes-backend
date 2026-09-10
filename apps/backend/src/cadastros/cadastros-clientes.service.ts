@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -16,8 +17,10 @@ import { ClientesService } from '../clientes/clientes.service';
 import { CreateClienteDto } from '../clientes/dto/create-cliente.dto';
 import { UpdateClienteDto } from '../clientes/dto/update-cliente.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { defaultClientePapeis, normalizeClientePapeis, clienteTemPapelTransportador } from './cliente-papeis.util';
 import { CadastrosClienteFormDto } from './dto/cadastros-cliente-form.dto';
 import { CadastrosClienteQueryDto } from './dto/cadastros-cliente-query.dto';
+import { CadastrosTransportadorasService } from './cadastros-transportadoras.service';
 
 const PAGE_SIZE = 10;
 
@@ -37,16 +40,20 @@ const AUDIT_FIELD_LABELS: Record<string, string> = {
   enderecoUf: 'UF',
   enderecoCep: 'CEP',
   condicaoPagamento: 'Condição de Pagamento',
+  papeis: 'Tipo de cadastro',
   deletedAt: 'Status',
 };
 
 @Injectable()
 export class CadastrosClientesService {
+  private readonly logger = new Logger(CadastrosClientesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly clientesService: ClientesService,
     private readonly auditoriaService: AuditoriaService,
     private readonly address: AddressService,
+    private readonly transportadoras: CadastrosTransportadorasService,
   ) {}
 
   async list(query: CadastrosClienteQueryDto, actor: AuthUser) {
@@ -85,6 +92,7 @@ export class CadastrosClientesService {
           telefone: true,
           enderecoCidade: true,
           enderecoUf: true,
+          papeis: true,
           deletedAt: true,
           _count: {
             select: {
@@ -106,6 +114,7 @@ export class CadastrosClientesService {
         telefone: r.telefone,
         cidade: r.enderecoCidade,
         uf: r.enderecoUf,
+        papeis: defaultClientePapeis(r.papeis),
         ativo: r.deletedAt == null,
         contratosAtivos: 0,
         solicitacoes: r._count.solicitacoes,
@@ -116,9 +125,12 @@ export class CadastrosClientesService {
     };
   }
 
-  async findOne(id: string, actor: AuthUser) {
-    const cliente = await this.clientesService.findOne(id, actor);
-    return this.toFormShape(cliente as Record<string, unknown>);
+  async findOne(id: string, _actor: AuthUser) {
+    const cliente = await this.prisma.cliente.findFirst({ where: { id, deletedAt: null } });
+    if (!cliente) {
+      throw new NotFoundException(`Cliente com ID ${id} não encontrado.`);
+    }
+    return this.toFormShape(cliente as unknown as Record<string, unknown>);
   }
 
   async create(
@@ -129,6 +141,7 @@ export class CadastrosClientesService {
   ) {
     const createDto = await this.toCreateDto(dto);
     const created = await this.clientesService.create(createDto, usuarioId, ip, userAgent);
+    await this.syncTransportadoraIfNeeded(created as Record<string, unknown>);
     return this.toFormShape(created as Record<string, unknown>);
   }
 
@@ -149,6 +162,7 @@ export class CadastrosClientesService {
       userAgent,
       actor,
     );
+    await this.syncTransportadoraIfNeeded(updated as Record<string, unknown>);
     return this.toFormShape(updated as Record<string, unknown>);
   }
 
@@ -191,7 +205,10 @@ export class CadastrosClientesService {
 
     try {
       const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${clean}`, {
-        headers: { Accept: 'application/json' },
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'RL-Transportes/1.0 (+cadastros-cnpj)',
+        },
         signal: AbortSignal.timeout(8000),
       });
       if (!res.ok) {
@@ -230,6 +247,19 @@ export class CadastrosClientesService {
       uf: r.uf ?? '',
       complemento: '',
     };
+  }
+
+  private async syncTransportadoraIfNeeded(cliente: Record<string, unknown>) {
+    if (!clienteTemPapelTransportador(cliente.papeis)) return;
+    try {
+      await this.transportadoras.upsertFromCliente(cliente);
+    } catch (err) {
+      this.logger.warn(
+        `Cliente ${String(cliente.id)} salvo, mas não apareceu em Transportadoras: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   private mapAuditAction(acao: AcaoAuditoria): 'CREATE' | 'UPDATE' | 'DELETE' | 'READ' {
@@ -290,8 +320,8 @@ export class CadastrosClientesService {
       observacoes: '',
       condicaoPagamento: cliente.condicaoPagamento ?? '',
       limiteCredito: '',
-      segmento: '',
       tipoCliente: cliente.tipo ?? 'PJ',
+      papeis: defaultClientePapeis(cliente.papeis),
       ativo: cliente.deletedAt == null,
     };
   }
@@ -304,6 +334,11 @@ export class CadastrosClientesService {
     if (!dto.email) throw new BadRequestException('E-mail é obrigatório.');
     if (!dto.endereco || !dto.bairro || !dto.cidade || !dto.uf || !dto.cep) {
       throw new BadRequestException('Endereço completo é obrigatório.');
+    }
+
+    const papeis = normalizeClientePapeis(dto.papeis);
+    if (!papeis.length) {
+      throw new BadRequestException('Selecione Cliente e/ou Transportador.');
     }
 
     const createDto: CreateClienteDto = {
@@ -326,12 +361,18 @@ export class CadastrosClientesService {
       responsavel: dto.razaoSocial,
       responsavelTelefone: dto.celular || telefone,
       responsavelEmail: dto.email,
+      papeis,
+      condicaoPagamento: dto.condicaoPagamento,
     };
 
     return createDto;
   }
 
   private async toUpdateDto(dto: CadastrosClienteFormDto): Promise<UpdateClienteDto> {
+    const papeis = normalizeClientePapeis(dto.papeis);
+    if (!papeis.length) {
+      throw new BadRequestException('Selecione Cliente e/ou Transportador.');
+    }
     const telefone = dto.telefone || dto.celular;
     const update: UpdateClienteDto = {
       razaoSocial: dto.razaoSocial,
@@ -351,6 +392,8 @@ export class CadastrosClientesService {
       responsavel: dto.razaoSocial,
       responsavelTelefone: dto.celular || telefone,
       responsavelEmail: dto.email,
+      papeis,
+      condicaoPagamento: dto.condicaoPagamento,
     };
     return update;
   }

@@ -5,8 +5,14 @@ import {
 } from '@prisma/client';
 import { diffCalendarDays, diffDiasCalendario, roundMoney } from '../armazenagem-faturamento/armazenagem-billing.util';
 import {
+  agruparDiasPorFaixa,
   calcularArmazenagemEscalonada,
+  calcularEnergiaEscalonada,
+  formatarFaixasCobranca,
+  SUBSTANTIVO_DIA_ENERGIA,
+  SUBSTANTIVO_DIARIA,
   valorMedioDiariaEscalonada,
+  valorMedioEnergiaEscalonada,
 } from './faixa-diaria-calculator';
 import { parseFaixasDiaria } from './faixa-diaria.types';
 import type {
@@ -15,7 +21,6 @@ import type {
   ContainerBillingContext,
   ContainerMdmKeys,
   ItemFaturaCalculado,
-  LegacyTarifaLike,
   RegraTarifariaLike,
 } from './billing-rule-engine.types';
 import { resolveTipoContainerCodigo } from '../cadastros/tipo-container-tamanhos.util';
@@ -298,10 +303,23 @@ export function evaluateBillingRules(input: BillingRuleEngineInput): BillingRule
     statusContainer,
     mdm,
   );
-  const useHandling = Boolean(regraHandling && Number(regraHandling.valor) > 0);
+  const handlingValor =
+    input.pricingOverrides?.valorHandling != null
+      ? Number(input.pricingOverrides.valorHandling)
+      : regraHandling
+        ? Number(regraHandling.valor)
+        : 0;
+  const useHandling = handlingValor > 0;
 
-  if (input.incluirGateOut && useHandling && regraHandling) {
-    items.push(buildFixedItem(regraHandling, EventoGatilhoTarifa.HANDLING, 'Handling (entrada + saída)'));
+  if (input.incluirGateOut && useHandling) {
+    items.push({
+      regraTarifariaId: regraHandling?.id ?? null,
+      eventoGatilho: EventoGatilhoTarifa.HANDLING,
+      descricao: regraHandling?.nome?.trim() || 'Handling (entrada + saída)',
+      quantidade: 1,
+      valorUnitario: roundMoney(handlingValor),
+      valorTotal: roundMoney(handlingValor),
+    });
   } else {
     if (input.incluirGateIn) {
       const regra = pickRegra(input.regras, tipoContainer, EventoGatilhoTarifa.GATE_IN, statusContainer, mdm);
@@ -333,28 +351,39 @@ export function evaluateBillingRules(input: BillingRuleEngineInput): BillingRule
 
   let diasFaturaveis = Math.max(0, diasNoPatio - diasFreeTime);
   let diariaTotal = 0;
+  const temDiariaOverride =
+    (input.pricingOverrides?.valorDiaria != null && input.pricingOverrides.valorDiaria > 0) ||
+    Boolean(faixas.length);
+  const podeCobrarDiaria = Boolean(regraDiaria) || temDiariaOverride;
 
-  if (regraDiaria && diasFaturaveis > 0) {
+  if (podeCobrarDiaria && diasFaturaveis > 0) {
+    const rotuloDiaria = regraDiaria?.nome?.trim() || 'Diária de aluguel';
     if (faixas.length) {
       diariaTotal = calcularArmazenagemEscalonada(diasNoPatio, diasFreeTime, faixas);
       const { valorMedio } = valorMedioDiariaEscalonada(diasNoPatio, diasFreeTime, faixas);
+      const grupos = agruparDiasPorFaixa(diasFreeTime + 1, diasNoPatio, faixas);
       items.push({
-        regraTarifariaId: regraDiaria.id,
+        regraTarifariaId: regraDiaria?.id ?? null,
         eventoGatilho: EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
-        descricao: regraDiaria.nome?.trim() || 'Diária de armazenagem (escalonada)',
+        descricao: regraDiaria?.nome?.trim() || 'Diária (escalonada)',
+        detalheCobranca: formatarFaixasCobranca(grupos, SUBSTANTIVO_DIARIA),
         quantidade: diasFaturaveis,
         valorUnitario: valorMedio,
         valorTotal: diariaTotal,
       });
     } else {
       const valorUnitario = roundMoney(
-        input.pricingOverrides?.valorDiaria ?? Number(regraDiaria.valor),
+        input.pricingOverrides?.valorDiaria ?? Number(regraDiaria?.valor ?? 0),
       );
       diariaTotal = roundMoney(diasFaturaveis * valorUnitario);
       items.push({
-        regraTarifariaId: regraDiaria.id,
+        regraTarifariaId: regraDiaria?.id ?? null,
         eventoGatilho: EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
-        descricao: regraDiaria.nome?.trim() || 'Diária de armazenagem',
+        descricao: rotuloDiaria,
+        detalheCobranca: formatarFaixasCobranca(
+          [{ quantidade: diasFaturaveis, valorUnitario }],
+          SUBSTANTIVO_DIARIA,
+        ),
         quantidade: diasFaturaveis,
         valorUnitario,
         valorTotal: diariaTotal,
@@ -379,18 +408,53 @@ export function evaluateBillingRules(input: BillingRuleEngineInput): BillingRule
       statusContainer,
       mdm,
     );
-    const tarifaBase = input.pricingOverrides?.valorEnergiaReefer
-      ?? (regraEnergia ? Number(regraEnergia.valor) : DEFAULT_TARIFA_ENERGIA_REEFER_DIA);
+    const faixasEnergiaOverride = input.pricingOverrides?.faixasEnergiaReefer;
+    const faixasEnergiaRegra = regraEnergia ? parseFaixasDiaria(regraEnergia.faixasDiaria) : [];
+    const faixasEnergia = faixasEnergiaOverride?.length ? faixasEnergiaOverride : faixasEnergiaRegra;
+
+    const tarifaTabela =
+      input.pricingOverrides?.valorEnergiaReefer != null
+        ? Number(input.pricingOverrides.valorEnergiaReefer)
+        : regraEnergia
+          ? Number(regraEnergia.valor)
+          : null;
+    const tarifaBase = tarifaTabela ?? DEFAULT_TARIFA_ENERGIA_REEFER_DIA;
     const setPoint = input.container.setPoint ?? 0;
-    const fator = reeferEnergyFactor(setPoint);
-    const valorUnitario = roundMoney(tarifaBase * fator);
-    const valorTotal = calculateReeferSurcharge(diasEnergia, setPoint, tarifaBase);
+    const usaFator =
+      input.pricingOverrides?.energiaUsaFatorSetPoint ?? tarifaTabela == null;
+    const fator = usaFator ? reeferEnergyFactor(setPoint) : 1;
+
+    let valorUnitario: number;
+    let valorTotal: number;
+    let detalheEnergia = '';
+    if (faixasEnergia.length) {
+      const totalFaixas = calcularEnergiaEscalonada(diasEnergia, faixasEnergia);
+      const { valorMedio } = valorMedioEnergiaEscalonada(diasEnergia, faixasEnergia);
+      valorUnitario = roundMoney(valorMedio * fator);
+      valorTotal = roundMoney(totalFaixas * fator);
+      detalheEnergia = formatarFaixasCobranca(
+        agruparDiasPorFaixa(1, diasEnergia, faixasEnergia, fator),
+        SUBSTANTIVO_DIA_ENERGIA,
+      );
+    } else {
+      valorUnitario = roundMoney(tarifaBase * fator);
+      valorTotal = usaFator
+        ? calculateReeferSurcharge(diasEnergia, setPoint, tarifaBase)
+        : roundMoney(diasEnergia * tarifaBase);
+      detalheEnergia = formatarFaixasCobranca(
+        [{ quantidade: diasEnergia, valorUnitario }],
+        SUBSTANTIVO_DIA_ENERGIA,
+      );
+    }
     items.push({
       regraTarifariaId: regraEnergia?.id ?? null,
       eventoGatilho: EventoGatilhoTarifa.ENERGIA_REEFER,
       descricao:
         regraEnergia?.nome?.trim() ||
-        `Energia reefer / tomada (set point ${setPoint}°C, fator ${fator}x)`,
+        (fator !== 1
+          ? `Energia reefer / tomada (set point ${setPoint}°C, fator ${fator}x)`
+          : 'Energia reefer / tomada'),
+      detalheCobranca: detalheEnergia,
       quantidade: diasEnergia,
       valorUnitario,
       valorTotal,
@@ -427,61 +491,5 @@ export function evaluateBillingRules(input: BillingRuleEngineInput): BillingRule
     diasFaturaveis,
     diasFreeTime,
     tipoContainer,
-  };
-}
-
-/** Converte tarifa legada (`TabelaTarifaria`) em regras sintéticas. */
-export function legacyTarifaToRegras(legado: LegacyTarifaLike): RegraTarifariaLike[] {
-  const valorDiaria = Number(legado.valorDiaria);
-  const extras = Number(legado.valorServicosExtras ?? 0);
-  const regras: RegraTarifariaLike[] = [
-    {
-      id: 'legacy-diaria',
-      eventoGatilho: EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
-      tipoContainer: TipoContainerTarifa.TODOS,
-      statusContainer: StatusContainerTarifa.AMBOS,
-      valor: valorDiaria as unknown as RegraTarifariaLike['valor'],
-      diasFreeTime: legado.freeTimeDias,
-      ativa: true,
-      nome: 'Diária legada',
-    },
-  ];
-  if (extras > 0) {
-    regras.push({
-      id: 'legacy-shifting',
-      eventoGatilho: EventoGatilhoTarifa.SHIFTING_EXTRA,
-      tipoContainer: TipoContainerTarifa.TODOS,
-      statusContainer: StatusContainerTarifa.AMBOS,
-      valor: extras as unknown as RegraTarifariaLike['valor'],
-      diasFreeTime: 0,
-      ativa: true,
-      nome: 'Serviços extras (1x após free time)',
-    });
-  }
-  return regras;
-}
-
-/** Compat: primeira diária cobrada dispara shifting legado como taxa única. */
-export function applyLegacyShiftingOnFirstBillableDay(
-  result: BillingRuleEngineResult,
-  legado: LegacyTarifaLike,
-): BillingRuleEngineResult {
-  const extras = Number(legado.valorServicosExtras ?? 0);
-  if (extras <= 0 || result.diasFaturaveis <= 0) return result;
-  const already = result.items.some((i) => i.eventoGatilho === EventoGatilhoTarifa.SHIFTING_EXTRA);
-  if (already) return result;
-  const shiftItem: ItemFaturaCalculado = {
-    regraTarifariaId: 'legacy-shifting',
-    eventoGatilho: EventoGatilhoTarifa.SHIFTING_EXTRA,
-    descricao: 'Serviços extras',
-    quantidade: 1,
-    valorUnitario: roundMoney(extras),
-    valorTotal: roundMoney(extras),
-  };
-  const items = [...result.items, shiftItem];
-  return {
-    ...result,
-    items,
-    valorTotal: roundMoney(items.reduce((acc, i) => acc + i.valorTotal, 0)),
   };
 }

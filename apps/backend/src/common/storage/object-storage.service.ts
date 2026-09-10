@@ -3,8 +3,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { IntegrationCredentialsService } from '../../tenant/integration-credentials.service';
+import { appendSignedMediaQuery, rewriteSignedUrlHost, verifyLocalMediaSignature } from './signed-media-url.util';
+import { assertSafeStorageSegments, canonicalMediaKey, resolveSafeLocalPath } from './safe-local-path.util';
 
 export interface ObjectStoragePutResult {
   url: string;
@@ -20,14 +23,19 @@ function sanitizeFilename(name: string): string {
 export class ObjectStorageService implements OnModuleInit {
   private readonly logger = new Logger(ObjectStorageService.name);
   private readonly isProd: boolean;
-  private s3: S3Client | null = null;
-  private readonly bucket?: string;
+  private readonly envS3: S3Client | null = null;
+  private readonly envBucket?: string;
+  private tenantS3: S3Client | null = null;
+  private tenantS3Fp = '';
   private readonly publicBase?: string;
   private readonly apiPublicBase: string;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly integrationCreds: IntegrationCredentialsService,
+  ) {
     this.isProd = (config.get<string>('NODE_ENV') ?? 'development') === 'production';
-    this.bucket = config.get<string>('AWS_S3_BUCKET') ?? process.env.AWS_S3_BUCKET;
+    this.envBucket = config.get<string>('AWS_S3_BUCKET') ?? process.env.AWS_S3_BUCKET;
     this.publicBase =
       config.get<string>('STORAGE_PUBLIC_BASE_URL') ??
       process.env.STORAGE_PUBLIC_BASE_URL;
@@ -41,8 +49,8 @@ export class ObjectStorageService implements OnModuleInit {
       process.env.STORAGE_ENDPOINT ??
       process.env.S3_ENDPOINT ??
       process.env.R2_ENDPOINT;
-    if (this.bucket && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
-      this.s3 = new S3Client({
+    if (this.envBucket && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+      this.envS3 = new S3Client({
         region,
         ...(endpoint ? { endpoint, forcePathStyle: true } : {}),
       });
@@ -50,58 +58,83 @@ export class ObjectStorageService implements OnModuleInit {
   }
 
   onModuleInit(): void {
-    if (this.isProd && !this.bucket) {
+    if (this.isProd && !this.envBucket && !this.integrationCreds.peekS3().configured) {
       throw new Error(
         'AWS_S3_BUCKET obrigatório em produção. Configure bucket S3/R2 antes do go-live.',
       );
     }
-    if (this.usesS3()) {
-      this.logger.log(`Object storage: S3 bucket ${this.bucket}`);
+    const runtime = this.runtimeS3();
+    if (runtime) {
+      this.logger.log(`Object storage: S3 bucket ${runtime.bucket}`);
     } else {
       this.logger.warn('Object storage: filesystem local (uploads/)');
     }
   }
 
+  private runtimeS3(): { client: S3Client; bucket: string; publicBase?: string } | null {
+    if (this.envS3 && this.envBucket) {
+      return { client: this.envS3, bucket: this.envBucket, publicBase: this.publicBase };
+    }
+    const t = this.integrationCreds.peekS3();
+    if (!t.configured || !t.bucket || !t.accessKeyId || !t.secretAccessKey) return null;
+    const fp = `${t.bucket}|${t.endpoint ?? ''}|${t.region ?? ''}|${t.accessKeyId}`;
+    if (!this.tenantS3 || this.tenantS3Fp !== fp) {
+      this.tenantS3 = new S3Client({
+        region: t.region || 'us-east-1',
+        credentials: { accessKeyId: t.accessKeyId, secretAccessKey: t.secretAccessKey },
+        ...(t.endpoint ? { endpoint: t.endpoint, forcePathStyle: true } : {}),
+      });
+      this.tenantS3Fp = fp;
+    }
+    return { client: this.tenantS3, bucket: t.bucket, publicBase: t.publicBaseUrl ?? this.publicBase };
+  }
+
   usesS3(): boolean {
-    return Boolean(this.s3 && this.bucket);
+    return this.runtimeS3() !== null;
   }
 
   async testConnection(): Promise<{ ok: boolean; message: string }> {
-    if (!this.usesS3()) {
+    const runtime = this.runtimeS3();
+    if (!runtime) {
       return { ok: true, message: 'Armazenamento local (uploads/) — dev' };
     }
     try {
-      await this.s3!.send(new HeadBucketCommand({ Bucket: this.bucket! }));
+      await runtime.client.send(new HeadBucketCommand({ Bucket: runtime.bucket }));
       const key = `_probe/${randomUUID()}.txt`;
       await this.putS3(key, Buffer.from('rl-probe'), 'text/plain');
       await this.deleteKeys([key]);
-      return { ok: true, message: `Bucket S3 ${this.bucket} — read/write OK` };
+      return { ok: true, message: `Bucket S3 ${runtime.bucket} — read/write OK` };
     } catch (e) {
       return { ok: false, message: (e as Error).message };
     }
   }
 
-  /** URL de leitura: CDN pública ou presigned (sem ACL public-read). */
+  /** URL de leitura: S3/MinIO pré-assinado ou HMAC local. Nunca URL pública sem query. */
   async resolveReadUrl(key: string, expiresSec = 3600): Promise<string> {
     const k = key.replace(/^\/+/, '');
-    if (this.publicBase) {
-      return `${this.publicBase.replace(/\/$/, '')}/${k}`;
-    }
-    if (this.usesS3()) {
-      return getSignedUrl(
-        this.s3!,
-        new GetObjectCommand({ Bucket: this.bucket!, Key: k }),
+    const runtime = this.runtimeS3();
+    if (runtime) {
+      const signed = await getSignedUrl(
+        runtime.client,
+        new GetObjectCommand({ Bucket: runtime.bucket, Key: k }),
         { expiresIn: expiresSec },
       );
+      return rewriteSignedUrlHost(signed, runtime.publicBase);
     }
-    const rel = k.includes('/') ? k.replace(/^[^/]+\//, '') : k;
-    return `${this.apiPublicBase.replace(/\/$/, '')}/v2/gate/vistoria/media/${encodeURIComponent(rel)}`;
+    const rel = this.toLocalRelativeKey(k);
+    const unsigned = `${this.apiPublicBase.replace(/\/$/, '')}/v2/gate/vistoria/media/${rel
+      .split('/')
+      .map((p) => encodeURIComponent(p))
+      .join('/')}`;
+    return appendSignedMediaQuery(unsigned, rel, this.mediaSigningSecret());
   }
 
   private async putS3(key: string, body: Buffer, contentType: string): Promise<ObjectStoragePutResult> {
-    await this.s3!.send(
+    const runtime = this.runtimeS3();
+    if (!runtime) throw new Error('S3 não configurado');
+    await runtime.client.send(
       new PutObjectCommand({
-        Bucket: this.bucket!,
+        Bucket: runtime.bucket,
         Key: key,
         Body: body,
         ContentType: contentType,
@@ -147,30 +180,86 @@ export class ObjectStorageService implements OnModuleInit {
     localServePath?: string;
   }): Promise<ObjectStoragePutResult> {
     const safe = sanitizeFilename(params.filename);
-    const key = `${params.namespace}/${params.parts.join('/')}/${randomUUID()}_${safe}`;
+    const relParts = params.parts;
+    assertSafeStorageSegments(params.namespace.split(/[\\/]/).filter(Boolean));
+    assertSafeStorageSegments(relParts);
+    if (relParts.some((p) => /[\\/]/.test(p))) {
+      throw new Error('Object storage path inválido');
+    }
+    const key = `${params.namespace}/${relParts.join('/')}/${randomUUID()}_${safe}`;
 
     if (this.usesS3()) {
       return this.putS3(key, params.buffer, params.mimeType);
     }
-
-    const relParts = params.parts;
-    const base = path.join(process.cwd(), 'uploads', params.namespace, ...relParts);
+    const uploadsRoot = path.resolve(process.cwd(), 'uploads');
+    const base = path.resolve(uploadsRoot, params.namespace, ...relParts);
+    const relToUploads = path.relative(uploadsRoot, base);
+    if (!relToUploads || relToUploads.startsWith('..') || path.isAbsolute(relToUploads)) {
+      throw new Error('Object storage path inválido');
+    }
     fs.mkdirSync(base, { recursive: true });
     const file = `${randomUUID()}_${safe}`;
     fs.writeFileSync(path.join(base, file), params.buffer);
     const storageKey = `${relParts.join('/')}/${file}`.replace(/\\/g, '/');
-    const serve =
-      params.localServePath ??
-      `/v2/gate/vistoria/media/${encodeURIComponent(storageKey)}`;
-    const url = `${this.apiPublicBase.replace(/\/$/, '')}${serve}`;
+    const servePath = `/v2/gate/vistoria/media/${storageKey
+      .split('/')
+      .map((p) => encodeURIComponent(p))
+      .join('/')}`;
+    const unsigned = `${this.apiPublicBase.replace(/\/$/, '')}${params.localServePath ?? servePath}`;
+    const url = appendSignedMediaQuery(unsigned, storageKey, this.mediaSigningSecret());
     this.logger.warn(`Object stored local: ${storageKey}`);
     return { url, storageKey: `${params.namespace}/${storageKey}` };
   }
 
   readLocal(namespace: string, storageKey: string): { buffer: Buffer; mimeType: string } {
-    const full = path.join(process.cwd(), 'uploads', namespace, storageKey);
-    if (!fs.existsSync(full)) throw new NotFoundException('Arquivo não encontrado');
+    const full = resolveSafeLocalPath(namespace, storageKey);
     const mimeType = full.endsWith('.png') ? 'image/png' : 'image/jpeg';
+    return { buffer: fs.readFileSync(full), mimeType };
+  }
+
+  verifyLocalMediaAccess(storageKey: string, exp?: string, sig?: string): boolean {
+    const rel = this.toLocalRelativeKey(storageKey);
+    return verifyLocalMediaSignature(rel, exp, sig, this.mediaSigningSecret());
+  }
+
+  private mediaSigningSecret(): string {
+    return (
+      this.config.get<string>('STORAGE_SIGNING_SECRET') ??
+      this.config.get<string>('secrets.jwtSecret') ??
+      this.config.get<string>('JWT_SECRET') ??
+      process.env.JWT_SECRET ??
+      ''
+    );
+  }
+
+  private toLocalRelativeKey(storageKey: string): string {
+    const k = canonicalMediaKey(storageKey);
+    for (const prefix of ['vistorias/', 'logistica/vistorias/']) {
+      if (k.startsWith(prefix)) return k.slice(prefix.length);
+    }
+    return k;
+  }
+
+  async getBuffer(storageKey: string): Promise<{ buffer: Buffer; mimeType?: string }> {
+    const k = canonicalMediaKey(storageKey);
+    const runtime = this.runtimeS3();
+    if (runtime) {
+      const out = await runtime.client.send(new GetObjectCommand({ Bucket: runtime.bucket, Key: k }));
+      const bytes = await out.Body!.transformToByteArray();
+      return { buffer: Buffer.from(bytes), mimeType: out.ContentType };
+    }
+    const slash = k.indexOf('/');
+    const namespace = slash > 0 ? k.slice(0, slash) : 'objects';
+    const rel = slash > 0 ? k.slice(slash + 1) : k;
+    const full = resolveSafeLocalPath(namespace, rel);
+    const lower = k.toLowerCase();
+    const mimeType = lower.endsWith('.pdf')
+      ? 'application/pdf'
+      : lower.endsWith('.png')
+        ? 'image/png'
+        : lower.endsWith('.webp')
+          ? 'image/webp'
+          : 'image/jpeg';
     return { buffer: fs.readFileSync(full), mimeType };
   }
 
@@ -181,20 +270,20 @@ export class ObjectStorageService implements OnModuleInit {
   async deleteKeys(storageKeys: string[], localNamespace = 'vistorias'): Promise<void> {
     for (const key of storageKeys) {
       if (!key || key.includes('..')) continue;
-      if (this.usesS3()) {
+      const runtime = this.runtimeS3();
+      if (runtime) {
         try {
-          await this.s3!.send(new DeleteObjectCommand({ Bucket: this.bucket!, Key: key }));
+          await runtime.client.send(new DeleteObjectCommand({ Bucket: runtime.bucket, Key: key }));
         } catch (e) {
           this.logger.warn(`Falha ao remover S3 ${key}: ${(e as Error).message}`);
         }
         continue;
       }
       const rel = key.includes('/') ? key.replace(/^[^/]+\//, '') : key;
-      const full = path.join(process.cwd(), 'uploads', localNamespace, rel);
       try {
-        fs.unlinkSync(full);
+        fs.unlinkSync(resolveSafeLocalPath(localNamespace, rel));
       } catch {
-        /* ignore */
+        /* ignore missing / path inválido */
       }
     }
   }

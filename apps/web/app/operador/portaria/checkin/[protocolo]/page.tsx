@@ -105,9 +105,14 @@ export default function CheckinPage({ params }: { params: { protocolo: string } 
         <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
           <div>
-            <p className="text-sm font-medium text-amber-400">Esta unidade já foi identificada</p>
+            <p className="text-sm font-medium text-amber-400">
+              {operacao.devolucaoPortaria
+                ? "Gate devolveu para complementar a vistoria"
+                : "Esta unidade já foi identificada"}
+            </p>
             <p className="mt-1 text-xs text-slate-400">
-              Estado atual: {STATE_LABELS[operacao.state]}
+              {operacao.devolucaoPortaria?.mensagem ??
+                `Estado atual: ${STATE_LABELS[operacao.state]}`}
             </p>
             {(operacao.state === "CHECKIN_PORTARIA" ||
               operacao.state === "VISTORIA_FOTOGRAFICA") && (
@@ -121,7 +126,7 @@ export default function CheckinPage({ params }: { params: { protocolo: string } 
                   )
                 }
               >
-                Continuar vistoria →
+                {operacao.devolucaoPortaria ? "Complementar vistoria →" : "Continuar vistoria →"}
               </Button>
             )}
           </div>

@@ -25,6 +25,18 @@ async function parseJson<T>(res: Response): Promise<T> {
   }
 }
 
+function nestErrorMessage(raw: string, fallbackStatus: number): string {
+  const fallback = raw || `Erro HTTP ${fallbackStatus}`;
+  try {
+    const j = JSON.parse(raw) as { message?: string | string[] };
+    if (Array.isArray(j.message) && j.message.length) return j.message.join(", ");
+    if (typeof j.message === "string" && j.message.trim()) return j.message.trim();
+  } catch {
+    /* texto cru */
+  }
+  return fallback;
+}
+
 export { ApiError } from "@/lib/api/corporate-auth-client";
 
 const STAFF_EXT_HEADERS: Record<string, string> = { "X-RL-Auth-Cookie": "1" };
@@ -62,6 +74,9 @@ export async function staffRequest(path: string, init?: RequestInit): Promise<Re
   const doFetch = async () => {
     const headers = new Headers(init?.headers);
     if (!headers.has("Accept")) headers.set("Accept", "application/json");
+    if (!headers.has("Content-Type") && init?.body && !(init.body instanceof FormData)) {
+      headers.set("Content-Type", "application/json");
+    }
     for (const [k, v] of Object.entries(STAFF_EXT_HEADERS)) {
       if (!headers.has(k)) headers.set(k, v);
     }
@@ -155,7 +170,7 @@ export async function staffJson<T>(path: string, init?: RequestInit): Promise<T>
   }
   if (!res.ok) {
     const err = await res.text();
-    throw new ApiError(err || `Erro HTTP ${res.status}`, res.status);
+    throw new ApiError(nestErrorMessage(err, res.status), res.status);
   }
   return parseJson<T>(res);
 }
@@ -175,7 +190,7 @@ export async function staffTryJson<T>(path: string, init?: RequestInit): Promise
   }
   if (!res.ok) {
     const err = await res.text();
-    throw new ApiError(err || `Erro HTTP ${res.status}`, res.status);
+    throw new ApiError(nestErrorMessage(err, res.status), res.status);
   }
   return parseJson<T>(res);
 }
@@ -301,6 +316,30 @@ export type StaffGateFilaItem = {
 
 export function staffGateFila() {
   return staffJson<StaffGateFilaItem[]>("/v2/gate/fila");
+}
+
+export type EstoqueLegadoReport = {
+  geradoEm: string;
+  tenantId: string;
+  patioSemId: Array<{
+    patioUnidadeId: string;
+    unidadeIso: string;
+    statusPatio: string;
+    solicitacaoId: string;
+    protocolo: string;
+    clienteId: string;
+  }>;
+  coletasSemEstoque: Array<{
+    solicitacaoId: string;
+    protocolo: string;
+    clienteId: string;
+    status: string;
+    unidadeIso: string;
+  }>;
+};
+
+export function staffEstoqueLegado() {
+  return staffJson<EstoqueLegadoReport>("/v2/gate/estoque-legado");
 }
 
 export type { GateCockpitPayload } from "@/lib/gate/gate-cockpit-types";

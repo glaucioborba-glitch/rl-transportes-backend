@@ -108,7 +108,7 @@ HC/DC **não** são tipos separados — são **capacidade** vinculada ao tipo DR
 
 
 
-- `TabelaTarifaria` descontinuada após migração.
+- `TabelaTarifaria` removida (`20260907200000_drop_tos_legacy`). Fonte única: cadastro → sync → `TabelaPreco`.
 
 
 

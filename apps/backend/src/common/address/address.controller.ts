@@ -1,10 +1,12 @@
 import { Controller, Get, Param } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Public } from '../decorators/public.decorator';
 import { onlyDigits } from './address-normalizer';
 import { AddressService } from './address.service';
 import { AddressInvalidException } from './exceptions/address-invalid.exception';
 
 @ApiTags('address')
+@Public()
 @Controller('address')
 export class AddressController {
   constructor(private readonly address: AddressService) {}

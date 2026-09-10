@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CategoriaAuditLog } from '@prisma/client';
 import { appendAuditTrailEntry } from '../audit-trail/audit-trail-capture.util';
@@ -8,6 +8,11 @@ import { mergeReguaCobranca } from '../common/finance/regua-cobranca.util';
 import { PrismaService } from '../prisma/prisma.service';
 import type { UpdateParametrosGeraisDto } from './dto/update-parametros-gerais.dto';
 import { DEFAULT_TENANT_ID } from './tenant.constants';
+import {
+  mergeIntegracoesCredenciais,
+  parseGoogleServiceAccountJson,
+} from './integration-credentials.util';
+import { IntegrationCredentialsService } from './integration-credentials.service';
 import { TenantConfigProbesService } from './tenant-config-probes.service';
 import {
   DEFAULT_SEGURANCA,
@@ -55,6 +60,7 @@ export class TenantConfigService {
     private readonly cache: ConfigCacheService,
     private readonly config: ConfigService,
     private readonly probes: TenantConfigProbesService,
+    private readonly integrationCreds: IntegrationCredentialsService,
   ) {}
 
   private cacheKey(tenantId: string) {
@@ -88,10 +94,14 @@ export class TenantConfigService {
 
   async getParametrosGerais(tenantId: string = DEFAULT_TENANT_ID): Promise<ParametrosGeraisResponse> {
     const cached = await this.cache.get<ParametrosGeraisResponse>(this.cacheKey(tenantId));
-    if (cached) return cached;
+    if (cached) {
+      await this.integrationCreds.load(tenantId);
+      return { ...cached, integracoes: this.probes.buildIntegracoesStatus() };
+    }
 
     const { tenantId: tid, parametros } = await this.getParametros(tenantId);
     const envMunicipio = this.config.get<string>('nfse.ipm.municipioIbge');
+    this.integrationCreds.remember(tenantId, parametros.integracoesCredenciais);
     const integracoes = this.probes.buildIntegracoesStatus();
     const templates = await this.probes.revalidateWhatsappTemplates();
     integracoes.whatsapp.templatesAprovados = templates.filter((t) => t.status === 'APPROVED').length;
@@ -131,6 +141,7 @@ export class TenantConfigService {
       data: { parametros: merged as object },
     });
     await this.cache.invalidate(this.cacheKey(tenantId));
+    this.integrationCreds.remember(tenantId, merged.integracoesCredenciais);
     await this.getParametrosSeguranca(tenantId);
     return { tenantId: updated.tenantId, parametros: mergeTenantParametros(updated.parametros) };
   }
@@ -167,6 +178,20 @@ export class TenantConfigService {
     }
     if (dto.seguranca) patch.seguranca = { ...current.parametros.seguranca, ...dto.seguranca };
     if (dto.notificacoes) patch.notificacoes = { ...current.parametros.notificacoes, ...dto.notificacoes };
+    if (dto.integracoes) {
+      const googleJson = dto.integracoes.googleVision?.credentialsJson;
+      if (googleJson?.trim()) {
+        try {
+          parseGoogleServiceAccountJson(googleJson);
+        } catch (err) {
+          throw new BadRequestException((err as Error).message);
+        }
+      }
+      patch.integracoesCredenciais = mergeIntegracoesCredenciais(
+        current.parametros.integracoesCredenciais,
+        dto.integracoes,
+      );
+    }
 
     const merged = syncLegacyOperacaoFields(mergeTenantParametros({ ...current.parametros, ...patch }));
 
@@ -180,6 +205,7 @@ export class TenantConfigService {
       data: { parametros: merged as object },
     });
     await this.cache.invalidate(this.cacheKey(tenantId));
+    this.integrationCreds.remember(tenantId, merged.integracoesCredenciais);
     await this.getParametrosSeguranca(tenantId);
 
     const actor = this.auditContext.resolveActor();
@@ -195,6 +221,9 @@ export class TenantConfigService {
         fiscal: resolveFiscal(merged, this.config.get<string>('nfse.ipm.municipioIbge')),
         seguranca: resolveSeguranca(merged),
         notificacoes: resolveNotificacoes(merged),
+        integracoes: dto.integracoes
+          ? this.probes.buildIntegracoesStatus()
+          : undefined,
       },
     });
 

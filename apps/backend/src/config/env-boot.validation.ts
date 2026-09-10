@@ -50,4 +50,9 @@ export function assertProductionEnvBoot(): void {
   if (process.env.CSRF_ENABLED === '0') {
     console.warn('[boot] CSRF desabilitado explicitamente em produção (CSRF_ENABLED=0).');
   }
+
+  assertSecret('INTEGRACAO_FINANCE_WEBHOOK_SECRET', process.env.INTEGRACAO_FINANCE_WEBHOOK_SECRET);
+  assertSecret('INTEGRACAO_INTERNO_SECRET', process.env.INTEGRACAO_INTERNO_SECRET);
+  assertSecret('STORAGE_SIGNING_SECRET', process.env.STORAGE_SIGNING_SECRET);
+  assertSecret('REDIS_PASSWORD', process.env.REDIS_PASSWORD, 16);
 }

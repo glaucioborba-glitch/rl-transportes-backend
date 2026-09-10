@@ -330,6 +330,110 @@ export class UpdateNotificacoesDto {
   debounceAlertasMin?: number;
 }
 
+export class UpdateGoogleVisionDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(20_000)
+  credentialsJson?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  apiKey?: string;
+}
+
+export class UpdateWhatsappIntegracaoDto {
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  phoneNumberId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  accessToken?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  businessAccountId?: string;
+}
+
+export class UpdateBankingIntegracaoDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  provider?: string;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v != null && v !== '')
+  @IsUrl({ require_tld: false })
+  apiBaseUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  apiToken?: string;
+}
+
+export class UpdateS3IntegracaoDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  bucket?: string;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v != null && v !== '')
+  @IsUrl({ require_tld: false })
+  endpoint?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  region?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  accessKeyId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  secretAccessKey?: string;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v != null && v !== '')
+  @IsUrl({ require_tld: false })
+  publicBaseUrl?: string;
+}
+
+export class UpdateIntegracoesDto {
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateGoogleVisionDto)
+  googleVision?: UpdateGoogleVisionDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateWhatsappIntegracaoDto)
+  whatsapp?: UpdateWhatsappIntegracaoDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateBankingIntegracaoDto)
+  banking?: UpdateBankingIntegracaoDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateS3IntegracaoDto)
+  s3?: UpdateS3IntegracaoDto;
+}
+
 export class UpdateParametrosGeraisDto {
   @IsOptional()
   @ValidateNested()
@@ -355,4 +459,9 @@ export class UpdateParametrosGeraisDto {
   @ValidateNested()
   @Type(() => UpdateNotificacoesDto)
   notificacoes?: UpdateNotificacoesDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateIntegracoesDto)
+  integracoes?: UpdateIntegracoesDto;
 }

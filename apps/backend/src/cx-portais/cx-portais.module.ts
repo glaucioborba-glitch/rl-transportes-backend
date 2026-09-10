@@ -49,6 +49,7 @@ import { AgendamentosModule } from '../agendamentos/agendamentos.module';
 import { YardReadModule } from '../yard-read/yard-read.module';
 import { ContainerTimelineModule } from '../container-timeline/container-timeline.module';
 import { ArmazenagemFaturamentoModule } from '../armazenagem-faturamento/armazenagem-faturamento.module';
+import { BillingEngineModule } from '../billing-engine/billing-engine.module';
 import { ContainerTimelineClientController } from '../container-timeline/container-timeline-client.controller';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { VistoriaModule } from '../vistoria/vistoria.module';
@@ -60,6 +61,10 @@ import { TransportadorasAutorizadasModule } from '../transportadoras-autorizadas
 import { TenantModule } from '../tenant/tenant.module';
 import { CadastrosModule } from '../cadastros/cadastros.module';
 import { PatioV2Module } from '../patio-v2/patio.module';
+import { PortalNotificacoesModule } from '../portal-notificacoes/portal-notificacao.module';
+import { PortalNotificacaoController } from './portal-notificacao.controller';
+import { PortalSimulacaoValoresController } from './portal-simulacao-valores.controller';
+import { PortalSimulacaoValoresService } from './services/portal-simulacao-valores.service';
 
 /**
  * Fase 20 — Camada CX: portais cliente/fornecedor, IAM dedicado, branding, tickets e analytics.
@@ -71,6 +76,7 @@ import { PatioV2Module } from '../patio-v2/patio.module';
     AuditoriaModule,
     CadastrosModule,
     PatioV2Module,
+    PortalNotificacoesModule,
     SolicitacoesModule,
     EmailModule,
     AddressModule,
@@ -84,6 +90,7 @@ import { PatioV2Module } from '../patio-v2/patio.module';
     YardReadModule,
     ContainerTimelineModule,
     ArmazenagemFaturamentoModule,
+    BillingEngineModule,
     AuditLogModule,
     VistoriaModule,
     HoldReleaseModule,
@@ -115,6 +122,8 @@ import { PatioV2Module } from '../patio-v2/patio.module';
     SecurityPortalController,
     ContainerTimelineClientController,
     VistoriaPortalController,
+    PortalNotificacaoController,
+    PortalSimulacaoValoresController,
   ],
   providers: [
     PortalJwtService,
@@ -138,6 +147,7 @@ import { PatioV2Module } from '../patio-v2/patio.module';
     CxPortalSecurityService,
     PortalCxInterceptor,
     PortalCadastroAprovadoGuard,
+    PortalSimulacaoValoresService,
 
     /* Re-export guards for DI */
   ],

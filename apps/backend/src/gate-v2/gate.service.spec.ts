@@ -16,7 +16,6 @@ import { SecurityEventsService } from '../security-center/security-events.servic
 import { SolicitacaoAnexoStorageService } from '../modules/solicitacoes-v2/solicitacao-anexo.storage';
 import { SolicitacoesV2Service } from '../modules/solicitacoes-v2/solicitacoes-v2.service';
 import { PatioV2Service } from '../patio-v2/patio.service';
-import { ArmazenagemBillingService } from '../armazenagem-faturamento/armazenagem-billing.service';
 import { YardAllocationService } from '../yard-allocation/yard-allocation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { HoldReleaseService } from '../hold-release/hold-release.service';
@@ -36,13 +35,17 @@ describe('GateV2Service', () => {
   let security: { emit: jest.Mock };
   let storage: { persist: jest.Mock; deleteUploadedObjects: jest.Mock };
   let solicitacoesV2: { obterDetalheStaff: jest.Mock };
-  let patioV2: { provisionFromGateIn: jest.Mock; finalizeFromGateOut: jest.Mock };
+  let patioV2: {
+    provisionFromGateIn: jest.Mock;
+    finalizeFromGateOut: jest.Mock;
+    attachGateInToProcesso: jest.Mock;
+  };
   let vistoria: {
     assertFotosCompletas: jest.Mock;
     createVistoria: jest.Mock;
     rollbackUploaded: jest.Mock;
   };
-  let holdRelease: { assertSemBloqueioAtivo: jest.Mock };
+  let holdRelease: { assertSemBloqueioAtivo: jest.Mock; resolveFinancialHoldForGateOut: jest.Mock };
 
   function fotosCompletas() {
     const map = new Map();
@@ -68,6 +71,7 @@ describe('GateV2Service', () => {
     patioV2 = {
       provisionFromGateIn: jest.fn().mockResolvedValue(1),
       finalizeFromGateOut: jest.fn().mockResolvedValue(undefined),
+      attachGateInToProcesso: jest.fn().mockResolvedValue(undefined),
     };
 
     vistoria = {
@@ -78,7 +82,10 @@ describe('GateV2Service', () => {
       }),
       rollbackUploaded: jest.fn(),
     };
-    holdRelease = { assertSemBloqueioAtivo: jest.fn().mockResolvedValue(undefined) };
+    holdRelease = {
+      assertSemBloqueioAtivo: jest.fn().mockResolvedValue(undefined),
+      resolveFinancialHoldForGateOut: jest.fn().mockResolvedValue(undefined),
+    };
 
     const tx = {
       gateCheckIn: {
@@ -94,6 +101,9 @@ describe('GateV2Service', () => {
       },
       saida: {
         upsert: jest.fn(),
+      },
+      preFatura: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
     };
 
@@ -124,7 +134,6 @@ describe('GateV2Service', () => {
         { provide: SecurityEventsService, useValue: security },
         { provide: SolicitacoesV2Service, useValue: solicitacoesV2 },
         { provide: PatioV2Service, useValue: patioV2 },
-        { provide: ArmazenagemBillingService, useValue: { openPreFaturasForGateIn: jest.fn(), consolidateOnGateOut: jest.fn(), onGateOut: jest.fn() } },
         { provide: YardAllocationService, useValue: { applyGiroEstimado: jest.fn().mockResolvedValue(null) } },
         { provide: VistoriaService, useValue: vistoria },
         { provide: HoldReleaseService, useValue: holdRelease },

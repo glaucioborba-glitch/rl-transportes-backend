@@ -52,7 +52,7 @@ export default function ParametrosSegurancaPage() {
   };
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="space-y-6">
       <ParametrosBreadcrumb current="Segurança" />
       <div>
         <h1 className="text-2xl font-bold">Parâmetros Gerais</h1>
@@ -63,8 +63,8 @@ export default function ParametrosSegurancaPage() {
       <ParametrosTabs />
 
       <FormSection title="Política de Senha" icon={Lock}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Tamanho mínimo">
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Tamanho mínimo" size="sm">
             <Input
               type="number"
               min={6}
@@ -113,8 +113,8 @@ export default function ParametrosSegurancaPage() {
       </FormSection>
 
       <FormSection title="Controle de Acesso" icon={Shield}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Tentativas antes do bloqueio">
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Tentativas antes do bloqueio" size="md">
             <Input
               type="number"
               min={1}

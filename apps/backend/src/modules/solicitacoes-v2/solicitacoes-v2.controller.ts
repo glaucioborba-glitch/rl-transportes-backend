@@ -122,7 +122,7 @@ export class SolicitacoesV2Controller {
   }
 
   @Post(':id/aprovar')
-  @ApiOperation({ summary: 'Aprovar (exige anexos registrados)' })
+  @ApiOperation({ summary: 'Aprovar solicitação pendente ou em análise' })
   @Roles(Role.ADMIN, Role.GERENTE)
   @Permissions('solicitacoes:atualizar')
   aprovar(@Param('id') id: string, @CurrentUser() user: AuthUser) {

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Building, Loader2, Save, X } from "lucide-react";
-import { FormField, FormSection } from "@/components/cadastros/form-field";
+import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/staff-client";
@@ -91,15 +91,15 @@ export function BancoForm({ bancoId }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mx-auto max-w-2xl space-y-6">
+    <form onSubmit={handleSubmit} className={CADASTRO_FORM_CLASS}>
       <div>
         <h1 className="text-2xl font-bold">{bancoId ? "Editar Banco" : "Novo Banco"}</h1>
         <p className="mt-1 text-sm text-muted-foreground">Catálogo de instituições financeiras</p>
       </div>
 
       <FormSection title="Dados do Banco" icon={Building}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Código FEBRABAN" required>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Código FEBRABAN" required size="sm">
             <Input
               value={formData.codigo}
               onChange={(e) => setFormData({ ...formData, codigo: e.target.value })}
@@ -108,14 +108,14 @@ export function BancoForm({ bancoId }: Props) {
               maxLength={5}
             />
           </FormField>
-          <FormField label="Nome" required>
+          <FormField label="Nome" required className="min-w-[14rem] flex-1">
             <Input
               value={formData.nome}
               onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
               placeholder="Ex: Banco do Brasil S.A."
             />
           </FormField>
-          <FormField label="CNPJ">
+          <FormField label="CNPJ" size="md">
             <Input
               value={formData.cnpj ? formatCNPJ(formData.cnpj) : ""}
               onChange={(e) =>
@@ -125,7 +125,7 @@ export function BancoForm({ bancoId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Site">
+          <FormField label="Site" className="min-w-[14rem] flex-1">
             <Input
               value={formData.site ?? ""}
               onChange={(e) => setFormData({ ...formData, site: e.target.value })}
@@ -147,7 +147,7 @@ export function BancoForm({ bancoId }: Props) {
         </FormField>
       </FormSection>
 
-      <div className="sticky bottom-0 flex gap-3 border-t border-border bg-background/95 p-4 backdrop-blur">
+      <div className="flex gap-3">
         <Button type="button" variant="outline" onClick={() => router.back()}>
           <X className="mr-2 h-4 w-4" />
           Cancelar

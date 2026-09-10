@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
@@ -31,7 +31,7 @@ import { CreateSolicitacaoDto } from './dto/create-solicitacao.dto';
 import { UpdateSolicitacaoDto } from './dto/update-solicitacao.dto';
 import { SolicitacoesService } from './solicitacoes.service';
 
-@ApiTags('solicitacoes')
+@ApiTags('solicitacoes-v1-deprecated')
 @ApiBearerAuth('access-token')
 @UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
 @Controller('solicitacoes')
@@ -39,6 +39,10 @@ export class SolicitacoesController {
   constructor(private readonly solicitacoesService: SolicitacoesService) {}
 
   @Get()
+  @ApiOperation({
+    deprecated: true,
+    summary: 'Listar solicitações (v1 — use GET /v2/solicitacoes)',
+  })
   @Roles(
     Role.ADMIN,
     Role.GERENTE,
@@ -60,6 +64,7 @@ export class SolicitacoesController {
   }
 
   @Get('export/csv')
+  @ApiOperation({ deprecated: true, summary: 'Export CSV (v1 — use v2)' })
   @Roles(
     Role.ADMIN,
     Role.GERENTE,
@@ -80,6 +85,7 @@ export class SolicitacoesController {
   }
 
   @Get(':id')
+  @ApiOperation({ deprecated: true, summary: 'Obter solicitação (v1 — use GET /v2/solicitacoes/:id)' })
   @Roles(
     Role.ADMIN,
     Role.GERENTE,
@@ -94,6 +100,7 @@ export class SolicitacoesController {
   }
 
   @Post()
+  @ApiOperation({ deprecated: true, summary: 'Criar solicitação (v1 — use POST /v2/solicitacoes)' })
   @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_PORTARIA)
   @Permissions('solicitacoes:criar')
   create(@Body() dto: CreateSolicitacaoDto, @CurrentUser() user: AuthUser) {
@@ -101,6 +108,7 @@ export class SolicitacoesController {
   }
 
   @Post('unidades')
+  @ApiOperation({ deprecated: true, summary: 'Adicionar unidade (v1)' })
   @Roles(Role.ADMIN, Role.GERENTE)
   @Permissions('solicitacoes:criar')
   addContainer(
@@ -111,6 +119,7 @@ export class SolicitacoesController {
   }
 
   @Post('portaria')
+  @ApiOperation({ deprecated: true, summary: 'Portaria (v1 — use gate v2)' })
   @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_PORTARIA)
   @Permissions('solicitacoes:portaria')
   registerPortaria(
@@ -121,6 +130,7 @@ export class SolicitacoesController {
   }
 
   @Post('gate')
+  @ApiOperation({ deprecated: true, summary: 'Gate (v1 — use /v2/gate)' })
   @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_GATE)
   @Permissions('solicitacoes:gate')
   registerGate(@Body() dto: CreateGateDto, @CurrentUser() user: AuthUser) {
@@ -128,6 +138,7 @@ export class SolicitacoesController {
   }
 
   @Post('patio')
+  @ApiOperation({ deprecated: true, summary: 'Pátio (v1 — use /v2/patio)' })
   @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_PATIO)
   @Permissions('solicitacoes:patio')
   registerPatio(@Body() dto: CreatePatioDto, @CurrentUser() user: AuthUser) {
@@ -135,6 +146,7 @@ export class SolicitacoesController {
   }
 
   @Post('saida')
+  @ApiOperation({ deprecated: true, summary: 'Saída (v1 — use /v2/gate)' })
   @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_GATE)
   @Permissions('solicitacoes:saida')
   registerSaida(@Body() dto: CreateSaidaDto, @CurrentUser() user: AuthUser) {
@@ -142,6 +154,7 @@ export class SolicitacoesController {
   }
 
   @Patch(':id')
+  @ApiOperation({ deprecated: true, summary: 'Atualizar (v1 — use PATCH /v2/solicitacoes/:id)' })
   @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_PORTARIA, Role.OPERADOR_GATE)
   @Permissions('solicitacoes:atualizar')
   update(
@@ -156,6 +169,7 @@ export class SolicitacoesController {
   }
 
   @Delete(':id')
+  @ApiOperation({ deprecated: true, summary: 'Excluir (v1)' })
   @Roles(Role.ADMIN, Role.GERENTE)
   @Permissions('solicitacoes:excluir')
   remove(

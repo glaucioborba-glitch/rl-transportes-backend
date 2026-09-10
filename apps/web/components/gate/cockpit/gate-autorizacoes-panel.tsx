@@ -42,7 +42,7 @@ type AutorizacaoItem = {
   id: string;
   protocolo: string;
   empresa: string;
-  container: string;
+  containers: string[];
   tipoTamanho: string | null;
   situacao: GateContainerSituacao | null;
   status: string;
@@ -78,7 +78,7 @@ function mapItem(row: Record<string, unknown>): AutorizacaoItem {
     id: String(row.id),
     protocolo: String(row.protocolo ?? ""),
     empresa: cliente?.razaoSocial ?? "—",
-    container: isos[0] ?? "—",
+    containers: isos.length ? isos : ["—"],
     tipoTamanho: formatTipoTamanhoContainerLabel(cs?.tipo, cs?.tamanho),
     situacao,
     status: String(row.status ?? ""),
@@ -176,7 +176,16 @@ export function GateAutorizacoesPanel() {
               key={item.id}
               className="flex w-full flex-col rounded-lg border border-white/10 bg-[#0b1018]/90 p-5"
             >
-              <ContainerNumber value={item.container} className="mb-1" />
+              <div className="mb-1 space-y-1">
+                {item.containers.map((iso, idx) => (
+                  <div key={`${item.id}-${iso}-${idx}`} className="flex flex-wrap items-center gap-2">
+                    <ContainerNumber value={iso} />
+                    {item.containers.length > 1 ? (
+                      <span className="text-xs text-muted-foreground">Unidade #{idx + 1}</span>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
 
               {item.tipoTamanho ? (
                 <div className="mb-1 flex flex-wrap items-center gap-2">

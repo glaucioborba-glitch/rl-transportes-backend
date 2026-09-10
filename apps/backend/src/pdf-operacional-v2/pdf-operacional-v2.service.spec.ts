@@ -5,6 +5,7 @@ import { AcaoAuditoria, StatusSolicitacao, TipoCaminhao } from '@prisma/client';
 import { SolicitacoesV2Service } from '../modules/solicitacoes-v2/solicitacoes-v2.service';
 import { RedisService } from '../redis/redis.service';
 import { PdfOperacionalV2Service, type DetalheStaff } from './pdf-operacional-v2.service';
+import { EmpresaOperadoraService } from '../tenant/empresa-operadora.service';
 import { gerarHashAntiFraude } from './utils/hash-antifraude';
 
 jest.mock('qrcode', () => ({
@@ -27,13 +28,14 @@ jest.mock('puppeteer-core', () => ({
   },
 }));
 
-function mockReq(fp = 'fp-test'): Request {
+function mockReq(fp = 'fp-test', query: Record<string, string> = {}): Request {
   return {
     protocol: 'http',
     get: (h: string) => (h.toLowerCase() === 'host' ? 'localhost:3001' : undefined),
     ip: '127.0.0.1',
     socket: { remoteAddress: '127.0.0.1' } as Request['socket'],
     headers: { 'x-device-fingerprint': fp },
+    query,
   } as unknown as Request;
 }
 
@@ -214,6 +216,10 @@ describe('PdfOperacionalV2Service', () => {
               k === 'PUPPETEER_EXECUTABLE_PATH' ? 'C:\\fake\\chrome.exe' : undefined,
           },
         },
+        {
+          provide: EmpresaOperadoraService,
+          useValue: { logoDataUri: jest.fn().mockResolvedValue(null) },
+        },
       ],
     }).compile();
     service = mod.get(PdfOperacionalV2Service);
@@ -257,7 +263,7 @@ describe('PdfOperacionalV2Service', () => {
 
   it('renderiza HTML sem erro e inclui seções principais', async () => {
     solicitacoesV2.obterDetalheStaff.mockResolvedValue(baseDetalhe());
-    const { html, hash } = await service.buildHtml('sol-1', mockReq());
+    const { html, hash } = await service.buildHtml('sol-1', mockReq('fp-test', { perfil: 'operacional' }));
     expect(html.length).toBeGreaterThan(500);
     expect(html).toContain('Comprovante Operacional');
     expect(html).toContain('RL-V2-TEST');
@@ -273,15 +279,28 @@ describe('PdfOperacionalV2Service', () => {
 
   it('lista auditoria e timeline coerentes no HTML', async () => {
     solicitacoesV2.obterDetalheStaff.mockResolvedValue(baseDetalhe());
-    const { html } = await service.buildHtml('sol-1', mockReq());
+    const { html } = await service.buildHtml('sol-1', mockReq('fp-test', { perfil: 'operacional' }));
     expect(html).toContain('Trilhas de auditoria');
     expect(html).toContain('EM_ANALISE');
     expect(html).toContain('Alerta de segurança');
   });
 
+  it('PDF do portal é credencial enxuta para o motorista', async () => {
+    solicitacoesV2.obterDetalheStaff.mockResolvedValue(baseDetalhe());
+    const { html } = await service.buildHtml('sol-1', mockReq());
+    expect(html).toContain('Autorização de acesso');
+    expect(html).toContain('MSKU123');
+    expect(html).toContain('Cliente Teste LTDA');
+    expect(html).toContain('Motorista Integração');
+    expect(html).toContain('ABC1D23');
+    expect(html).not.toContain('Trilhas de auditoria');
+    expect(html).not.toContain('Risco operacional');
+    expect(html).not.toContain('Hash SHA-256');
+  });
+
   it('rótulo Rodotrem aparece quando tipo é RODOTREM', async () => {
     solicitacoesV2.obterDetalheStaff.mockResolvedValue(baseDetalhe({ tipoCaminhao: TipoCaminhao.RODOTREM }));
-    const { html } = await service.buildHtml('sol-1', mockReq());
+    const { html } = await service.buildHtml('sol-1', mockReq('fp-test', { perfil: 'operacional' }));
     expect(html).toContain('Rodotrem');
   });
 

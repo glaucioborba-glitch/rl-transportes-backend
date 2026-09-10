@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PatioStatus, StatusSolicitacao, TipoContainerTos } from '@prisma/client';
+import { PatioStatus, StatusSolicitacao } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';

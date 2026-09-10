@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { fetchRhColaboradorById } from "@/lib/rh/merge-directory";
 import { hashSeed } from "@/lib/rh/hash";
@@ -37,9 +36,6 @@ export default function RhCompetenciaDetailPage() {
   if (!row) {
     return (
       <div>
-        <Link href="/rh/competencias" className="text-cyan-400 text-sm">
-          ← Voltar
-        </Link>
         <p className="mt-4 text-zinc-500">Não encontrado.</p>
       </div>
     );
@@ -65,9 +61,6 @@ export default function RhCompetenciaDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link href="/rh/competencias" className="text-sm text-cyan-400 hover:underline">
-        ← Competências
-      </Link>
       <div>
         <h1 className="text-2xl font-bold text-white">{row.nome}</h1>
         <p className="text-sm text-zinc-500">

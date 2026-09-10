@@ -1,13 +1,15 @@
 import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
+import request = require('supertest');
 import * as bcrypt from 'bcrypt';
 import { Role, TipoCliente } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
 import { clienteE2eDefaults } from './helpers/e2e-cliente.factory';
+import { canonicalPagamentoPayload } from '../src/integracao-mobilidade/common/integracao-finance.canonical';
+import { signWebhookPayload } from '../src/integracao-mobilidade/common/webhook-signature.util';
 
 describe('Integracao mobilidade (e2e)', () => {
   let app: INestApplication;
@@ -27,6 +29,7 @@ describe('Integracao mobilidade (e2e)', () => {
 
   beforeAll(async () => {
     process.env.INTEGRACAO_INTERNO_SECRET = 'interno-secreto-teste-16';
+    process.env.INTEGRACAO_FINANCE_WEBHOOK_SECRET = 'e2e-finance-hmac-secret-32chars!!';
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -96,12 +99,12 @@ describe('Integracao mobilidade (e2e)', () => {
     expect(res.body.data).toBeDefined();
   });
 
-  it('POST /mobile/portaria — OPERADOR_GATE 202', async () => {
+  it('POST /mobile/portaria — legado descontinuado (410)', async () => {
     await request(app.getHttpServer())
       .post('/mobile/portaria')
       .set('Authorization', `Bearer ${tokenOp}`)
       .send({ protocolo: 'X', observacao: 'e2e' })
-      .expect(202);
+      .expect(410);
   });
 
   it('GET /cliente-api/solicitacoes — API Key', async () => {
@@ -131,15 +134,21 @@ describe('Integracao mobilidade (e2e)', () => {
     expect(res.body.aceito).toBe(true);
   });
 
-  it('POST /integracao/pagamentos/webhook — aceito', async () => {
+  it('POST /integracao/pagamentos/webhook — aceito com HMAC', async () => {
+    const dto = {
+      referencia: `REF-${suffix}`,
+      valor: 10.5,
+      status: 'confirmado' as const,
+      meio: 'PIX' as const,
+    };
+    const sig = signWebhookPayload(
+      process.env.INTEGRACAO_FINANCE_WEBHOOK_SECRET!,
+      canonicalPagamentoPayload(dto),
+    );
     const res = await request(app.getHttpServer())
       .post('/integracao/pagamentos/webhook')
-      .send({
-        referencia: `REF-${suffix}`,
-        valor: 10.5,
-        status: 'confirmado',
-        meio: 'PIX',
-      })
+      .set('X-Integracao-Signature', sig)
+      .send(dto)
       .expect(202);
     expect(res.body.aceito).toBe(true);
   });

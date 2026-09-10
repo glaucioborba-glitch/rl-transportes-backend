@@ -1,22 +1,64 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Get,
-  Param,
-  Patch,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role, TenantStatus } from '@prisma/client';
-import { IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsEnum, IsOptional, IsString, MaxLength, MinLength, ValidateNested } from 'class-validator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
-import { FeatureFlagService } from '../feature-flags/feature-flag.service';
-import { PrismaService } from '../prisma/prisma.service';
-import { DEFAULT_TENANT_PARAMETROS } from '../tenant/tenant-config.types';
+import { SuperAdminService } from './super-admin.service';
+
+class EmpresaIdentidadeDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  razaoSocial?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  nomeFantasia?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(9)
+  cep?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  logradouro?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  numero?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  bairro?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  cidade?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2)
+  uf?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  email?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  telefone?: string;
+}
 
 class CriarTenantDto {
   @IsString()
@@ -30,6 +72,16 @@ class CriarTenantDto {
   @IsOptional()
   @IsString()
   plano?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(18)
+  cnpj?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => EmpresaIdentidadeDto)
+  empresa?: EmpresaIdentidadeDto;
 }
 
 class AtualizarTenantDto {
@@ -44,6 +96,16 @@ class AtualizarTenantDto {
   @IsOptional()
   @IsString()
   nome?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(18)
+  cnpj?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => EmpresaIdentidadeDto)
+  empresa?: EmpresaIdentidadeDto;
 }
 
 class PatchFeatureFlagDto {
@@ -60,80 +122,47 @@ class PatchFeatureFlagDto {
 @Roles(Role.SUPER_ADMIN)
 @Controller('super-admin')
 export class SuperAdminController {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly flags: FeatureFlagService,
-  ) {}
+  constructor(private readonly saas: SuperAdminService) {}
 
   @Get('tenants')
   @ApiOperation({ summary: 'Listar terminais (tenants) SaaS' })
   listTenants() {
-    return this.prisma.tenant.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: { config: { select: { tenantKey: true, nome: true } } },
-    });
+    return this.saas.listTenants();
   }
 
   @Post('tenants')
   @ApiOperation({ summary: 'Cadastrar novo terminal' })
-  async createTenant(@Body() dto: CriarTenantDto) {
-    const id = dto.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
-    if (!id) throw new BadRequestException('Slug inválido');
-    const existing = await this.prisma.tenant.findUnique({ where: { id } });
-    if (existing) throw new BadRequestException('Tenant já existe');
-
-    return this.prisma.$transaction(async (tx) => {
-      const tenant = await tx.tenant.create({
-        data: {
-          id,
-          slug: id,
-          nome: dto.nome.trim(),
-          plano: dto.plano?.trim() || 'STANDARD',
-        },
-      });
-      await tx.tenantConfig.create({
-        data: {
-          tenantId: id,
-          tenantKey: id,
-          nome: dto.nome.trim(),
-          parametros: DEFAULT_TENANT_PARAMETROS as object,
-          slasMinutosMeta: { gate: 240, patio: 4320, saida: 1440 },
-          horarioFuncionamento: '06:00–22:00',
-          regrasOperacao: 'Configuração inicial SaaS',
-        },
-      });
-      return tenant;
-    });
+  createTenant(@Body() dto: CriarTenantDto) {
+    return this.saas.createTenant(dto);
   }
 
   @Patch('tenants/:id')
-  @ApiOperation({ summary: 'Atualizar status/plano do terminal (bloquear por inadimplência)' })
+  @ApiOperation({ summary: 'Atualizar nome, plano, CNPJ ou status do terminal' })
   updateTenant(@Param('id') id: string, @Body() dto: AtualizarTenantDto) {
-    return this.prisma.tenant.update({
-      where: { id },
-      data: {
-        ...(dto.status !== undefined ? { status: dto.status } : {}),
-        ...(dto.plano !== undefined ? { plano: dto.plano } : {}),
-        ...(dto.nome !== undefined ? { nome: dto.nome.trim() } : {}),
-      },
-    });
+    return this.saas.updateTenant(id, dto);
+  }
+
+  @Delete('tenants/:id')
+  @ApiOperation({ summary: 'Excluir terminal vazio (nunca o default; com dados, bloqueie)' })
+  deleteTenant(@Param('id') id: string) {
+    return this.saas.deleteTenant(id);
   }
 
   @Get('feature-flags')
   @ApiOperation({ summary: 'Feature flags globais do SaaS' })
   listFlags() {
-    return this.prisma.featureFlag.findMany({ orderBy: { chave: 'asc' } });
+    return this.saas.listFlags();
+  }
+
+  @Post('feature-flags/ensure-known')
+  @ApiOperation({ summary: 'Garante as flags conhecidas do produto (inativas por padrão)' })
+  ensureKnownFlags() {
+    return this.saas.ensureKnownFlags();
   }
 
   @Patch('feature-flags/:chave')
-  @ApiOperation({ summary: 'Atualizar feature flag (ex: BI Premium por tenant)' })
-  async patchFlag(@Param('chave') chave: string, @Body() dto: PatchFeatureFlagDto) {
-    return this.prisma.featureFlag.update({
-      where: { chave },
-      data: {
-        ...(dto.ativo !== undefined ? { ativo: dto.ativo } : {}),
-        ...(dto.regras !== undefined ? { regras: dto.regras as object } : {}),
-      },
-    });
+  @ApiOperation({ summary: 'Atualizar feature flag' })
+  patchFlag(@Param('chave') chave: string, @Body() dto: PatchFeatureFlagDto) {
+    return this.saas.patchFlag(chave, dto);
   }
 }

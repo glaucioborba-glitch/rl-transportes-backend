@@ -13,7 +13,7 @@ import {
   type DispatchVeiculo,
   staffDispatchVeiculos,
 } from "@/lib/api/staff-client";
-import { useTosSocket } from "@/lib/realtime/use-tos-socket";
+import { useRealtimeSocket } from "@/lib/realtime/use-realtime-socket";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { buildContainerPrimaryDisplay } from "@/lib/container-display";
@@ -91,7 +91,7 @@ export function DispatchBoard() {
     void load();
   }, [load]);
 
-  useTosSocket({
+  useRealtimeSocket({
     namespace: "/ws/dispatch",
     event: "dispatch_updated",
     onEvent: (payload) => {

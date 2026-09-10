@@ -9,6 +9,7 @@ import { PessoasPermissoesModule } from '../pessoas-permissoes/pessoas-permissoe
 import { PdfOperacionalV2Controller } from './pdf-operacional-v2.controller';
 import { PdfOperacionalV2Service } from './pdf-operacional-v2.service';
 import { PdfSolicitacaoV2AccessGuard } from './pdf-solicitacao-v2-access.guard';
+import { TenantModule } from '../tenant/tenant.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { PdfSolicitacaoV2AccessGuard } from './pdf-solicitacao-v2-access.guard';
     CxPortaisModule,
     SolicitacoesV2Module,
     PessoasPermissoesModule,
+    TenantModule,
   ],
   controllers: [PdfOperacionalV2Controller],
   providers: [PdfOperacionalV2Service, PdfSolicitacaoV2AccessGuard],

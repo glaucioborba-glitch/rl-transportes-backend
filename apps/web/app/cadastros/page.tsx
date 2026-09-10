@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
 import {
   Boxes,
+  Building2,
   ChevronRight,
   DollarSign,
   FileText,
@@ -26,25 +27,32 @@ type BlocoCardDef = {
 
 const BLOCOS: BlocoCardDef[] = [
   {
+    id: "empresa",
+    title: "Empresa operadora",
+    href: "/cadastros/empresa",
+    icon: Building2,
+    desc: "Ficha da RL Transportes — identidade, tributos de provisão e logos de todos os canais",
+  },
+  {
     id: "pessoas",
     title: "Pessoas & Entidades",
     href: "/cadastros/pessoas",
     icon: Users,
-    desc: "Clientes, Colaboradores, Motoristas, Transportadoras, Fornecedores, Visitantes",
+    desc: "Clientes, Colaboradores, Motoristas, Transportadoras, Terceiros, Fornecedores, Visitantes",
   },
   {
     id: "operacional",
     title: "Operacional",
     href: "/cadastros/operacional",
     icon: Boxes,
-    desc: "Contêineres, Equipamentos, Posições, Tipos de Operação, Turnos",
+    desc: "Contêineres, Equipamentos, Posições, Tipos de Operação, Origens e destinos",
   },
   {
     id: "financeiro",
     title: "Financeiro",
     href: "/cadastros/financeiro",
     icon: DollarSign,
-    desc: "Bancos, Centros de Custo, Plano de Contas, Tabelas de Preços",
+    desc: "Bancos, Tabelas de Preços, Tabela de transportes, Serviços, Forma e prazo",
   },
   {
     id: "contratos",
@@ -75,7 +83,9 @@ function BlocoCard({ bloco, user }: { bloco: BlocoCardDef; user: CadastrosUserCo
     return null;
   }
 
-  const blockId = bloco.id as "pessoas" | "operacional" | "financeiro" | "contratos" | "parametros";
+  const blockId = (
+    bloco.id === "empresa" ? "parametros" : bloco.id
+  ) as "pessoas" | "operacional" | "financeiro" | "contratos" | "parametros";
   const canView =
     bloco.id === "permissoes"
       ? user.role === "ADMIN" || user.role === "SUPER_ADMIN"

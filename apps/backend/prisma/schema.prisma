@@ -47,6 +47,21 @@ enum StatusCadastroCliente {
   REJEITADO
 }
 
+enum TipoNotificacaoPortal {
+  CADASTRO_EM_ANALISE
+  CADASTRO_APROVADO
+  CADASTRO_REJEITADO
+  CONDICAO_PAGAMENTO_ALTERADA
+  UNIDADE_PROCESSO_ABERTO
+  UNIDADE_PROCESSO_ENCERRADO
+}
+
+/// Catálogo parametrizável de forma de pagamento vs. prazo comercial.
+enum TipoOpcaoPagamento {
+  FORMA
+  PRAZO
+}
+
 /// Estado da solicitação no fluxo operacional (ordem compatível com PostgreSQL: novos valores ao final).
 enum StatusSolicitacao {
   PENDENTE
@@ -87,6 +102,32 @@ enum PatioStatus {
   MOVIMENTANDO
   SEPARADO
   AGUARDANDO_GATE_OUT
+}
+
+/// Ciclo de vida da unidade no pátio (entrada → ID → saída). Independente da visita do caminhão.
+enum StatusUnidadeProcesso {
+  ABERTO
+  ENCERRADO
+  CANCELADO
+}
+
+/// Pátio (depot) vs frota própria de aluguel. A diária de aluguel começa na saída.
+enum ModalidadeUnidadeProcesso {
+  PATIO
+  ALUGUEL
+}
+
+enum StatusUnidadeAluguel {
+  DISPONIVEL
+  ALUGADA
+  MANUTENCAO
+  INATIVA
+}
+
+enum StatusAluguel {
+  ATIVO
+  ENCERRADO
+  CANCELADO
 }
 
 enum MovTipo {
@@ -205,27 +246,24 @@ enum StatusOrdemTransporte {
   CONCLUIDA
 }
 
-/// Tipo físico do contêiner no TOS (Depot).
-enum TipoContainerTos {
-  DRY
-  REEFER
-  TANK
+/// Estágio da linha de frete (cores da planilha EMBARQUES).
+enum StatusFrete {
+  PENDENTE
+  PROGRAMADO
+  EM_ANDAMENTO
+  CONCLUIDO
+  PROBLEMA
+  CANCELADO
 }
 
-/// Eventos imutáveis do ciclo de vida (Event Sourcing).
-enum ContainerEventType {
-  SCHEDULED
-  GATE_IN_OCR_FAILED
-  GATE_IN_COMPLETED
-  YARD_ALLOCATED
-  REEFER_PLUGGED
-  REEFER_UNPLUGGED
-  REEFER_TEMP_LOGGED
-  REPAIR_REQUESTED
-  REPAIR_APPROVED
-  GATE_OUT_COMPLETED
-  PRE_MOUNTING_DONE
+/// Sentido operacional da viagem (coluna EXP/IMP da planilha).
+enum TipoFrete {
+  EXP
+  IMP
+  DEVOLUCAO_VAZIO
+  RETIRADA_VAZIO
 }
+
 
 /// Eventos comerciais/operacionais de tomada reefer no pátio v2.
 enum PatioTomadaEventType {
@@ -239,12 +277,6 @@ enum OutboxEventStatus {
   PROCESSING
   PROCESSED
   FAILED
-}
-
-/// Momento da avaria no fluxo gate.
-enum MomentoAvaria {
-  GATE_IN
-  GATE_OUT
 }
 
 enum TipoUnidade {
@@ -291,6 +323,8 @@ enum EventoGatilhoTarifa {
   DIARIA_ARMAZENAGEM
   SHIFTING_EXTRA
   ENERGIA_REEFER
+  SERVICO_ADICIONAL
+  FRETE
 }
 
 /// Categoria do item na tabela cadastral de preços.
@@ -366,12 +400,14 @@ model Tenant {
   faturamentos Faturamento[]
   agendamentos AgendamentoTerminal[]
   gateCheckIns GateCheckIn[]
+  unidadeProcessos UnidadeProcesso[]
   tabelasPreco TabelaPreco[]
   bloqueiosContainer BloqueioContainer[]
   arquivosBancarios  ArquivoBancario[]
   cadastrosColaboradores CadastroColaborador[]
   cadastrosTransportadoras CadastroTransportadora[]
   cadastrosMotoristas CadastroMotorista[]
+  cadastrosTerceiros CadastroTerceiro[]
   cadastrosTiposContainer CadastroTipoContainer[]
   cadastrosCapacidadesContainer CadastroCapacidadeContainer[]
   cadastrosContainerCache CadastroContainerCache[]
@@ -381,10 +417,18 @@ model Tenant {
   cadastrosTiposOperacao CadastroTipoOperacao[]
   cadastrosTurnos CadastroTurno[]
   cadastrosMotivosRejeicao CadastroMotivoRejeicao[]
+  cadastrosLocaisTransporte CadastroLocalTransporte[]
   cadastrosBancos CadastroBanco[]
   cadastrosCentrosCusto CadastroCentroCusto[]
   cadastrosPlanoContas CadastroPlanoContas[]
   cadastrosTabelasPreco CadastroTabelaPreco[]
+  cadastrosTabelasTransporte CadastroTabelaTransporte[]
+  cadastrosTarifasTransporte CadastroTarifaTransporte[]
+  cadastrosTabelasServico CadastroTabelaServico[]
+  cadastrosUnidadesAluguel CadastroUnidadeAluguel[]
+  cadastrosTabelasAluguel CadastroTabelaAluguel[]
+  alugueis Aluguel[]
+  fretes Frete[]
 
   @@index([status])
   @@map("tenants")
@@ -414,7 +458,6 @@ model User {
   gateCheckInsOperados  GateCheckIn[]  @relation("GateCheckInOperador")
   gateCheckOutsOperados GateCheckOut[] @relation("GateCheckOutOperador")
   patioMovimentacoes    PatioMovimentacao[] @relation("PatioMovOperador")
-  containerEventsCriados ContainerEvent[] @relation("ContainerEventCriador")
   motoristaPerfil       Motorista?
   transportadoraAutorizada TransportadoraAutorizada?
   equipamentoVinculos   CadastroEquipamentoVinculo[] @relation("EquipamentoVinculoOperador")
@@ -496,12 +539,18 @@ model Cliente {
   /// Fluxo de liberação comercial/financeira pós-cadastro portal.
   statusCadastro   StatusCadastroCliente @default(PENDENTE_ANALISE_FINANCEIRA) @map("status_cadastro")
   condicaoPagamento String? @map("condicao_pagamento") @db.VarChar(64)
+  /// Prazo comercial (ex.: A_VISTA, 30_DIAS). Independente da forma de pagamento.
+  prazoPagamento   String? @map("prazo_pagamento") @db.VarChar(64)
+  /// Relação comercial no terminal: CLIENTE e/ou TRANSPORTADOR (pode ser ambos).
+  papeis           String[] @default(["CLIENTE"])
   analisadoPor     String? @map("analisado_por") @db.VarChar(64)
   analisadoEm      DateTime? @map("analisado_em")
   motivoRejeicaoCadastro String? @map("motivo_rejeicao_cadastro") @db.VarChar(500)
 
   tabelaPrecoId String?      @map("tabela_preco_id")
   tabelaPreco   TabelaPreco? @relation(fields: [tabelaPrecoId], references: [id], onDelete: SetNull)
+  cadastroTabelaTransporteId String? @map("cadastro_tabela_transporte_id")
+  cadastroTabelaTransporte   CadastroTabelaTransporte? @relation(fields: [cadastroTabelaTransporteId], references: [id], onDelete: SetNull)
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -509,16 +558,20 @@ model Cliente {
 
   solicitacoes     Solicitacao[]
   faturamentos     Faturamento[]
-  tabelaTarifaria  TabelaTarifaria?
   preFaturas       PreFatura[]
+  unidadeProcessos UnidadeProcesso[]
   faturasArmazenagem Fatura[]
   usuarioPortal    User?
   agendamentos     AgendamentoTerminal[]
   pessoasAutorizadas PessoaAutorizada[]
   transportadorasAutorizadas TransportadoraAutorizada[]
-  containersTos    Container[]
   pilhasLogicas    PilhaLogica[]
   cadastrosTabelasPreco CadastroTabelaPreco[]
+  notificacoesPortal    PortalNotificacao[]
+  cessoesOrigem         CessaoTitularidade[] @relation("CessaoDe")
+  cessoesDestino        CessaoTitularidade[] @relation("CessaoPara")
+  fretes                Frete[]
+  alugueis              Aluguel[]
 
   @@unique([tenantId, cpfCnpj])
   @@unique([tenantId, email])
@@ -527,8 +580,27 @@ model Cliente {
   @@index([deletedAt])
   @@index([tenantId])
   @@index([tabelaPrecoId])
+  @@index([cadastroTabelaTransporteId])
   @@index([statusCadastro])
   @@map("clientes")
+}
+
+/// Inbox do portal do cliente (cadastro e condição comercial).
+model PortalNotificacao {
+  id        String                 @id @default(uuid())
+  tenantId  String                 @map("tenant_id") @db.VarChar(64)
+  clienteId String                 @map("cliente_id")
+  cliente   Cliente                @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  tipo      TipoNotificacaoPortal
+  titulo    String                 @db.VarChar(160)
+  corpo     String                 @db.VarChar(2000)
+  link      String?                @db.VarChar(255)
+  lidaEm    DateTime?              @map("lida_em")
+  createdAt DateTime               @default(now()) @map("created_at")
+
+  @@index([clienteId, lidaEm, createdAt])
+  @@index([tenantId])
+  @@map("portal_notificacoes")
 }
 
 /// Versões publicadas dos Termos de Uso (cadastro portal).
@@ -660,6 +732,9 @@ model Solicitacao {
   gateCheckIns              GateCheckIn[]
   patioUnidadesV2           PatioUnidade[]
   bloqueiosContainer        BloqueioContainer[]
+  unidadeProcessosEntrada   UnidadeProcesso[] @relation("UnidadeProcessoEntrada")
+  unidadeProcessosSaida     UnidadeProcesso[] @relation("UnidadeProcessoSaida")
+  fretes                    Frete[]
 
   @@index([clienteId])
   @@index([status])
@@ -691,6 +766,7 @@ model ContainerSolicitacao {
   unidade       String              @db.VarChar(64)
   booking       String              @db.VarChar(120)
   processo      String              @db.VarChar(120)
+  navio         String              @default("") @db.VarChar(120)
   tamanho       String              @db.VarChar(32)
   tipo          String              @db.VarChar(64)
   status        StatusContainer @map("status_container")
@@ -754,7 +830,7 @@ model Unidade {
   id            String   @id @default(uuid())
   solicitacaoId String
   solicitacao   Solicitacao @relation("SolicitacaoUnidades", fields: [solicitacaoId], references: [id], onDelete: Cascade)
-  numeroIso     String   @unique
+  numeroIso     String
   tipo          TipoUnidade
   /// Impede portaria/gate/pátio/saída quando true (avaria, fiscal, etc.).
   movimentacaoBloqueada Boolean  @default(false) @map("movimentacao_bloqueada")
@@ -762,6 +838,7 @@ model Unidade {
   bloqueioTipo          String?  @map("bloqueio_tipo") @db.VarChar(64)
   createdAt     DateTime @default(now())
 
+  @@unique([solicitacaoId, numeroIso])
   @@index([solicitacaoId])
   @@index([numeroIso])
   @@map("unidades_solicitacao")
@@ -775,6 +852,8 @@ model Portaria {
   motoristaNome            String?  @map("motorista_nome") @db.VarChar(255)
   motoristaCpf             String?  @map("motorista_cpf") @db.VarChar(11)
   transportadoraNome       String?  @map("transportadora_nome") @db.VarChar(255)
+  cadastroTransportadoraId String?  @map("cadastro_transportadora_id") @db.VarChar(36)
+  cadastroTransportadora   CadastroTransportadora? @relation(fields: [cadastroTransportadoraId], references: [id], onDelete: SetNull)
   motoristaTelefone        String?  @map("motorista_telefone") @db.VarChar(20)
   fotosCaminhao   Json     @default("[]")
   fotosContainer  Json     @default("[]")
@@ -785,6 +864,7 @@ model Portaria {
   updatedAt       DateTime @updatedAt
 
   @@index([solicitacaoId])
+  @@index([cadastroTransportadoraId])
   @@map("portarias")
 }
 
@@ -885,14 +965,111 @@ model PatioPosicao {
   @@map("patio_v2_posicoes")
 }
 
-/// Unidade (container ISO) rastreada no pátio após Gate In.
+/// Ciclo de vida da unidade: abre na RIC/liberar de entrada, fecha na RIC/liberar de saída.
+/// O número sequencial (`numero`) é o ID operacional exibido na tela (ID 1284).
+model UnidadeProcesso {
+  id        String                @id @default(uuid())
+  tenantId  String                @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  numero    Int
+  unidadeIso String               @map("unidade_iso") @db.VarChar(16)
+  clienteId String                @map("cliente_id")
+  cliente   Cliente               @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  status    StatusUnidadeProcesso @default(ABERTO)
+  modalidade ModalidadeUnidadeProcesso @default(PATIO)
+
+  entradaEm DateTime  @map("entrada_em")
+  saidaEm   DateTime? @map("saida_em")
+
+  /// Lacre da RIC de saída (não sobrescreve o lacre de entrada).
+  lacreSaida            String?  @map("lacre_saida") @db.VarChar(120)
+  lacreSaidaOrigem      String?  @map("lacre_saida_origem") @db.VarChar(16)
+  lacreSaidaObservacao  String?  @map("lacre_saida_observacao") @db.VarChar(255)
+  /// Após troca cheio↔vazio (ex.: transbordo), handling usa sempre a tarifa CHEIO.
+  faturarHandlingComoCheio Boolean @default(false) @map("faturar_handling_como_cheio")
+
+  entradaSolicitacaoId String? @map("entrada_solicitacao_id")
+  entradaSolicitacao   Solicitacao? @relation("UnidadeProcessoEntrada", fields: [entradaSolicitacaoId], references: [id], onDelete: Restrict)
+  saidaSolicitacaoId   String? @map("saida_solicitacao_id")
+  saidaSolicitacao     Solicitacao? @relation("UnidadeProcessoSaida", fields: [saidaSolicitacaoId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  patioUnidades PatioUnidade[]
+  preFaturas    PreFatura[]
+  cessoesTitularidade CessaoTitularidade[]
+  servicosLancados UnidadeProcessoServico[]
+  aluguel Aluguel?
+
+  @@unique([tenantId, numero])
+  @@index([unidadeIso, status])
+  @@index([clienteId, status])
+  @@index([entradaSolicitacaoId])
+  @@index([saidaSolicitacaoId])
+  @@index([modalidade, status])
+  @@map("unidade_processos")
+}
+
+/// Cessão comercial do ID: solicitante da RIC permanece; titular/pagador muda.
+enum EtapaCessaoTitularidade {
+  DURANTE_ESTADIA
+  POS_SAIDA
+  POS_NFSE
+}
+
+enum StatusCessaoTitularidade {
+  CONCLUIDA
+  AGUARDANDO_CANCELAMENTO_NFSE
+  REEMITIDA
+  CANCELADA
+}
+
+model CessaoTitularidade {
+  id                 String                   @id @default(uuid())
+  tenantId           String                   @default("default") @map("tenant_id") @db.VarChar(64)
+  unidadeProcessoId  String                   @map("unidade_processo_id")
+  unidadeProcesso    UnidadeProcesso          @relation(fields: [unidadeProcessoId], references: [id], onDelete: Restrict)
+  deClienteId        String                   @map("de_cliente_id")
+  deCliente          Cliente                  @relation("CessaoDe", fields: [deClienteId], references: [id], onDelete: Restrict)
+  paraClienteId      String                   @map("para_cliente_id")
+  paraCliente        Cliente                  @relation("CessaoPara", fields: [paraClienteId], references: [id], onDelete: Restrict)
+  etapa              EtapaCessaoTitularidade
+  status             StatusCessaoTitularidade
+  motivo             String                   @db.VarChar(2000)
+  comprovanteNome       String? @map("comprovante_nome") @db.VarChar(255)
+  comprovanteMime       String? @map("comprovante_mime") @db.VarChar(80)
+  comprovanteStorageKey String? @map("comprovante_storage_key") @db.VarChar(500)
+  comprovanteTamanho    Int?    @map("comprovante_tamanho")
+  resetFreeTime      Boolean                  @default(false) @map("reset_free_time")
+  vigenteEm          DateTime                 @map("vigente_em")
+  gerenteId          String                   @map("gerente_id")
+  operadorId         String                   @map("operador_id")
+  preFaturaOrigemId  String?                  @map("pre_fatura_origem_id")
+  preFaturaDestinoId String?                  @map("pre_fatura_destino_id")
+  faturaOrigemId     String?                  @map("fatura_origem_id")
+  faturaDestinoId    String?                  @map("fatura_destino_id")
+  valorOrigem        Decimal?                 @map("valor_origem") @db.Decimal(10, 2)
+  createdAt          DateTime                 @default(now()) @map("created_at")
+  updatedAt          DateTime                 @updatedAt @map("updated_at")
+
+  @@index([unidadeProcessoId, createdAt])
+  @@index([paraClienteId])
+  @@index([status, etapa])
+  @@index([tenantId])
+  @@map("cessoes_titularidade")
+}
+
+/// Unidade (container ISO) rastreada no pátio após entrada (ID aberto).
 model PatioUnidade {
   id             String        @id @default(uuid())
   unidadeIso     String        @map("unidade_iso") @db.VarChar(16)
   solicitacaoId  String        @map("solicitacao_id")
   solicitacao    Solicitacao   @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
-  gateInId       String        @map("gate_in_id")
-  gateIn         GateCheckIn   @relation(fields: [gateInId], references: [id], onDelete: Cascade)
+  gateInId       String?       @map("gate_in_id")
+  gateIn         GateCheckIn?  @relation(fields: [gateInId], references: [id], onDelete: SetNull)
+  unidadeProcessoId String?    @map("unidade_processo_id")
+  unidadeProcesso   UnidadeProcesso? @relation(fields: [unidadeProcessoId], references: [id], onDelete: SetNull)
   posicaoAtualId String?       @map("posicao_atual_id")
   posicaoAtual   PatioPosicao? @relation("PosicaoAtual", fields: [posicaoAtualId], references: [id], onDelete: SetNull)
   status         PatioStatus   @default(SEPARADO)
@@ -905,10 +1082,12 @@ model PatioUnidade {
   tomadaEventos PatioTomadaEvent[]
 
   @@unique([gateInId, unidadeIso])
+  @@unique([unidadeProcessoId, unidadeIso])
   @@index([solicitacaoId])
   @@index([unidadeIso])
   @@index([status])
   @@index([posicaoAtualId])
+  @@index([unidadeProcessoId])
   @@map("patio_v2_unidades")
 }
 
@@ -984,8 +1163,8 @@ model AgendamentoTerminal {
   createdAt             DateTime                  @default(now())
   updatedAt             DateTime                  @updatedAt
 
-  containersTos Container[]
   ordensTransporte OrdemTransporte[]
+  frete            Frete?
 
   @@unique([dataRef, turno, numeroIso, tipoOperacao])
   @@index([clienteId, dataRef])
@@ -993,58 +1172,6 @@ model AgendamentoTerminal {
   @@index([numeroIso, tipoOperacao])
   @@index([tenantId])
   @@map("agendamentos_terminal")
-}
-
-/// Aggregate root TOS — ciclo de vida do contêiner no depot (estado derivado dos eventos).
-model Container {
-  id             String           @id @default(uuid())
-  /// ISO 6346: 4 letras + 7 dígitos (ex.: ABCD1234567).
-  numero         String           @unique @db.VarChar(11)
-  tipo           TipoContainerTos
-  clienteId      String           @map("cliente_id")
-  cliente        Cliente          @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  agendamentoId  String           @map("agendamento_id")
-  agendamento    AgendamentoTerminal @relation(fields: [agendamentoId], references: [id], onDelete: Restrict)
-  version        Int              @default(1)
-  createdAt      DateTime         @default(now()) @map("created_at")
-  updatedAt      DateTime         @updatedAt @map("updated_at")
-
-  eventos ContainerEvent[]
-  avarias AvariaRecord[]
-
-  @@index([clienteId])
-  @@index([agendamentoId])
-  @@map("containers_tos")
-}
-
-/// Event Sourcing — log imutável de transições do contêiner.
-model ContainerEvent {
-  id          String             @id @default(uuid())
-  containerId String             @map("container_id")
-  container   Container          @relation(fields: [containerId], references: [id], onDelete: Cascade)
-  eventType   ContainerEventType @map("event_type")
-  payload     Json               @default("{}")
-  criadoPor   String?            @map("criado_por")
-  criador     User?              @relation("ContainerEventCriador", fields: [criadoPor], references: [id], onDelete: SetNull)
-  createdAt   DateTime           @default(now()) @map("created_at")
-
-  @@index([containerId, createdAt])
-  @@index([eventType])
-  @@map("container_events")
-}
-
-/// Registro de avarias com fotos no gate-in ou gate-out.
-model AvariaRecord {
-  id          String        @id @default(uuid())
-  containerId String        @map("container_id")
-  container   Container     @relation(fields: [containerId], references: [id], onDelete: Cascade)
-  descricao   String        @db.VarChar(1000)
-  fotos       String[]      @default([])
-  momento     MomentoAvaria
-  createdAt   DateTime      @default(now()) @map("created_at")
-
-  @@index([containerId])
-  @@map("avaria_records")
 }
 
 /// Pilha lógica do pátio (OCC + read model CQRS por cliente/baia).
@@ -1134,6 +1261,51 @@ model OrdemTransporte {
   @@map("ordens_transporte")
 }
 
+/// Linha do quadro de fretes (substitui a planilha EMBARQUES / FRETES DA SEMANA).
+model Frete {
+  id        String   @id @default(uuid())
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  dataRef   DateTime @map("data_ref") @db.Date
+  /// Janela operacional no formato da planilha (ex.: 08x09).
+  janela    String?  @db.VarChar(16)
+  turno     TurnoAgendamento?
+
+  numeroIso   String      @map("numero_iso") @db.VarChar(16)
+  statusCarga StatusCarga @map("status_carga")
+  tipo        TipoFrete
+  local       String?     @db.VarChar(255)
+
+  clienteId   String?  @map("cliente_id")
+  cliente     Cliente? @relation(fields: [clienteId], references: [id], onDelete: SetNull)
+  clienteNome String   @map("cliente_nome") @db.VarChar(255)
+
+  motoristaNome String? @map("motorista_nome") @db.VarChar(255)
+  cpfMotorista  String? @map("cpf_motorista") @db.VarChar(11)
+  placaCavalo   String? @map("placa_cavalo") @db.VarChar(10)
+  placaCarreta  String? @map("placa_carreta") @db.VarChar(10)
+
+  valor     Decimal? @db.Decimal(12, 2)
+  booking   String?  @db.VarChar(120)
+  observacao String? @db.Text
+  status    StatusFrete @default(PENDENTE)
+
+  solicitacaoId String?     @map("solicitacao_id")
+  solicitacao   Solicitacao? @relation(fields: [solicitacaoId], references: [id], onDelete: SetNull)
+  agendamentoId String?     @unique @map("agendamento_id")
+  agendamento   AgendamentoTerminal? @relation(fields: [agendamentoId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId, dataRef])
+  @@index([tenantId, status])
+  @@index([tenantId, numeroIso])
+  @@index([solicitacaoId])
+  @@map("fretes")
+}
+
 /// Limites configuráveis de slots por turno (admin).
 model CapacidadeTurnoTerminal {
   id               String   @id @default(uuid())
@@ -1205,33 +1377,25 @@ enum StatusArquivoBancario {
   ERRO
 }
 
-/// Tarifário de armazenagem/demurrage por cliente (free time + diária).
-/// @deprecated Sunset A.5 — usar TabelaPreco + sync cadastral. Mantida read-only para dados históricos.
-model TabelaTarifaria {
-  id                  String   @id @default(uuid())
-  clienteId           String   @unique @map("cliente_id")
-  cliente             Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  freeTimeDias        Int      @default(5) @map("free_time_dias")
-  valorDiaria         Decimal  @map("valor_diaria") @db.Decimal(10, 2)
-  valorServicosExtras Decimal  @default(0) @map("valor_servicos_extras") @db.Decimal(10, 2)
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
-
-  @@map("tabelas_tarifarias")
-}
-
 /// Provisão diária de armazenagem — consolidada no Gate-Out.
 model PreFatura {
   id               String           @id @default(uuid())
   containerIso     String           @map("container_iso") @db.VarChar(16)
   clienteId        String           @map("cliente_id")
   cliente          Cliente          @relation(fields: [clienteId], references: [id], onDelete: Cascade)
-  gateInId         String           @map("gate_in_id")
-  gateIn           GateCheckIn      @relation(fields: [gateInId], references: [id], onDelete: Cascade)
+  gateInId         String?          @map("gate_in_id")
+  gateIn           GateCheckIn?     @relation(fields: [gateInId], references: [id], onDelete: SetNull)
+  unidadeProcessoId String?         @map("unidade_processo_id")
+  unidadeProcesso   UnidadeProcesso? @relation(fields: [unidadeProcessoId], references: [id], onDelete: SetNull)
   gateInAt         DateTime         @map("gate_in_at")
   valorAcumulado   Decimal          @default(0) @map("valor_acumulado") @db.Decimal(10, 2)
   diasCobrados     Int              @default(0) @map("dias_cobrados")
   status           StatusPreFatura  @default(ABERTA)
+  /// 0 = segmento original da entrada; 1+ = após cessão.
+  segmento         Int              @default(0)
+  cessaoId         String?          @map("cessao_id")
+  /// Sem free time neste segmento (cessão: B herda o ciclo).
+  freeTimeZerado   Boolean          @default(false) @map("free_time_zerado")
   /// Primeiro dia útil após free time (início da cobrança de diárias).
   cobrancaInicioEm DateTime?        @map("cobranca_inicio_em")
   createdAt        DateTime         @default(now()) @map("created_at")
@@ -1241,8 +1405,10 @@ model PreFatura {
   itens  ItemFaturaArmazenagem[]
 
   @@unique([gateInId, containerIso])
+  @@unique([unidadeProcessoId, containerIso, segmento])
   @@index([clienteId, status])
   @@index([containerIso])
+  @@index([unidadeProcessoId])
   @@map("pre_faturas")
 }
 
@@ -1523,18 +1689,26 @@ model TenantConfig {
   @@map("tenant_configs")
 }
 
-/// Opções de condição de pagamento customizáveis por tenant (fase 02 — UI dinâmica).
+/// Catálogo de forma de pagamento e prazo, por tenant.
 model CondicaoPagamentoPersonalizada {
-  id           String       @id @default(cuid())
-  tenantId     String       @map("tenant_id")
-  label        String       @db.VarChar(120)
-  value        String       @db.VarChar(64)
-  ativo        Boolean      @default(true)
-  criadoEm     DateTime     @default(now()) @map("criado_em")
-  tenantConfig TenantConfig @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id           String             @id @default(cuid())
+  tenantId     String             @map("tenant_id")
+  tipo         TipoOpcaoPagamento @default(FORMA)
+  label        String             @db.VarChar(120)
+  value        String             @db.VarChar(64)
+  ativo        Boolean            @default(true)
+  ordem        Int                @default(0)
+  /// Primeiro vencimento em dias (só PRAZO). 0 = à vista. Espelho de vencimentos[0].
+  dias         Int?
+  /// Dias de cada parcela a partir da emissão, ex.: [7, 14, 21]. Quantidade = nº de boletos.
+  vencimentos  Int[]              @default([])
+  /// Código da forma de pagamento vinculada (só PRAZO), ex.: AVISTA_PIX / FATURAMENTO.
+  formaVinculada String?          @map("forma_vinculada") @db.VarChar(64)
+  criadoEm     DateTime           @default(now()) @map("criado_em")
+  tenantConfig TenantConfig       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@unique([tenantId, value])
-  @@index([tenantId])
+  @@unique([tenantId, tipo, value])
+  @@index([tenantId, tipo])
   @@map("condicoes_pagamento_personalizadas")
 }
 
@@ -1717,6 +1891,7 @@ model CadastroTransportadora {
 
   dados     Json     @default("{}")
   motoristas CadastroMotorista[]
+  portarias  Portaria[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -1756,6 +1931,80 @@ model CadastroMotorista {
   @@index([tenantId, ativo])
   @@index([transportadoraId])
   @@map("cadastros_motoristas")
+}
+
+/// Capacidade do conjunto do terceiro (20", 40" ou ambos).
+enum CapacidadeVeiculoTerceiro {
+  PE_20
+  PE_40
+  AMBOS
+}
+
+/// Autônomo / PF contratado para transportes (motorista + dono + veículo).
+model CadastroTerceiro {
+  id       String @id @default(uuid())
+  tenantId String @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  motoristaNome String @map("motorista_nome") @db.VarChar(255)
+  motoristaCpf  String @map("motorista_cpf") @db.VarChar(11)
+
+  donoNome String @map("dono_nome") @db.VarChar(255)
+  pix      String @db.VarChar(128)
+
+  placaCavalo        String                     @map("placa_cavalo") @db.VarChar(10)
+  renavamCavalo      String?                    @map("renavam_cavalo") @db.VarChar(11)
+  crlvValidadeCavalo DateTime?                  @map("crlv_validade_cavalo") @db.Date
+  placaCarreta       String?                    @map("placa_carreta") @db.VarChar(10)
+  placaCarreta02     String?                    @map("placa_carreta_02") @db.VarChar(10)
+  /// Placas (busca). Detalhe por carreta em `carretas`.
+  placasCarretas     String[]                   @default([]) @map("placas_carretas")
+  /// [{ placa, capacidade, renavam, validadeDocumento }]
+  carretas           Json                       @default("[]")
+  /// Resumo das pinagens das carretas (não se aplica ao cavalo).
+  capacidade         CapacidadeVeiculoTerceiro
+  cnhCategoria       String?                    @map("cnh_categoria") @db.VarChar(8)
+  cnhValidade        DateTime?                  @map("cnh_validade") @db.Date
+  /// Celular WhatsApp (dígitos BR, 10–11). Usado na integração Meta.
+  whatsapp           String?                    @db.VarChar(20)
+
+  documentos CadastroTerceiroDocumento[]
+
+  ativo Boolean @default(true)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, motoristaCpf])
+  @@index([tenantId, ativo])
+  @@map("cadastros_terceiros")
+}
+
+enum TipoDocumentoTerceiro {
+  CNH
+  CRLV_CAVALO
+  CRLV_CARRETA
+  CRLV_CARRETA_02
+}
+
+model CadastroTerceiroDocumento {
+  id           String                @id @default(uuid())
+  tenantId     String                @default("default") @map("tenant_id") @db.VarChar(64)
+  terceiroId   String?               @map("terceiro_id")
+  terceiro     CadastroTerceiro?     @relation(fields: [terceiroId], references: [id], onDelete: SetNull)
+  tipo         TipoDocumentoTerceiro
+  /// Ordem da carreta (0, 1, 2…) quando tipo é CRLV_CARRETA / CRLV_CARRETA_02.
+  indice       Int?
+  storageKey   String                @map("storage_key") @db.VarChar(512)
+  originalName String                @map("original_name") @db.VarChar(255)
+  mimeType     String                @map("mime_type") @db.VarChar(80)
+  sizeBytes    Int                   @map("size_bytes")
+  extraido     Json                  @default("{}")
+  createdAt    DateTime              @default(now()) @map("created_at")
+
+  @@index([tenantId, terceiroId])
+  @@map("cadastros_terceiros_documentos")
 }
 
 /// MDM — catálogo de tipos de contêiner aceitos pelo terminal.
@@ -2015,6 +2264,32 @@ model CadastroMotivoRejeicao {
   @@map("cadastros_motivos_rejeicao")
 }
 
+/// Ponto de origem/destino usado nas tarifas de transporte (sentido indiferente).
+model CadastroLocalTransporte {
+  id        String   @id @default(uuid())
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  codigo    String   @db.VarChar(32)
+  nome      String   @db.VarChar(120)
+  /// TERMINAL | PORTO | DEPOSITO | CIDADE | OUTRO
+  tipo      String   @default("OUTRO") @db.VarChar(32)
+  cidade    String?  @db.VarChar(120)
+  uf        String?  @db.VarChar(2)
+  ativo     Boolean  @default(true)
+
+  trechosComoA CadastroTarifaTransporte[] @relation("TarifaLocalA")
+  trechosComoB CadastroTarifaTransporte[] @relation("TarifaLocalB")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId, ativo])
+  @@map("cadastros_locais_transporte")
+}
+
 /// Catálogo de bancos (código FEBRABAN).
 model CadastroBanco {
   id        String   @id @default(uuid())
@@ -2141,6 +2416,8 @@ model CadastroTabelaPrecoItem {
   faixasDiaria        Json?    @map("faixas_diaria")
   tarifaDiariaArmazenagem Decimal? @map("tarifa_diaria_armazenagem") @db.Decimal(10, 2)
   tarifaEnergiaReeferDiaria Decimal? @map("tarifa_energia_reefer_diaria") @db.Decimal(10, 2)
+  /// Faixas de energia por dias conectados: [{ diaInicio, diaFim|null, valorDiaria }]
+  faixasEnergiaReefer Json? @map("faixas_energia_reefer")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -2149,6 +2426,224 @@ model CadastroTabelaPrecoItem {
   @@index([tabelaId, categoriaItem])
   @@index([tipoOperacaoCodigo, tipoContainerCodigo])
   @@map("cadastros_tabelas_preco_itens")
+}
+
+/// Tabela de tarifas de transporte (catálogo negociável por cliente, como tabela de preços).
+model CadastroTabelaTransporte {
+  id        String   @id @default(uuid())
+  tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  nome      String   @db.VarChar(255)
+  descricao String?  @db.Text
+  dataInicio DateTime @default(now()) @map("data_inicio") @db.Date
+  dataFim    DateTime? @map("data_fim") @db.Date
+  ativo     Boolean  @default(true)
+  /// Tabela padrão do terminal (uma por tenant). Novos cadastros entram nela.
+  padrao    Boolean  @default(false)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  itens    CadastroTarifaTransporte[]
+  clientes Cliente[]
+
+  @@index([tenantId, ativo])
+  @@index([tenantId, padrao])
+  @@index([tenantId, dataInicio, dataFim])
+  @@map("cadastros_tabelas_transporte")
+}
+
+/// Catálogo de serviços adicionais (lavagem, lacre, pesagem…) lançáveis no ID.
+model CadastroTabelaServico {
+  id         String    @id @default(uuid())
+  tenantId   String    @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  nome       String    @db.VarChar(255)
+  descricao  String?   @db.Text
+  dataInicio DateTime  @default(now()) @map("data_inicio") @db.Date
+  dataFim    DateTime? @map("data_fim") @db.Date
+  ativo      Boolean   @default(true)
+  padrao     Boolean   @default(false)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  itens CadastroServicoItem[]
+
+  @@index([tenantId, ativo])
+  @@index([tenantId, padrao])
+  @@map("cadastros_tabelas_servico")
+}
+
+model CadastroServicoItem {
+  id       String               @id @default(uuid())
+  tabelaId String               @map("tabela_id")
+  tabela   CadastroTabelaServico @relation(fields: [tabelaId], references: [id], onDelete: Cascade)
+  codigo   String               @db.VarChar(32)
+  nome     String               @db.VarChar(120)
+  valor    Decimal              @db.Decimal(12, 2)
+  unidade  String               @default("POR_UNIDADE") @db.VarChar(32)
+  ativo    Boolean              @default(true)
+  /// NENHUM | SUBSTITUIR_LACRE_SAIDA | TRANSBORDO_CARGA
+  efeito       String  @default("NENHUM") @db.VarChar(32)
+  efeitoConfig Json?   @map("efeito_config")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  lancamentos UnidadeProcessoServico[]
+
+  @@unique([tabelaId, codigo])
+  @@index([tabelaId, ativo])
+  @@map("cadastros_servico_itens")
+}
+
+/// Serviço adicional lançado num ID — valor congelado no momento do lançamento.
+model UnidadeProcessoServico {
+  id                   String              @id @default(uuid())
+  unidadeProcessoId    String              @map("unidade_processo_id")
+  unidadeProcesso      UnidadeProcesso     @relation(fields: [unidadeProcessoId], references: [id], onDelete: Cascade)
+  cadastroServicoItemId String?            @map("cadastro_servico_item_id")
+  cadastroServicoItem  CadastroServicoItem? @relation(fields: [cadastroServicoItemId], references: [id], onDelete: SetNull)
+  codigo               String              @db.VarChar(32)
+  nome                 String              @db.VarChar(120)
+  quantidade           Decimal             @db.Decimal(10, 2)
+  valorUnitario        Decimal             @map("valor_unitario") @db.Decimal(12, 2)
+  valorTotal           Decimal             @map("valor_total") @db.Decimal(12, 2)
+  lancadoPorUserId     String?             @map("lancado_por_user_id")
+  payload              Json?
+  createdAt            DateTime            @default(now()) @map("created_at")
+
+  @@index([unidadeProcessoId])
+  @@map("unidade_processo_servicos")
+}
+
+/// Unidade da frota própria de aluguel (poucas caixas, processo separado do pátio).
+model CadastroUnidadeAluguel {
+  id                   String               @id @default(uuid())
+  tenantId             String               @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant               Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  unidadeIso           String               @map("unidade_iso") @db.VarChar(16)
+  tipoContainerCodigo  String               @map("tipo_container_codigo") @db.VarChar(32)
+  containerTamanho     String               @map("container_tamanho") @db.VarChar(8)
+  capacidadeCodigo     String?              @map("capacidade_codigo") @db.VarChar(32)
+  status               StatusUnidadeAluguel @default(DISPONIVEL)
+  observacao           String?              @db.VarChar(500)
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+  deletedAt            DateTime?            @map("deleted_at")
+
+  alugueis Aluguel[]
+
+  @@unique([tenantId, unidadeIso])
+  @@index([tenantId, status])
+  @@map("cadastros_unidades_aluguel")
+}
+
+/// Tabela comercial de aluguel (diária a partir da saída + entrega/coleta opcionais).
+model CadastroTabelaAluguel {
+  id         String    @id @default(uuid())
+  tenantId   String    @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  nome       String    @db.VarChar(255)
+  descricao  String?   @db.Text
+  dataInicio DateTime  @default(now()) @map("data_inicio") @db.Date
+  dataFim    DateTime? @map("data_fim") @db.Date
+  ativo      Boolean   @default(true)
+  padrao     Boolean   @default(false)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  itens    CadastroTabelaAluguelItem[]
+  alugueis Aluguel[]
+
+  @@index([tenantId, ativo])
+  @@index([tenantId, padrao])
+  @@map("cadastros_tabelas_aluguel")
+}
+
+model CadastroTabelaAluguelItem {
+  id                  String               @id @default(uuid())
+  tabelaId            String               @map("tabela_id")
+  tabela              CadastroTabelaAluguel @relation(fields: [tabelaId], references: [id], onDelete: Cascade)
+  tipoContainerCodigo String               @map("tipo_container_codigo") @db.VarChar(32)
+  containerTamanho    String               @map("container_tamanho") @db.VarChar(8)
+  valorDiaria         Decimal              @map("valor_diaria") @db.Decimal(12, 2)
+  diasFreeTime        Int                  @default(0) @map("dias_free_time")
+  valorEntrega        Decimal              @default(0) @map("valor_entrega") @db.Decimal(12, 2)
+  valorColeta         Decimal              @default(0) @map("valor_coleta") @db.Decimal(12, 2)
+  ativo               Boolean              @default(true)
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  deletedAt           DateTime?            @map("deleted_at")
+
+  @@unique([tabelaId, tipoContainerCodigo, containerTamanho])
+  @@index([tabelaId, ativo])
+  @@map("cadastros_tabela_aluguel_itens")
+}
+
+/// Contrato de aluguel: abre ID na saída da unidade e fecha na devolução.
+model Aluguel {
+  id                String        @id @default(uuid())
+  tenantId          String        @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  unidadeAluguelId  String        @map("unidade_aluguel_id")
+  unidadeAluguel    CadastroUnidadeAluguel @relation(fields: [unidadeAluguelId], references: [id], onDelete: Restrict)
+  clienteId         String        @map("cliente_id")
+  cliente           Cliente       @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  tabelaAluguelId   String        @map("tabela_aluguel_id")
+  tabelaAluguel     CadastroTabelaAluguel @relation(fields: [tabelaAluguelId], references: [id], onDelete: Restrict)
+  unidadeProcessoId String        @unique @map("unidade_processo_id")
+  unidadeProcesso   UnidadeProcesso @relation(fields: [unidadeProcessoId], references: [id], onDelete: Restrict)
+  status            StatusAluguel @default(ATIVO)
+  iniciadoEm        DateTime      @map("iniciado_em")
+  encerradoEm       DateTime?     @map("encerrado_em")
+  observacao        String?       @db.VarChar(500)
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  @@index([tenantId, status])
+  @@index([clienteId, status])
+  @@index([unidadeAluguelId, status])
+  @@map("alugueis")
+}
+
+/// Tarifa de transporte entre dois locais. O par é canônico (localAId < localBId): FL×Portonave = Portonave×FL.
+model CadastroTarifaTransporte {
+  id         String   @id @default(uuid())
+  tenantId   String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  tabelaId   String   @map("tabela_id")
+  tabela     CadastroTabelaTransporte @relation(fields: [tabelaId], references: [id], onDelete: Cascade)
+
+  localAId   String   @map("local_a_id")
+  localA     CadastroLocalTransporte @relation("TarifaLocalA", fields: [localAId], references: [id], onDelete: Restrict)
+  localBId   String   @map("local_b_id")
+  localB     CadastroLocalTransporte @relation("TarifaLocalB", fields: [localBId], references: [id], onDelete: Restrict)
+
+  valor      Decimal  @db.Decimal(12, 2)
+  /// CHEIO | VAZIO
+  statusCarga String  @default("CHEIO") @map("status_carga") @db.VarChar(16)
+  tipoContainerCodigo String @default("DRYDC") @map("tipo_container_codigo") @db.VarChar(32)
+  /// Frete de retorno: valor cobrado = 50% da tarifa.
+  retorno    Boolean  @default(false)
+  valorPagoTerceiro Decimal? @map("valor_pago_terceiro") @db.Decimal(12, 2)
+  observacao String?  @db.Text
+  ativo      Boolean  @default(true)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([tabelaId])
+  @@index([tenantId, tabelaId, localAId, localBId, statusCarga, tipoContainerCodigo, retorno])
+  @@index([tenantId, ativo])
+  @@map("cadastros_tarifas_transporte")
 }
 
 // ============================================================================

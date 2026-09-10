@@ -122,7 +122,7 @@ export default function ParametrosFiscalPage() {
   };
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="space-y-6">
       <ParametrosBreadcrumb current="Fiscal" />
       <div>
         <h1 className="text-2xl font-bold">Parâmetros Gerais</h1>
@@ -133,8 +133,8 @@ export default function ParametrosFiscalPage() {
       <ParametrosTabs />
 
       <FormSection title="Configuração NFS-e" icon={Receipt}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Município IBGE" required>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Município IBGE" required size="md">
             <Input
               maxLength={7}
               disabled={!canEdit}
@@ -192,7 +192,7 @@ export default function ParametrosFiscalPage() {
               </span>
             ) : null}
           </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="flex flex-wrap gap-4">
             <FormField label="Senha do certificado">
               <Input
                 type="password"

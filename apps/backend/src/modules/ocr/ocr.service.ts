@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { IntegrationCredentialsService } from '../../tenant/integration-credentials.service';
 import type { OCRProcessarResponse, OCRProvider, OCRRequest, OCRResult } from './ocr-provider.interface';
 import { GoogleVisionProvider } from './providers/google-vision.provider';
 import { TesseractProvider } from './providers/tesseract.provider';
@@ -11,12 +12,35 @@ export class OCRService {
   private readonly providers: OCRProvider[];
   private readonly googleVision: GoogleVisionProvider;
 
-  constructor() {
+  constructor(private readonly integrationCreds: IntegrationCredentialsService) {
     this.googleVision = new GoogleVisionProvider();
     this.providers = [this.googleVision, new TesseractProvider()];
   }
 
+  async ensureGoogleVision(): Promise<boolean> {
+    const resolved = await this.integrationCreds.resolveGoogleVision();
+    if (resolved.credentials) {
+      this.googleVision.apply({
+        kind: 'json',
+        credentials: resolved.credentials,
+        fingerprint: `json:${resolved.clientEmail ?? 'tenant'}`,
+      });
+    } else if (resolved.useApplicationDefault) {
+      this.googleVision.apply({ kind: 'adc', fingerprint: 'adc' });
+    } else if (resolved.apiKey) {
+      this.googleVision.apply({
+        kind: 'apiKey',
+        apiKey: resolved.apiKey,
+        fingerprint: `key:${resolved.apiKey.slice(0, 8)}`,
+      });
+    } else {
+      this.googleVision.apply({ kind: 'none', fingerprint: 'none' });
+    }
+    return this.googleVision.isAvailable();
+  }
+
   async processar(req: OCRRequest): Promise<OCRProcessarResponse> {
+    await this.ensureGoogleVision();
     this.logger.log(
       `[OCR] Processando imagem tipo=${req.tipo} esperado=${req.valorEsperado ?? 'N/A'}`,
     );
@@ -59,14 +83,36 @@ export class OCRService {
   }
 
   isGoogleVisionAvailable(): boolean {
-    return this.googleVision.isAvailable();
+    return this.googleVision.isAvailable() || this.integrationCreds.peekGoogleVision().configured;
+  }
+
+  async extractDocumentText(buffer: Buffer): Promise<string> {
+    if (await this.ensureGoogleVision()) {
+      try {
+        const text = await this.googleVision.extractDocumentText(buffer);
+        if (text.trim()) return text;
+      } catch (err) {
+        this.logger.warn(`Vision documento falhou: ${(err as Error).message}`);
+      }
+    }
+    return '';
   }
 
   async testConnection(): Promise<{ ok: boolean; message: string }> {
-    if (this.isGoogleVisionAvailable()) {
-      return { ok: true, message: 'Google Vision configurado (credenciais presentes)' };
+    const available = await this.ensureGoogleVision();
+    if (!available) {
+      return { ok: false, message: 'Google Vision não configurado — cole o JSON da service account.' };
     }
-    return { ok: true, message: 'Tesseract local disponível (Vision não configurado)' };
+    const probe = await this.googleVision.probe();
+    const resolved = this.integrationCreds.peekGoogleVision();
+    const hint = resolved.clientEmail ?? (resolved.apiKey ? 'API key' : undefined);
+    if (!probe.ok) {
+      return { ok: false, message: hint ? `${probe.message} (${hint})` : probe.message };
+    }
+    return {
+      ok: true,
+      message: hint ? `Google Vision OK (${hint})` : probe.message,
+    };
   }
 
   private compararValores(extraido: string, esperado?: string): boolean {

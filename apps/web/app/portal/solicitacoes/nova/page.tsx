@@ -12,26 +12,37 @@ import {
   criarSolicitacaoV2,
   criarSolicitacaoV2ComAnexos,
   type CreateSolicitacaoV2Payload,
+  type PortalPatioSaldoItem,
 } from "@/lib/api/portal-client";
 import { toast } from "@/lib/toast";
 import { usePessoaAutorizadaStore } from "@/stores/pessoaAutorizadaStore";
 import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
 import { formatCpfCnpjBr } from "@/lib/format-cpf-cnpj-br";
 import { formatPhoneBr } from "@/lib/nfse/cliente-fiscal";
+import { ContainerEstoqueSearch } from "@/components/portal/container-estoque-search";
 import {
-  ContainerIsoInput,
   ContainerRefrigeradoSelect,
   ContainerStatusSelect,
   ContainerTamanhoSelect,
   ContainerTipoSelect,
   findPortalTipo,
 } from "@/components/portal/container-form-fields";
-import { stripContainerISO } from "@/utils/containerFormatter";
-import { optionalDateTimeLocalToIso } from "@/lib/solicitacao-intent";
+import { formatContainerISO, stripContainerISO } from "@/utils/containerFormatter";
+import { fieldErrorForContainer, parseUnidadeEstoqueError } from "@/lib/solicitacao-estoque-error";
+import { usePortalEstoqueCliente } from "@/hooks/use-portal-estoque-cliente";
 import { PortalAgendamentoGuard } from "@/components/portal/portal-agendamento-guard";
 import { useTenantTurnos } from "@/hooks/use-tenant-turnos";
+import { resolveAgendamentoTurno } from "@/lib/api/tenant-config-client";
 import { usePortalTiposContainer } from "@/hooks/use-portal-tipos-container";
 import { formatTamanhoContainerDisplay, normalizeTamanhoContainer } from "@/lib/cadastros/tipo-container-tamanhos";
+import {
+  SOLICITACAO_CARD_C as CARD_C,
+  SOLICITACAO_CARD_H as CARD_H,
+  SOLICITACAO_FORM_GRID as GRID,
+  SOLICITACAO_SELECT_CLS as SELECT_CLS,
+  SOLICITACAO_SPAN2 as SPAN2,
+  SOLICITACAO_SPAN4 as SPAN4,
+} from "@/components/portal/solicitacao-form-layout";
 
 type TipoCaminhao = "LS" | "RODOTREM";
 
@@ -39,6 +50,7 @@ type ContainerDraft = {
   unidade: string;
   booking: string;
   processo: string;
+  navio: string;
   tamanho: string;
   tipo: string;
   status: "CHEIO" | "VAZIO";
@@ -53,6 +65,7 @@ function emptyContainer(ordem: number): ContainerDraft {
     unidade: "",
     booking: "",
     processo: "",
+    navio: "",
     tamanho: "",
     tipo: "",
     status: "CHEIO",
@@ -75,6 +88,7 @@ export default function NovaSolicitacaoCorporativaPage() {
   const [placaCarreta02, setPlacaCarreta02] = useState("");
 
   const [containers, setContainers] = useState<ContainerDraft[]>([emptyContainer(1)]);
+  const [unidadeFieldErrors, setUnidadeFieldErrors] = useState<Record<number, string>>({});
 
   const [dataRef, setDataRef] = useState("");
   const { turnos } = useTenantTurnos();
@@ -87,8 +101,8 @@ export default function NovaSolicitacaoCorporativaPage() {
   const [solEmail, setSolEmail] = useState("");
 
   const [files, setFiles] = useState<File[]>([]);
-  const [previsaoRetirada, setPrevisaoRetirada] = useState("");
   const { tipos: tiposContainer, loading: loadingTipos } = usePortalTiposContainer(true);
+  const estoque = usePortalEstoqueCliente(true);
 
   const pessoa = usePessoaAutorizadaStore((s) => s.pessoa);
   const user = usePortalClienteAuthStore((s) => s.user);
@@ -126,6 +140,13 @@ export default function NovaSolicitacaoCorporativaPage() {
   }, [tipoCaminhao]);
 
   function updateContainer(i: number, patch: Partial<ContainerDraft>) {
+    if (patch.unidade !== undefined) {
+      setUnidadeFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[i];
+        return next;
+      });
+    }
     setContainers((rows) => {
       const next = [...rows];
       const merged = { ...next[i], ...patch };
@@ -144,6 +165,23 @@ export default function NovaSolicitacaoCorporativaPage() {
       if (!merged.refrigerado) merged.setPoint = "";
       next[i] = merged;
       return next;
+    });
+  }
+
+  function applyEstoque(idx: number, item: PortalPatioSaldoItem | null) {
+    if (!item) {
+      updateContainer(idx, { unidade: "" });
+      return;
+    }
+    updateContainer(idx, {
+      unidade: formatContainerISO(item.unidadeIso),
+      tipo: item.tipo?.trim().toUpperCase() ?? "",
+      tamanho: item.tamanho ? normalizeTamanhoContainer(item.tamanho) : "",
+      status: item.statusContainer === "VAZIO" ? "VAZIO" : "CHEIO",
+      booking: item.booking ?? "",
+      processo: item.processo ?? "",
+      navio: item.navio ?? "",
+      refrigerado: item.refrigerado,
     });
   }
 
@@ -168,6 +206,7 @@ export default function NovaSolicitacaoCorporativaPage() {
           unidade: stripContainerISO(c.unidade),
           booking: c.booking.trim(),
           processo: c.processo.trim(),
+          navio: c.navio.trim(),
           tamanho: formatTamanhoContainerDisplay(c.tamanho),
           tipo: c.tipo.trim().toUpperCase(),
           status: c.status,
@@ -179,7 +218,7 @@ export default function NovaSolicitacaoCorporativaPage() {
       }),
       agendamento: {
         dataRef,
-        turno,
+        turno: resolveAgendamentoTurno(turnos, turno),
         atendimentoEspecial,
         atendimentoEspecialTexto: atendimentoEspecial ? atendimentoEspecialTexto.trim() || undefined : undefined,
       },
@@ -188,7 +227,6 @@ export default function NovaSolicitacaoCorporativaPage() {
         telefone: solTelefone.trim(),
         email: solEmail.trim().toLowerCase(),
       },
-      previsaoRetirada: optionalDateTimeLocalToIso(previsaoRetirada),
     };
     return payload;
   }
@@ -196,6 +234,22 @@ export default function NovaSolicitacaoCorporativaPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     const ordens = containers.slice(0, containerCount);
+    const allowed = new Set(estoque.items.map((i) => stripContainerISO(i.unidadeIso)));
+    const seen = new Set<string>();
+    for (const c of ordens) {
+      const iso = stripContainerISO(c.unidade);
+      if (!iso || !allowed.has(iso)) {
+        toast.error(
+          `Contêiner #${c.ordem}: selecione uma unidade do estoque deste cliente (lupa).`,
+        );
+        return;
+      }
+      if (seen.has(iso)) {
+        toast.error("Não use a mesma unidade nos dois contêineres.");
+        return;
+      }
+      seen.add(iso);
+    }
     for (const c of ordens) {
       if (c.refrigerado) {
         const spRaw = c.setPoint.trim().replace(",", ".");
@@ -220,7 +274,15 @@ export default function NovaSolicitacaoCorporativaPage() {
       toast.success(files.length ? "Solicitação registrada com anexos." : "Solicitação registrada.");
       router.push(`/portal/solicitacoes/${id}`);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Falha ao salvar");
+      const msg = err instanceof ApiError ? err.message : "Falha ao salvar";
+      toast.error(msg);
+      const parsed = parseUnidadeEstoqueError(msg);
+      const next: Record<number, string> = {};
+      containers.slice(0, containerCount).forEach((c, i) => {
+        const field = fieldErrorForContainer(c.unidade, parsed, msg);
+        if (field) next[i] = field;
+      });
+      setUnidadeFieldErrors(next);
     } finally {
       setSaving(false);
     }
@@ -228,7 +290,7 @@ export default function NovaSolicitacaoCorporativaPage() {
 
   return (
     <PortalAgendamentoGuard>
-    <main className="mx-auto max-w-4xl space-y-6 px-4 py-8">
+    <main className="mx-auto w-[90%] space-y-4 py-6">
       <SectionTitle
         title="Nova solicitação (corporativa)"
         description="Transporte LS ou Rodotrem define containers. Envio em uma única requisição com anexos (multipart)."
@@ -239,14 +301,13 @@ export default function NovaSolicitacaoCorporativaPage() {
         </Button>
       </div>
 
-      <form onSubmit={(e) => void onSubmit(e)} className="space-y-6">
+      <form onSubmit={(e) => void onSubmit(e)} className="space-y-3">
         <Card className="border-white/10 bg-black/25">
-          <CardHeader>
-            <CardTitle className="text-lg text-white">1 · Transporte</CardTitle>
-            <CardDescription>Motorista, CPF, tipo de caminhão e placas (normalizadas na API).</CardDescription>
+          <CardHeader className={CARD_H}>
+            <CardTitle className="text-sm text-white">1 · Transporte</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <div className="sm:col-span-2">
+          <CardContent className={`${GRID} ${CARD_C}`}>
+            <div className={SPAN2}>
               <label className="mb-1 block text-xs text-slate-500">Nome do motorista</label>
               <Input value={nomeMotorista} onChange={(e) => setNomeMotorista(e.target.value)} required className="bg-black/40" />
             </div>
@@ -257,7 +318,7 @@ export default function NovaSolicitacaoCorporativaPage() {
             <div>
               <label className="mb-1 block text-xs text-slate-500">Tipo de caminhão</label>
               <select
-                className="flex h-10 w-full rounded-md border border-white/10 bg-black/40 px-3 text-sm text-white"
+                className={SELECT_CLS}
                 value={tipoCaminhao}
                 onChange={(e) => setTipoCaminhao(e.target.value as TipoCaminhao)}
               >
@@ -284,9 +345,9 @@ export default function NovaSolicitacaoCorporativaPage() {
 
         {containers.slice(0, containerCount).map((c, idx) => (
           <Card key={c.ordem} className="border-white/10 bg-black/25">
-            <CardHeader>
+            <CardHeader className={CARD_H}>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <CardTitle className="text-lg text-white">2 · Container #{c.ordem}</CardTitle>
+                <CardTitle className="text-sm text-white">2 · Contêiner #{c.ordem}</CardTitle>
                 <div className="flex flex-wrap gap-1">
                   {c.refrigerado ? (
                     <span className="rounded bg-rose-600/35 px-2 py-0.5 text-[10px] font-semibold uppercase text-rose-100">
@@ -300,17 +361,26 @@ export default function NovaSolicitacaoCorporativaPage() {
                   ) : null}
                 </div>
               </div>
-              <CardDescription>Informações operacionais e reefer.</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-3 sm:grid-cols-2">
+            <CardContent className={`${GRID} ${CARD_C}`}>
               <div>
-                <label className="mb-1 block text-xs text-slate-500">Unidade / ISO</label>
-                <ContainerIsoInput
+                <label className="mb-1 block text-xs text-slate-500">Unidade em estoque (deste cliente)</label>
+                <ContainerEstoqueSearch
                   value={c.unidade}
-                  onChange={(v) => updateContainer(idx, { unidade: v })}
+                  onSelect={(item) => applyEstoque(idx, item)}
+                  items={estoque.items}
+                  loading={estoque.loading}
+                  error={estoque.error}
+                  excludeIsos={containers
+                    .slice(0, containerCount)
+                    .filter((_, i) => i !== idx)
+                    .map((row) => row.unidade)}
                   required
-                  className="bg-black/40 font-mono"
+                  className="bg-black/40"
                 />
+                {unidadeFieldErrors[idx] ? (
+                  <p className="mt-1 text-xs text-red-400">{unidadeFieldErrors[idx]}</p>
+                ) : null}
               </div>
               <div>
                 <label className="mb-1 block text-xs text-slate-500">Booking (opcional)</label>
@@ -321,12 +391,16 @@ export default function NovaSolicitacaoCorporativaPage() {
                 <Input value={c.processo} onChange={(e) => updateContainer(idx, { processo: e.target.value })} className="bg-black/40" />
               </div>
               <div>
+                <label className="mb-1 block text-xs text-slate-500">Navio (opcional)</label>
+                <Input value={c.navio} onChange={(e) => updateContainer(idx, { navio: e.target.value })} className="bg-black/40" />
+              </div>
+              <div>
                 <label className="mb-1 block text-xs text-slate-500">Tipo</label>
                 <ContainerTipoSelect
                   value={c.tipo}
                   onChange={(v) => updateContainer(idx, { tipo: v })}
                   required
-                  selectClassName="flex h-10 w-full rounded-md border border-white/10 bg-black/40 px-3 text-sm text-white"
+                  selectClassName={SELECT_CLS}
                   tipos={tiposContainer}
                   disabled={loadingTipos}
                 />
@@ -337,7 +411,7 @@ export default function NovaSolicitacaoCorporativaPage() {
                   value={c.tamanho}
                   onChange={(v) => updateContainer(idx, { tamanho: v })}
                   required
-                  selectClassName="flex h-10 w-full rounded-md border border-white/10 bg-black/40 px-3 text-sm text-white"
+                  selectClassName={SELECT_CLS}
                   tamanhos={findPortalTipo(tiposContainer, c.tipo)?.tamanhos ?? []}
                   disabled={!c.tipo}
                 />
@@ -347,28 +421,28 @@ export default function NovaSolicitacaoCorporativaPage() {
                 <ContainerStatusSelect
                   value={c.status}
                   onChange={(v) => updateContainer(idx, { status: v as "CHEIO" | "VAZIO" })}
-                  selectClassName="flex h-10 w-full rounded-md border border-white/10 bg-black/40 px-3 text-sm text-white"
+                  selectClassName={SELECT_CLS}
                 />
               </div>
               {c.status === "CHEIO" ? (
-                <div className="sm:col-span-2">
-                  <label className="mb-1 block text-xs text-slate-500">Lacre (obrigatório se cheio)</label>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">Lacre</label>
                   <Input value={c.lacre} onChange={(e) => updateContainer(idx, { lacre: e.target.value })} required className="bg-black/40" />
                 </div>
               ) : null}
               {findPortalTipo(tiposContainer, c.tipo)?.tomadaReefer ? (
                 <>
-                  <div>
+                  <div className={SPAN2}>
                     <label className="mb-1 block text-xs text-slate-500">
                       Conectar à tomada reefer?
                     </label>
                     <ContainerRefrigeradoSelect
                       value={c.refrigerado}
                       onChange={(v) => updateContainer(idx, { refrigerado: v })}
-                      selectClassName="flex h-10 w-full rounded-md border border-white/10 bg-black/40 px-3 text-sm text-white"
+                      selectClassName={SELECT_CLS}
                     />
                     <p className="mt-1 text-[11px] text-slate-500">
-                      Sim = diária de energia (premium). Não = só armazenagem.
+                      Sim = diária de energia. Não = só armazenagem.
                     </p>
                   </div>
                   {c.refrigerado ? (
@@ -393,35 +467,18 @@ export default function NovaSolicitacaoCorporativaPage() {
         ))}
 
         <Card className="border-white/10 bg-black/25">
-          <CardHeader>
-            <CardTitle className="text-lg text-white">Previsão de retirada (opcional)</CardTitle>
-            <CardDescription>
-              Informar a previsão nos ajuda a posicionar seu contêiner para uma saída mais rápida.
-            </CardDescription>
+          <CardHeader className={CARD_H}>
+            <CardTitle className="text-sm text-white">3 · Agendamento</CardTitle>
           </CardHeader>
-          <CardContent>
-            <Input
-              type="datetime-local"
-              value={previsaoRetirada}
-              onChange={(e) => setPrevisaoRetirada(e.target.value)}
-              className="bg-black/40"
-            />
-          </CardContent>
-        </Card>
-
-        <Card className="border-white/10 bg-black/25">
-          <CardHeader>
-            <CardTitle className="text-lg text-white">3 · Agendamento</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
+          <CardContent className={`${GRID} ${CARD_C}`}>
             <div>
               <label className="mb-1 block text-xs text-slate-500">Data</label>
               <Input type="date" value={dataRef} onChange={(e) => setDataRef(e.target.value)} required className="bg-black/40" />
             </div>
-            <div>
+            <div className={SPAN2}>
               <label className="mb-1 block text-xs text-slate-500">Turno</label>
               <select
-                className="flex h-10 w-full rounded-md border border-white/10 bg-black/40 px-3 text-sm text-white"
+                className={SELECT_CLS}
                 value={turno}
                 onChange={(e) => setTurno(e.target.value)}
                 required
@@ -433,19 +490,19 @@ export default function NovaSolicitacaoCorporativaPage() {
                 ))}
               </select>
             </div>
-            <div className="flex items-center gap-2 sm:col-span-2">
-              <input
-                type="checkbox"
-                id="atesp"
-                checked={atendimentoEspecial}
-                onChange={(e) => setAtendimentoEspecial(e.target.checked)}
-              />
-              <label htmlFor="atesp" className="text-sm text-slate-300">
-                Atendimento especial (prioritário)
+            <div className="flex items-end pb-2">
+              <label htmlFor="atesp" className="flex items-center gap-2 text-sm text-slate-300">
+                <input
+                  type="checkbox"
+                  id="atesp"
+                  checked={atendimentoEspecial}
+                  onChange={(e) => setAtendimentoEspecial(e.target.checked)}
+                />
+                Atendimento especial
               </label>
             </div>
             {atendimentoEspecial ? (
-              <div className="sm:col-span-2">
+              <div className={SPAN4}>
                 <label className="mb-1 block text-xs text-slate-500">Detalhes (opcional)</label>
                 <Input value={atendimentoEspecialTexto} onChange={(e) => setAtendimentoEspecialTexto(e.target.value)} className="bg-black/40" />
               </div>
@@ -454,16 +511,16 @@ export default function NovaSolicitacaoCorporativaPage() {
         </Card>
 
         <Card className="border-white/10 bg-black/25">
-          <CardHeader>
-            <CardTitle className="text-lg text-white">4 · Contato do solicitante</CardTitle>
+          <CardHeader className={CARD_H}>
+            <CardTitle className="text-sm text-white">4 · Contato do solicitante</CardTitle>
             {pessoa && user?.cpfCnpj ? (
               <CardDescription>
-                Responsável pela ação: {pessoa.nome} (CNPJ/CPF {formatCpfCnpjBr(user.cpfCnpj)})
+                Responsável: {pessoa.nome} (CNPJ/CPF {formatCpfCnpjBr(user.cpfCnpj)})
               </CardDescription>
             ) : null}
           </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <div className="sm:col-span-2">
+          <CardContent className={`${GRID} ${CARD_C}`}>
+            <div className={SPAN2}>
               <label className="mb-1 block text-xs text-slate-500">Nome</label>
               <Input value={solNome} onChange={(e) => setSolNome(e.target.value)} required className="bg-black/40" />
             </div>
@@ -479,11 +536,11 @@ export default function NovaSolicitacaoCorporativaPage() {
         </Card>
 
         <Card className="border-white/10 bg-black/25">
-          <CardHeader>
-            <CardTitle className="text-lg text-white">5 · Anexos (opcional)</CardTitle>
-            <CardDescription>JPG ou PDF, até 5MB por arquivo. Você pode enviar a solicitação sem anexos.</CardDescription>
+          <CardHeader className={CARD_H}>
+            <CardTitle className="text-sm text-white">5 · Anexos (opcional)</CardTitle>
+            <CardDescription>JPG ou PDF, até 5MB. Pode enviar sem anexos.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className={`${CARD_C} space-y-2`}>
             <Input
               type="file"
               accept=".jpg,.jpeg,.pdf,image/jpeg,application/pdf"

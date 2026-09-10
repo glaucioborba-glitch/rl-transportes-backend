@@ -40,7 +40,7 @@ export class PlataformaMarketplaceAdminController {
 
   @Post('assinaturas')
   @HttpCode(HttpStatus.CREATED)
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @Permissions('plataforma:marketplace:write')
   @ApiOperation({
     summary: 'Registrar assinatura marketplace (habilita/desabilita APIs por cliente corporativo)',

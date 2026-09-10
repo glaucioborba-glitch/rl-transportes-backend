@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { staffJson } from "@/lib/api/staff-client";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
@@ -95,9 +94,6 @@ export default function AdminContratoDetailPage() {
   if (!c) {
     return (
       <div>
-        <Link href="/admin/contratos" className="text-sky-400 text-sm">
-          ← Voltar
-        </Link>
         <p className="mt-4 text-zinc-500">Contrato não encontrado no armazenamento local.</p>
       </div>
     );
@@ -143,9 +139,6 @@ export default function AdminContratoDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link href="/admin/contratos" className="text-sm text-sky-400 hover:underline">
-        ← Contratos
-      </Link>
       <div>
         <h1 className="font-serif text-3xl font-bold text-white">{c.clienteNome}</h1>
         <p className="text-sm text-zinc-500">

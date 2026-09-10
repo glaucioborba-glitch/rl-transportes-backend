@@ -15,6 +15,8 @@ import type { Request } from 'express';
 import { Role } from '@prisma/client';
 import { SolicitacoesV2Service } from '../modules/solicitacoes-v2/solicitacoes-v2.service';
 import { RedisService } from '../redis/redis.service';
+import { EmpresaOperadoraService } from '../tenant/empresa-operadora.service';
+import { DEFAULT_TENANT_ID } from '../tenant/tenant.constants';
 import { diffAntifraudPayloads, gerarHashAntiFraude } from './utils/hash-antifraude';
 
 const PDF_SNAPSHOT_TTL_SEC = 15552000; // 180 dias
@@ -45,15 +47,47 @@ export class PdfOperacionalV2Service {
     private readonly solicitacoesV2: SolicitacoesV2Service,
     private readonly redis: RedisService,
     private readonly config: ConfigService,
+    private readonly empresa: EmpresaOperadoraService,
   ) {}
 
-  private templateDir(): string {
-    return path.join(__dirname, 'templates');
+  /** Nest copia .hbs para dist/…; o JS compilado fica em dist/src/…. */
+  private resolveAssetDir(subdir: 'templates' | 'assets'): string {
+    const candidates = [
+      path.join(__dirname, subdir),
+      path.join(process.cwd(), 'dist', 'src', 'pdf-operacional-v2', subdir),
+      path.join(process.cwd(), 'dist', 'pdf-operacional-v2', subdir),
+      path.join(process.cwd(), 'src', 'pdf-operacional-v2', subdir),
+    ];
+    for (const dir of candidates) {
+      if (fs.existsSync(dir)) return dir;
+    }
+    return candidates[0]!;
   }
 
-  private resolveLogoDataUri(): string {
+  private templateDir(): string {
+    return this.resolveAssetDir('templates');
+  }
+
+  private resolveChromeExecutable(): string | undefined {
+    const configured =
+      this.config.get<string>('PUPPETEER_EXECUTABLE_PATH') ?? process.env.PUPPETEER_EXECUTABLE_PATH;
+    if (configured?.trim() && fs.existsSync(configured.trim())) return configured.trim();
+    const guesses = [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+      '/usr/bin/google-chrome',
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+    ];
+    return guesses.find((p) => fs.existsSync(p));
+  }
+
+  private async resolveLogoDataUri(): Promise<string> {
+    const uploaded = await this.empresa.logoDataUri(DEFAULT_TENANT_ID, 'documento');
+    if (uploaded) return uploaded;
     try {
-      const p = path.join(__dirname, 'assets', 'logo.png');
+      const p = path.join(this.resolveAssetDir('assets'), 'logo.png');
       if (fs.existsSync(p)) {
         const buf = fs.readFileSync(p);
         return `data:image/png;base64,${buf.toString('base64')}`;
@@ -67,7 +101,78 @@ export class PdfOperacionalV2Service {
     return `data:image/svg+xml;charset=utf-8,${svg}`;
   }
 
-  private loadTemplate(): handlebars.TemplateDelegate {
+  private formatUnidadeDisplay(raw: string): string {
+    const iso = String(raw ?? '').replace(/\s/g, '').toUpperCase();
+    if (iso.length === 11) return `${iso.slice(0, 4)} ${iso.slice(4, 10)}-${iso.slice(10)}`;
+    return String(raw ?? '').trim() || '—';
+  }
+
+  private formatDataRefBr(raw: unknown): string {
+    if (raw == null) return '—';
+    const s = raw instanceof Date ? raw.toISOString() : String(raw);
+    const ymd = s.slice(0, 10);
+    const [y, m, d] = ymd.split('-');
+    if (y && m && d && ymd.length === 10) return `${d}/${m}/${y}`;
+    return ymd || '—';
+  }
+
+  private isDriverPdf(req: Request): boolean {
+    const perfil = String(
+      (req.query as { perfil?: string } | undefined)?.perfil ?? '',
+    ).toLowerCase();
+    return perfil !== 'operacional';
+  }
+
+  private viewModelCredencialMotorista(dados: {
+    s: Record<string, unknown>;
+    ts?: Record<string, unknown>;
+    containers: Record<string, unknown>[];
+    ag?: Record<string, unknown>;
+    cli?: Record<string, unknown>;
+  }) {
+    const sorted = [...dados.containers].sort(
+      (a, b) => Number(a.ordem) - Number(b.ordem),
+    );
+    const unidades = sorted
+      .map((c) => this.formatUnidadeDisplay(String(c.unidade ?? '')))
+      .filter((u) => u && u !== '—');
+    const tipo = String(dados.ts?.tipoCaminhao ?? '').toUpperCase();
+    const rodotrem = tipo === 'RODOTREM' || unidades.length > 1;
+    const carretas = [dados.ts?.placaCarreta01, dados.ts?.placaCarreta02]
+      .map((p) => String(p ?? '').trim().toUpperCase())
+      .filter(Boolean);
+    const data = this.formatDataRefBr(dados.ag?.dataRef);
+    const turno = dados.ag ? this.labelTurno(String(dados.ag.turno)) : '—';
+    const empresa = dados.cli
+      ? String(dados.cli.razaoSocial ?? dados.cli.nomeFantasia ?? '—')
+      : '—';
+    return {
+      protocolo: String(dados.s.protocolo ?? '—'),
+      unidadeLabel: rodotrem || unidades.length > 1 ? 'Unidades' : 'Unidade',
+      unidades: unidades.length ? unidades : ['—'],
+      empresa,
+      motorista: dados.ts ? String(dados.ts.nomeMotorista ?? '—') : '—',
+      placaCavalo: dados.ts ? String(dados.ts.placaCavalo ?? '—').toUpperCase() : '—',
+      carretaLabel: carretas.length > 1 ? 'Placas carreta' : 'Placa carreta',
+      placasCarreta: carretas.length ? carretas : ['—'],
+      agendamento: `${data} · ${turno}`,
+    };
+  }
+
+  private qrPayloadCredencial(card: ReturnType<PdfOperacionalV2Service['viewModelCredencialMotorista']>): string {
+    return [
+      'RL TRANSPORTES',
+      card.protocolo,
+      `${card.unidadeLabel.toUpperCase()}: ${card.unidades.join(' | ')}`,
+      `EMPRESA: ${card.empresa}`,
+      `MOTORISTA: ${card.motorista}`,
+      `CAVALO: ${card.placaCavalo}`,
+      `${card.carretaLabel.toUpperCase()}: ${card.placasCarreta.join(' | ')}`,
+      `AGENDA: ${card.agendamento}`,
+    ].join('\n');
+  }
+
+  private loadTemplate(name = 'solicitacao-v2.hbs'): handlebars.TemplateDelegate {
     handlebars.registerHelper('fmtIsoDate', (d: unknown) => {
       if (d == null) return '—';
       if (d instanceof Date) return d.toISOString().slice(0, 10);
@@ -80,7 +185,19 @@ export class PdfOperacionalV2Service {
       if (Number.isNaN(dt.getTime())) return String(d);
       return dt.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
     });
-    const tplPath = path.join(this.templateDir(), 'solicitacao-v2.hbs');
+    const dirs = [
+      this.templateDir(),
+      path.join(__dirname, 'templates'),
+      path.join(process.cwd(), 'dist', 'src', 'pdf-operacional-v2', 'templates'),
+      path.join(process.cwd(), 'dist', 'pdf-operacional-v2', 'templates'),
+      path.join(process.cwd(), 'src', 'pdf-operacional-v2', 'templates'),
+    ];
+    const tplPath = dirs
+      .map((dir) => path.join(dir, name))
+      .find((p) => fs.existsSync(p));
+    if (!tplPath) {
+      throw new Error(`Template PDF não encontrado: ${name}`);
+    }
     const src = fs.readFileSync(tplPath, 'utf8');
     return handlebars.compile(src);
   }
@@ -407,8 +524,8 @@ export class PdfOperacionalV2Service {
     };
   }
 
-  async gerarQRCodeDataUrl(verificarUrl: string): Promise<string> {
-    return QRCode.toDataURL(verificarUrl, { margin: 1, width: 180, errorCorrectionLevel: 'M' });
+  async gerarQRCodeDataUrl(verificarUrl: string, width = 180): Promise<string> {
+    return QRCode.toDataURL(verificarUrl, { margin: 1, width, errorCorrectionLevel: 'M' });
   }
 
   verificarUrlPublica(req: Request, solicitacaoId: string, hash: string): string {
@@ -425,6 +542,18 @@ export class PdfOperacionalV2Service {
     const fp = String(req.headers['x-device-fingerprint'] ?? '');
     const dados = this.extrairDadosParaPdf(detalhe, fp);
     const verificarUrl = this.verificarUrlPublica(req, solicitacaoId, dados.hash);
+
+    if (this.isDriverPdf(req)) {
+      const card = this.viewModelCredencialMotorista(dados);
+      const qrDataUrl = await this.gerarQRCodeDataUrl(this.qrPayloadCredencial(card), 240);
+      const html = this.loadTemplate('credencial-motorista-v2.hbs')({
+        logoDataUri: await this.resolveLogoDataUri(),
+        qrDataUrl,
+        card,
+      });
+      return { html, hash: dados.hash };
+    }
+
     const qrDataUrl = await this.gerarQRCodeDataUrl(verificarUrl);
 
     await this.redis.setex(
@@ -437,7 +566,7 @@ export class PdfOperacionalV2Service {
     const emitidoEm = new Date().toISOString();
     const pdfView = this.viewModelPdf(detalhe, dados);
     const html = tpl({
-      logoDataUri: this.resolveLogoDataUri(),
+      logoDataUri: await this.resolveLogoDataUri(),
       titulo: 'Comprovante Operacional de Solicitação',
       versaoDoc: '2.0',
       emitidoEm,
@@ -467,8 +596,7 @@ export class PdfOperacionalV2Service {
           headless: true,
         });
       } else {
-        const executablePath =
-          this.config.get<string>('PUPPETEER_EXECUTABLE_PATH') ?? process.env.PUPPETEER_EXECUTABLE_PATH;
+        const executablePath = this.resolveChromeExecutable();
         if (!executablePath) {
           throw new ServiceUnavailableException(
             'PDF indisponível: defina PUPPETEER_EXECUTABLE_PATH (Chrome/Chromium) ou PDF_USE_LAMBDA_CHROMIUM=1.',

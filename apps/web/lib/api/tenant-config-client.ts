@@ -54,7 +54,20 @@ export type TenantTurnoConfig = {
   nome: string;
   inicio: string;
   fim: string;
+  slot?: "MANHA" | "TARDE";
 };
+
+/** API de solicitação só aceita MANHA/TARDE — o select pode usar código MDM. */
+export function resolveAgendamentoTurno(
+  turnos: TenantTurnoConfig[],
+  selectedId: string,
+): "MANHA" | "TARDE" {
+  if (selectedId === "MANHA" || selectedId === "TARDE") return selectedId;
+  const t = turnos.find((x) => x.id === selectedId);
+  if (t?.slot === "MANHA" || t?.slot === "TARDE") return t.slot;
+  const h = parseInt((t?.inicio ?? "12").split(":")[0] ?? "12", 10);
+  return Number.isFinite(h) && h < 12 ? "MANHA" : "TARDE";
+}
 
 
 
@@ -178,36 +191,36 @@ export type TenantParametrosSeguranca = {
 
 
 
+export type IntegracaoOrigem = "env" | "tenant" | "none";
+
 export type TenantIntegracaoStatus = {
-
   enabled: boolean;
-
+  configured: boolean;
+  origem: IntegracaoOrigem;
+  lockedByEnv: boolean;
   phoneNumberId?: string;
-
   templatesAprovados?: number;
-
   apiKeyPresent?: boolean;
-
+  clientEmail?: string;
   provider?: string;
-
   bucket?: string;
-
   endpoint?: string;
-
+  region?: string;
+  accessTokenPresent?: boolean;
+  businessAccountIdPresent?: boolean;
+  apiBaseUrl?: string;
 };
 
-
-
 export type TenantParametrosIntegracoes = {
-
-  whatsapp: TenantIntegracaoStatus & { phoneNumberId?: string; templatesAprovados: number };
-
-  googleVision: TenantIntegracaoStatus & { apiKeyPresent: boolean };
-
-  banking: TenantIntegracaoStatus & { provider?: string };
-
-  s3: TenantIntegracaoStatus & { bucket?: string; endpoint?: string };
-
+  whatsapp: TenantIntegracaoStatus & {
+    phoneNumberId?: string;
+    templatesAprovados: number;
+    accessTokenPresent: boolean;
+    businessAccountIdPresent: boolean;
+  };
+  googleVision: TenantIntegracaoStatus & { apiKeyPresent: boolean; clientEmail?: string };
+  banking: TenantIntegracaoStatus & { provider?: string; apiBaseUrl?: string };
+  s3: TenantIntegracaoStatus & { bucket?: string; endpoint?: string; region?: string };
 };
 
 
@@ -322,36 +335,21 @@ export type TenantParametrosResponse = {
 
 const FALLBACK_TURNOS: TenantTurnoConfig[] = [
 
-  { id: "MANHA", nome: "Manhã", inicio: "06:00", fim: "14:00" },
+  { id: "MANHA", nome: "Manhã", inicio: "06:00", fim: "14:00", slot: "MANHA" },
 
-  { id: "TARDE", nome: "Tarde", inicio: "14:00", fim: "22:00" },
+  { id: "TARDE", nome: "Tarde", inicio: "14:00", fim: "22:00", slot: "TARDE" },
 
 ];
 
 
 
-export async function fetchTenantTurnos(tenantId = "default"): Promise<TenantTurnoConfig[]> {
-
+export async function fetchTenantTurnos(_tenantId = "default"): Promise<TenantTurnoConfig[]> {
   try {
-
-    const res = await fetch(`${getApiBase()}/tenant-config/turnos/${encodeURIComponent(tenantId)}`, {
-
-      cache: "no-store",
-
-    });
-
-    if (!res.ok) return FALLBACK_TURNOS;
-
-    const data = (await res.json()) as TenantTurnoConfig[];
-
+    const data = await staffJson<TenantTurnoConfig[]>("/tenant-config/turnos");
     return data?.length ? data : FALLBACK_TURNOS;
-
   } catch {
-
     return FALLBACK_TURNOS;
-
   }
-
 }
 
 
@@ -446,6 +444,24 @@ export type ParametrosGeraisPatch = {
 
   notificacoes?: Partial<TenantParametrosNotificacoes>;
 
+  integracoes?: {
+    googleVision?: { credentialsJson?: string; apiKey?: string };
+    whatsapp?: {
+      enabled?: boolean;
+      phoneNumberId?: string;
+      accessToken?: string;
+      businessAccountId?: string;
+    };
+    banking?: { provider?: string; apiBaseUrl?: string; apiToken?: string };
+    s3?: {
+      bucket?: string;
+      endpoint?: string;
+      region?: string;
+      accessKeyId?: string;
+      secretAccessKey?: string;
+      publicBaseUrl?: string;
+    };
+  };
 };
 
 

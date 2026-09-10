@@ -16,6 +16,7 @@ export type MatrixItemForm = {
   valorHandling: string;
   freeTimeDias: string;
   faixasDiaria: FaixaDiariaForm[];
+  faixasEnergiaReefer: FaixaDiariaForm[];
   tarifaEnergiaReeferDiaria: string;
   valor: number;
   unidade: string;
@@ -112,19 +113,16 @@ export function TabelaPrecoMatrixGrid({ items, onChange }: Props) {
                         onChange={(faixasDiaria) => update(index, { faixasDiaria })}
                       />
                       {(item.tipoContainerCodigo.toUpperCase().includes("REEFER") ||
+                        item.faixasEnergiaReefer.length > 0 ||
                         item.tarifaEnergiaReeferDiaria !== "") && (
-                        <div className="mt-2">
-                          <label className="text-xs text-muted-foreground">
-                            Energia / tomada reefer (R$/dia) — cobrada só nos dias conectados
-                          </label>
-                          <Input
-                            className="mt-1 h-8 w-32"
-                            type="number"
-                            min={0}
-                            value={item.tarifaEnergiaReeferDiaria}
-                            onChange={(e) =>
-                              update(index, { tarifaEnergiaReeferDiaria: e.target.value })
-                            }
+                        <div className="mt-3">
+                          <FaixasDiariaEditor
+                            title="Faixas de energia (dias conectados à tomada)"
+                            emptyHint="Nenhuma faixa — energia não é cobrada. Dia 1 = primeiro dia ligado."
+                            defaultStartDay={1}
+                            defaultValor={item.tarifaEnergiaReeferDiaria || "45"}
+                            faixas={item.faixasEnergiaReefer}
+                            onChange={(faixasEnergiaReefer) => update(index, { faixasEnergiaReefer })}
                           />
                         </div>
                       )}

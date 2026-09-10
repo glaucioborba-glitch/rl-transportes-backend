@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { staffJson } from "@/lib/api/staff-client";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { lastNDays } from "@/lib/admin/dates";
@@ -124,9 +123,6 @@ export default function AdminJuridicoRiscosPage() {
 
   return (
     <div className="space-y-6">
-      <Link href="/admin/juridico" className="text-sm text-sky-400 hover:underline">
-        ← Jurídico
-      </Link>
       <div>
         <h1 className="font-serif text-3xl font-bold text-white">Riscos & conformidade</h1>
         <p className="text-sm text-zinc-500">Dados reais do backend + leitura de auditoria.</p>

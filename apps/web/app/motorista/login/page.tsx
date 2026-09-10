@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { MobileButton } from "@/components/motorista/mobile-button";
 import { BigInput } from "@/components/motorista/big-input";
 import { ApiError, authLogin } from "@/lib/api/corporate-auth-client";
-import { setMotoristaSessionCookie } from "@/lib/auth-motorista-cookie";
+import { issueMotoristaSessionCookie } from "@/lib/auth-motorista-cookie";
 import { toast } from "@/lib/toast";
 import { useMotoristaAuthStore } from "@/stores/motorista-auth-store";
 import { RlLogo } from "@/components/portal/rl-logo";
@@ -58,7 +58,7 @@ function MotoristaLoginInner() {
       const res = await authLogin(documento, password);
       setSession(res.accessToken, res.refreshToken, res.user);
       pushRecent(documento);
-      setMotoristaSessionCookie();
+      await issueMotoristaSessionCookie(res.accessToken);
       vibrateOk();
       toast.success("Bem-vindo ao app do motorista");
       const next = searchParams.get("next") || "/motorista/checkin";

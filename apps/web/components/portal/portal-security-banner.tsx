@@ -95,7 +95,7 @@ export function PortalSecurityBanner() {
   if (showSevere) {
     return (
       <div className="border-b border-red-500/40 bg-red-950/40 px-4 py-3 text-sm text-red-100">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
+        <div className="mx-auto flex w-[90%] flex-wrap items-center justify-between gap-3">
           <p>
             <span className="mr-2">🔒</span>
             Alerta crítico de segurança — revise sessões e dispositivos imediatamente.
@@ -115,7 +115,7 @@ export function PortalSecurityBanner() {
 
   return (
     <div className="border-b border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-50">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
+      <div className="mx-auto flex w-[90%] flex-wrap items-center justify-between gap-3">
         <p>
           <span className="mr-2">⚠️</span>
           Atividade incomum detectada na sua conta — revise seus dispositivos.

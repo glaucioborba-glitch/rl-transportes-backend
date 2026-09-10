@@ -4,6 +4,7 @@ import { Building2, FileText, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { CadastrosClienteListItem } from "@/lib/api/cadastros-clientes-client";
+import { CLIENTE_PAPEL_LABEL, defaultClientePapeisSafe } from "@/lib/cadastros/cliente-papeis";
 import { formatCNPJ, formatPhone } from "@/lib/cadastros/formatters";
 
 type Props = {
@@ -35,16 +36,23 @@ export function ClienteCard({
             <p className="text-sm text-muted-foreground">{cliente.nomeFantasia || "—"}</p>
           </div>
         </div>
-        <Badge
-          variant={cliente.ativo ? "aprovado" : "rejeitado"}
-          className={
-            cliente.ativo
-              ? "border-green-500/30 bg-green-500/15 text-green-400"
-              : "border-red-500/30 bg-red-500/15 text-red-400"
-          }
-        >
-          {cliente.ativo ? "Ativo" : "Inativo"}
-        </Badge>
+        <div className="flex flex-wrap justify-end gap-1.5">
+          {defaultClientePapeisSafe(cliente.papeis).map((papel) => (
+            <Badge key={papel} variant="neutral" className="text-[10px]">
+              {CLIENTE_PAPEL_LABEL[papel]}
+            </Badge>
+          ))}
+          <Badge
+            variant={cliente.ativo ? "aprovado" : "rejeitado"}
+            className={
+              cliente.ativo
+                ? "border-green-500/30 bg-green-500/15 text-green-400"
+                : "border-red-500/30 bg-red-500/15 text-red-400"
+            }
+          >
+            {cliente.ativo ? "Ativo" : "Inativo"}
+          </Badge>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 text-sm">

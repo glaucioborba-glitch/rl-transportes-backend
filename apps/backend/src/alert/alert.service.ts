@@ -143,4 +143,21 @@ export class AlertService {
       meta: input,
     });
   }
+
+  async faturamentoReconcileFailed(input: {
+    falhas: number;
+    consolidados: number;
+    amostras: Array<{ unidadeProcessoId: string; numero: number | null; erro: string }>;
+  }): Promise<void> {
+    const sample = input.amostras
+      .map((a) => `ID ${a.numero ?? a.unidadeProcessoId}: ${a.erro}`)
+      .join(' | ');
+    await this.notify({
+      key: 'faturamento_reconcile_failed',
+      severity: 'critical',
+      title: 'Pré-fatura aberta após saída do ID',
+      message: `${input.falhas} ciclo(s) não consolidaram (${input.consolidados} ok). ${sample}`.slice(0, 1500),
+      meta: { falhas: input.falhas, consolidados: input.consolidados },
+    });
+  }
 }

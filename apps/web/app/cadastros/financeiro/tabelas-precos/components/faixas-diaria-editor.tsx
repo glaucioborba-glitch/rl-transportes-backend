@@ -14,16 +14,28 @@ type Props = {
   faixas: FaixaDiariaForm[];
   onChange: (faixas: FaixaDiariaForm[]) => void;
   freeTimeDias?: string;
+  title?: string;
+  emptyHint?: string;
+  defaultStartDay?: number;
+  defaultValor?: string;
 };
 
-export function FaixasDiariaEditor({ faixas, onChange, freeTimeDias }: Props) {
+export function FaixasDiariaEditor({
+  faixas,
+  onChange,
+  freeTimeDias,
+  title = "Faixas de diária (após free time)",
+  emptyHint = "Nenhuma faixa — usa padrão 8–15 @ R$30, 16+ @ R$45.",
+  defaultStartDay,
+  defaultValor = "30",
+}: Props) {
   const add = () =>
     onChange([
       ...faixas,
       {
-        diaInicio: String(Number(freeTimeDias || 7) + 1),
+        diaInicio: String(defaultStartDay ?? Number(freeTimeDias || 7) + 1),
         diaFim: "",
-        valorDiaria: "30",
+        valorDiaria: defaultValor,
       },
     ]);
 
@@ -36,13 +48,13 @@ export function FaixasDiariaEditor({ faixas, onChange, freeTimeDias }: Props) {
   return (
     <div className="space-y-2 rounded-md border border-border p-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-medium text-muted-foreground">Faixas de diária (após free time)</p>
+        <p className="text-xs font-medium text-muted-foreground">{title}</p>
         <Button type="button" variant="outline" size="sm" onClick={add}>
           <Plus className="mr-1 h-3 w-3" /> Faixa
         </Button>
       </div>
       {faixas.length === 0 ? (
-        <p className="text-xs text-muted-foreground">Nenhuma faixa — usa padrão 8–15 @ R$30, 16+ @ R$45.</p>
+        <p className="text-xs text-muted-foreground">{emptyHint}</p>
       ) : (
         faixas.map((f, i) => (
           <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">

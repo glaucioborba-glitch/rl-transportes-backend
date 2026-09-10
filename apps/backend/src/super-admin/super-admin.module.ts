@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
-import { FeatureFlagsModule } from '../feature-flags/feature-flags.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { SuperAdminController } from './super-admin.controller';
+import { SuperAdminService } from './super-admin.service';
 
 @Module({
-  imports: [PrismaModule, FeatureFlagsModule],
+  imports: [PrismaModule],
   controllers: [SuperAdminController],
+  providers: [SuperAdminService],
 })
 export class SuperAdminModule {}

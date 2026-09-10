@@ -17,6 +17,7 @@ import { RlLogo } from "@/components/portal/rl-logo";
 import { formatCpfBr } from "@/lib/format-cpf-cnpj-br";
 import { validarCPF } from "@/lib/br-documents";
 import { resolveStaffLoginDest } from "@/lib/staff-redirect";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 function StaffLoginInner() {
   const router = useRouter();
@@ -67,7 +68,10 @@ function StaffLoginInner() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[#080a0d] px-4 py-12">
+    <div className="relative flex min-h-screen flex-col items-center justify-center bg-[#080a0d] px-4 py-12">
+      <div className="absolute right-4 top-4">
+        <ThemeToggle />
+      </div>
       <div className="mb-8 flex items-center gap-3">
         <RlLogo className="h-11 w-11 text-lg" />
         <div>

@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { ConfigModule } from '@nestjs/config';
 import { TraceMiddleware } from './common/observability/trace.middleware';
 import bankingConfig from './config/banking.config';
@@ -38,6 +39,7 @@ import { YardDomainModule } from './modules/yard/yard-domain.module';
   ],
   controllers: [],
   providers: [
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_INTERCEPTOR, useClass: PortalAuditInterceptor },
     { provide: APP_INTERCEPTOR, useClass: DeviceAuditInterceptor },
   ],

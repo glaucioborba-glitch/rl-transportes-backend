@@ -5,7 +5,9 @@
  * Preserva:
  * - tenants, tenant_configs, feature_flags, _prisma_migrations, termos_uso
  * - users, clientes, pessoas_autorizadas, permissoes, transportadoras_autorizadas
- * - cadastros_tipos_container, cadastros_capacidades_container
+ *
+ * Cadastros MDM (tipos, capacidades, colaboradores, etc.) são limpos
+ * para reteste manual das telas de cadastro.
  *
  * Uso: node scripts/clean-keep-users-clientes.cjs
  */
@@ -23,8 +25,6 @@ const KEEP = new Set([
   'permissoes_pessoa_autorizada',
   'transportadoras_autorizadas',
   'termos_uso',
-  'cadastros_tipos_container',
-  'cadastros_capacidades_container',
   'feature_flags',
 ]);
 
@@ -51,6 +51,8 @@ async function main() {
     console.log(`Limpando ${wipe.length} tabelas (sem CASCADE em users/clientes)...`);
 
     await client.query('BEGIN');
+    // clientes.tabela_preco_id aponta para tabelas_preco — anula para poder truncar preços.
+    await client.query(`UPDATE clientes SET tabela_preco_id = NULL WHERE tabela_preco_id IS NOT NULL`);
     // Desliga checagem de FK na sessão — evita TRUNCATE CASCADE puxar users/clientes.
     await client.query(`SET LOCAL session_replication_role = 'replica'`);
     const quoted = wipe.map((t) => `"${t}"`).join(', ');

@@ -4,20 +4,24 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowDownCircle,
+  ArrowLeftRight,
   ArrowUpCircle,
   Award,
   Boxes,
   Briefcase,
   Building,
   Building2,
+  Calculator,
   Calendar,
   CheckCircle,
   ClipboardList,
   Clock,
   Container,
+  CreditCard,
   DollarSign,
   Eye,
   FileCheck,
+  FileSearch,
   FileText,
   Fingerprint,
   FolderOpen,
@@ -26,6 +30,7 @@ import {
   History,
   LayoutDashboard,
   Radio,
+  Repeat,
   Scale,
   ScanLine,
   Search,
@@ -34,7 +39,6 @@ import {
   Shield,
   ShieldCheck,
   Ship,
-  CheckSquare,
   Target,
   Timer,
   TrendingUp,
@@ -63,6 +67,8 @@ export type IntranetNavItem = {
   label: string;
   href: string;
   roles?: string[];
+  /** Só o submenu Fretes: planilha em outra aba. */
+  openInNewTab?: boolean;
 };
 
 export type IntranetSubMenuItem = {
@@ -72,6 +78,7 @@ export type IntranetSubMenuItem = {
   badgeKey?: string;
   description?: string;
   roles?: string[];
+  openInNewTab?: boolean;
 };
 
 export type IntranetAdvancedItem = {
@@ -95,7 +102,7 @@ export const MODULOS_INTRANET: IntranetNavItem[] = [
   {
     id: "gate",
     label: "Gate CPO",
-    href: "/operador/gate/dashboard",
+    href: "/operador/gate/controle-entrada-saida",
     roles: ["ADMIN", "GERENTE", "OPERADOR_GATE"],
   },
   {
@@ -106,8 +113,8 @@ export const MODULOS_INTRANET: IntranetNavItem[] = [
   },
   {
     id: "dispatch",
-    label: "Dispatch",
-    href: "/operador/dispatch",
+    label: "Transportes",
+    href: "/operador/transportes",
     roles: ["ADMIN", "GERENTE", "OPERADOR_GATE"],
   },
   {
@@ -167,7 +174,7 @@ export const MODULE_META: Record<
   dashboard: { title: "Dashboard", subtitle: "Visão geral operacional" },
   gate: { title: "Gate CPO", subtitle: "Centro de Operação" },
   cadastros: { title: "Cadastros", subtitle: "Master Data Management" },
-  dispatch: { title: "Dispatch", subtitle: "Gestão de frota" },
+  dispatch: { title: "Transportes", subtitle: "Fretes e operação de frota" },
   patio: { title: "Pátio", subtitle: "Operação de pátio" },
   financeiro: { title: "Financeiro", subtitle: "Tesouraria corporativa" },
   rh: { title: "RH", subtitle: "Recursos humanos" },
@@ -180,6 +187,19 @@ export const MODULE_META: Record<
 
 export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
   gate: [
+    {
+      label: "Controle de Entrada e Saída",
+      href: "/operador/gate/controle-entrada-saida",
+      icon: ArrowLeftRight,
+      badgeKey: "gate.controle",
+      description: "Conferência solicitação × portaria, RIC e liberação",
+    },
+    {
+      label: "Consulta RIC",
+      href: "/operador/gate/consulta-ric",
+      icon: FileSearch,
+      description: "IDs emitidos — entrada, saída e reimpressão da RIC",
+    },
     { label: "Dashboard", href: "/operador/gate/dashboard", icon: LayoutDashboard },
     { label: "Fila de Chegada", href: "/operador/gate/fila", icon: Truck, badgeKey: "gate.fila" },
     { label: "Operação Ativa", href: "/operador/gate/operacao", icon: Activity, badgeKey: "gate.operacao" },
@@ -205,13 +225,6 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
       badgeKey: "gate.autorizacoes",
     },
     {
-      label: "Reconfirmações",
-      href: "/operador/gate/reconfirmar",
-      icon: CheckSquare,
-      badgeKey: "gate.reconfirmacoes",
-      description: "Vistorias fotográficas aguardando conferência",
-    },
-    {
       label: "Portaria",
       href: "/operador/portaria",
       icon: ScanLine,
@@ -220,6 +233,13 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
     },
   ],
   cadastros: [
+    {
+      label: "Empresa",
+      href: "/cadastros/empresa",
+      icon: Building2,
+      description: "Dados da RL Transportes, tributos e logos (intranet, portais, RIC e e-mail)",
+      roles: ["ADMIN", "GERENTE"],
+    },
     {
       label: "Pessoas & Entidades",
       href: "/cadastros/pessoas",
@@ -230,13 +250,13 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
       label: "Operacional",
       href: "/cadastros/operacional",
       icon: Boxes,
-      description: "Contêineres, Equipamentos, Posições, Tipos de Operação, Turnos",
+      description: "Contêineres, Equipamentos, Posições, Origens e destinos, Turnos",
     },
     {
       label: "Financeiro",
       href: "/cadastros/financeiro",
       icon: DollarSign,
-      description: "Bancos, Centros de Custo, Plano de Contas, Tabelas de Preços",
+      description: "Bancos, Tabelas de Preços, Tabela de transportes, Serviços, Forma e prazo",
       roles: ["ADMIN", "GERENTE", "FINANCEIRO"],
     },
     {
@@ -268,8 +288,25 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
       icon: UserPlus,
       badgeKey: "financeiro.pendencias",
     },
+    {
+      label: "Forma e prazo",
+      href: "/financeiro/condicoes-clientes",
+      icon: CreditCard,
+    },
     { label: "Contas a Pagar", href: "/financeiro/apagar", icon: ArrowDownCircle },
+    {
+      label: "Provisão de encargos",
+      href: "/financeiro/provisao-encargos",
+      icon: Calculator,
+      description: "Provisão mensal automática — não é título a pagar",
+    },
     { label: "Contas a Receber", href: "/financeiro/areceber", icon: ArrowUpCircle },
+    {
+      label: "Cessão de titularidade",
+      href: "/financeiro/cessao-titularidade",
+      icon: Repeat,
+      description: "Reemissão após cancelamento de NFS-e",
+    },
     { label: "Bancos", href: "/financeiro/bancos", icon: Building },
     { label: "Conciliação", href: "/financeiro/conciliacao", icon: Scale },
   ],
@@ -320,8 +357,21 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
     { label: "Incidentes", href: "/ssma/incidentes", icon: AlertTriangle },
     { label: "PTW", href: "/ssma/ptw", icon: FileCheck },
   ],
-  dispatch: [{ label: "Dispatch Board", href: "/operador/dispatch", icon: Send }],
-  patio: [{ label: "Visão Geral", href: "/operador/patio", icon: Grid3x3 }],
+  dispatch: [
+    { label: "Visão Geral", href: "/operador/transportes", icon: LayoutDashboard },
+    {
+      label: "Fretes",
+      href: "/operador/fretes",
+      icon: Truck,
+      openInNewTab: true,
+      description: "Planilha — abre em nova aba",
+    },
+    { label: "Dispatch Board", href: "/operador/dispatch", icon: Send },
+  ],
+  patio: [
+    { label: "Visão Geral", href: "/operador/patio", icon: Grid3x3 },
+    { label: "Aluguéis", href: "/operador/patio/alugueis", icon: Container },
+  ],
   dashboard: [{ label: "Dashboard Geral", href: "/operador/dashboard", icon: LayoutDashboard }],
 };
 

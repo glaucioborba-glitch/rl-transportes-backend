@@ -13,6 +13,7 @@ import {
   formatTipoTamanhoContainerLabel,
   normalizeTamanhosContainer,
   resolveTipoContainerCodigo,
+  TAMANHOS_CONTAINER_ORDEM,
 } from './tipo-container-tamanhos.util';
 
 @Injectable()
@@ -20,6 +21,20 @@ export class CadastrosTiposContainerService {
   private catalogCodigosCache: { at: number; codigos: string[] } | null = null;
 
   constructor(private readonly prisma: PrismaService) {}
+
+  /** Tamanhos usados nos tipos ativos (matriz do cadastro). */
+  async listTamanhosCatalogo(): Promise<string[]> {
+    const rows = await this.prisma.cadastroTipoContainer.findMany({
+      where: { deletedAt: null, ativo: true },
+      select: { tamanhos: true },
+    });
+    const seen = new Set<string>();
+    for (const r of rows) {
+      for (const t of normalizeTamanhosContainer(r.tamanhos)) seen.add(t);
+    }
+    const out = TAMANHOS_CONTAINER_ORDEM.filter((t) => seen.has(t));
+    return out.length ? out : [...TAMANHOS_CONTAINER_ORDEM];
+  }
 
   /** Códigos ativos do MDM (cache curto — cadastro é a matriz). */
   async listActiveCodigos(): Promise<string[]> {

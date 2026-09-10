@@ -70,7 +70,7 @@ export default function HistoricoContainerPage() {
     <div className="space-y-6">
       <div>
         <div className="mb-1 flex items-center gap-2 text-sm text-muted-foreground">
-          <Link href="/operador/gate/dashboard" className="hover:text-white">
+          <Link href="/operador/gate/controle-entrada-saida" className="hover:text-white">
             Gate CPO
           </Link>
           <span>/</span>

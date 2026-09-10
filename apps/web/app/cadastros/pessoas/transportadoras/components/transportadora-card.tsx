@@ -17,9 +17,10 @@ type Props = {
   canEdit: boolean;
   onEdit: () => void;
   onAuditoria: () => void;
+  onVerCliente?: () => void;
 };
 
-export function TransportadoraCard({ transp, canEdit, onEdit, onAuditoria }: Props) {
+export function TransportadoraCard({ transp, canEdit, onEdit, onAuditoria, onVerCliente }: Props) {
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
   const validade = transp.rntrcValidade
@@ -42,16 +43,23 @@ export function TransportadoraCard({ transp, canEdit, onEdit, onAuditoria }: Pro
             <p className="text-sm text-muted-foreground">{transp.nomeFantasia || "—"}</p>
           </div>
         </div>
-        <Badge
-          variant="neutral"
-          className={
-            transp.ativo
-              ? "border-green-500/30 bg-green-500/15 text-green-400"
-              : "border-red-500/30 bg-red-500/15 text-red-400"
-          }
-        >
-          {transp.ativo ? "Ativa" : "Inativa"}
-        </Badge>
+        <div className="flex flex-wrap justify-end gap-1.5">
+          {transp.clienteId ? (
+            <Badge variant="neutral" className="text-[10px]">
+              Cliente
+            </Badge>
+          ) : null}
+          <Badge
+            variant="neutral"
+            className={
+              transp.ativo
+                ? "border-green-500/30 bg-green-500/15 text-green-400"
+                : "border-red-500/30 bg-red-500/15 text-red-400"
+            }
+          >
+            {transp.ativo ? "Ativa" : "Inativa"}
+          </Badge>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 text-sm">
@@ -110,10 +118,15 @@ export function TransportadoraCard({ transp, canEdit, onEdit, onAuditoria }: Pro
         </div>
       ) : null}
 
-      <div className="mt-2 flex gap-2">
+      <div className="mt-2 flex flex-wrap gap-2">
         {canEdit ? (
           <Button variant="outline" size="sm" onClick={onEdit} className="text-xs">
             Editar
+          </Button>
+        ) : null}
+        {onVerCliente ? (
+          <Button variant="outline" size="sm" onClick={onVerCliente} className="text-xs">
+            Cadastro cliente
           </Button>
         ) : null}
         <Button

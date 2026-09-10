@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AddressModule } from '../common/address/address.module';
 import { AuditoriaModule } from '../auditoria/auditoria.module';
 import { ClientesModule } from '../clientes/clientes.module';
+import { OCRModule } from '../modules/ocr/ocr.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PricingSyncModule } from '../pricing-sync/pricing-sync.module';
 import { CadastrosClientesController } from './cadastros-clientes.controller';
@@ -41,11 +42,26 @@ import { CadastrosPlanoContasController } from './cadastros-plano-contas.control
 import { CadastrosPlanoContasService } from './cadastros-plano-contas.service';
 import { CadastrosTabelasPrecosController } from './cadastros-tabelas-precos.controller';
 import { CadastrosTabelasPrecosService } from './cadastros-tabelas-precos.service';
+import { CadastrosTabelasTransporteController } from './cadastros-tabelas-transporte.controller';
+import { CadastrosTabelasTransporteService } from './cadastros-tabelas-transporte.service';
+import { CadastrosLocaisTransporteController } from './cadastros-locais-transporte.controller';
+import { CadastrosLocaisTransporteService } from './cadastros-locais-transporte.service';
+import { CadastrosTarifasTransporteController } from './cadastros-tarifas-transporte.controller';
+import { CadastrosTarifasTransporteService } from './cadastros-tarifas-transporte.service';
+import { CadastrosTabelasServicosController } from './cadastros-tabelas-servicos.controller';
+import { CadastrosTabelasServicosService } from './cadastros-tabelas-servicos.service';
+import { CadastrosTabelasAluguelController } from './cadastros-tabelas-aluguel.controller';
+import { CadastrosTabelasAluguelService } from './cadastros-tabelas-aluguel.service';
+import { CadastrosUnidadesAluguelController } from './cadastros-unidades-aluguel.controller';
+import { CadastrosUnidadesAluguelService } from './cadastros-unidades-aluguel.service';
 import { OperacionalVinculoController } from './operacional-vinculo.controller';
 import { OperacionalVinculoService } from './operacional-vinculo.service';
+import { CadastrosTerceirosController } from './cadastros-terceiros.controller';
+import { CadastrosTerceirosDocumentosService } from './cadastros-terceiros-documentos.service';
+import { CadastrosTerceirosService } from './cadastros-terceiros.service';
 
 @Module({
-  imports: [ClientesModule, AuditoriaModule, AddressModule, PrismaModule, PricingSyncModule],
+  imports: [ClientesModule, AuditoriaModule, AddressModule, PrismaModule, PricingSyncModule, OCRModule],
   controllers: [
     CadastrosClientesController,
     CadastrosColaboradoresController,
@@ -63,6 +79,13 @@ import { OperacionalVinculoService } from './operacional-vinculo.service';
     CadastrosCentrosCustoController,
     CadastrosPlanoContasController,
     CadastrosTabelasPrecosController,
+    CadastrosTabelasTransporteController,
+    CadastrosLocaisTransporteController,
+    CadastrosTarifasTransporteController,
+    CadastrosTabelasServicosController,
+    CadastrosTabelasAluguelController,
+    CadastrosUnidadesAluguelController,
+    CadastrosTerceirosController,
     OperacionalVinculoController,
   ],
   providers: [
@@ -83,6 +106,14 @@ import { OperacionalVinculoService } from './operacional-vinculo.service';
     CadastrosCentrosCustoService,
     CadastrosPlanoContasService,
     CadastrosTabelasPrecosService,
+    CadastrosTabelasTransporteService,
+    CadastrosLocaisTransporteService,
+    CadastrosTarifasTransporteService,
+    CadastrosTabelasServicosService,
+    CadastrosTabelasAluguelService,
+    CadastrosUnidadesAluguelService,
+    CadastrosTerceirosService,
+    CadastrosTerceirosDocumentosService,
     OperacionalVinculoService,
   ],
   exports: [CadastrosContainerCacheService, CadastrosTiposContainerService],

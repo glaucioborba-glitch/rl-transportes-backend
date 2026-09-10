@@ -7,16 +7,16 @@ import {
 import { resolveAgendamentoFromTipoOperacao } from './solicitacao-intent.util';
 
 describe('solicitacao-intent.util', () => {
-  it('mapeia baixa para GATE_OUT + FROTA_CLIENTE', () => {
+  it('mapeia baixa para GATE_IN + FROTA_CLIENTE (entrada da unidade)', () => {
     const r = resolveAgendamentoFromTipoOperacao(TipoOperacaoSolicitacaoIntent.SOLICITAR_BAIXA);
-    expect(r.tipoOperacao).toBe(TipoOperacaoAgendamento.GATE_OUT);
+    expect(r.tipoOperacao).toBe(TipoOperacaoAgendamento.GATE_IN);
     expect(r.modalidadeTransporte).toBe(ModalidadeTransporte.FROTA_CLIENTE);
     expect(r.exigeTransporteCliente).toBe(true);
   });
 
-  it('mapeia coleta para GATE_IN + FROTA_CLIENTE', () => {
+  it('mapeia coleta para GATE_OUT + FROTA_CLIENTE (saída da unidade)', () => {
     const r = resolveAgendamentoFromTipoOperacao(TipoOperacaoSolicitacaoIntent.SOLICITAR_COLETA);
-    expect(r.tipoOperacao).toBe(TipoOperacaoAgendamento.GATE_IN);
+    expect(r.tipoOperacao).toBe(TipoOperacaoAgendamento.GATE_OUT);
     expect(r.modalidadeTransporte).toBe(ModalidadeTransporte.FROTA_CLIENTE);
     expect(r.exigeTransporteCliente).toBe(true);
   });

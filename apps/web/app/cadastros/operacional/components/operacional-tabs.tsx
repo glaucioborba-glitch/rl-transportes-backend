@@ -12,6 +12,8 @@ export const OPERACIONAL_TABS = [
   { label: "Tipos de Operação", href: "/cadastros/operacional/tipos-operacao" },
   { label: "Turnos", href: "/cadastros/operacional/turnos" },
   { label: "Motivos de Rejeição", href: "/cadastros/operacional/motivos-rejeicao" },
+  { label: "Origens e destinos", href: "/cadastros/operacional/origens-destinos" },
+  { label: "Unidades de aluguel", href: "/cadastros/operacional/unidades-aluguel" },
 ] as const;
 
 export function OperacionalTabs() {

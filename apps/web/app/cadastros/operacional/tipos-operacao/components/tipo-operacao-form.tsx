@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeftRight, Cog, Loader2, Save, X } from "lucide-react";
-import { FormField, FormSection } from "@/components/cadastros/form-field";
+import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/staff-client";
@@ -108,10 +108,10 @@ export function TipoOperacaoForm({ tipoId }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-2xl space-y-8">
+    <form onSubmit={handleSubmit} className={CADASTRO_FORM_CLASS}>
       <FormSection title="Tipo de Operação" icon={Cog}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Código" required>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Código" required size="md">
             <Input
               value={formData.codigo}
               onChange={(e) =>
@@ -121,14 +121,14 @@ export function TipoOperacaoForm({ tipoId }: Props) {
               className="font-mono"
             />
           </FormField>
-          <FormField label="Nome" required>
+          <FormField label="Nome" required className="min-w-[14rem] flex-1">
             <Input
               value={formData.nome}
               onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
               placeholder="Ex: Baixa de Contêiner"
             />
           </FormField>
-          <FormField label="Descrição" className="md:col-span-2">
+          <FormField label="Descrição" className="min-w-[16rem] flex-[2]">
             <Input
               value={formData.descricao ?? ""}
               onChange={(e) =>
@@ -137,7 +137,7 @@ export function TipoOperacaoForm({ tipoId }: Props) {
               placeholder="Descrição opcional"
             />
           </FormField>
-          <FormField label="Direção" required>
+          <FormField label="Direção" required size="md">
             <select
               value={formData.direcao}
               onChange={(e) => setFormData({ ...formData, direcao: e.target.value })}
@@ -150,7 +150,7 @@ export function TipoOperacaoForm({ tipoId }: Props) {
               ))}
             </select>
           </FormField>
-          <FormField label="Cor">
+          <FormField label="Cor" size="md">
             <div className="flex items-center gap-3">
               <input
                 type="color"
@@ -166,7 +166,7 @@ export function TipoOperacaoForm({ tipoId }: Props) {
               />
             </div>
           </FormField>
-          <FormField label="Tempo Padrão (min)">
+          <FormField label="Tempo Padrão (min)" size="sm">
             <Input
               type="number"
               min={1}
@@ -180,7 +180,7 @@ export function TipoOperacaoForm({ tipoId }: Props) {
               placeholder="Ex: 30"
             />
           </FormField>
-          <FormField label="Centro de Custo Padrão">
+          <FormField label="Centro de Custo Padrão" size="md">
             <Input
               value={formData.centroCustoPadrao ?? ""}
               onChange={(e) =>
@@ -197,7 +197,7 @@ export function TipoOperacaoForm({ tipoId }: Props) {
       </FormSection>
 
       <FormSection title="Requisitos" icon={ArrowLeftRight}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="flex flex-wrap gap-4">
           <FormField label="Exige Contêiner">
             <label className="flex cursor-pointer items-center gap-2 text-sm">
               <input

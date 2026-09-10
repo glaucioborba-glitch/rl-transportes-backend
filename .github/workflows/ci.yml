@@ -37,6 +37,7 @@ jobs:
       REDIS_PORT: 6379
       JWT_SECRET: ci_jwt_secret_replace_in_real_deploy_minimum_32_chars
       JWT_REFRESH_SECRET: ci_jwt_refresh_secret_replace_minimum_32_chars
+      INTEGRACAO_FINANCE_WEBHOOK_SECRET: ci_finance_webhook_hmac_secret_32ch
       NODE_ENV: test
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +50,9 @@ jobs:
       - run: npx prisma validate
       - run: npm run validate:migrations
       - run: npx prisma migrate deploy
+      - name: Drift schema vs banco
+        run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+      - run: npm run db:validate-schema
       - run: npm run build
       - run: npm run lint
       - run: npm test

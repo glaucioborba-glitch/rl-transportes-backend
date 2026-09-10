@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchPortalTurnos } from "@/lib/api/portal-client";
 import { fetchTenantTurnos, FALLBACK_TURNOS, type TenantTurnoConfig } from "@/lib/api/tenant-config-client";
 import { useStaffAuthStore } from "@/stores/staffAuthStore";
 
@@ -13,9 +14,19 @@ export function useTenantTurnos(tenantIdOverride?: string) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchTenantTurnos(tenantId)
+    const portal =
+      typeof window !== "undefined" &&
+      (window.location.pathname.startsWith("/portal") ||
+        window.location.pathname.startsWith("/cliente/portal"));
+    const load = portal
+      ? fetchPortalTurnos().then((rows) => (rows?.length ? rows : FALLBACK_TURNOS))
+      : fetchTenantTurnos(tenantId);
+    load
       .then((rows) => {
         if (!cancelled) setTurnos(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setTurnos(FALLBACK_TURNOS);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

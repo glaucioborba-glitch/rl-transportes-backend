@@ -12,7 +12,16 @@ describe('BankingBoletoService', () => {
     }),
   } as unknown as ConfigService;
 
-  const svc = new BankingBoletoService(config);
+  const integrationCreds = {
+    peekBanking: () => ({ configured: false, provider: 'sandbox', origem: 'none', lockedByEnv: false }),
+    resolveBanking: async () => ({
+      configured: false,
+      provider: 'sandbox',
+      origem: 'none',
+      lockedByEnv: false,
+    }),
+  };
+  const svc = new BankingBoletoService(config, integrationCreds as never);
 
   it('gera boleto sandbox com PIX', async () => {
     const fatura = { id: 'fat-abc-123', valorTotal: { toString: () => '375.00' } } as Fatura;

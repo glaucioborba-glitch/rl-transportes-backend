@@ -1,0 +1,30 @@
+---
+description: Pendências SaaS / Super Admin (planos, acesso, onboarding do terminal)
+alwaysApply: true
+---
+
+# Pendências — Super Admin / SaaS
+
+## Planos STANDARD / PREMIUM / ENTERPRISE
+
+Só rótulo no tenant. **Não amarrar a feature flags agora.** O `default` está STANDARD e a RL já usa NFS-e, gate, financeiro. Restringir por plano quebraria o ambiente de teste.
+
+Quando for a hora: o terminal **base (`default`) nunca é limitado por plano**. Pacote só para terminal novo. Só o que já for flag — não esconder tela que hoje existe.
+
+## Acesso do dono
+
+Super Admin hoje é o mesmo site da intranet RL (`/login/staff` → `/super-admin` com papel SUPER_ADMIN). ADMIN não entra nessa tela.
+
+Login do dono (ambiente local / seed): CPF `036.501.639-00`. Senha em `SEED_SUPER_ADMIN_PASSWORD` no `.env` da raiz (não versionar).
+
+Depois: porta própria (URL/login “dono do software”), sem passar pela cara da intranet operacional.
+
+## Onboarding do terminal (ainda não existe)
+
+O Super Admin **é** o lugar certo para, ao criar um terminal, informar:
+
+- **URL / host** em que aquele terminal roda (subdomínio ou domínio próprio)
+- **primeiro ADMIN** (CPF + senha temporária) — hoje o cadastro não cria usuário
+- CNPJ (já grava na ficha Cadastros → Empresa)
+
+Hoje o **slug é só o ID interno**. Login não escolhe terminal; o usuário já nasce com `tenantId`. Branding público ainda cai no `default`. Não resolver tenant por Host até o desenho fechar — risco de quebrar a RL.

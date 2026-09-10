@@ -10,8 +10,7 @@ export default function OperacionalPage() {
       <div>
         <h1 className="text-2xl font-bold">Operacional</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Bloco 2 completo — Tipos de Contêiner, Equipamentos, Posições, Tipos de Operação, Turnos e
-          Motivos de Rejeição
+          Tipos de contêiner, equipamentos, posições, operações, turnos, motivos de rejeição, origens/destinos e unidades de aluguel
         </p>
       </div>
 
@@ -28,6 +27,14 @@ export default function OperacionalPage() {
           ou{" "}
           <Link href="/cadastros/operacional/tipos-operacao" className="text-[var(--accent)] hover:underline">
             Tipos de Operação
+          </Link>{" "}
+          ou{" "}
+          <Link href="/cadastros/operacional/origens-destinos" className="text-[var(--accent)] hover:underline">
+            Origens e destinos
+          </Link>{" "}
+          ou{" "}
+          <Link href="/cadastros/operacional/unidades-aluguel" className="text-[var(--accent)] hover:underline">
+            Unidades de aluguel
           </Link>
           .
         </p>

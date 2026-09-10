@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BookOpen, Loader2, Save, X } from "lucide-react";
-import { FormField, FormSection } from "@/components/cadastros/form-field";
+import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/staff-client";
@@ -115,10 +115,10 @@ export function PlanoContasForm({ contaId }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mx-auto max-w-2xl space-y-8">
+    <form onSubmit={handleSubmit} className={CADASTRO_FORM_CLASS}>
       <FormSection title="Dados da Conta" icon={BookOpen}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Código" required>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Código" required size="md">
             <Input
               value={formData.codigo}
               onChange={(e) => setFormData({ ...formData, codigo: e.target.value })}
@@ -126,7 +126,7 @@ export function PlanoContasForm({ contaId }: Props) {
               className="font-mono"
             />
           </FormField>
-          <FormField label="Nome" required>
+          <FormField label="Nome" required className="min-w-[14rem] flex-1">
             <Input
               value={formData.nome}
               onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
@@ -168,7 +168,7 @@ export function PlanoContasForm({ contaId }: Props) {
               ))}
             </select>
           </FormField>
-          <FormField label="Descrição" className="md:col-span-2">
+          <FormField label="Descrição" className="min-w-[16rem] flex-[2]">
             <Input
               value={formData.descricao}
               onChange={(e) => setFormData({ ...formData, descricao: e.target.value })}
@@ -190,7 +190,7 @@ export function PlanoContasForm({ contaId }: Props) {
         </FormField>
       </FormSection>
 
-      <div className="sticky bottom-0 flex gap-3 border-t border-border bg-background/95 p-4 backdrop-blur">
+      <div className="flex gap-3">
         <Button type="button" variant="outline" onClick={() => router.back()}>
           <X className="mr-2 h-4 w-4" />
           Cancelar

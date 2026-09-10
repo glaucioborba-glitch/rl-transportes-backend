@@ -3,15 +3,13 @@ import { CxPortaisModule } from '../../cx-portais/cx-portais.module';
 import { PessoasAutorizadasModule } from '../../pessoas-autorizadas/pessoas-autorizadas.module';
 import { PessoasPermissoesModule } from '../../pessoas-permissoes/pessoas-permissoes.module';
 import { PlataformaIntegracaoModule } from '../../plataforma-integracao/plataforma-integracao.module';
-import { PortalModule } from '../../portal/portal.module';
 import { TransportadorasAutorizadasModule } from '../../transportadoras-autorizadas/transportadoras-autorizadas.module';
 
 /**
- * Bounded Context — Portal do Cliente (APIs externas CX).
+ * Bounded Context — Portal do Cliente (APIs CX, JWT portal).
  */
 @Module({
   imports: [
-    PortalModule,
     CxPortaisModule,
     PessoasAutorizadasModule,
     PessoasPermissoesModule,
@@ -19,7 +17,6 @@ import { TransportadorasAutorizadasModule } from '../../transportadoras-autoriza
     PlataformaIntegracaoModule,
   ],
   exports: [
-    PortalModule,
     CxPortaisModule,
     PessoasAutorizadasModule,
     PessoasPermissoesModule,

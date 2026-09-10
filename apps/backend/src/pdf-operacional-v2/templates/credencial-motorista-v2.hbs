@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Autorização de acesso · {{card.protocolo}}</title>
+  <style>
+    @page { size: A4 portrait; margin: 0; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+      color: #111;
+      background: #fff;
+    }
+    .sheet {
+      min-height: 297mm;
+      padding: 14mm 12mm 16mm;
+    }
+    .brand {
+      text-align: center;
+      border-bottom: 4px solid #111;
+      padding-bottom: 10px;
+      margin-bottom: 18px;
+    }
+    .brand img { height: 40px; max-width: 180px; object-fit: contain; }
+    .brand h1 {
+      margin: 10px 0 4px;
+      font-size: 22pt;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .protocolo {
+      font-size: 14pt;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+    }
+    .field { margin: 0 0 16px; }
+    .label {
+      display: block;
+      font-size: 10pt;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #555;
+      margin-bottom: 4px;
+    }
+    .value {
+      font-size: 20pt;
+      font-weight: 800;
+      line-height: 1.15;
+      word-break: break-word;
+    }
+    .unidades .value { font-size: 28pt; letter-spacing: 0.02em; }
+    .row {
+      display: flex;
+      gap: 16px;
+    }
+    .row .field { flex: 1; min-width: 0; }
+    .qr-block {
+      margin-top: 22px;
+      text-align: center;
+      border-top: 4px solid #111;
+      padding-top: 16px;
+    }
+    .qr-block img {
+      width: 240px;
+      height: 240px;
+    }
+    .qr-hint {
+      margin: 10px 0 0;
+      font-size: 12pt;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <header class="brand">
+      <img src="{{logoDataUri}}" alt="RL Transportes" />
+      <h1>Autorização de acesso</h1>
+      <div class="protocolo">{{card.protocolo}}</div>
+    </header>
+
+    <div class="field unidades">
+      <span class="label">{{card.unidadeLabel}}</span>
+      {{#each card.unidades}}
+      <div class="value">{{this}}</div>
+      {{/each}}
+    </div>
+
+    <div class="field">
+      <span class="label">Empresa solicitante</span>
+      <div class="value">{{card.empresa}}</div>
+    </div>
+
+    <div class="field">
+      <span class="label">Motorista</span>
+      <div class="value">{{card.motorista}}</div>
+    </div>
+
+    <div class="row">
+      <div class="field">
+        <span class="label">Placa cavalo</span>
+        <div class="value">{{card.placaCavalo}}</div>
+      </div>
+      <div class="field">
+        <span class="label">{{card.carretaLabel}}</span>
+        {{#each card.placasCarreta}}
+        <div class="value">{{this}}</div>
+        {{/each}}
+      </div>
+    </div>
+
+    <div class="field">
+      <span class="label">Agendamento</span>
+      <div class="value">{{card.agendamento}}</div>
+    </div>
+
+    <div class="qr-block">
+      <img src="{{qrDataUrl}}" alt="QRCode da autorização" />
+      <p class="qr-hint">Apresente o QRCode na portaria</p>
+    </div>
+  </div>
+</body>
+</html>

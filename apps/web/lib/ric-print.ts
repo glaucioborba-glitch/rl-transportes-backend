@@ -48,6 +48,7 @@ export function openRicPrintWindow(payload: ContainerRicPayload) {
     <tr><th>Motorista</th><td>${escapeHtml(payload.transporte.motoristaNome)} · CPF ${escapeHtml(payload.transporte.motoristaCpf)}</td></tr>
     <tr><th>Placas</th><td>${escapeHtml(payload.transporte.placaCavalo)} / ${escapeHtml(payload.transporte.placaCarreta01)}${payload.transporte.placaCarreta02 ? " / " + escapeHtml(String(payload.transporte.placaCarreta02)) : ""}</td></tr>
     <tr><th>Operador terminal</th><td>${escapeHtml(payload.operador.nome)}${payload.operador.email ? " · " + escapeHtml(payload.operador.email) : ""}</td></tr>
+    <tr><th>Lacre</th><td>${escapeHtml(payload.lacre ?? "—")}${payload.lacreObservacao ? `<br/><em>${escapeHtml(payload.lacreObservacao)}</em>` : ""}</td></tr>
     <tr><th>Assinatura RIC (legado)</th><td>${payload.assinaturaRicPresente ? "Presente" : "Não registrada"}</td></tr>
     <tr><th>Hash PDF validado</th><td>${escapeHtml(payload.hashPdfValidado ?? "—")}</td></tr>
     <tr><th>Divergências</th><td>${divergencias}</td></tr>

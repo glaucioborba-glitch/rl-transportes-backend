@@ -18,5 +18,6 @@ export type MatrixPrecoCell = {
   valorHandling: number;
   freeTimeDias: number;
   faixasDiaria: FaixaDiariaContract[];
+  faixasEnergiaReefer?: FaixaDiariaContract[];
   tarifaEnergiaReeferDiaria?: number | null;
 };

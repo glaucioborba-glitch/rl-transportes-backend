@@ -48,6 +48,7 @@ export class CadastrosColaboradorFormDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @Transform(({ value }) => (value === '' || value == null ? undefined : value))
   @IsDateString()
   dataNascimento?: string;
 
@@ -182,6 +183,7 @@ export class CadastrosColaboradorFormDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @Transform(({ value }) => (value === '' || value == null ? undefined : value))
   @IsDateString()
   cnhValidade?: string;
 
@@ -192,6 +194,7 @@ export class CadastrosColaboradorFormDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @Transform(({ value }) => (value === '' || value == null ? undefined : value))
   @IsDateString()
   dataDemissao?: string;
 

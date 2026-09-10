@@ -41,16 +41,13 @@ export default function AdminClientesListaPage() {
   }, [load]);
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8">
+    <div>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-white">Clientes</h1>
           <p className="text-sm text-zinc-500">GET /clientes · edição fiscal NFS-e</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link href="/admin/executivo" className="text-sm text-zinc-400 hover:text-white">
-            Voltar
-          </Link>
           <Link href="/admin/clientes/novo" className={cn(buttonVariants({ size: "sm" }), "text-xs")}>
             Novo cliente
           </Link>

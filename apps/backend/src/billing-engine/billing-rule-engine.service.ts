@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import {
   EventoGatilhoTarifa,
   PatioTomadaEventType,
@@ -10,7 +10,6 @@ import {
   TipoContainerTarifa,
 } from '@prisma/client';
 import { addCalendarDays } from '../armazenagem-faturamento/armazenagem-billing.util';
-import { DEFAULT_FREE_TIME_DIAS, DEFAULT_VALOR_DIARIA } from '../armazenagem-faturamento/armazenagem-billing.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantConfigService } from '../tenant/tenant-config.service';
 import { resolveOperacional } from '../tenant/tenant-config.types';
@@ -21,7 +20,6 @@ import type {
 } from './billing-rule-engine.types';
 import {
   computeDiasEnergiaFromTomadaEvents,
-  DEFAULT_TARIFA_ENERGIA_REEFER_DIA,
   diffDiasCalendario,
   evaluateBillingRules,
   extractContainerMdmKeys,
@@ -30,7 +28,13 @@ import {
   resolveDiasEnergiaReefer,
 } from './billing-rule-engine.util';
 import { parseFaixasDiaria } from './faixa-diaria.types';
-import { resolveFaixasFromCadastroItem } from './faixa-diaria-calculator';
+import { resolveFaixasFromCadastroItem, resolveFaixasEnergiaFromCadastroItem } from './faixa-diaria-calculator';
+import {
+  resolveCadastroTabelaVigente,
+  resolveCadastroTabelasCandidatas,
+  resolveBillingTabelaPrecoIdPadrao,
+} from '../cadastros/cadastro-tabela-preco-vigente';
+import { statusParaHandling } from '../cadastros/servico-efeito';
 
 export type ResolvedPricingTable = {
   source: 'TABELA_PRECO' | 'DEFAULT';
@@ -41,8 +45,11 @@ export type ResolvedPricingTable = {
 export type ContainerPricingOverrides = {
   diasFreeTime: number;
   valorDiaria: number;
+  valorHandling?: number;
   valorEnergiaReefer: number;
+  energiaUsaFatorSetPoint?: boolean;
   faixasDiaria?: import('./faixa-diaria.types').FaixaDiaria[];
+  faixasEnergiaReefer?: import('./faixa-diaria.types').FaixaDiaria[];
 };
 
 @Injectable()
@@ -55,6 +62,9 @@ export class BillingRuleEngineService {
   ) {}
 
   async resolvePricingForCliente(clienteId: string): Promise<ResolvedPricingTable> {
+    const fromCadastro = await this.loadRegrasFromCadastroVigente(clienteId);
+    if (fromCadastro) return fromCadastro;
+
     const cliente = await this.prisma.cliente.findFirst({
       where: { id: clienteId, deletedAt: null },
       include: {
@@ -64,7 +74,7 @@ export class BillingRuleEngineService {
       },
     });
     if (!cliente) {
-      return this.resolveDefaultTable();
+      throw new NotFoundException(`Cliente ${clienteId} não encontrado para faturar.`);
     }
 
     if (cliente.tabelaPreco?.ativa && cliente.tabelaPreco.regras.length) {
@@ -75,37 +85,43 @@ export class BillingRuleEngineService {
       };
     }
 
-    const padrao = await this.prisma.tabelaPreco.findFirst({
-      where: { tenantId: cliente.tenantId, padrao: true, ativa: true },
-      include: { regras: { where: { ativa: true }, orderBy: { createdAt: 'asc' } } },
-    });
-    if (padrao?.regras.length) {
-      return {
-        source: 'TABELA_PRECO',
-        tabelaPrecoId: padrao.id,
-        regras: padrao.regras,
-      };
-    }
-
-    this.logger.warn(
-      `Cliente ${clienteId} sem tabela comercial nem padrão — usando regras DEFAULT. Configure em /cadastros/financeiro/tabelas-precos.`,
-    );
-    return this.resolveDefaultTable();
+    return this.resolveDefaultTable(cliente.tenantId);
   }
 
-  private async resolveDefaultTable(): Promise<ResolvedPricingTable> {
-    const padrao = await this.prisma.tabelaPreco.findFirst({
-      where: { tenantId: 'default', padrao: true, ativa: true },
+  private async resolveDefaultTable(tenantId = 'default'): Promise<ResolvedPricingTable> {
+    const billingId = await resolveBillingTabelaPrecoIdPadrao(this.prisma, tenantId);
+    if (billingId) {
+      const padrao = await this.prisma.tabelaPreco.findFirst({
+        where: { id: billingId, ativa: true },
+        include: { regras: { where: { ativa: true }, orderBy: { createdAt: 'asc' } } },
+      });
+      if (padrao?.regras.length) {
+        return {
+          source: 'TABELA_PRECO',
+          tabelaPrecoId: padrao.id,
+          regras: padrao.regras,
+        };
+      }
+    }
+    throw new UnprocessableEntityException(
+      `Tabela padrão de preços ausente ou sem regras (tenant ${tenantId}). Configure em Cadastros → Tabelas de preços.`,
+    );
+  }
+
+  /** Prefere a tabela cadastral vigente (a mesma da tela de cadastro / Forma e prazo). */
+  private async loadRegrasFromCadastroVigente(clienteId: string): Promise<ResolvedPricingTable | null> {
+    const cadastro = await resolveCadastroTabelaVigente(this.prisma, clienteId);
+    if (!cadastro?.billingTabelaPrecoId) return null;
+    const tabela = await this.prisma.tabelaPreco.findFirst({
+      where: { id: cadastro.billingTabelaPrecoId, ativa: true },
       include: { regras: { where: { ativa: true }, orderBy: { createdAt: 'asc' } } },
     });
-    if (padrao?.regras.length) {
-      return {
-        source: 'TABELA_PRECO',
-        tabelaPrecoId: padrao.id,
-        regras: padrao.regras,
-      };
-    }
-    return { source: 'DEFAULT', regras: this.defaultRegras() };
+    if (!tabela?.regras.length) return null;
+    return {
+      source: 'TABELA_PRECO',
+      tabelaPrecoId: tabela.id,
+      regras: tabela.regras,
+    };
   }
 
   /**
@@ -146,7 +162,7 @@ export class BillingRuleEngineService {
     if (regra) return regra.diasFreeTime;
 
     const params = await this.tenantConfig.getParametros(tenantId);
-    return resolveOperacional(params.parametros).freeTimePadraoDias ?? DEFAULT_FREE_TIME_DIAS;
+    return resolveOperacional(params.parametros).freeTimePadraoDias ?? 0;
   }
 
   /** PR-03: Tarifa diária — item cadastral > regra > default. */
@@ -173,7 +189,9 @@ export class BillingRuleEngineService {
     );
     if (regra) return Number(regra.valor);
 
-    return DEFAULT_VALOR_DIARIA;
+    throw new UnprocessableEntityException(
+      'Tabela de preços sem diária de armazenagem para este tipo de contêiner. Ajuste a tabela padrão ou a tabela do cliente.',
+    );
   }
 
   /** PR-03: Tarifa energia reefer — item cadastral > regra > default. */
@@ -199,7 +217,7 @@ export class BillingRuleEngineService {
     );
     if (regra) return Number(regra.valor);
 
-    return DEFAULT_TARIFA_ENERGIA_REEFER_DIA;
+    return 0;
   }
 
   /** Resolve overrides completos para evaluateBillingRules. */
@@ -210,13 +228,47 @@ export class BillingRuleEngineService {
     container: ContainerBillingContext,
     regras: RegraTarifaria[],
   ): Promise<ContainerPricingOverrides> {
-    const [diasFreeTime, valorDiaria, valorEnergiaReefer, faixasDiaria] = await Promise.all([
-      this.resolveFreeTime(tenantId, clienteId, tabelaPrecoId, container, regras),
-      this.resolveTarifaDiaria(tenantId, clienteId, container, regras),
-      this.resolveTarifaEnergiaReefer(clienteId, container, regras),
-      this.resolveFaixasDiaria(clienteId, container, regras),
-    ]);
-    return { diasFreeTime, valorDiaria, valorEnergiaReefer, faixasDiaria };
+    const [diasFreeTime, valorDiaria, valorHandling, valorEnergiaReefer, faixasDiaria, faixasEnergiaReefer] =
+      await Promise.all([
+        this.resolveFreeTime(tenantId, clienteId, tabelaPrecoId, container, regras),
+        this.resolveTarifaDiaria(tenantId, clienteId, container, regras),
+        this.resolveValorHandling(clienteId, container, regras),
+        this.resolveTarifaEnergiaReefer(clienteId, container, regras),
+        this.resolveFaixasDiaria(clienteId, container, regras),
+        this.resolveFaixasEnergia(clienteId, container, regras),
+      ]);
+    return {
+      diasFreeTime,
+      valorDiaria,
+      valorHandling,
+      valorEnergiaReefer,
+      energiaUsaFatorSetPoint: false,
+      faixasDiaria,
+      faixasEnergiaReefer,
+    };
+  }
+
+  /** Handling do item cadastral (matriz) > regra tarifária. */
+  async resolveValorHandling(
+    clienteId: string,
+    container: ContainerBillingContext,
+    regras: RegraTarifaria[],
+  ): Promise<number | undefined> {
+    const tipo = inferTipoContainer(container);
+    const status = statusParaHandling(
+      this.normalizeStatus(container.statusContainer),
+      container.faturarHandlingComoCheio,
+    );
+    const mdm = extractContainerMdmKeys(container);
+
+    const cadastroItem = await this.findCadastroBillingItem(clienteId, mdm, status);
+    if (cadastroItem?.valorHandling != null) {
+      return Number(cadastroItem.valorHandling);
+    }
+
+    const regra = this.resolveBillingRule(regras, tipo, EventoGatilhoTarifa.HANDLING, status);
+    if (regra) return Number(regra.valor);
+    return undefined;
   }
 
   async resolveFaixasDiaria(
@@ -251,6 +303,37 @@ export class BillingRuleEngineService {
     return parsed.length ? parsed : undefined;
   }
 
+  async resolveFaixasEnergia(
+    clienteId: string,
+    container: ContainerBillingContext,
+    regras: RegraTarifaria[],
+  ) {
+    const status = this.normalizeStatus(container.statusContainer);
+    const mdm = extractContainerMdmKeys(container);
+
+    const cadastroItem = await this.findCadastroBillingItem(clienteId, mdm, status);
+    if (cadastroItem) {
+      const faixas = resolveFaixasEnergiaFromCadastroItem({
+        faixasEnergiaReefer: cadastroItem.faixasEnergiaReefer,
+        tarifaEnergiaReeferDiaria:
+          cadastroItem.tarifaEnergiaReeferDiaria != null
+            ? Number(cadastroItem.tarifaEnergiaReeferDiaria)
+            : null,
+      });
+      if (faixas.length) return faixas;
+    }
+
+    const regra = pickRegra(
+      regras as never,
+      TipoContainerTarifa.REEFER,
+      EventoGatilhoTarifa.ENERGIA_REEFER,
+      status,
+      mdm,
+    );
+    const parsed = regra ? parseFaixasDiaria(regra.faixasDiaria) : [];
+    return parsed.length ? parsed : undefined;
+  }
+
   evaluate(input: BillingRuleEngineInput): BillingRuleEngineResult {
     return evaluateBillingRules(input);
   }
@@ -267,8 +350,12 @@ export class BillingRuleEngineService {
     tabelaPrecoId?: string;
     gateInId?: string;
     containerIso?: string;
+    /** Segmento após cessão: não cobra GATE_IN de novo (já ficou no segmento do solicitante). */
+    omitirGateIn?: boolean;
+    forcarDiasFreeTime?: number;
   }): Promise<BillingRuleEngineResult> {
-    const incluirGateIn = params.fase === 'GATE_IN' || params.fase === 'GATE_OUT';
+    const incluirGateIn =
+      !params.omitirGateIn && (params.fase === 'GATE_IN' || params.fase === 'GATE_OUT');
     const incluirGateOut = params.fase === 'GATE_OUT';
     const shiftingExtras =
       params.fase === 'GATE_OUT' ? params.shiftingExtras : params.fase === 'PROVISAO_DIARIA' ? 0 : 0;
@@ -282,6 +369,16 @@ export class BillingRuleEngineService {
         params.container,
         params.regras,
       );
+    }
+    if (params.forcarDiasFreeTime != null) {
+      pricingOverrides = {
+        ...(pricingOverrides ?? {
+          diasFreeTime: 0,
+          valorDiaria: 0,
+          valorEnergiaReefer: 0,
+        }),
+        diasFreeTime: params.forcarDiasFreeTime,
+      };
     }
 
     const diasEnergiaReefer = await this.resolveDiasEnergiaReeferForCycle({
@@ -372,11 +469,21 @@ export class BillingRuleEngineService {
   }
 
   async loadContainerContext(
-    gateInId: string,
+    gateInId: string | null | undefined,
     containerIso: string,
+    opts?: { unidadeProcessoId?: string | null; solicitacaoId?: string | null },
   ): Promise<ContainerBillingContext> {
+    const isoNorm = containerIso.replace(/\s/g, '').toUpperCase();
+    const or: Prisma.PatioUnidadeWhereInput[] = [];
+    if (gateInId) or.push({ gateInId });
+    if (opts?.unidadeProcessoId) or.push({ unidadeProcessoId: opts.unidadeProcessoId });
+    if (opts?.solicitacaoId) or.push({ solicitacaoId: opts.solicitacaoId });
+
     const unit = await this.prisma.patioUnidade.findFirst({
-      where: { gateInId, unidadeIso: containerIso },
+      where: {
+        unidadeIso: isoNorm,
+        ...(or.length ? { OR: or } : {}),
+      },
       include: {
         solicitacao: {
           include: { containersSolicitacao: true },
@@ -384,10 +491,22 @@ export class BillingRuleEngineService {
       },
     });
     if (!unit) {
-      return { tamanho: '40', tipo: 'DRY', refrigerado: false };
+      const processoFlag = await this.prisma.unidadeProcesso.findFirst({
+        where: {
+          ...(opts?.unidadeProcessoId
+            ? { id: opts.unidadeProcessoId }
+            : { unidadeIso: isoNorm, status: 'ABERTO' }),
+        },
+        select: { faturarHandlingComoCheio: true },
+      });
+      return {
+        tamanho: '40',
+        tipo: 'DRY',
+        refrigerado: false,
+        faturarHandlingComoCheio: processoFlag?.faturarHandlingComoCheio ?? false,
+      };
     }
 
-    const isoNorm = containerIso.replace(/\s/g, '').toUpperCase();
     const fromForm = unit.solicitacao.containersSolicitacao.find(
       (c) => c.unidade.replace(/\s/g, '').toUpperCase() === isoNorm,
     );
@@ -395,12 +514,22 @@ export class BillingRuleEngineService {
     const statusFromPatio = unit.statusContainer;
     const statusFromForm = fromForm?.status;
 
+    const processoFlag = await this.prisma.unidadeProcesso.findFirst({
+      where: {
+        ...(opts?.unidadeProcessoId
+          ? { id: opts.unidadeProcessoId }
+          : { unidadeIso: isoNorm, status: 'ABERTO' }),
+      },
+      select: { faturarHandlingComoCheio: true },
+    });
+
     return {
       tamanho: fromForm?.tamanho ?? '40',
       tipo: fromForm?.tipo ?? 'DRY',
       refrigerado: fromForm?.refrigerado ?? unit.refrigerado,
       setPoint: fromForm?.setPoint ?? null,
       statusContainer: this.mapContainerStatus(statusFromForm ?? statusFromPatio),
+      faturarHandlingComoCheio: processoFlag?.faturarHandlingComoCheio ?? false,
     };
   }
 
@@ -437,7 +566,9 @@ export class BillingRuleEngineService {
             ? item.regraTarifariaId
             : null,
         eventoGatilho: item.eventoGatilho,
-        descricao: item.descricao,
+        descricao: item.detalheCobranca
+          ? `${item.descricao} — ${item.detalheCobranca}`
+          : item.descricao,
         quantidade: item.quantidade,
         valorUnitario: new Prisma.Decimal(item.valorUnitario.toFixed(2)),
         valorTotal: new Prisma.Decimal(item.valorTotal.toFixed(2)),
@@ -488,22 +619,7 @@ export class BillingRuleEngineService {
     mdm: { tipoCodigo?: string | null; capacidadeCodigo?: string | null; containerTamanho?: string | null },
     status: StatusContainerTarifa | null,
   ) {
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
-
-    const tabelas = await this.prisma.cadastroTabelaPreco.findMany({
-      where: {
-        deletedAt: null,
-        ativo: true,
-        dataInicio: { lte: hoje },
-        AND: [
-          { OR: [{ dataFim: null }, { dataFim: { gte: hoje } }] },
-          { OR: [{ clienteId }, { clienteId: null }] },
-        ],
-      },
-      include: { itens: true },
-      orderBy: [{ clienteId: 'desc' }, { dataInicio: 'desc' }],
-    });
+    const tabelas = await resolveCadastroTabelasCandidatas(this.prisma, clienteId);
 
     const statusesToTry: StatusContainerTarifa[] = status
       ? [status, StatusContainerTarifa.AMBOS]
@@ -532,6 +648,7 @@ export class BillingRuleEngineService {
       faixasDiaria?: unknown;
       tarifaDiariaArmazenagem: Prisma.Decimal | null;
       tarifaEnergiaReeferDiaria: Prisma.Decimal | null;
+      faixasEnergiaReefer?: unknown;
       valorHandling?: Prisma.Decimal | null;
     },
     mdm: { tipoCodigo?: string | null; capacidadeCodigo?: string | null; containerTamanho?: string | null },
@@ -562,36 +679,9 @@ export class BillingRuleEngineService {
       item.faixasDiaria != null ||
       item.tarifaDiariaArmazenagem != null ||
       item.tarifaEnergiaReeferDiaria != null ||
+      item.faixasEnergiaReefer != null ||
       item.valorHandling != null
     );
-  }
-
-  private defaultRegras(): RegraTarifaria[] {
-    const now = new Date();
-    const mk = (
-      eventoGatilho: EventoGatilhoTarifa,
-      valor: number,
-      diasFreeTime: number,
-    ): RegraTarifaria =>
-      ({
-        id: `default-${eventoGatilho}`,
-        tabelaPrecoId: 'default',
-        nome: eventoGatilho,
-        eventoGatilho,
-        tipoContainer: 'TODOS',
-        statusContainer: StatusContainerTarifa.AMBOS,
-        valor: new Prisma.Decimal(valor.toFixed(2)),
-        diasFreeTime,
-        ativa: true,
-        createdAt: now,
-        updatedAt: now,
-      }) as RegraTarifaria;
-
-    return [
-      mk(EventoGatilhoTarifa.DIARIA_ARMAZENAGEM, 85, 5),
-      mk(EventoGatilhoTarifa.GATE_IN, 0, 0),
-      mk(EventoGatilhoTarifa.GATE_OUT, 0, 0),
-    ];
   }
 }
 

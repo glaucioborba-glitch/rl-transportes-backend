@@ -13,7 +13,7 @@ import {
   Wallet,
   X,
 } from "lucide-react";
-import { FormField, FormSection } from "@/components/cadastros/form-field";
+import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { FamiliaresSection } from "@/components/cadastros/familiares-section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -191,8 +191,13 @@ export function ColaboradorForm({ colaboradorId }: Props) {
       return;
     }
 
+    const optionalDate = (v: string) => (v.trim() ? v : undefined);
     const payload = {
       ...formData,
+      dataNascimento: optionalDate(formData.dataNascimento),
+      cnhValidade: optionalDate(formData.cnhValidade),
+      dataDemissao: optionalDate(formData.dataDemissao),
+      motivoDemissao: formData.motivoDemissao.trim() || undefined,
       familiares: familiaresPayload,
     };
 
@@ -223,27 +228,26 @@ export function ColaboradorForm({ colaboradorId }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mx-auto max-w-7xl space-y-6 px-4 py-6 pb-20">
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="space-y-6">
+    <form onSubmit={handleSubmit} className={CADASTRO_FORM_CLASS}>
       <FormSection title="Dados Pessoais" icon={User}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <FormField label="Nome Completo" required className="md:col-span-2">
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-4">
+          <FormField label="Nome Completo" required className="min-w-[16rem] flex-[2]">
             <Input
               value={formData.nome}
               onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
               placeholder="Ex: João da Silva Santos"
             />
           </FormField>
-          <FormField label="Data de Nascimento">
+          <FormField label="Data de Nascimento" size="md">
             <Input
               type="date"
               value={formData.dataNascimento}
               onChange={(e) => setFormData({ ...formData, dataNascimento: e.target.value })}
             />
           </FormField>
-          <FormField label="CPF" required>
-            <div className="flex gap-2">
+          <FormField label="CPF" required size="md">
+            <div className="flex items-center gap-2">
               <Input
                 value={formatCPF(formData.cpf)}
                 onChange={(e) =>
@@ -255,11 +259,11 @@ export function ColaboradorForm({ colaboradorId }: Props) {
                 disabled={Boolean(colaboradorId)}
               />
               {validatingCpf ? (
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin self-center text-muted-foreground" />
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
               ) : null}
             </div>
           </FormField>
-          <FormField label="RG">
+          <FormField label="RG" size="md">
             <Input
               value={formData.rg}
               onChange={(e) => setFormData({ ...formData, rg: e.target.value })}
@@ -267,7 +271,7 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="PIS/PASEP">
+          <FormField label="PIS/PASEP" size="md">
             <Input
               value={formatPIS(formData.pis)}
               onChange={(e) =>
@@ -277,7 +281,7 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Sexo">
+          <FormField label="Sexo" size="md">
             <select
               value={formData.sexo}
               onChange={(e) => setFormData({ ...formData, sexo: e.target.value })}
@@ -289,7 +293,7 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               <option value="O">Outro</option>
             </select>
           </FormField>
-          <FormField label="Estado Civil">
+          <FormField label="Estado Civil" className="min-w-[12rem] flex-1">
             <select
               value={formData.estadoCivil}
               onChange={(e) => setFormData({ ...formData, estadoCivil: e.target.value })}
@@ -303,18 +307,20 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               <option value="UNIAO_ESTAVEL">União Estável</option>
             </select>
           </FormField>
-          <FormField label="Nacionalidade">
+          <FormField label="Nacionalidade" className="min-w-[10rem] flex-1">
             <Input
               value={formData.nacionalidade}
               onChange={(e) => setFormData({ ...formData, nacionalidade: e.target.value })}
             />
           </FormField>
+          </div>
         </div>
       </FormSection>
 
       <FormSection title="Endereço" icon={Building2}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <FormField label="CEP">
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-4">
+          <FormField label="CEP" size="sm">
             <Input
               value={formatCEP(formData.cep)}
               onChange={(e) => setFormData({ ...formData, cep: e.target.value.replace(/\D/g, "") })}
@@ -323,37 +329,39 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Endereço" className="md:col-span-2">
+          <FormField label="Endereço" className="min-w-[16rem] flex-[3]">
             <Input
               value={formData.endereco}
               onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
             />
           </FormField>
-          <FormField label="Número">
+          <FormField label="Número" size="sm">
             <Input
               value={formData.numero}
               onChange={(e) => setFormData({ ...formData, numero: e.target.value })}
             />
           </FormField>
-          <FormField label="Complemento">
+          </div>
+          <div className="flex flex-wrap gap-4">
+          <FormField label="Complemento" className="min-w-[10rem] flex-1">
             <Input
               value={formData.complemento}
               onChange={(e) => setFormData({ ...formData, complemento: e.target.value })}
             />
           </FormField>
-          <FormField label="Bairro">
+          <FormField label="Bairro" className="min-w-[10rem] flex-1">
             <Input
               value={formData.bairro}
               onChange={(e) => setFormData({ ...formData, bairro: e.target.value })}
             />
           </FormField>
-          <FormField label="Cidade">
+          <FormField label="Cidade" className="min-w-[10rem] flex-1">
             <Input
               value={formData.cidade}
               onChange={(e) => setFormData({ ...formData, cidade: e.target.value })}
             />
           </FormField>
-          <FormField label="UF">
+          <FormField label="UF" size="xs">
             <Input
               value={formData.uf}
               onChange={(e) =>
@@ -362,12 +370,13 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               maxLength={2}
             />
           </FormField>
+          </div>
         </div>
       </FormSection>
 
       <FormSection title="Contato" icon={User}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="E-mail">
+        <div className="flex flex-wrap gap-4">
+          <FormField label="E-mail" className="min-w-[16rem] flex-[2]">
             <Input
               type="email"
               value={formData.email}
@@ -375,7 +384,7 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               placeholder="joao@rltransportes.com"
             />
           </FormField>
-          <FormField label="Telefone">
+          <FormField label="Telefone" size="md">
             <Input
               value={formatPhone(formData.telefone)}
               onChange={(e) =>
@@ -384,7 +393,7 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Celular">
+          <FormField label="Celular" size="md">
             <Input
               value={formatPhone(formData.celular)}
               onChange={(e) =>
@@ -395,12 +404,10 @@ export function ColaboradorForm({ colaboradorId }: Props) {
           </FormField>
         </div>
       </FormSection>
-        </div>
 
-        <div className="space-y-6">
       <FormSection title="Dados Admissionais" icon={Briefcase}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <FormField label="Matrícula">
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Matrícula" size="sm">
             <Input
               value={formData.matricula}
               onChange={(e) => setFormData({ ...formData, matricula: e.target.value })}
@@ -408,21 +415,21 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Data de Admissão" required>
+          <FormField label="Data de Admissão" required size="md">
             <Input
               type="date"
               value={formData.dataAdmissao}
               onChange={(e) => setFormData({ ...formData, dataAdmissao: e.target.value })}
             />
           </FormField>
-          <FormField label="Cargo">
+          <FormField label="Cargo" className="min-w-[14rem] flex-1">
             <Input
               value={formData.cargo}
               onChange={(e) => setFormData({ ...formData, cargo: e.target.value })}
               placeholder="Ex: Operador de Empilhadeira"
             />
           </FormField>
-          <FormField label="Departamento">
+          <FormField label="Departamento" className="min-w-[12rem] flex-1">
             <select
               value={formData.departamento}
               onChange={(e) => setFormData({ ...formData, departamento: e.target.value })}
@@ -439,7 +446,7 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               <option value="TI">Tecnologia da Informação</option>
             </select>
           </FormField>
-          <FormField label="Gestor Responsável">
+          <FormField label="Gestor Responsável" className="min-w-[12rem] flex-1">
             <select
               value={formData.gestorId}
               onChange={(e) => setFormData({ ...formData, gestorId: e.target.value })}
@@ -455,7 +462,7 @@ export function ColaboradorForm({ colaboradorId }: Props) {
                 ))}
             </select>
           </FormField>
-          <FormField label="Vínculo">
+          <FormField label="Vínculo" size="md">
             <select
               value={formData.vinculo}
               onChange={(e) => setFormData({ ...formData, vinculo: e.target.value })}
@@ -468,7 +475,7 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               <option value="PRESTADOR">Prestador PJ</option>
             </select>
           </FormField>
-          <FormField label="Regime de Trabalho">
+          <FormField label="Regime de Trabalho" className="min-w-[12rem] flex-1">
             <select
               value={formData.regimeTrabalho}
               onChange={(e) => setFormData({ ...formData, regimeTrabalho: e.target.value })}
@@ -483,7 +490,7 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               <option value="ESTAGIO_20">Estágio 20h</option>
             </select>
           </FormField>
-          <FormField label="Jornada Semanal (h)">
+          <FormField label="Jornada Semanal (h)" size="sm">
             <Input
               type="number"
               value={formData.jornadaSemanal}
@@ -496,7 +503,7 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Turno">
+          <FormField label="Turno" size="md">
             <select
               value={formData.turno}
               onChange={(e) => setFormData({ ...formData, turno: e.target.value })}
@@ -512,8 +519,8 @@ export function ColaboradorForm({ colaboradorId }: Props) {
       </FormSection>
 
       <FormSection title="Dados Financeiros" icon={Wallet}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <FormField label="Centro de Custo">
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Centro de Custo" className="min-w-[14rem] flex-1">
             <select
               value={formData.centroCustoId}
               onChange={(e) => setFormData({ ...formData, centroCustoId: e.target.value })}
@@ -527,7 +534,7 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               ))}
             </select>
           </FormField>
-          <FormField label="Salário Base (R$)">
+          <FormField label="Salário Base (R$)" size="md">
             <Input
               type="number"
               step="0.01"
@@ -536,7 +543,7 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Conta Bancária">
+          <FormField label="Conta Bancária" className="min-w-[14rem] flex-1">
             <Input
               value={formData.contaBancaria}
               onChange={(e) => setFormData({ ...formData, contaBancaria: e.target.value })}
@@ -547,15 +554,15 @@ export function ColaboradorForm({ colaboradorId }: Props) {
       </FormSection>
 
       <FormSection title="Carteira Nacional de Habilitação (CNH)" icon={FileText}>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <FormField label="Número da CNH">
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Número da CNH" size="md">
             <Input
               value={formData.cnhNumero}
               onChange={(e) => setFormData({ ...formData, cnhNumero: e.target.value })}
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Categoria">
+          <FormField label="Categoria" size="sm">
             <select
               value={formData.cnhCategoria}
               onChange={(e) => setFormData({ ...formData, cnhCategoria: e.target.value })}
@@ -572,7 +579,7 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               <option value="AE">AE</option>
             </select>
           </FormField>
-          <FormField label="Validade">
+          <FormField label="Validade" size="md">
             <Input
               type="date"
               value={formData.cnhValidade}
@@ -583,8 +590,8 @@ export function ColaboradorForm({ colaboradorId }: Props) {
       </FormSection>
 
       <FormSection title="Status e Observações" icon={Calendar}>
-        <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Status">
+        <div className="mb-4 flex flex-wrap gap-4">
+          <FormField label="Status" className="min-w-[14rem] flex-1">
             <select
               value={formData.status}
               onChange={(e) => setFormData({ ...formData, status: e.target.value })}
@@ -598,14 +605,14 @@ export function ColaboradorForm({ colaboradorId }: Props) {
           </FormField>
           {formData.status === "INATIVO" ? (
             <>
-              <FormField label="Data de Demissão">
+              <FormField label="Data de Demissão" size="md">
                 <Input
                   type="date"
                   value={formData.dataDemissao}
                   onChange={(e) => setFormData({ ...formData, dataDemissao: e.target.value })}
                 />
               </FormField>
-              <FormField label="Motivo da Demissão" className="md:col-span-2">
+              <FormField label="Motivo da Demissão" className="min-w-[16rem] flex-[2]">
                 <select
                   value={formData.motivoDemissao}
                   onChange={(e) => setFormData({ ...formData, motivoDemissao: e.target.value })}
@@ -633,8 +640,6 @@ export function ColaboradorForm({ colaboradorId }: Props) {
           />
         </FormField>
       </FormSection>
-        </div>
-      </div>
 
       <FamiliaresSection
         familiares={familiares}
@@ -643,7 +648,7 @@ export function ColaboradorForm({ colaboradorId }: Props) {
         onRemove={removeFamiliar}
       />
 
-      <div className="sticky bottom-0 -mx-4 flex justify-end gap-2 border-t border-white/10 bg-black/80 px-4 pb-4 pt-4 backdrop-blur-sm">
+      <div className="flex justify-end gap-2">
         <Button type="button" variant="outline" onClick={() => router.back()}>
           <X className="mr-2 h-4 w-4" />
           Cancelar

@@ -1,12 +1,25 @@
-const COOKIE = "rl_motorista_session";
+import { MOTORISTA_SESSION_COOKIE } from "@/lib/motorista-signed-session";
 
-export function setMotoristaSessionCookie() {
-  if (typeof document === "undefined") return;
-  const maxAge = 60 * 60 * 24 * 30;
-  document.cookie = `${COOKIE}=1; path=/; max-age=${maxAge}; SameSite=Lax`;
-}
-
+/** Limpa leftover de cookie legado (`=1`) no browser. A sessão HMAC é HttpOnly (DELETE /api/motorista/session). */
 export function clearMotoristaSessionCookie() {
   if (typeof document === "undefined") return;
-  document.cookie = `${COOKIE}=; path=/; max-age=0`;
+  document.cookie = `${MOTORISTA_SESSION_COOKIE}=; path=/; max-age=0`;
+}
+
+export async function issueMotoristaSessionCookie(accessToken: string): Promise<boolean> {
+  const res = await fetch("/api/motorista/session", {
+    method: "POST",
+    credentials: "include",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  return res.ok;
+}
+
+export async function revokeMotoristaSessionCookie(): Promise<void> {
+  try {
+    await fetch("/api/motorista/session", { method: "DELETE", credentials: "include" });
+  } catch {
+    /* best-effort */
+  }
+  clearMotoristaSessionCookie();
 }

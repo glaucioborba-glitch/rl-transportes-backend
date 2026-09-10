@@ -10,6 +10,10 @@ export const FINANCEIRO_TABS = [
   { label: "Centros de Custo", href: "/cadastros/financeiro/centros-custo" },
   { label: "Plano de Contas", href: "/cadastros/financeiro/plano-contas" },
   { label: "Tabelas de Preços", href: "/cadastros/financeiro/tabelas-precos" },
+  { label: "Tabela de transportes", href: "/cadastros/financeiro/transportes" },
+  { label: "Serviços", href: "/cadastros/financeiro/servicos" },
+  { label: "Aluguel", href: "/cadastros/financeiro/aluguel" },
+  { label: "Forma e prazo", href: "/cadastros/financeiro/formas-prazos" },
 ] as const;
 
 export function FinanceiroTabs() {

@@ -54,7 +54,7 @@ export default function ParametrosFeatureFlagsPage() {
   };
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="space-y-6">
       <ParametrosBreadcrumb current="Feature Flags" />
       <div>
         <h1 className="text-2xl font-bold">Parâmetros Gerais</h1>

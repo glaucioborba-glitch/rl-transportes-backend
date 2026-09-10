@@ -27,6 +27,8 @@ export type ContainerPassagemSaida = {
 
 export type ContainerPassagem = {
   processoId: string;
+  unidadeProcessoNumero?: number;
+  status?: string;
   solicitacaoId: string;
   tipoOperacao: string;
   dataProcesso: string;

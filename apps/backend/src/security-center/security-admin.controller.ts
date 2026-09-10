@@ -62,7 +62,7 @@ class SecurityAcaoDto {
 @ApiBearerAuth('access-token')
 @Controller('admin/security')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
-@Roles(Role.ADMIN)
+@Roles(Role.ADMIN, Role.SUPER_ADMIN)
 export class SecurityAdminController {
   constructor(
     private readonly prisma: PrismaService,

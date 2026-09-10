@@ -514,7 +514,7 @@ export default function PortalCadastrarPage() {
   return (
     <div className="flex min-h-screen flex-col items-center bg-[#080a0d] px-4 py-4">
       <div className={cn("mb-3 flex items-center gap-3", PAGE_MAX_W)}>
-        <RlLogo className="h-10 w-10 text-lg" />
+        <RlLogo slot="portal" className="h-10 w-auto max-w-[180px] text-lg" />
         <div>
           <h1 className="text-xl font-bold text-white">Criar conta</h1>
           <p className="text-sm text-slate-500">Portal do cliente</p>

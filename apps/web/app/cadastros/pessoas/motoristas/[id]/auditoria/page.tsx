@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Edit, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useWidgetData, WidgetError } from "@/components/ui/widget-error";
@@ -23,7 +22,6 @@ function AuditSkeleton() {
 }
 
 export default function AuditoriaMotoristaPage({ params }: Props) {
-  const router = useRouter();
   const { data: historico, loading, error, refetch } = useWidgetData(
     () => fetchCadastrosMotoristaAuditoria(params.id),
     [params.id],
@@ -32,10 +30,7 @@ export default function AuditoriaMotoristaPage({ params }: Props) {
   return (
     <div className="space-y-6">
       <div>
-        <Button type="button" variant="ghost" size="sm" onClick={() => router.back()}>
-          ← Voltar
-        </Button>
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold">Auditoria do Motorista</h1>
             <p className="text-sm text-muted-foreground">Histórico completo de alterações</p>

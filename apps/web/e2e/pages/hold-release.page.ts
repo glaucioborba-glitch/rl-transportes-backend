@@ -5,7 +5,7 @@ export class HoldReleasePage {
   constructor(private page: Page) {}
 
   async gotoCheckout() {
-    await this.page.goto(`/staff/gate/checkout/${E2E_GATE_IN_ID}`);
+    await this.page.goto(`/operador/gate/checkout/${E2E_GATE_IN_ID}`);
   }
 
   async advanceToConfirmStep() {

@@ -12,6 +12,8 @@ const TONE: Record<string, string> = {
   GATE_IN: "border-emerald-500/40 bg-emerald-500/10 text-emerald-100",
   PATIO_MOVIMENTO: "border-violet-500/40 bg-violet-500/10 text-violet-100",
   GATE_OUT: "border-lime-500/40 bg-lime-500/10 text-lime-100",
+  UNIDADE_ENTRADA: "border-teal-500/40 bg-teal-500/10 text-teal-100",
+  UNIDADE_SAIDA: "border-orange-500/40 bg-orange-500/10 text-orange-100",
 };
 
 function formatWhen(iso: string) {

@@ -32,6 +32,8 @@ import {
 } from "@/components/ui/dialog";
 import { ContainerNumber } from "@/components/ui/container-number";
 import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
+import { useTenantTurnos } from "@/hooks/use-tenant-turnos";
+import type { TenantTurnoConfig } from "@/lib/api/tenant-config-client";
 import { useGateCockpitContext } from "./gate-cockpit-context";
 
 type Props = {
@@ -40,8 +42,33 @@ type Props = {
 
 function formatDate(value?: string | null) {
   if (!value) return "—";
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? value : d.toLocaleString("pt-BR");
+  const ymd = String(value).slice(0, 10);
+  const [y, m, d] = ymd.split("-");
+  if (y && m && d && ymd.length === 10) return `${d}/${m}/${y}`;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString("pt-BR");
+}
+
+function turnoCadastroLabel(turno?: string | null, turnos: TenantTurnoConfig[] = []) {
+  if (!turno) return "";
+  const matches = turnos.filter((t) => t.id === turno || t.slot === turno);
+  if (matches.length === 1) return matches[0].nome;
+  if (turno === "MANHA") return "Manhã";
+  if (turno === "TARDE") return "Tarde";
+  return turno;
+}
+
+function formatAgendadoPara(
+  dataRef?: string | null,
+  data?: string | null,
+  turno?: string | null,
+  turnos: TenantTurnoConfig[] = [],
+) {
+  const raw = dataRef ?? data;
+  if (!raw) return undefined;
+  const date = formatDate(String(raw));
+  const label = turnoCadastroLabel(turno, turnos);
+  return label ? `${date} - ${label}` : date;
 }
 
 function SituacaoBadge({ situacao }: { situacao: GateContainerSituacao }) {
@@ -90,6 +117,7 @@ export function GateAutorizacaoDetalhePanel({ id }: Props) {
   const router = useRouter();
   const { refresh } = useGateCockpitContext();
   const user = useStaffAuthStore((s) => s.user);
+  const { turnos } = useTenantTurnos();
   const podeAutorizar = podeAprovarOs(user);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<Awaited<ReturnType<typeof staffFetchSolicitacaoV2Detalhe>> | null>(
@@ -154,8 +182,9 @@ export function GateAutorizacaoDetalhePanel({ id }: Props) {
   const sol = data?.solicitacao as Record<string, unknown> | undefined;
   if (!data || !sol) return <NotFoundState />;
 
-  const containers = (sol.containersSolicitacao as Record<string, unknown>[] | undefined) ?? [];
-  const cs = containers[0];
+  const containers = [...((sol.containersSolicitacao as Record<string, unknown>[] | undefined) ?? [])].sort(
+    (a, b) => Number(a.ordem ?? 0) - Number(b.ordem ?? 0),
+  );
   const ts = sol.transporteSolicitacao as Record<string, unknown> | undefined;
   const ag = sol.agendamentoSolicitacao as Record<string, unknown> | undefined;
   const ct = sol.solicitanteContato as Record<string, unknown> | undefined;
@@ -164,11 +193,9 @@ export function GateAutorizacaoDetalhePanel({ id }: Props) {
   const isos = collectSolicitacaoContainerISOs({
     containersSolicitacao: containers as Array<{ unidade?: string; ordem?: number }>,
   });
-  const situacao =
-    cs?.status === "CHEIO" ? "CHEIO" : cs?.status === "VAZIO" ? "VAZIO" : null;
-  const tipoTamanho = formatTipoTamanhoContainerLabel(cs?.tipo, cs?.tamanho);
   const status = String(sol.status ?? "");
   const canAct = podeAutorizar && (status === "PENDENTE" || status === "EM_ANALISE");
+  const rodotrem = String(ts?.tipoCaminhao ?? "").toUpperCase() === "RODOTREM" || containers.length > 1;
 
   return (
     <div className="space-y-6 pb-24">
@@ -187,36 +214,66 @@ export function GateAutorizacaoDetalhePanel({ id }: Props) {
         <Badge variant="neutral">{status.replace(/_/g, " ")}</Badge>
       </div>
 
-      <Card className="border-white/10 bg-[#0b1018]/90 p-5">
-        <CardContent className="p-0">
-          <ContainerNumber value={isos[0] ?? String(cs?.unidade ?? "—")} size="lg" className="mb-2" />
-          <div className="flex flex-wrap items-center gap-3">
-            {tipoTamanho ? <span className="text-sm text-muted-foreground">{tipoTamanho}</span> : null}
-            {situacao ? <SituacaoBadge situacao={situacao} /> : null}
-          </div>
-        </CardContent>
-      </Card>
+      <div className={rodotrem ? "grid gap-4 md:grid-cols-2" : "grid gap-4"}>
+        {(containers.length ? containers : [{ unidade: isos[0] ?? "—" }]).map((c, idx) => {
+          const situacao =
+            c.status === "CHEIO" ? "CHEIO" : c.status === "VAZIO" ? "VAZIO" : null;
+          const tipoTamanho = formatTipoTamanhoContainerLabel(c.tipo, c.tamanho);
+          const iso = isos[idx] ?? String(c.unidade ?? "—");
+          return (
+            <Card key={`${iso}-${idx}`} className="border-white/10 bg-[#0b1018]/90 p-5">
+              <CardContent className="p-0">
+                {rodotrem || containers.length > 1 ? (
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Unidade #{idx + 1}
+                  </p>
+                ) : null}
+                <ContainerNumber value={iso} size="lg" className="mb-2" />
+                <div className="flex flex-wrap items-center gap-3">
+                  {tipoTamanho ? (
+                    <span className="text-sm text-muted-foreground">{tipoTamanho}</span>
+                  ) : null}
+                  {situacao ? <SituacaoBadge situacao={situacao} /> : null}
+                </div>
+                {c.booking != null && String(c.booking).trim() ? (
+                  <p className="mt-2 text-sm text-slate-300">
+                    Booking: <span className="text-white">{String(c.booking)}</span>
+                  </p>
+                ) : null}
+                {c.processo != null && String(c.processo).trim() ? (
+                  <p className="text-sm text-slate-300">
+                    Processo: <span className="text-white">{String(c.processo)}</span>
+                  </p>
+                ) : null}
+                {c.status === "CHEIO" && c.lacre != null && String(c.lacre).trim() ? (
+                  <p className="text-sm text-slate-300">
+                    Lacre: <span className="text-white">{String(c.lacre)}</span>
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <DataField label="Solicitante" value={ct?.nome != null ? String(ct.nome) : undefined} />
         <DataField label="Empresa" value={cliente?.razaoSocial} />
-        <DataField label="Booking" value={cs?.booking != null ? String(cs.booking) : undefined} />
         <DataField
           label="Transporte"
           value={ts?.tipoCaminhao != null ? String(ts.tipoCaminhao) : undefined}
         />
         <DataField label="Motorista" value={ts?.nomeMotorista != null ? String(ts.nomeMotorista) : undefined} />
         <DataField label="CPF Motorista" value={ts?.cpfMotorista != null ? String(ts.cpfMotorista) : undefined} />
-        <DataField label="Turno" value={ag?.turno != null ? String(ag.turno) : undefined} />
+        <DataField label="Turno" value={turnoCadastroLabel(ag?.turno != null ? String(ag.turno) : null, turnos) || undefined} />
         <DataField
           label="Agendado para"
-          value={
-            ag?.dataRef != null
-              ? formatDate(String(ag.dataRef))
-              : ag?.data != null
-                ? formatDate(String(ag.data))
-                : undefined
-          }
+          value={formatAgendadoPara(
+            ag?.dataRef != null ? String(ag.dataRef) : null,
+            ag?.data != null ? String(ag.data) : null,
+            ag?.turno != null ? String(ag.turno) : null,
+            turnos,
+          )}
         />
       </div>
 
@@ -271,7 +328,9 @@ export function GateAutorizacaoDetalhePanel({ id }: Props) {
               onClick={() => void aprovar()}
             >
               <Check className="mr-2 h-4 w-4" />
-              Aprovar Solicitação
+              {containers.length > 1
+                ? `Aprovar solicitação (${containers.length} unidades)`
+                : "Aprovar Solicitação"}
             </Button>
             <Button
               type="button"

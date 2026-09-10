@@ -28,7 +28,9 @@ export class FaturamentoCronService {
         this.logger.log(`CRON mora/juros: ${JSON.stringify(mora)}`);
         const holds = await this.holdRelease.syncFinancialHoldsForAllTenants();
         this.logger.log(`CRON hold financeiro: ${JSON.stringify(holds)}`);
-        return { result, mora, holds };
+        const reconcile = await this.billing.reconcileClosedProcessoPrefaturas();
+        this.logger.log(`CRON reconciliação ID encerrado: ${JSON.stringify(reconcile)}`);
+        return { result, mora, holds, reconcile };
       });
     } catch (err) {
       this.logger.error('CRON provisão falhou', err instanceof Error ? err.stack : err);

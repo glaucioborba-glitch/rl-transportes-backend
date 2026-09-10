@@ -2,27 +2,10 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { isPortalAgendamentoPath } from "@/lib/portal-financeiro-block";
 import { demoModulesBlockedRedirect } from "@/lib/demo-modules";
-
-/** Redireciona rotas legadas /staff (V1) para equivalentes V2 em /operador. */
-function staffLegacyRedirect(pathname: string): string | null {
-  if (pathname === "/staff/gate") return "/operador/gate/dashboard";
-  if (pathname.startsWith("/staff/gate/checkin/")) return "/operador/gate/fila";
-  if (pathname.startsWith("/staff/gate/checkout/")) return "/operador/gate/despacho";
-  if (pathname === "/staff/fila-operacional") return "/operador/gate/fila";
-  if (pathname === "/staff/triagem") return "/operador/gate/autorizacoes";
-  if (pathname === "/staff/patio") return "/operador/patio";
-  if (pathname === "/staff/consulta-container") return "/intranet/consulta-container";
-  if (pathname === "/staff/solicitacoes-v2") return "/operador/gate/autorizacoes";
-  if (pathname.startsWith("/staff/solicitacoes-v2/")) {
-    const id = pathname.slice("/staff/solicitacoes-v2/".length).split("/")[0];
-    return id ? `/operador/gate/autorizacoes/${id}` : "/operador/gate/autorizacoes";
-  }
-  if (pathname === "/staff/observabilidade") return "/admin/auditoria";
-  if (pathname === "/staff/security") return "/grc/governanca";
-  if (pathname === "/staff/perfil/dispositivos") return "/portal/perfil/dispositivos";
-  if (pathname === "/staff") return "/operador/dashboard";
-  return null;
-}
+import { staffLegacyRedirect } from "@/lib/staff-legacy-redirect";
+import { intranetPathAllowed } from "@/lib/intranet/intranet-path-access";
+import { isPortalCookieAuthMode } from "@/lib/portal-auth-mode";
+import { isValidMotoristaSessionValue } from "@/lib/motorista-signed-session";
 
 const STAFF_PREFIXES = [
   "/operador",
@@ -72,14 +55,13 @@ function isPortalProtectedPath(pathname: string): boolean {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  /** Playwright E2E: auth real via mock de rede; não redireciona rotas legadas staff→operador. */
-  if (process.env.E2E_MOCK_AUTH === "1") {
-    return NextResponse.next();
-  }
-
   const demoDest = demoModulesBlockedRedirect(pathname);
   if (demoDest) {
     return NextResponse.redirect(new URL(demoDest, request.url));
+  }
+
+  if (process.env.E2E_MOCK_AUTH === "1") {
+    return NextResponse.next();
   }
 
   const staffDest = staffLegacyRedirect(pathname);
@@ -98,15 +80,17 @@ export async function middleware(request: NextRequest) {
       login.searchParams.set("next", pathname);
       return NextResponse.redirect(login);
     }
+    const me = (await res.json()) as { role?: string };
     if (pathname === "/super-admin" || pathname.startsWith("/super-admin/")) {
-      const me = (await res.json()) as { role?: string };
       if (me.role !== "SUPER_ADMIN") {
-        return NextResponse.redirect(new URL("/staff", request.url));
+        return NextResponse.redirect(new URL("/operador/dashboard", request.url));
       }
+    } else if (me.role && !intranetPathAllowed(me.role, pathname)) {
+      return NextResponse.redirect(new URL("/operador/dashboard", request.url));
     }
   }
 
-  if (isPortalProtectedPath(pathname) && process.env.NEXT_PUBLIC_PORTAL_COOKIE_AUTH === "1") {
+  if (isPortalProtectedPath(pathname) && isPortalCookieAuthMode()) {
     const verify = new URL("/api/portal/me", request.url);
     const res = await fetch(verify, {
       headers: { cookie: request.headers.get("cookie") ?? "" },
@@ -137,7 +121,8 @@ export async function middleware(request: NextRequest) {
 
   if (pathname.startsWith("/motorista") && !pathname.startsWith("/motorista/login")) {
     const session = request.cookies.get("rl_motorista_session")?.value;
-    if (!session) {
+    const ok = await isValidMotoristaSessionValue(session);
+    if (!ok) {
       const login = new URL("/motorista/login", request.url);
       login.searchParams.set("next", pathname);
       return NextResponse.redirect(login);
@@ -147,10 +132,6 @@ export async function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
-/**
- * Nunca executar middleware em assets estáticos / rotas internas do Next.
- * Evita interferência com `/_next/static/*` (404 de chunks em dev após troca build↔dev).
- */
 export const config = {
   matcher: [
     "/((?!api|_next/static|_next/image|_next/webpack-hmr|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)",

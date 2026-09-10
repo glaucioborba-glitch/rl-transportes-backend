@@ -3,7 +3,9 @@ export type ContainerTimelineEventType =
   | 'VISTORIA_EIR'
   | 'GATE_IN'
   | 'PATIO_MOVIMENTO'
-  | 'GATE_OUT';
+  | 'GATE_OUT'
+  | 'UNIDADE_ENTRADA'
+  | 'UNIDADE_SAIDA';
 
 export type ContainerTimelineVisibility = 'PUBLIC' | 'ADMIN_ONLY';
 
@@ -30,6 +32,7 @@ export type ContainerTimelineResponse = {
   isoFormatado: string;
   geradoEm: string;
   eventos: ContainerTimelineEvent[];
+  unidadeProcessoAberto?: { id: string; numero: number } | null;
   bloqueios?: Array<{
     tipo: string;
     motivo: string;
@@ -68,4 +71,6 @@ export type ContainerRicPayload = {
   observacoesInternas?: string[];
   assinaturaRicPresente?: boolean;
   hashPdfValidado?: string | null;
+  lacre?: string;
+  lacreObservacao?: string;
 };
