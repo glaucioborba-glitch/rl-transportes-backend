@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { PatioStatus, StatusAgendamentoTerminal, StatusSolicitacao, type Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PlataformaTenantStore } from '../../plataforma-integracao/stores/plataforma-tenant.store';
@@ -26,6 +26,12 @@ import {
   normalizeTamanhoContainer,
   normalizeTamanhosContainer,
 } from '../../cadastros/tipo-container-tamanhos.util';
+import { CatalogoMotoristasExternosService } from '../../catalogo-motoristas-externos/catalogo-motoristas-externos.service';
+import { isCpfFrotaPlaceholder } from '../../catalogo-motoristas-externos/catalogo-motoristas-externos.util';
+import { MOTIVO_CONTA_CORRENTE_LABEL, classificarSaldo, toMoneyNumber } from '../../conta-corrente/conta-corrente.util';
+import { BankingBoletoService } from '../../fiscal-integracao/banking-boleto.service';
+import { RetriableOutboxError } from '../../outbox/outbox.errors';
+import { unificarFats } from '../portal-fat.util';
 
 const STATUS_TERMINAL = new Set<StatusSolicitacao>([
   StatusSolicitacao.CONCLUIDO,
@@ -42,6 +48,8 @@ export class PortalClienteDataService {
     private readonly dashboardPortal: DashboardPortalService,
     private readonly agendamentos: AgendamentosService,
     private readonly auditLog: AuditLogService,
+    private readonly catalogoMotoristas: CatalogoMotoristasExternosService,
+    private readonly banking: BankingBoletoService,
   ) {}
 
   private async clientScope(cx: CxPortalRequestUser, clienteIdParam?: string): Promise<string> {
@@ -227,12 +235,150 @@ export class PortalClienteDataService {
 
   async faturas(cx: CxPortalRequestUser, clienteIdParam?: string) {
     const clienteId = await this.clientScope(cx, clienteIdParam);
-    return this.prisma.faturamento.findMany({
+    const [mensais, avulsas] = await Promise.all([
+      this.prisma.faturamento.findMany({
+        where: { clienteId },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        select: {
+          id: true,
+          periodo: true,
+          valorTotal: true,
+          statusNfe: true,
+          statusBoleto: true,
+          createdAt: true,
+          itens: { select: { id: true, descricao: true, valor: true } },
+          nfsEmitidas: {
+            select: {
+              id: true,
+              numeroNfe: true,
+              statusIpm: true,
+              createdAt: true,
+              linkNfsePdf: true,
+            },
+          },
+          boletos: {
+            select: {
+              id: true,
+              numeroBoleto: true,
+              valorBoleto: true,
+              dataVencimento: true,
+              statusPagamento: true,
+              linkPdf: true,
+            },
+          },
+          solicitacoesVinculadas: {
+            select: { solicitacao: { select: { id: true, protocolo: true } } },
+          },
+          faturasArmazenagem: {
+            select: {
+              id: true,
+              valorTotal: true,
+              statusPagamento: true,
+              dataEmissao: true,
+              linkNfse: true,
+              linkBoleto: true,
+              linkPix: true,
+              preFatura: { select: { containerIso: true, diasCobrados: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.fatura.findMany({
+        where: { clienteId, faturamentoId: null },
+        orderBy: { dataEmissao: 'desc' },
+        take: 100,
+        select: {
+          id: true,
+          valorTotal: true,
+          dataEmissao: true,
+          createdAt: true,
+          statusPagamento: true,
+          linkNfse: true,
+          linkBoleto: true,
+          linkPix: true,
+          preFatura: { select: { containerIso: true, diasCobrados: true } },
+        },
+      }),
+    ]);
+    return unificarFats(mensais, avulsas);
+  }
+
+  async contaCorrente(cx: CxPortalRequestUser, clienteIdParam?: string) {
+    const clienteId = await this.clientScope(cx, clienteIdParam);
+    const lancamentos = await this.prisma.clienteContaCorrenteLancamento.findMany({
       where: { clienteId },
       orderBy: { createdAt: 'desc' },
-      take: 100,
-      include: { itens: true },
+      take: 200,
     });
+    const saldo = toMoneyNumber(
+      lancamentos.reduce((acc, l) => acc + toMoneyNumber(l.valorSinal), 0),
+    );
+    const situacao = classificarSaldo(saldo);
+    const situacaoLabel =
+      situacao === 'CREDOR'
+        ? 'Crédito a seu favor'
+        : situacao === 'DEVEDOR'
+          ? 'Saldo em aberto'
+          : 'Saldo zerado';
+    return {
+      cliente: {
+        saldo,
+        situacao,
+        situacaoLabel,
+        lancamentos: lancamentos.length,
+      },
+      lancamentos: lancamentos.map((l) => ({
+        id: l.id,
+        tipo: l.tipo,
+        valor: toMoneyNumber(l.valor),
+        valorSinal: toMoneyNumber(l.valorSinal),
+        motivo: l.motivo,
+        motivoLabel: MOTIVO_CONTA_CORRENTE_LABEL[l.motivo],
+        descricao: l.descricao,
+        referencia: l.referencia,
+        createdAt: l.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  async pixCreditoContaCorrente(cx: CxPortalRequestUser, valorRaw: number, clienteIdParam?: string) {
+    const clienteId = await this.clientScope(cx, clienteIdParam);
+    const valor = toMoneyNumber(valorRaw);
+    if (!Number.isFinite(valor) || valor < 0.01) {
+      throw new BadRequestException('Informe um valor válido para o crédito.');
+    }
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id: clienteId, tenantId: cx.tenantId },
+      select: { id: true, razaoSocial: true, cpfCnpj: true, email: true, emailNfse: true },
+    });
+    if (!cliente) throw new NotFoundException('Cliente não encontrado');
+    const referencia = `CC-${cliente.id.replace(/-/g, '').slice(0, 12).toUpperCase()}-${Date.now()}`;
+    try {
+      const pix = await this.banking.gerarPixCobranca({
+        referencia,
+        valor,
+        descricao: 'Crédito conta corrente',
+        cliente,
+      });
+      if (!pix.pixCopiaCola) {
+        throw new ServiceUnavailableException('O banco não retornou o código PIX. Tente novamente.');
+      }
+      return {
+        valor,
+        pixCopiaCola: pix.pixCopiaCola,
+        pixQrCodeUrl: pix.pixQrCodeUrl,
+        provedor: pix.provedor,
+        sandbox: pix.sandbox,
+        referenciaExterna: pix.referenciaExterna,
+      };
+    } catch (e) {
+      if (e instanceof ServiceUnavailableException) throw e;
+      if (e instanceof RetriableOutboxError) {
+        throw new ServiceUnavailableException('Banco indisponível no momento. Tente novamente em instantes.');
+      }
+      throw e;
+    }
   }
 
   /** Faturas de armazenagem (Gate-Out) com links NFS-e / boleto / PIX. */
@@ -479,14 +625,19 @@ export class PortalClienteDataService {
     const invalidateQr =
       deltasInvalidateQrCredential(auditDeltas) || containerIsosChanged(isosBefore, isosAfter);
 
+    if (dto.transporte) {
+      const cpf = dto.transporte.cpfMotorista.replace(/\D/g, '');
+      if (!isCpfFrotaPlaceholder(cpf)) {
+        await this.catalogoMotoristas.assertNaoSuspenso(cpf);
+      }
+    }
+
     await this.prisma.$transaction(async (tx) => {
       await tx.agendamentoSolicitacao.update({
         where: { solicitacaoId: id },
         data: {
           dataRef,
           turno: dto.agendamento.turno,
-          atendimentoEspecial: dto.agendamento.atendimentoEspecial,
-          atendimentoEspecialTexto: dto.agendamento.atendimentoEspecialTexto?.trim() || null,
         },
       });
 
@@ -557,6 +708,16 @@ export class PortalClienteDataService {
         });
       }
     });
+
+    if (dto.transporte && !isCpfFrotaPlaceholder(dto.transporte.cpfMotorista.replace(/\D/g, ''))) {
+      void this.catalogoMotoristas
+        .registrarDaSolicitacao({
+          cpf: dto.transporte.cpfMotorista,
+          nome: dto.transporte.nomeMotorista,
+          origem: 'PORTAL',
+        })
+        .catch(() => undefined);
+    }
 
     const updated = await this.obterSolicitacao(cx, id);
     if (!updated) throw new NotFoundException('Solicitação não encontrada');

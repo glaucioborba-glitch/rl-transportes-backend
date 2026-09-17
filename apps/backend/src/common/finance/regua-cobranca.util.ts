@@ -1,5 +1,6 @@
 import { EstagioCobranca } from '@prisma/client';
 import { diffDiasAtraso } from './finance-profile.util';
+import { formatMoeda } from './format-moeda.util';
 
 export type ReguaCobrancaConfig = {
   ativo?: boolean;
@@ -150,7 +151,7 @@ export function buildDunningMessage(
     diasAtraso: number;
   },
 ): string {
-  const valor = input.valorExibicao.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const valor = formatMoeda(input.valorExibicao);
   const dataFmt = input.dataVencimento.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
   switch (stage) {

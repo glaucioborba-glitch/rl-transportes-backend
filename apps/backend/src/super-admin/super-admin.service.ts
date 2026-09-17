@@ -1,8 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantStatus } from '@prisma/client';
+import type { Request, Response } from 'express';
+import { attachSaTenantCookies, clearSaTenantCookies } from '../auth/auth-cookie.util';
 import { FEATURE_FLAG_KEYS } from '../feature-flags/feature-flag.keys';
 import { PrismaService } from '../prisma/prisma.service';
 import { validarCNPJ } from '../common/utils/br-documents';
+import { readSaActingTenantCookie } from '../tenant/sa-acting-tenant.util';
 import { DEFAULT_TENANT_PARAMETROS } from '../tenant/tenant-config.types';
 import {
   applyEmpresaIdentidade,
@@ -14,6 +17,7 @@ import {
   type EmpresaIdentidadePatch,
   type TenantUso,
 } from './super-admin.util';
+import { parseIdiomaPadrao, parseMoedaCorrente } from '../tenant/tenant-locale.util';
 
 const FLAG_CATALOGO: Array<{ chave: string; descricao: string }> = [
   {
@@ -61,6 +65,8 @@ export class SuperAdminService {
         nome: t.nome,
         status: t.status,
         plano: t.plano,
+        moedaCorrente: parseMoedaCorrente(t.moedaCorrente),
+        idiomaPadrao: parseIdiomaPadrao(t.idiomaPadrao),
         cnpj: cnpjFromParametros(t.config?.parametros),
         createdAt: t.createdAt,
         updatedAt: t.updatedAt,
@@ -79,6 +85,8 @@ export class SuperAdminService {
     plano?: string;
     cnpj?: string;
     empresa?: EmpresaIdentidadePatch;
+    moedaCorrente?: string;
+    idiomaPadrao?: string;
   }) {
     const id = dto.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-');
     if (!id) throw new BadRequestException('Slug inválido');
@@ -99,6 +107,8 @@ export class SuperAdminService {
           slug: id,
           nome,
           plano: dto.plano?.trim() || 'STANDARD',
+          moedaCorrente: parseMoedaCorrente(dto.moedaCorrente),
+          idiomaPadrao: parseIdiomaPadrao(dto.idiomaPadrao),
         },
       });
       await tx.tenantConfig.create({
@@ -125,6 +135,8 @@ export class SuperAdminService {
       nome?: string;
       cnpj?: string;
       empresa?: EmpresaIdentidadePatch;
+      moedaCorrente?: string;
+      idiomaPadrao?: string;
     },
   ) {
     const row = await this.prisma.tenant.findUnique({
@@ -149,6 +161,12 @@ export class SuperAdminService {
           ...(dto.status !== undefined ? { status: dto.status } : {}),
           ...(dto.plano !== undefined ? { plano: dto.plano } : {}),
           ...(nome ? { nome } : {}),
+          ...(dto.moedaCorrente !== undefined
+            ? { moedaCorrente: parseMoedaCorrente(dto.moedaCorrente) }
+            : {}),
+          ...(dto.idiomaPadrao !== undefined
+            ? { idiomaPadrao: parseIdiomaPadrao(dto.idiomaPadrao) }
+            : {}),
         },
       });
       if (row.config) {
@@ -222,6 +240,42 @@ export class SuperAdminService {
       });
     }
     return this.listFlags();
+  }
+
+  async entrarIntranet(tenantId: string, res: Response) {
+    const row = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!row) throw new NotFoundException('Terminal não encontrado.');
+    attachSaTenantCookies(res, row.id, row.nome);
+    return {
+      ok: true as const,
+      tenantId: row.id,
+      nome: row.nome,
+      slug: row.slug,
+      status: row.status,
+    };
+  }
+
+  sairIntranet(res: Response) {
+    clearSaTenantCookies(res);
+    return { ok: true as const };
+  }
+
+  async intranetSessao(req: Request) {
+    const tenantId = readSaActingTenantCookie(req.cookies);
+    if (!tenantId) {
+      return { acting: false as const, tenantId: null, nome: null, slug: null, status: null };
+    }
+    const row = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!row) {
+      return { acting: false as const, tenantId: null, nome: null, slug: null, status: null };
+    }
+    return {
+      acting: true as const,
+      tenantId: row.id,
+      nome: row.nome,
+      slug: row.slug,
+      status: row.status,
+    };
   }
 
   private assertCnpj(raw?: string) {

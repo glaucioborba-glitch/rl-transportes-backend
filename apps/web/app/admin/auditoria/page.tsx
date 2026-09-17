@@ -13,6 +13,7 @@ import {
 import { ApiError, staffRequest } from "@/lib/api/staff-client";
 import { getApiBase } from "@/lib/api/corporate-auth-client";
 import { toast } from "@/lib/toast";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { AuditFiltersDrawer } from "@/components/audit-trail/audit-filters-drawer";
 import { AuditTimeline } from "@/components/audit-trail/audit-timeline";
@@ -28,7 +29,7 @@ const TABS: { id: CategoriaAuditLog | "ALL"; label: string }[] = [
 ];
 
 export default function AdminAuditoriaPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [q, setQ] = useState("");
   const [tab, setTab] = useState<CategoriaAuditLog | "ALL">("ALL");
   const [filters, setFilters] = useState<AuditTrailQuery>({ page: 1, limit: 40 });

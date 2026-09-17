@@ -3,13 +3,12 @@ export const TAMANHOS_CONTAINER_ORDEM = ['20', '40', '45'] as const;
 export type TamanhoContainer = (typeof TAMANHOS_CONTAINER_ORDEM)[number];
 
 /**
- * Códigos legados (seeds/demos) → código atual do cadastro MDM.
- * O cadastro operacional é a matriz; aliases só suavizam histórico.
+ * Códigos curtos / compostos legados → tipo MDM.
+ * DRY é o tipo; DC/HC são capacidade, não código de tipo.
  */
 export const TIPO_CONTAINER_LEGACY_ALIASES: Record<string, string> = {
-  DRY: 'DRYDC',
-  DC: 'DRYDC',
-  HC: 'DRYHC',
+  DRYDC: 'DRY',
+  DRYHC: 'DRY',
   OT: 'OPENTOP',
   FR: 'FLATRACK',
   TANK: 'ISOTANK',
@@ -79,7 +78,7 @@ export function formatTamanhoContainerMatrix(value: unknown): string {
 }
 
 /**
- * Label alinhado ao cadastro tipos-container: `DRYDC / 20'`.
+ * Label alinhado ao cadastro tipos-container: `DRY / 20'`.
  */
 export function formatTipoTamanhoContainerLabel(
   tipo?: unknown,

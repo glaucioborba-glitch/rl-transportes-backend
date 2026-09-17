@@ -4,6 +4,7 @@ import { isPortalAgendamentoPath } from "@/lib/portal-financeiro-block";
 import { demoModulesBlockedRedirect } from "@/lib/demo-modules";
 import { staffLegacyRedirect } from "@/lib/staff-legacy-redirect";
 import { intranetPathAllowed } from "@/lib/intranet/intranet-path-access";
+import { SA_ACTING_TENANT_COOKIE } from "@/lib/super-admin-acting-cookie";
 import { isPortalCookieAuthMode } from "@/lib/portal-auth-mode";
 import { isValidMotoristaSessionValue } from "@/lib/motorista-signed-session";
 
@@ -36,11 +37,20 @@ const PORTAL_PUBLIC_PREFIXES = [
   "/portal/dev/email-preview",
 ];
 
+function isSuperAdminLoginPath(pathname: string): boolean {
+  return pathname === "/super-admin/login" || pathname.startsWith("/super-admin/login/");
+}
+
+function isSuperAdminArea(pathname: string): boolean {
+  return pathname === "/super-admin" || pathname.startsWith("/super-admin/");
+}
+
 function isStaffProtectedPath(pathname: string): boolean {
   if (
     pathname.startsWith("/login/staff") ||
     pathname.startsWith("/auth/login") ||
-    pathname.startsWith("/operador/login")
+    pathname.startsWith("/operador/login") ||
+    isSuperAdminLoginPath(pathname)
   ) {
     return false;
   }
@@ -76,14 +86,19 @@ export async function middleware(request: NextRequest) {
       cache: "no-store",
     });
     if (!res.ok) {
-      const login = new URL("/login/staff", request.url);
+      const login = new URL(isSuperAdminArea(pathname) ? "/super-admin/login" : "/login/staff", request.url);
       login.searchParams.set("next", pathname);
       return NextResponse.redirect(login);
     }
     const me = (await res.json()) as { role?: string };
-    if (pathname === "/super-admin" || pathname.startsWith("/super-admin/")) {
+    if (isSuperAdminArea(pathname)) {
       if (me.role !== "SUPER_ADMIN") {
         return NextResponse.redirect(new URL("/operador/dashboard", request.url));
+      }
+    } else if (me.role === "SUPER_ADMIN") {
+      const acting = request.cookies.get(SA_ACTING_TENANT_COOKIE)?.value?.trim();
+      if (!acting) {
+        return NextResponse.redirect(new URL("/super-admin", request.url));
       }
     } else if (me.role && !intranetPathAllowed(me.role, pathname)) {
       return NextResponse.redirect(new URL("/operador/dashboard", request.url));
@@ -119,7 +134,11 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  if (pathname.startsWith("/motorista") && !pathname.startsWith("/motorista/login")) {
+  if (
+    pathname.startsWith("/motorista") &&
+    !pathname.startsWith("/motorista/login") &&
+    !pathname.startsWith("/motorista/gps")
+  ) {
     const session = request.cookies.get("rl_motorista_session")?.value;
     const ok = await isValidMotoristaSessionValue(session);
     if (!ok) {

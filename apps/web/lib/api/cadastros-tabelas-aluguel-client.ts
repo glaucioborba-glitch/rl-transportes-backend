@@ -18,8 +18,8 @@ export type CadastroTabelaAluguelItem = {
   containerTamanho: string;
   valorDiaria: number;
   diasFreeTime: number;
-  valorEntrega: number;
-  valorColeta: number;
+  valorHandling: number;
+  faixasDiaria: { diaInicio: number; diaFim: number | null; valorDiaria: number }[];
   ativo: boolean;
 };
 
@@ -30,15 +30,16 @@ export type TabelaAluguelPayload = {
   dataFim?: string;
   ativo: boolean;
   padrao: boolean;
+  itens?: TabelaAluguelItemPayload[];
 };
 
 export type TabelaAluguelItemPayload = {
   tipoContainerCodigo: string;
   containerTamanho: string;
-  valorDiaria: number;
+  valorDiaria?: number;
   diasFreeTime: number;
-  valorEntrega: number;
-  valorColeta: number;
+  valorHandling: number;
+  faixasDiaria?: { diaInicio: number; diaFim: number | null; valorDiaria: number }[];
   ativo: boolean;
 };
 

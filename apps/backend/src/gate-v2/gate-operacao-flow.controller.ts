@@ -144,7 +144,16 @@ export class GateOperacaoFlowController {
     @Param('protocolo') protocolo: string,
     @Body()
     body: {
-      fotos: Array<{ tipo: string; imagem: string; ocrResult?: string; ocrMatch?: boolean; ocrConfianca?: number; ocrProvider?: string }>;
+      fotos: Array<{
+        tipo: string;
+        imagem: string;
+        ocrResult?: string;
+        ocrMatch?: boolean;
+        ocrConfianca?: number;
+        ocrProvider?: string;
+        ocrTextoBruto?: string;
+        ocrExtras?: Record<string, string | undefined>;
+      }>;
       avarias: Array<{ foto: string; descricao: string; localizacao: string }>;
     },
     @CurrentUser() user: AuthUser,

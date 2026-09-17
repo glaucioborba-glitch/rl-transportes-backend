@@ -52,6 +52,10 @@ export type DashboardData = {
   pendenciasFinanceiras: number;
   financeCounts: DashboardFinanceCounts;
   condicaoPagamento: string | null;
+  prazoPagamento: string | null;
+  condicaoPagamentoLabel: string | null;
+  prazoPagamentoLabel: string | null;
+  statusCadastro: "PENDENTE_ANALISE_FINANCEIRA" | "APROVADO" | "REJEITADO" | null;
 };
 
 export function usePortalDashboard(opts: { recentPage: number; recentLimit?: number }) {
@@ -198,6 +202,10 @@ export function usePortalDashboard(opts: { recentPage: number; recentLimit?: num
           faturadoMes: dash.financeiro.faturadoMes ?? 0,
         },
         condicaoPagamento: dash.condicaoPagamento ?? null,
+        prazoPagamento: dash.prazoPagamento ?? null,
+        condicaoPagamentoLabel: dash.condicaoPagamentoLabel ?? null,
+        prazoPagamentoLabel: dash.prazoPagamentoLabel ?? null,
+        statusCadastro: dash.statusCadastro ?? null,
       });
     } catch (e) {
       const msg =

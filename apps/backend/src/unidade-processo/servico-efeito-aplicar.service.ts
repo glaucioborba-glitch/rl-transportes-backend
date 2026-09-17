@@ -35,6 +35,42 @@ export class ServicoEfeitoAplicarService {
     return this.aplicarTransbordo(params.processoId, params.item, params.input);
   }
 
+  /** Desfaz lacre/transbordo ao excluir o lançamento (ID ainda aberto). */
+  async reverter(processoId: string, payload: ServicoEfeitoPayload): Promise<void> {
+    const efeito = parseServicoEfeito(payload.efeito);
+    if (efeito === 'NENHUM') return;
+
+    if (efeito === 'SUBSTITUIR_LACRE_SAIDA') {
+      await this.prisma.unidadeProcesso.update({
+        where: { id: processoId },
+        data: { lacreSaida: null, lacreSaidaOrigem: null, lacreSaidaObservacao: null },
+      });
+      return;
+    }
+
+    const destId = payload.unidadeProcessoDestinoId;
+    const origem = await this.prisma.unidadeProcesso.findUnique({ where: { id: processoId } });
+    if (!origem || !destId) return;
+    const destino = await this.prisma.unidadeProcesso.findUnique({ where: { id: destId } });
+    if (!destino) return;
+
+    await this.gravarStatusOperacional(origem.id, origem.unidadeIso, 'CHEIO');
+    await this.gravarStatusOperacional(destino.id, destino.unidadeIso, 'VAZIO');
+    await this.prisma.unidadeProcesso.update({
+      where: { id: origem.id },
+      data: { faturarHandlingComoCheio: false },
+    });
+    await this.prisma.unidadeProcesso.update({
+      where: { id: destino.id },
+      data: {
+        faturarHandlingComoCheio: false,
+        ...(payload.lacre
+          ? { lacreSaida: null, lacreSaidaObservacao: null }
+          : {}),
+      },
+    });
+  }
+
   private async aplicarLacreSaida(
     processoId: string,
     item: { tabelaId: string; nome: string },

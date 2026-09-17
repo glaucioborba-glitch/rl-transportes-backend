@@ -21,6 +21,11 @@ import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-
 import { formatDate, solicitacaoProtocoloDisplay } from "@/lib/portal-tracking";
 import { toast } from "@/lib/toast";
 import { PatioSolicitarSaidaButton } from "@/components/portal/patio-solicitar-saida-button";
+import { PortalTomadaReeferActions } from "@/components/portal/portal-tomada-reefer-actions";
+import { usePortalTiposContainer } from "@/hooks/use-portal-tipos-container";
+import { rotuloTomadaPedido } from "@/lib/cadastros/tomada-display";
+import { TomadaPedidoBadge } from "@/components/gate/tomada-pedido-badge";
+import { tipoRequerTomadaReefer } from "@/lib/cadastros/tipo-requer-tomada";
 
 function diasLabel(n: number): string {
   if (n <= 0) return "Hoje";
@@ -61,6 +66,7 @@ export default function PortalPatioSaldoPage() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [data, setData] = useState<PortalPatioSaldoResponse | null>(null);
+  const { tipos } = usePortalTiposContainer(true);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -160,6 +166,7 @@ export default function PortalPatioSaldoPage() {
                     { key: "unidade", header: "Unidade" },
                     { key: "id", header: "ID" },
                     { key: "tipo", header: "Tipo" },
+                    { key: "tomada", header: "Tomada" },
                     { key: "carga", header: "Carga" },
                     { key: "booking", header: "Booking" },
                     { key: "dias", header: "Dias" },
@@ -187,10 +194,30 @@ export default function PortalPatioSaldoPage() {
                       return (
                         <span className="text-slate-200">
                           {equipamentoLabel(r)}
-                          {r.refrigerado ? (
-                            <span className="ml-2 text-xs text-sky-300">Reefer</span>
-                          ) : null}
                         </span>
+                      );
+                    }
+                    if (key === "tomada") {
+                      const requer = tipoRequerTomadaReefer(tipos, r.tipo);
+                      if (!requer) return "—";
+                      return (
+                        <div className="min-w-[12rem] space-y-2 py-1">
+                          <TomadaPedidoBadge
+                            label={rotuloTomadaPedido({
+                              tipo: r.tipo,
+                              refrigerado: r.refrigerado,
+                              tipos,
+                            })}
+                          />
+                          <PortalTomadaReeferActions
+                            unidadeIso={r.unidadeIso}
+                            solicitacaoStatus="EM_PATIO"
+                            tipoCodigo={r.tipo}
+                            requerTomada={requer}
+                            liberarPedido={Boolean(r.unidadeProcessoNumero)}
+                            onChanged={() => void load()}
+                          />
+                        </div>
                       );
                     }
                     if (key === "carga") return cargaLabel(r.statusContainer);
@@ -250,6 +277,26 @@ export default function PortalPatioSaldoPage() {
                           <p className="text-xs text-slate-500">Tipo</p>
                           <p className="text-slate-200">{equipamentoLabel(r)}</p>
                         </div>
+                        {tipoRequerTomadaReefer(tipos, r.tipo) ? (
+                          <div className="col-span-2">
+                            <p className="text-xs text-slate-500">Tomada</p>
+                            <TomadaPedidoBadge
+                              label={rotuloTomadaPedido({
+                                tipo: r.tipo,
+                                refrigerado: r.refrigerado,
+                                tipos,
+                              })}
+                            />
+                            <PortalTomadaReeferActions
+                              unidadeIso={r.unidadeIso}
+                              solicitacaoStatus="EM_PATIO"
+                              tipoCodigo={r.tipo}
+                              requerTomada
+                              liberarPedido={Boolean(r.unidadeProcessoNumero)}
+                              onChanged={() => void load()}
+                            />
+                          </div>
+                        ) : null}
                         <div>
                           <p className="text-xs text-slate-500">Carga</p>
                           <p className="text-slate-200">{cargaLabel(r.statusContainer)}</p>

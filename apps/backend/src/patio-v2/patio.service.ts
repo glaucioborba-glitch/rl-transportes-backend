@@ -5,11 +5,13 @@ import {
 } from '@nestjs/common';
 import {
   AcaoAuditoria,
+  ModalidadeUnidadeProcesso,
   MovTipo,
   PatioStatus,
   PatioTomadaEventType,
   Prisma,
   StatusSolicitacao,
+  StatusUnidadeProcesso,
 } from '@prisma/client';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { withOcc } from '../common/prisma/occ.util';
@@ -24,6 +26,10 @@ import type {
   PatioTomadaDesconectarDto,
   PortalSolicitarTomadaDto,
 } from './dto/tomada.dto';
+import { formatTamanhoContainerMatrix, normalizeTamanhoContainer } from '../cadastros/tipo-container-tamanhos.util';
+import { matchContainerSolicitacao } from './patio-saldo.util';
+import { tipoRequerTomadaReefer } from '../cadastros/tipo-container-tomada.util';
+import { sincronizarTomadaDiariaDoProcesso } from '../unidade-processo/tomada-diaria-id.util';
 
 const OCUPACAO_CRITICA_RATIO = 1;
 
@@ -177,22 +183,50 @@ export class PatioV2Service {
     actorUserId?: string,
   ) {
     const unidadeIso = normalizeContainerIso(unidadeIsoRaw).replace(/\s/g, '').toUpperCase();
-    const unit = await this.prisma.patioUnidade.findFirst({
+    const includePortal = {
+      tomadaEventos: { orderBy: { createdAt: 'desc' as const }, take: 5 },
+      solicitacao: {
+        include: {
+          containersSolicitacao: true,
+        },
+      },
+    };
+    let unit = await this.prisma.patioUnidade.findFirst({
       where: {
         unidadeIso,
         solicitacao: { clienteId, deletedAt: null },
-        gateIn: { checkOut: null },
-        status: { not: PatioStatus.AGUARDANDO_GATE_OUT },
+        OR: [
+          { unidadeProcesso: { status: StatusUnidadeProcesso.ABERTO } },
+          { gateIn: { checkOut: null } },
+          { gateInId: null, status: { not: PatioStatus.AGUARDANDO_GATE_OUT } },
+        ],
       },
-      include: {
-        tomadaEventos: { orderBy: { createdAt: 'desc' }, take: 5 },
-        solicitacao: {
-          include: {
-            containersSolicitacao: true,
-          },
-        },
-      },
+      include: includePortal,
+      orderBy: { createdAt: 'desc' },
     });
+    if (!unit) {
+      const processo = await this.prisma.unidadeProcesso.findFirst({
+        where: {
+          unidadeIso,
+          clienteId,
+          status: StatusUnidadeProcesso.ABERTO,
+          modalidade: ModalidadeUnidadeProcesso.PATIO,
+        },
+      });
+      if (processo?.entradaSolicitacaoId) {
+        const createdId = await this.provisionFromProcesso({
+          unidadeProcessoId: processo.id,
+          solicitacaoId: processo.entradaSolicitacaoId,
+          unidadeIso,
+          refrigerado: false,
+          gateInId: null,
+        });
+        unit = await this.prisma.patioUnidade.findUnique({
+          where: { id: createdId },
+          include: includePortal,
+        });
+      }
+    }
     if (!unit) {
       throw new NotFoundException('Contêiner não encontrado no pátio ou já liberado.');
     }
@@ -208,6 +242,7 @@ export class PatioV2Service {
     const form = unit.solicitacao.containersSolicitacao.find(
       (c) => normalizeContainerIso(c.unidade).replace(/\s/g, '').toUpperCase() === unidadeIso,
     );
+    await this.assertTipoPermiteTomada(form?.tipo);
     await this.prisma.$transaction(async (tx) => {
       await tx.patioTomadaEvent.create({
         data: {
@@ -259,12 +294,19 @@ export class PatioV2Service {
     const form = unit.solicitacao.containersSolicitacao.find(
       (c) => normalizeContainerIso(c.unidade).replace(/\s/g, '').toUpperCase() === iso,
     );
+    await this.assertTipoPermiteTomada(form?.tipo);
     const setPoint = dto.setPoint ?? form?.setPoint ?? null;
+
+    const processoId =
+      unit.unidadeProcessoId ?? (await this.processoAbertoIdPorIso(iso));
 
     await this.prisma.$transaction(async (tx) => {
       await tx.patioUnidade.update({
         where: { id: unit.id },
-        data: { refrigerado: true },
+        data: {
+          refrigerado: true,
+          ...(processoId && !unit.unidadeProcessoId ? { unidadeProcessoId: processoId } : {}),
+        },
       });
       await tx.patioTomadaEvent.create({
         data: {
@@ -295,6 +337,12 @@ export class PatioV2Service {
       dadosDepois: { tipo: 'CONECTADO', unidadeIso: iso, setPoint },
     });
 
+    if (processoId) {
+      await sincronizarTomadaDiariaDoProcesso(this.prisma, processoId, {
+        userId: operadorId,
+      });
+    }
+
     return { id: unit.id, unidadeIso: iso, refrigerado: true, setPoint };
   }
 
@@ -305,10 +353,16 @@ export class PatioV2Service {
       throw new BadRequestException('Tomada já está desconectada.');
     }
 
+    const processoId =
+      unit.unidadeProcessoId ?? (await this.processoAbertoIdPorIso(unit.unidadeIso));
+
     await this.prisma.$transaction(async (tx) => {
       await tx.patioUnidade.update({
         where: { id: unit.id },
-        data: { refrigerado: false },
+        data: {
+          refrigerado: false,
+          ...(processoId && !unit.unidadeProcessoId ? { unidadeProcessoId: processoId } : {}),
+        },
       });
       await tx.patioTomadaEvent.create({
         data: {
@@ -329,7 +383,90 @@ export class PatioV2Service {
       dadosDepois: { tipo: 'DESCONECTADO', unidadeIso: unit.unidadeIso },
     });
 
+    if (processoId) {
+      await sincronizarTomadaDiariaDoProcesso(this.prisma, processoId, {
+        userId: operadorId,
+      });
+    }
+
     return { id: unit.id, unidadeIso: unit.unidadeIso, refrigerado: false };
+  }
+
+  async conectarTomadaPorIso(
+    unidadeIsoRaw: string,
+    operadorId: string,
+    dto: PatioTomadaConectarDto,
+  ) {
+    const unit = await this.resolverPatioUnidadeParaTomada(unidadeIsoRaw);
+    return this.conectarTomada(unit.id, operadorId, dto);
+  }
+
+  async desconectarTomadaPorIso(unidadeIsoRaw: string, operadorId: string, dto: PatioTomadaDesconectarDto) {
+    const unit = await this.resolverPatioUnidadeParaTomada(unidadeIsoRaw);
+    return this.desconectarTomada(unit.id, operadorId, dto);
+  }
+
+  private async assertTipoPermiteTomada(tipoCodigo?: string | null) {
+    const tipos = await this.prisma.cadastroTipoContainer.findMany({
+      where: { deletedAt: null, ativo: true },
+      select: { codigo: true, tomadaReefer: true },
+    });
+    if (!tipoRequerTomadaReefer(tipos, tipoCodigo)) {
+      throw new BadRequestException(
+        'Tomada só é permitida para tipos com “Requer tomada reefer no pátio” no cadastro (ex.: REEFER).',
+      );
+    }
+  }
+
+  private async processoAbertoIdPorIso(unidadeIso: string): Promise<string | null> {
+    const iso = normalizeContainerIso(unidadeIso).replace(/\s/g, '').toUpperCase();
+    const processo = await this.prisma.unidadeProcesso.findFirst({
+      where: {
+        unidadeIso: iso,
+        status: StatusUnidadeProcesso.ABERTO,
+        modalidade: ModalidadeUnidadeProcesso.PATIO,
+      },
+      select: { id: true },
+    });
+    return processo?.id ?? null;
+  }
+
+  private async resolverPatioUnidadeParaTomada(unidadeIsoRaw: string) {
+    const unidadeIso = normalizeContainerIso(unidadeIsoRaw).replace(/\s/g, '').toUpperCase();
+    const noPatio = await this.prisma.patioUnidade.findFirst({
+      where: {
+        unidadeIso,
+        OR: [
+          { unidadeProcesso: { status: StatusUnidadeProcesso.ABERTO } },
+          { gateIn: { checkOut: null } },
+          { gateInId: null, status: { not: PatioStatus.AGUARDANDO_GATE_OUT } },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (noPatio) return noPatio;
+
+    const processo = await this.prisma.unidadeProcesso.findFirst({
+      where: {
+        unidadeIso,
+        status: StatusUnidadeProcesso.ABERTO,
+        modalidade: ModalidadeUnidadeProcesso.PATIO,
+      },
+    });
+    if (!processo?.entradaSolicitacaoId) {
+      throw new NotFoundException('Contêiner não encontrado no pátio. Abra o ID (RIC de entrada) antes de ligar a tomada.');
+    }
+
+    const createdId = await this.provisionFromProcesso({
+      unidadeProcessoId: processo.id,
+      solicitacaoId: processo.entradaSolicitacaoId,
+      unidadeIso,
+      refrigerado: false,
+      gateInId: null,
+    });
+    const created = await this.prisma.patioUnidade.findUnique({ where: { id: createdId } });
+    if (!created) throw new NotFoundException('Contêiner não encontrado no pátio.');
+    return created;
   }
 
   async statusTomada(unidadeIsoRaw: string, clienteId?: string) {
@@ -338,7 +475,11 @@ export class PatioV2Service {
       where: {
         unidadeIso,
         ...(clienteId ? { solicitacao: { clienteId } } : {}),
-        gateIn: { checkOut: null },
+        OR: [
+          { unidadeProcesso: { status: StatusUnidadeProcesso.ABERTO } },
+          { gateIn: { checkOut: null } },
+          { gateInId: null, status: { not: PatioStatus.AGUARDANDO_GATE_OUT } },
+        ],
       },
       include: {
         tomadaEventos: { orderBy: { createdAt: 'desc' }, take: 20 },
@@ -358,6 +499,7 @@ export class PatioV2Service {
     return {
       unidadeId: unit.id,
       unidadeIso: unit.unidadeIso,
+      unidadeProcessoId: unit.unidadeProcessoId,
       conectada: unit.refrigerado,
       solicitacaoPendente,
       eventos: unit.tomadaEventos.map((e) => ({
@@ -555,7 +697,7 @@ export class PatioV2Service {
   }
 
   async inventario() {
-    const [posicoes, unidades, semPosicao] = await Promise.all([
+    const [posicoes, unidades, semPosicao, tipos] = await Promise.all([
       this.prisma.patioPosicao.findMany({
         orderBy: { codigoBaia: 'asc' },
         include: {
@@ -570,6 +712,7 @@ export class PatioV2Service {
                   cliente: { select: { razaoSocial: true } },
                 },
               },
+              unidadeProcesso: { select: { entradaEm: true } },
             },
           },
         },
@@ -589,7 +732,24 @@ export class PatioV2Service {
         },
         include: {
           posicaoAtual: true,
-          solicitacao: { select: { clienteId: true, protocolo: true } },
+          solicitacao: {
+            select: {
+              clienteId: true,
+              protocolo: true,
+              cliente: { select: { razaoSocial: true } },
+              containersSolicitacao: {
+                select: {
+                  unidade: true,
+                  booking: true,
+                  processo: true,
+                  navio: true,
+                  status: true,
+                  tamanho: true,
+                  tipo: true,
+                },
+              },
+            },
+          },
           unidadeProcesso: { select: { numero: true, entradaEm: true } },
         },
       }),
@@ -599,6 +759,10 @@ export class PatioV2Service {
           status: { in: [PatioStatus.SEPARADO, PatioStatus.MOVIMENTANDO] },
         },
         select: { id: true, unidadeIso: true, status: true, solicitacaoId: true },
+      }),
+      this.prisma.cadastroTipoContainer.findMany({
+        where: { deletedAt: null, ativo: true },
+        select: { codigo: true, tomadaReefer: true },
       }),
     ]);
 
@@ -643,6 +807,7 @@ export class PatioV2Service {
           refrigerado: u.refrigerado,
           protocolo: u.solicitacao.protocolo,
           cliente: u.solicitacao.cliente?.razaoSocial ?? '—',
+          entradaEm: (u.unidadeProcesso?.entradaEm ?? u.createdAt).toISOString(),
           giroEstimado: u.solicitacao.giroEstimado ?? null,
         })),
       };
@@ -660,11 +825,50 @@ export class PatioV2Service {
       this.emitPatio('PATIO_DIVERGENCIA', 'system', undefined, { total: divergencias.length });
     }
 
+    const saldo = unidades
+      .map((u) => {
+        const c = matchContainerSolicitacao(u.unidadeIso, u.solicitacao.containersSolicitacao ?? []);
+        const situacaoRic = String(c?.status ?? '').toUpperCase();
+        const situacaoPatio = String(u.statusContainer ?? '').toUpperCase();
+        const situacao =
+          situacaoRic === 'CHEIO' || situacaoRic === 'VAZIO'
+            ? situacaoRic
+            : situacaoPatio === 'CHEIO' || situacaoPatio === 'VAZIO'
+              ? situacaoPatio
+              : '';
+        const tamanho = normalizeTamanhoContainer(c?.tamanho);
+        return {
+          id: u.id,
+          unidadeIso: u.unidadeIso,
+          status: u.status,
+          refrigerado: u.refrigerado,
+          situacao,
+          tamanho,
+          tamanhoLabel: tamanho ? formatTamanhoContainerMatrix(tamanho) : '',
+          cliente: u.solicitacao.cliente?.razaoSocial ?? '—',
+          clienteId: u.solicitacao.clienteId,
+          baia: u.posicaoAtual?.codigoBaia ?? null,
+          entradaEm: (u.unidadeProcesso?.entradaEm ?? u.createdAt).toISOString(),
+          processoNumero: u.unidadeProcesso?.numero ?? null,
+          processo: c?.processo?.trim() || '',
+          booking: c?.booking?.trim() || '',
+          navio: c?.navio?.trim() || '',
+          tipoContainer: c?.tipo ?? null,
+          tomadaReefer: tipoRequerTomadaReefer(tipos, c?.tipo),
+        };
+      })
+      .sort((a, b) => {
+        const dias = new Date(a.entradaEm).getTime() - new Date(b.entradaEm).getTime();
+        if (dias !== 0) return dias;
+        return a.unidadeIso.localeCompare(b.unidadeIso);
+      });
+
     return {
       geradoEm: new Date().toISOString(),
       lotacaoTotal: unidades.length,
       capacidadeTotal: posicoes.reduce((s, p) => s + p.capacidade, 0),
       reefersLigados: reefers,
+      semBaia: saldo.filter((u) => !u.baia).length,
       mediaHorasArmazenado: nTempo ? Math.round((sumHoras / nTempo) * 10) / 10 : null,
       contagemPorCliente: [...porCliente.entries()].map(([clienteId, total]) => ({
         clienteId,
@@ -672,6 +876,7 @@ export class PatioV2Service {
       })),
       divergencias,
       baias,
+      unidades: saldo,
     };
   }
 

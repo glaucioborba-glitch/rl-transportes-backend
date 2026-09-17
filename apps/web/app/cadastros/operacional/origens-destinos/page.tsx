@@ -48,7 +48,8 @@ export default function OrigensDestinosListPage() {
         <div>
           <h1 className="text-2xl font-bold">Origens e destinos</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Pontos de partida e chegada usados nas tarifas de transporte (o sentido não importa)
+            Pontos de partida e chegada das tarifas. Também aparecem no mapa de Localização; o Fretes vai
+            usar esta lista para designar o destino.
           </p>
         </div>
         {canCreate ? (
@@ -87,6 +88,7 @@ export default function OrigensDestinosListPage() {
                 <th className="p-4 text-left">Nome</th>
                 <th className="p-4 text-left">Tipo</th>
                 <th className="p-4 text-left">Cidade</th>
+                <th className="p-4 text-center">Mapa</th>
                 <th className="p-4 text-center">Status</th>
                 <th className="p-4 text-center">Ações</th>
               </tr>
@@ -108,6 +110,9 @@ export default function OrigensDestinosListPage() {
                   </td>
                   <td className="p-4 text-sm">
                     {local.cidade ? `${local.cidade}${local.uf ? `/${local.uf}` : ""}` : "—"}
+                  </td>
+                  <td className="p-4 text-center text-xs text-muted-foreground">
+                    {local.lat != null && local.lng != null ? "Com ponto" : "Sem ponto"}
                   </td>
                   <td className="p-4 text-center">
                     <Badge

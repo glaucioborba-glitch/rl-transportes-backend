@@ -121,6 +121,7 @@ enum StatusUnidadeAluguel {
   DISPONIVEL
   ALUGADA
   MANUTENCAO
+  USO_PROPRIO
   INATIVA
 }
 
@@ -293,6 +294,21 @@ enum StatusPagamento {
   CANCELADO
 }
 
+/// Caixa comercial do cliente (ajustes manuais — não é o livro de faturas).
+enum TipoLancamentoContaCorrente {
+  CREDITO
+  DEBITO
+}
+
+enum MotivoLancamentoContaCorrente {
+  ACORDO_COMERCIAL
+  AJUSTE_FATURA
+  PIX_A_MAIOR
+  LIBERACAO_PAGAR_DEPOIS
+  COMPENSACAO
+  OUTRO
+}
+
 enum StatusIpm {
   PENDENTE
   ENVIADO
@@ -387,6 +403,10 @@ model Tenant {
   nome      String       @db.VarChar(255)
   status    TenantStatus @default(ATIVO)
   plano     String       @default("STANDARD") @db.VarChar(32)
+  /// Moeda do terminal — só o Super Admin altera.
+  moedaCorrente String   @default("BRL") @map("moeda_corrente") @db.VarChar(8)
+  /// Idioma padrão do terminal — só o Super Admin altera.
+  idiomaPadrao  String   @default("pt-BR") @map("idioma_padrao") @db.VarChar(16)
   createdAt DateTime     @default(now()) @map("created_at")
   updatedAt DateTime     @updatedAt @map("updated_at")
 
@@ -407,8 +427,8 @@ model Tenant {
   cadastrosColaboradores CadastroColaborador[]
   cadastrosTransportadoras CadastroTransportadora[]
   cadastrosMotoristas CadastroMotorista[]
+  catalogoMotoristasExternos CatalogoMotoristaExterno[]
   cadastrosTerceiros CadastroTerceiro[]
-  cadastrosTiposContainer CadastroTipoContainer[]
   cadastrosCapacidadesContainer CadastroCapacidadeContainer[]
   cadastrosContainerCache CadastroContainerCache[]
   cadastrosEquipamentos CadastroEquipamento[]
@@ -429,6 +449,7 @@ model Tenant {
   cadastrosTabelasAluguel CadastroTabelaAluguel[]
   alugueis Aluguel[]
   fretes Frete[]
+  contaCorrenteLancamentos ClienteContaCorrenteLancamento[]
 
   @@index([status])
   @@map("tenants")
@@ -551,6 +572,10 @@ model Cliente {
   tabelaPreco   TabelaPreco? @relation(fields: [tabelaPrecoId], references: [id], onDelete: SetNull)
   cadastroTabelaTransporteId String? @map("cadastro_tabela_transporte_id")
   cadastroTabelaTransporte   CadastroTabelaTransporte? @relation(fields: [cadastroTabelaTransporteId], references: [id], onDelete: SetNull)
+  cadastroTabelaServicoId String? @map("cadastro_tabela_servico_id")
+  cadastroTabelaServico   CadastroTabelaServico? @relation(fields: [cadastroTabelaServicoId], references: [id], onDelete: SetNull)
+  cadastroTabelaAluguelId String? @map("cadastro_tabela_aluguel_id")
+  cadastroTabelaAluguel   CadastroTabelaAluguel? @relation(fields: [cadastroTabelaAluguelId], references: [id], onDelete: SetNull)
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -572,6 +597,7 @@ model Cliente {
   cessoesDestino        CessaoTitularidade[] @relation("CessaoPara")
   fretes                Frete[]
   alugueis              Aluguel[]
+  contaCorrenteLancamentos ClienteContaCorrenteLancamento[]
 
   @@unique([tenantId, cpfCnpj])
   @@unique([tenantId, email])
@@ -581,8 +607,34 @@ model Cliente {
   @@index([tenantId])
   @@index([tabelaPrecoId])
   @@index([cadastroTabelaTransporteId])
+  @@index([cadastroTabelaServicoId])
+  @@index([cadastroTabelaAluguelId])
   @@index([statusCadastro])
   @@map("clientes")
+}
+
+/// Ajustes manuais de crédito/débito do cliente (caixa comercial).
+/// Não substitui fatura/boleto. Saldo > 0 = a favor do cliente; < 0 = em aberto.
+model ClienteContaCorrenteLancamento {
+  id              String                         @id @default(uuid())
+  tenantId        String                         @map("tenant_id") @db.VarChar(64)
+  tenant          Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  clienteId       String                         @map("cliente_id")
+  cliente         Cliente                        @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  tipo            TipoLancamentoContaCorrente
+  valor           Decimal                        @db.Decimal(12, 2)
+  /// Crédito positivo, débito negativo — para somar o saldo.
+  valorSinal      Decimal                        @map("valor_sinal") @db.Decimal(12, 2)
+  motivo          MotivoLancamentoContaCorrente  @default(OUTRO)
+  descricao       String                         @db.VarChar(500)
+  referencia      String?                        @db.VarChar(120)
+  createdByUserId String?                        @map("created_by_user_id")
+  createdByNome   String?                        @map("created_by_nome") @db.VarChar(120)
+  createdAt       DateTime                       @default(now()) @map("created_at")
+
+  @@index([tenantId, clienteId, createdAt])
+  @@index([clienteId])
+  @@map("cliente_conta_corrente_lancamentos")
 }
 
 /// Inbox do portal do cliente (cadastro e condição comercial).
@@ -789,9 +841,6 @@ model AgendamentoSolicitacao {
   solicitacao             Solicitacao       @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
   dataRef                 DateTime          @map("data_ref") @db.Date
   turno                   TurnoAgendamento
-  atendimentoEspecial     Boolean           @default(false) @map("atendimento_especial")
-  atendimentoEspecialTexto String?          @map("atendimento_especial_texto") @db.VarChar(500)
-  atendimentoEspecialAudit Json?           @map("atendimento_especial_audit")
   createdAt               DateTime          @default(now())
   updatedAt               DateTime          @updatedAt
 
@@ -1914,6 +1963,9 @@ model CadastroMotorista {
   transportadoraId  String   @map("transportadora_id") @db.VarChar(36)
   transportadora    CadastroTransportadora @relation(fields: [transportadoraId], references: [id], onDelete: Restrict)
 
+  placaCavalo   String? @map("placa_cavalo") @db.VarChar(10)
+  placaCarreta  String? @map("placa_carreta") @db.VarChar(10)
+
   cnhNumero    String?   @map("cnh_numero") @db.VarChar(20)
   cnhCategoria String?   @map("cnh_categoria") @db.VarChar(4)
   cnhValidade  DateTime? @map("cnh_validade") @db.Date
@@ -1931,6 +1983,30 @@ model CadastroMotorista {
   @@index([tenantId, ativo])
   @@index([transportadoraId])
   @@map("cadastros_motoristas")
+}
+
+/// Motoristas de terceiros informados em solicitação — só deste tenant. Autofill + blacklist.
+model CatalogoMotoristaExterno {
+  id       String @id @default(uuid())
+  tenantId String @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  cpf    String  @db.VarChar(11)
+  nome   String  @db.VarChar(255)
+  origem String  @default("PORTAL") @db.VarChar(32)
+
+  suspensoAte      DateTime? @map("suspenso_ate")
+  suspensaoDias    Int?      @map("suspensao_dias")
+  suspensaoMotivo  String?   @map("suspensao_motivo") @db.VarChar(500)
+  suspensoEm       DateTime? @map("suspenso_em")
+  suspensoPorUserId String?  @map("suspenso_por_user_id") @db.VarChar(64)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, cpf])
+  @@index([tenantId, suspensoAte])
+  @@map("catalogo_motoristas_externos")
 }
 
 /// Capacidade do conjunto do terceiro (20", 40" ou ambos).
@@ -2008,12 +2084,12 @@ model CadastroTerceiroDocumento {
 }
 
 /// MDM — catálogo de tipos de contêiner aceitos pelo terminal.
+/// Tipos de caixa (DRY, REEFER…) — catálogo global, sem tenant.
+/// Edição só no Super Admin. Terminais, gate e portal só leem.
 model CadastroTipoContainer {
   id           String   @id @default(uuid())
-  tenantId     String   @default("default") @map("tenant_id") @db.VarChar(64)
-  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
 
-  codigo       String   @db.VarChar(32)
+  codigo       String   @unique @db.VarChar(32)
   nome         String   @db.VarChar(120)
   tamanhos     Json     @default("[]")
   tomadaReefer Boolean  @default(false) @map("tomada_reefer")
@@ -2023,9 +2099,30 @@ model CadastroTipoContainer {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  @@unique([tenantId, codigo])
-  @@index([tenantId, ativo])
+  @@index([ativo])
   @@map("cadastros_tipos_container")
+}
+
+/// Catálogo físico da caixa (ISO 6346) — compartilhado entre tenants.
+/// Só atributos da unidade (tipo da porta, tara/MGW em kg). Sem cliente, booking ou lacre.
+model CatalogoContainerIso {
+  id           String   @id @default(uuid())
+  unidadeIso   String   @unique @map("unidade_iso") @db.VarChar(16)
+  tipoIso      String?  @map("tipo_iso") @db.VarChar(8)
+  tipoCodigo   String?  @map("tipo_codigo") @db.VarChar(32)
+  tamanhoPes   String?  @map("tamanho_pes") @db.VarChar(8)
+  perfil       String?  @db.VarChar(16)
+  mgwKg        Int?     @map("mgw_kg")
+  taraKg       Int?     @map("tara_kg")
+  payloadKg    Int?     @map("payload_kg")
+  owner        String?  @db.VarChar(64)
+  origem       String   @default("GATE") @db.VarChar(32)
+  confirmadoEm DateTime @map("confirmado_em")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([tipoCodigo, tamanhoPes])
+  @@map("catalogo_containers_iso")
 }
 
 /// MDM — capacidade/cubagem do contêiner (HC, DC, etc.).
@@ -2276,6 +2373,9 @@ model CadastroLocalTransporte {
   tipo      String   @default("OUTRO") @db.VarChar(32)
   cidade    String?  @db.VarChar(120)
   uf        String?  @db.VarChar(2)
+  /// Ponto no mapa (Localização / ETA). Sem coordenada o local não aparece no GPS.
+  lat       Float?
+  lng       Float?
   ativo     Boolean  @default(true)
 
   trechosComoA CadastroTarifaTransporte[] @relation("TarifaLocalA")
@@ -2472,6 +2572,7 @@ model CadastroTabelaServico {
   deletedAt DateTime? @map("deleted_at")
 
   itens CadastroServicoItem[]
+  clientes Cliente[]
 
   @@index([tenantId, ativo])
   @@index([tenantId, padrao])
@@ -2544,7 +2645,7 @@ model CadastroUnidadeAluguel {
   @@map("cadastros_unidades_aluguel")
 }
 
-/// Tabela comercial de aluguel (diária a partir da saída + entrega/coleta opcionais).
+/// Tabela comercial de aluguel (handling na saída + diária por faixas).
 model CadastroTabelaAluguel {
   id         String    @id @default(uuid())
   tenantId   String    @default("default") @map("tenant_id") @db.VarChar(64)
@@ -2561,6 +2662,7 @@ model CadastroTabelaAluguel {
 
   itens    CadastroTabelaAluguelItem[]
   alugueis Aluguel[]
+  clientes Cliente[]
 
   @@index([tenantId, ativo])
   @@index([tenantId, padrao])
@@ -2575,8 +2677,9 @@ model CadastroTabelaAluguelItem {
   containerTamanho    String               @map("container_tamanho") @db.VarChar(8)
   valorDiaria         Decimal              @map("valor_diaria") @db.Decimal(12, 2)
   diasFreeTime        Int                  @default(0) @map("dias_free_time")
-  valorEntrega        Decimal              @default(0) @map("valor_entrega") @db.Decimal(12, 2)
-  valorColeta         Decimal              @default(0) @map("valor_coleta") @db.Decimal(12, 2)
+  valorHandling       Decimal              @default(0) @map("valor_handling") @db.Decimal(12, 2)
+  /// Faixas escalonadas: [{ diaInicio, diaFim|null, valorDiaria }]
+  faixasDiaria        Json?                @map("faixas_diaria")
   ativo               Boolean              @default(true)
   createdAt           DateTime             @default(now()) @map("created_at")
   updatedAt           DateTime             @updatedAt @map("updated_at")
@@ -3399,5 +3502,34 @@ model MobileHubOp {
   @@index([tenantId])
   @@index([createdAt])
   @@map("mobile_hub_ops")
+}
+
+/// Motorista interno (cadastro) ou terceiro da RL que envia GPS pelo celular.
+enum MotoristaGpsOrigem {
+  INTERNO
+  TERCEIRO
+}
+
+/// Última posição conhecida — um ponto por motorista do tenant.
+model MotoristaPosicao {
+  id         String             @id @default(uuid())
+  tenantId   String             @default("default") @map("tenant_id") @db.VarChar(64)
+  origem     MotoristaGpsOrigem
+  cadastroId String             @map("cadastro_id") @db.VarChar(36)
+  cpf        String             @db.VarChar(11)
+  nome       String             @db.VarChar(255)
+  placaCavalo String?           @map("placa_cavalo") @db.VarChar(10)
+  lat        Float
+  lng        Float
+  precisaoM  Float?             @map("precisao_m")
+  rastreando Boolean            @default(true)
+  atualizadoEm DateTime         @map("atualizado_em")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, origem, cadastroId])
+  @@index([tenantId, atualizadoEm])
+  @@map("motorista_posicoes")
 }
 

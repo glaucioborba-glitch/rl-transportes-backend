@@ -35,6 +35,7 @@ import {
   SOLICITACAO_SELECT_CLS as SELECT_CLS,
   SOLICITACAO_SPAN2 as SPAN2,
 } from "@/components/portal/solicitacao-form-layout";
+import { useMotoristaCpfAutofill } from "@/hooks/use-motorista-cpf-autofill";
 
 type ContainerDraft = {
   unidade: string;
@@ -73,8 +74,6 @@ export function SolicitacaoEditModal({
   const [containers, setContainers] = useState<ContainerDraft[]>([]);
   const [dataRef, setDataRef] = useState("");
   const [turno, setTurno] = useState<"MANHA" | "TARDE">("MANHA");
-  const [atendimentoEspecial, setAtendimentoEspecial] = useState(false);
-  const [atendimentoEspecialTexto, setAtendimentoEspecialTexto] = useState("");
 
   const [nomeMotorista, setNomeMotorista] = useState("");
   const [cpfMotorista, setCpfMotorista] = useState("");
@@ -87,6 +86,12 @@ export function SolicitacaoEditModal({
   const [solEmail, setSolEmail] = useState("");
 
   const isFrotaFL = useMemo(() => intentUsesFlFrete(intent), [intent]);
+  const { hint: motoristaHint, bloqueio: motoristaBloqueio } = useMotoristaCpfAutofill({
+    cpf: isFrotaFL ? "" : cpfMotorista,
+    nome: nomeMotorista,
+    setNome: setNomeMotorista,
+    source: "portal",
+  });
   const { tipos: tiposContainer, loading: loadingTipos } = usePortalTiposContainer(open);
   const selectCls = SELECT_CLS;
 
@@ -104,8 +109,6 @@ export function SolicitacaoEditModal({
         const t = (ag?.turno as "MANHA" | "TARDE") ?? "MANHA";
         setTurno(t);
         setOriginalTurno(t);
-        setAtendimentoEspecial(Boolean(ag?.atendimentoEspecial));
-        setAtendimentoEspecialTexto(ag?.atendimentoEspecialTexto ?? "");
 
         setContainers(
           (row.containersSolicitacao ?? []).map((c) => ({
@@ -209,10 +212,6 @@ export function SolicitacaoEditModal({
       agendamento: {
         dataRef,
         turno,
-        atendimentoEspecial,
-        atendimentoEspecialTexto: atendimentoEspecial
-          ? atendimentoEspecialTexto.trim() || undefined
-          : undefined,
       },
       solicitante: {
         nome: solNome.trim(),
@@ -225,6 +224,10 @@ export function SolicitacaoEditModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!solicitacaoId) return;
+    if (!isFrotaFL && motoristaBloqueio) {
+      toast.error(motoristaBloqueio);
+      return;
+    }
 
     const scheduleChanged = dataRef !== originalDataRef || turno !== originalTurno;
     if (
@@ -329,6 +332,33 @@ export function SolicitacaoEditModal({
                       disabled={!c.tipo}
                     />
                   </div>
+                  {findPortalTipo(tiposContainer, c.tipo)?.tomadaReefer ? (
+                    <>
+                      <div>
+                        <label className="mb-1 block text-xs text-slate-500">Tomada</label>
+                        <select
+                          className={selectCls}
+                          value={c.refrigerado ? "sim" : "nao"}
+                          onChange={(e) =>
+                            updateContainer(idx, { refrigerado: e.target.value === "sim" })
+                          }
+                        >
+                          <option value="nao">Não</option>
+                          <option value="sim">Sim</option>
+                        </select>
+                      </div>
+                      {c.refrigerado ? (
+                        <div>
+                          <label className="mb-1 block text-xs text-slate-500">Set point (°C)</label>
+                          <Input
+                            value={c.setPoint}
+                            onChange={(e) => updateContainer(idx, { setPoint: e.target.value })}
+                            className="bg-black/40"
+                          />
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
                 </CardContent>
               </Card>
             ))}
@@ -348,7 +378,7 @@ export function SolicitacaoEditModal({
                     className="bg-black/40"
                   />
                 </div>
-                <div className={SPAN2}>
+                <div>
                   <label className="mb-1 block text-xs text-slate-500">Turno</label>
                   <select
                     className={selectCls}
@@ -385,6 +415,11 @@ export function SolicitacaoEditModal({
                       required
                       className="bg-black/40"
                     />
+                    {motoristaBloqueio ? (
+                      <p className="mt-1 text-[11px] text-red-400">{motoristaBloqueio}</p>
+                    ) : motoristaHint ? (
+                      <p className="mt-1 text-[11px] text-slate-400">{motoristaHint}</p>
+                    ) : null}
                   </div>
                   <div>
                     <label className="mb-1 block text-xs text-slate-500">Placa cavalo</label>

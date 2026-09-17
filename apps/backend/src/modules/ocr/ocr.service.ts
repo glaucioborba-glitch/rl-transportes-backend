@@ -3,6 +3,7 @@ import { IntegrationCredentialsService } from '../../tenant/integration-credenti
 import type { OCRProcessarResponse, OCRProvider, OCRRequest, OCRResult } from './ocr-provider.interface';
 import { GoogleVisionProvider } from './providers/google-vision.provider';
 import { TesseractProvider } from './providers/tesseract.provider';
+import { parseContainerExtras, temContainerOcrExtras, type ContainerOcrExtras } from './utils/ocr-parsers';
 
 const CONFIANCA_MINIMA = 0.5;
 
@@ -46,19 +47,24 @@ export class OCRService {
     );
 
     let ultimoResultado: OCRResult | null = null;
+    let extras: ContainerOcrExtras | undefined;
 
     for (const provider of this.providers) {
       this.logger.log(`[OCR] Tentando provider: ${provider.name}`);
 
       const resultado = await provider.processar(req);
       ultimoResultado = resultado;
+      if (req.tipo === 'CONTAINER') {
+        const parsed = parseContainerExtras(resultado.textoBruto ?? '');
+        if (temContainerOcrExtras(parsed)) extras = parsed;
+      }
 
       if (resultado.sucesso && resultado.confianca >= CONFIANCA_MINIMA) {
         this.logger.log(
           `[OCR] ${provider.name} sucesso: texto="${resultado.textoExtraido}" confianca=${resultado.confianca}`,
         );
         const ocrMatch = this.compararValores(resultado.textoExtraido, req.valorEsperado);
-        return { ...resultado, ocrMatch, valorEsperado: req.valorEsperado };
+        return { ...resultado, extras, ocrMatch, valorEsperado: req.valorEsperado };
       }
 
       this.logger.warn(
@@ -77,6 +83,7 @@ export class OCRService {
       provider: ultimoResultado?.provider ?? 'mock',
       sucesso: ultimoResultado?.sucesso ?? false,
       erro: ultimoResultado?.erro ?? 'Todos os providers falharam',
+      extras,
       ocrMatch,
       valorEsperado: req.valorEsperado,
     };

@@ -22,13 +22,22 @@ export function PortalTomadaReeferActions({
   unidadeIso,
   solicitacaoStatus,
   tipoCodigo,
+  requerTomada,
+  liberarPedido,
+  onChanged,
 }: {
   unidadeIso: string;
   solicitacaoStatus: string;
   tipoCodigo?: string | null;
+  requerTomada?: boolean;
+  /** Unidade já no pátio (saldo) — não depende do status da OS. */
+  liberarPedido?: boolean;
+  onChanged?: () => void;
 }) {
   const podeTomada =
-    Boolean(tipoCodigo?.toUpperCase().includes("REEFER")) && EM_PATIO.has(solicitacaoStatus);
+    (requerTomada === true ||
+      (requerTomada === undefined && Boolean(tipoCodigo?.toUpperCase().includes("REEFER")))) &&
+    (liberarPedido === true || EM_PATIO.has(solicitacaoStatus));
   const [status, setStatus] = useState<PortalTomadaStatus | null>(null);
   const [setPoint, setSetPoint] = useState("-18");
   const [loading, setLoading] = useState(false);
@@ -66,6 +75,7 @@ export function PortalTomadaReeferActions({
       const res = await solicitarTomadaPortal(unidadeIso, { setPoint: sp });
       toast.success(res.message);
       setStatus(await fetchPortalTomadaStatus(unidadeIso));
+      onChanged?.();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Falha ao solicitar tomada");
     } finally {

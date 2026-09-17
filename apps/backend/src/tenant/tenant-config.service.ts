@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CategoriaAuditLog } from '@prisma/client';
 import { appendAuditTrailEntry } from '../audit-trail/audit-trail-capture.util';
@@ -6,7 +6,7 @@ import { AuditContextService } from '../audit-trail/audit-context.service';
 import { ConfigCacheService } from '../common/cache/config-cache.service';
 import { mergeReguaCobranca } from '../common/finance/regua-cobranca.util';
 import { PrismaService } from '../prisma/prisma.service';
-import type { UpdateParametrosGeraisDto } from './dto/update-parametros-gerais.dto';
+import type { UpdateIntegracoesDto, UpdateParametrosGeraisDto } from './dto/update-parametros-gerais.dto';
 import { DEFAULT_TENANT_ID } from './tenant.constants';
 import {
   mergeIntegracoesCredenciais,
@@ -14,6 +14,7 @@ import {
 } from './integration-credentials.util';
 import { IntegrationCredentialsService } from './integration-credentials.service';
 import { TenantConfigProbesService } from './tenant-config-probes.service';
+import { TenantContextService } from './tenant-context.service';
 import {
   DEFAULT_SEGURANCA,
   DEFAULT_TENANT_PARAMETROS,
@@ -61,6 +62,7 @@ export class TenantConfigService {
     private readonly config: ConfigService,
     private readonly probes: TenantConfigProbesService,
     private readonly integrationCreds: IntegrationCredentialsService,
+    private readonly tenantCtx: TenantContextService,
   ) {}
 
   private cacheKey(tenantId: string) {
@@ -179,18 +181,7 @@ export class TenantConfigService {
     if (dto.seguranca) patch.seguranca = { ...current.parametros.seguranca, ...dto.seguranca };
     if (dto.notificacoes) patch.notificacoes = { ...current.parametros.notificacoes, ...dto.notificacoes };
     if (dto.integracoes) {
-      const googleJson = dto.integracoes.googleVision?.credentialsJson;
-      if (googleJson?.trim()) {
-        try {
-          parseGoogleServiceAccountJson(googleJson);
-        } catch (err) {
-          throw new BadRequestException((err as Error).message);
-        }
-      }
-      patch.integracoesCredenciais = mergeIntegracoesCredenciais(
-        current.parametros.integracoesCredenciais,
-        dto.integracoes,
-      );
+      throw new ForbiddenException('Integrações do sistema só o Super Admin configura.');
     }
 
     const merged = syncLegacyOperacaoFields(mergeTenantParametros({ ...current.parametros, ...patch }));
@@ -228,6 +219,116 @@ export class TenantConfigService {
     });
 
     return this.getParametrosGerais(tenantId);
+  }
+
+  async getIntegracoes(tenantId: string) {
+    await this.ensureTenant(tenantId);
+    await this.integrationCreds.load(tenantId);
+    const integracoes = this.probes.buildIntegracoesStatus(tenantId);
+    try {
+      const templates = await this.tenantCtx.run({ tenantId, bypassIsolation: false }, () =>
+        this.probes.revalidateWhatsappTemplates(),
+      );
+      integracoes.whatsapp.templatesAprovados = templates.filter((t) => t.status === 'APPROVED').length;
+    } catch {
+      /* status ainda vale sem a contagem de templates */
+    }
+    return { tenantId, integracoes };
+  }
+
+  async updateIntegracoes(tenantId: string, dto: UpdateIntegracoesDto) {
+    await this.ensureTenant(tenantId);
+    const current = await this.getParametros(tenantId);
+    const googleJson = dto.googleVision?.credentialsJson;
+    if (googleJson?.trim()) {
+      try {
+        parseGoogleServiceAccountJson(googleJson);
+      } catch (err) {
+        throw new BadRequestException((err as Error).message);
+      }
+    }
+    const integracoesCredenciais = mergeIntegracoesCredenciais(
+      current.parametros.integracoesCredenciais,
+      dto,
+    );
+    const merged = mergeTenantParametros({ ...current.parametros, integracoesCredenciais });
+    const row = await this.prisma.tenantConfig.findFirst({
+      where: { OR: [{ tenantId }, { tenantKey: tenantId }] },
+    });
+    if (!row) throw new NotFoundException(`Config não encontrada para tenant ${tenantId}`);
+
+    await this.prisma.tenantConfig.update({
+      where: { id: row.id },
+      data: { parametros: merged as object },
+    });
+    await this.cache.invalidate(this.cacheKey(tenantId));
+    this.integrationCreds.remember(tenantId, merged.integracoesCredenciais);
+
+    const actor = this.auditContext.resolveActor();
+    await appendAuditTrailEntry(this.prisma, actor, {
+      entidadeId: row.id,
+      entidadeTipo: 'TENANT_CONFIG',
+      categoria: CategoriaAuditLog.OPERACIONAL,
+      acao: 'INTEGRACOES_ATUALIZADAS',
+      dadosAnteriores: { tenantId },
+      dadosNovos: { tenantId, integracoes: this.probes.buildIntegracoesStatus(tenantId) },
+    });
+
+    return this.getIntegracoes(tenantId);
+  }
+
+  async testIntegracao(
+    tenantId: string,
+    id:
+      | 'whatsapp'
+      | 'google-vision'
+      | 'google-maps'
+      | 'google-routes'
+      | 'banking'
+      | 'boleto'
+      | 'pix'
+      | 's3',
+  ) {
+    await this.ensureTenant(tenantId);
+    return this.tenantCtx.run({ tenantId, bypassIsolation: false }, async () => {
+      await this.integrationCreds.load(tenantId);
+      switch (id) {
+        case 'whatsapp':
+          return this.probes.testWhatsappConnection();
+        case 'google-vision':
+          return this.probes.testGoogleVisionConnection();
+        case 'google-maps':
+          return this.probes.testGoogleMapsConnection();
+        case 'google-routes':
+          return this.probes.testGoogleRoutesConnection();
+        case 'banking':
+        case 'boleto':
+          return this.probes.testBankingConnection();
+        case 'pix':
+          return this.probes.testPixConnection();
+        case 's3':
+          return this.probes.testS3Connection();
+        default:
+          throw new BadRequestException('Integração desconhecida');
+      }
+    });
+  }
+
+  async getMapsConfig(tenantId: string = DEFAULT_TENANT_ID) {
+    await this.integrationCreds.load(tenantId);
+    const maps = this.integrationCreds.peekGoogleMaps(tenantId);
+    return {
+      configured: maps.configured,
+      apiKey: maps.apiKey ?? '',
+      terminalLat: maps.terminalLat ?? null,
+      terminalLng: maps.terminalLng ?? null,
+    };
+  }
+
+  private async ensureTenant(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException(`Terminal ${tenantId} não encontrado`);
+    return tenant;
   }
 
   async getTurnosAgendamento(tenantId: string = DEFAULT_TENANT_ID) {

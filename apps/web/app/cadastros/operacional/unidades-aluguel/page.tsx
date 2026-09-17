@@ -8,12 +8,14 @@ import { Button } from "@/components/ui/button";
 import { useWidgetData, WidgetError } from "@/components/ui/widget-error";
 import { listCadastrosUnidadesAluguel } from "@/lib/api/cadastros-unidades-aluguel-client";
 import { canDo } from "@/lib/cadastros/permission-matrix";
+import { formatIsoDisplay } from "@/lib/container-display";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 
 const STATUS_LABEL: Record<string, string> = {
   DISPONIVEL: "Disponível",
   ALUGADA: "Alugada",
   MANUTENCAO: "Manutenção",
+  USO_PROPRIO: "Uso próprio",
   INATIVA: "Inativa",
 };
 
@@ -39,7 +41,7 @@ export default function UnidadesAluguelPage() {
         <div>
           <h1 className="text-2xl font-bold">Unidades de aluguel</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Frota exclusiva. O contrato (ID de aluguel) sai em Pátio → Aluguéis. Hospedar no pátio é outro ID, pelo Gate.
+            Frota exclusiva. O contrato (ID de aluguel) sai em Gate CPO → Aluguéis. Hospedar no pátio é outro ID.
           </p>
         </div>
         {canCreate ? (
@@ -82,7 +84,7 @@ export default function UnidadesAluguelPage() {
             <tbody>
               {unidades.map((u) => (
                 <tr key={u.id} className="border-b border-border/60">
-                  <td className="px-4 py-3 font-medium">{u.unidadeIso}</td>
+                  <td className="px-4 py-3 font-medium">{formatIsoDisplay(u.unidadeIso)}</td>
                   <td className="px-4 py-3">{u.tipoContainerCodigo}</td>
                   <td className="px-4 py-3">{u.containerTamanho}</td>
                   <td className="px-4 py-3">

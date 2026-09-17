@@ -57,6 +57,7 @@ export class OCRController {
       confianca: resultado.confianca,
       provider: resultado.provider,
       ocrMatch: resultado.ocrMatch,
+      extras: resultado.extras,
       erro: resultado.erro,
     };
   }

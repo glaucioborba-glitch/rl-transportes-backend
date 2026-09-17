@@ -19,5 +19,13 @@ test.describe("Cenário 5 — Financeiro portal", () => {
     await page.goto("/portal/financeiro");
     await expect(page.getByRole("heading", { name: /Financeiro/i })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/Faturamento/i)).toBeVisible();
+    await expect(page.getByRole("link", { name: /Voltar/i })).toBeVisible();
+    await expect(page.getByText("Conta corrente")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Adicionar crédito à sua conta corrente/i })).toBeVisible();
+    await expect(page.getByText("Armazenagem (Gate-Out)")).toHaveCount(0);
+    await page.getByRole("button", { name: "Abrir extrato da conta corrente" }).click();
+    await expect(page.getByRole("heading", { name: "Conta corrente" })).toBeVisible();
+    await page.getByRole("link", { name: /Voltar/i }).click();
+    await expect(page.getByRole("heading", { name: /Financeiro/i })).toBeVisible();
   });
 });

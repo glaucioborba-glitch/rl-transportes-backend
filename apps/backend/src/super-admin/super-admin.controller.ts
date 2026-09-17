@@ -1,12 +1,16 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role, TenantStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsEnum, IsOptional, IsString, MaxLength, MinLength, ValidateNested } from 'class-validator';
+import type { Request, Response } from 'express';
+import { IsEnum, IsIn, IsOptional, IsString, Matches, MaxLength, MinLength, ValidateNested } from 'class-validator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { SuperAdminService } from './super-admin.service';
+import { IDIOMAS_PADRAO, MOEDAS_CORRENTES } from '../tenant/tenant-locale.util';
+import { TenantConfigService } from '../tenant/tenant-config.service';
+import { UpdateIntegracoesDto } from '../tenant/dto/update-parametros-gerais.dto';
 
 class EmpresaIdentidadeDto {
   @IsOptional()
@@ -82,6 +86,14 @@ class CriarTenantDto {
   @ValidateNested()
   @Type(() => EmpresaIdentidadeDto)
   empresa?: EmpresaIdentidadeDto;
+
+  @IsOptional()
+  @IsIn([...MOEDAS_CORRENTES])
+  moedaCorrente?: (typeof MOEDAS_CORRENTES)[number];
+
+  @IsOptional()
+  @IsIn([...IDIOMAS_PADRAO])
+  idiomaPadrao?: (typeof IDIOMAS_PADRAO)[number];
 }
 
 class AtualizarTenantDto {
@@ -106,6 +118,14 @@ class AtualizarTenantDto {
   @ValidateNested()
   @Type(() => EmpresaIdentidadeDto)
   empresa?: EmpresaIdentidadeDto;
+
+  @IsOptional()
+  @IsIn([...MOEDAS_CORRENTES])
+  moedaCorrente?: (typeof MOEDAS_CORRENTES)[number];
+
+  @IsOptional()
+  @IsIn([...IDIOMAS_PADRAO])
+  idiomaPadrao?: (typeof IDIOMAS_PADRAO)[number];
 }
 
 class PatchFeatureFlagDto {
@@ -116,13 +136,22 @@ class PatchFeatureFlagDto {
   regras?: Record<string, unknown>;
 }
 
+class EntrarIntranetDto {
+  @IsString()
+  @Matches(/^[a-zA-Z0-9][a-zA-Z0-9-]{0,63}$/)
+  tenantId!: string;
+}
+
 @ApiTags('super-admin')
 @ApiBearerAuth('access-token')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 @Roles(Role.SUPER_ADMIN)
 @Controller('super-admin')
 export class SuperAdminController {
-  constructor(private readonly saas: SuperAdminService) {}
+  constructor(
+    private readonly saas: SuperAdminService,
+    private readonly tenantConfig: TenantConfigService,
+  ) {}
 
   @Get('tenants')
   @ApiOperation({ summary: 'Listar terminais (tenants) SaaS' })
@@ -148,6 +177,37 @@ export class SuperAdminController {
     return this.saas.deleteTenant(id);
   }
 
+  @Get('tenants/:id/integracoes')
+  @ApiOperation({ summary: 'Status das integrações do terminal (sem secrets)' })
+  getIntegracoes(@Param('id') id: string) {
+    return this.tenantConfig.getIntegracoes(id);
+  }
+
+  @Patch('tenants/:id/integracoes')
+  @ApiOperation({ summary: 'Salva credenciais de integração do terminal' })
+  patchIntegracoes(@Param('id') id: string, @Body() dto: UpdateIntegracoesDto) {
+    return this.tenantConfig.updateIntegracoes(id, dto);
+  }
+
+  @Get('tenants/:id/integracoes/test/:probe')
+  @ApiOperation({ summary: 'Testa uma integração do terminal' })
+  async testIntegracao(
+    @Param('id') id: string,
+    @Param('probe')
+    probe:
+      | 'whatsapp'
+      | 'google-vision'
+      | 'google-maps'
+      | 'google-routes'
+      | 'banking'
+      | 'boleto'
+      | 'pix'
+      | 's3',
+  ) {
+    const r = await this.tenantConfig.testIntegracao(id, probe);
+    return { connected: r.connected, message: r.message, latency: r.latencyMs };
+  }
+
   @Get('feature-flags')
   @ApiOperation({ summary: 'Feature flags globais do SaaS' })
   listFlags() {
@@ -164,5 +224,23 @@ export class SuperAdminController {
   @ApiOperation({ summary: 'Atualizar feature flag' })
   patchFlag(@Param('chave') chave: string, @Body() dto: PatchFeatureFlagDto) {
     return this.saas.patchFlag(chave, dto);
+  }
+
+  @Post('entrar-intranet')
+  @ApiOperation({ summary: 'Abrir a intranet operacional de um terminal (mesmo login do dono)' })
+  entrarIntranet(@Body() dto: EntrarIntranetDto, @Res({ passthrough: true }) res: Response) {
+    return this.saas.entrarIntranet(dto.tenantId, res);
+  }
+
+  @Post('sair-intranet')
+  @ApiOperation({ summary: 'Sair da intranet do terminal e voltar ao cockpit SaaS' })
+  sairIntranet(@Res({ passthrough: true }) res: Response) {
+    return this.saas.sairIntranet(res);
+  }
+
+  @Get('intranet-sessao')
+  @ApiOperation({ summary: 'Terminal em que o dono está operando a intranet, se houver' })
+  intranetSessao(@Req() req: Request) {
+    return this.saas.intranetSessao(req);
   }
 }

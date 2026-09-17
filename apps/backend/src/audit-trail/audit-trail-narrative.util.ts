@@ -1,5 +1,6 @@
 import { CategoriaAuditLog, StatusBloqueioContainer, StatusPagamentoFatura, StatusSolicitacao, TipoBloqueioContainer } from '@prisma/client';
 import type { AuditedPrismaModel } from './audit-trail.models';
+import { formatMoeda } from '../common/finance/format-moeda.util';
 
 export type AuditCaptureInput = {
   entidadeTipo: string;
@@ -19,7 +20,7 @@ export type AuditCaptureInput = {
 function formatBrl(value: unknown): string {
   const n = typeof value === 'number' ? value : Number(String(value ?? 0).replace(',', '.'));
   if (!Number.isFinite(n)) return String(value ?? '—');
-  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  return formatMoeda(n);
 }
 
 function actorLabel(role: string, nome: string): string {

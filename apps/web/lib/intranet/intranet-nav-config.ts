@@ -7,6 +7,7 @@ import {
   ArrowLeftRight,
   ArrowUpCircle,
   Award,
+  BookOpen,
   Boxes,
   Briefcase,
   Building,
@@ -14,7 +15,6 @@ import {
   Calculator,
   Calendar,
   CheckCircle,
-  ClipboardList,
   Clock,
   Container,
   CreditCard,
@@ -32,7 +32,6 @@ import {
   Radio,
   Repeat,
   Scale,
-  ScanLine,
   Search,
   Send,
   Settings,
@@ -46,10 +45,12 @@ import {
   UserPlus,
   Users,
   Wallet,
+  MapPin,
 } from "lucide-react";
 
 export type IntranetModuleId =
   | "dashboard"
+  | "portaria"
   | "gate"
   | "cadastros"
   | "dispatch"
@@ -100,6 +101,12 @@ export const MODULOS_INTRANET: IntranetNavItem[] = [
     roles: ["ADMIN", "GERENTE", "OPERADOR_PORTARIA", "OPERADOR_GATE", "OPERADOR_PATIO"],
   },
   {
+    id: "portaria",
+    label: "Portaria",
+    href: "/operador/portaria",
+    roles: ["ADMIN", "GERENTE", "OPERADOR_GATE", "OPERADOR_PORTARIA"],
+  },
+  {
     id: "gate",
     label: "Gate CPO",
     href: "/operador/gate/controle-entrada-saida",
@@ -121,7 +128,7 @@ export const MODULOS_INTRANET: IntranetNavItem[] = [
     id: "patio",
     label: "Pátio",
     href: "/operador/patio",
-    roles: ["ADMIN", "GERENTE", "OPERADOR_PATIO", "OPERADOR_GATE"],
+    roles: ["OPERADOR_PATIO"],
   },
   {
     id: "financeiro",
@@ -172,6 +179,7 @@ export const MODULE_META: Record<
   { title: string; subtitle: string }
 > = {
   dashboard: { title: "Dashboard", subtitle: "Visão geral operacional" },
+  portaria: { title: "Portaria", subtitle: "Check-in mobile com QR e vistoria" },
   gate: { title: "Gate CPO", subtitle: "Centro de Operação" },
   cadastros: { title: "Cadastros", subtitle: "Master Data Management" },
   dispatch: { title: "Transportes", subtitle: "Fretes e operação de frota" },
@@ -186,26 +194,54 @@ export const MODULE_META: Record<
 };
 
 export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
+  portaria: [
+    {
+      label: "Localização",
+      href: "/operador/localizacao-motoristas",
+      icon: MapPin,
+      description: "GPS dos motoristas internos e terceiros da RL",
+    },
+  ],
   gate: [
     {
-      label: "Controle de Entrada e Saída",
+      label: "Criar agendamento",
+      href: "/operador/gate/criar-agendamento",
+      icon: Calendar,
+      description: "Baixa, coleta e demais solicitações — preenchimento manual",
+    },
+    {
+      label: "Autorizações",
+      href: "/operador/gate/autorizacoes",
+      icon: ShieldCheck,
+      badgeKey: "gate.autorizacoes",
+      description: "Aprovar solicitações antes da portaria",
+    },
+    {
+      label: "Controle de Gate",
       href: "/operador/gate/controle-entrada-saida",
       icon: ArrowLeftRight,
       badgeKey: "gate.controle",
-      description: "Conferência solicitação × portaria, RIC e liberação",
+      description: "Conferência, RIC de entrada/saída e liberação",
     },
     {
       label: "Consulta RIC",
       href: "/operador/gate/consulta-ric",
       icon: FileSearch,
-      description: "IDs emitidos — entrada, saída e reimpressão da RIC",
+      description: "IDs emitidos — entrada, saída, serviços e reimpressão da RIC",
     },
-    { label: "Dashboard", href: "/operador/gate/dashboard", icon: LayoutDashboard },
-    { label: "Fila de Chegada", href: "/operador/gate/fila", icon: Truck, badgeKey: "gate.fila" },
-    { label: "Operação Ativa", href: "/operador/gate/operacao", icon: Activity, badgeKey: "gate.operacao" },
-    { label: "Pátio", href: "/operador/gate/patio", icon: Container, badgeKey: "gate.patio" },
-    { label: "Despacho", href: "/operador/gate/despacho", icon: CheckCircle, badgeKey: "gate.despacho" },
-    { label: "Ordens de Serviço", href: "/operador/gate/os", icon: ClipboardList, badgeKey: "gate.os" },
+    {
+      label: "Saldo de Unidades",
+      href: "/operador/gate/patio",
+      icon: Container,
+      badgeKey: "gate.patio",
+      description: "Estoque no terminal — baia opcional",
+    },
+    {
+      label: "Aluguéis",
+      href: "/operador/gate/alugueis",
+      icon: Repeat,
+      description: "Contratos de unidades próprias — ID independente do pátio",
+    },
     {
       label: "Histórico de Contêiner",
       href: "/operador/gate/historico-container",
@@ -219,17 +255,10 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
       description: "Line-up ZP21 (Itajaí/Navegantes) — atualização automática",
     },
     {
-      label: "Autorizações",
-      href: "/operador/gate/autorizacoes",
-      icon: ShieldCheck,
-      badgeKey: "gate.autorizacoes",
-    },
-    {
-      label: "Portaria",
-      href: "/operador/portaria",
-      icon: ScanLine,
-      description: "Check-in mobile com QR e vistoria fotográfica",
-      roles: ["ADMIN", "GERENTE", "OPERADOR_GATE", "OPERADOR_PORTARIA"],
+      label: "Localização",
+      href: "/operador/localizacao-motoristas",
+      icon: MapPin,
+      description: "GPS dos motoristas internos e terceiros da RL",
     },
   ],
   cadastros: [
@@ -244,13 +273,13 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
       label: "Pessoas & Entidades",
       href: "/cadastros/pessoas",
       icon: Users,
-      description: "Clientes, Colaboradores, Motoristas, Transportadoras, Fornecedores",
+      description: "Clientes, Colaboradores, Motoristas Internos, Transportadoras, Fornecedores",
     },
     {
       label: "Operacional",
       href: "/cadastros/operacional",
       icon: Boxes,
-      description: "Contêineres, Equipamentos, Posições, Origens e destinos, Turnos",
+      description: "Equipamentos, Posições, Origens e destinos, Turnos",
     },
     {
       label: "Financeiro",
@@ -301,6 +330,12 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
       description: "Provisão mensal automática — não é título a pagar",
     },
     { label: "Contas a Receber", href: "/financeiro/areceber", icon: ArrowUpCircle },
+    {
+      label: "Conta corrente",
+      href: "/financeiro/conta-corrente",
+      icon: BookOpen,
+      description: "Crédito e débito manuais do cliente — folga do processo",
+    },
     {
       label: "Cessão de titularidade",
       href: "/financeiro/cessao-titularidade",
@@ -367,12 +402,31 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
       description: "Planilha — abre em nova aba",
     },
     { label: "Dispatch Board", href: "/operador/dispatch", icon: Send },
+    {
+      label: "Localização",
+      href: "/operador/localizacao-motoristas",
+      icon: MapPin,
+      description: "GPS dos motoristas internos e terceiros da RL",
+    },
   ],
   patio: [
     { label: "Visão Geral", href: "/operador/patio", icon: Grid3x3 },
-    { label: "Aluguéis", href: "/operador/patio/alugueis", icon: Container },
+    {
+      label: "Localização",
+      href: "/operador/localizacao-motoristas",
+      icon: MapPin,
+      description: "GPS dos motoristas internos e terceiros da RL",
+    },
   ],
-  dashboard: [{ label: "Dashboard Geral", href: "/operador/dashboard", icon: LayoutDashboard }],
+  dashboard: [
+    { label: "Dashboard Geral", href: "/operador/dashboard", icon: LayoutDashboard },
+    {
+      label: "Localização",
+      href: "/operador/localizacao-motoristas",
+      icon: MapPin,
+      description: "GPS dos motoristas internos e terceiros da RL",
+    },
+  ],
 };
 
 export const ADVANCED_MODULES: IntranetAdvancedGroup[] = [

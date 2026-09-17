@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { ClientStaffHydrator } from "@/components/staff/client-staff-hydrator";
 import { ThemeRoot } from "@/components/theme-root";
+import { MoedaCorrenteSync } from "@/components/moeda-corrente-sync";
 import "./globals.css";
 
 const geistSans = localFont({
@@ -48,6 +49,7 @@ export default function RootLayout({
         />
         <ClientStaffHydrator />
         <ThemeRoot />
+        <MoedaCorrenteSync />
         {children}
       </body>
     </html>

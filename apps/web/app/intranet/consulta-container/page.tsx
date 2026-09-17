@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,13 +12,24 @@ import { openRicPrintWindow } from "@/lib/ric-print";
 import { toast } from "@/lib/toast";
 import { ContainerNumber } from "@/components/ui/container-number";
 import { formatContainerISO, stripContainerISO } from "@/utils/containerFormatter";
-import { ServicosIdCard } from "./servicos-id-card";
+import { ServicosIdCard } from "@/components/gate/servicos-id-card";
+import { TomadaGateCard } from "@/components/gate/tomada-gate-card";
+import { listCadastrosTiposContainer, type CadastrosTipoContainer } from "@/lib/api/cadastros-tipos-container-client";
+import { tipoRequerTomadaReefer } from "@/lib/cadastros/tipo-requer-tomada";
 
 export default function ConsultaContainerPage() {
   const [isoInput, setIsoInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ContainerTimelineResponse | null>(null);
   const [ricBusy, setRicBusy] = useState<"ENTRADA" | "SAIDA" | null>(null);
+  const [servicosTick, setServicosTick] = useState(0);
+  const [tipos, setTipos] = useState<CadastrosTipoContainer[]>([]);
+
+  useEffect(() => {
+    void listCadastrosTiposContainer()
+      .then((r) => setTipos(r.items))
+      .catch(() => setTipos([]));
+  }, []);
 
   const buscar = useCallback(async () => {
     const raw = stripContainerISO(isoInput);
@@ -100,8 +111,17 @@ export default function ConsultaContainerPage() {
         </Card>
       ) : null}
 
+      {data &&
+      tipoRequerTomadaReefer(tipos, data.unidadeProcessoAberto?.tipoContainer) ? (
+        <TomadaGateCard
+          unidadeIso={data.isoFormatado}
+          onChanged={() => setServicosTick((n) => n + 1)}
+        />
+      ) : null}
+
       {data?.unidadeProcessoAberto ? (
         <ServicosIdCard
+          key={`${data.unidadeProcessoAberto.id}-${servicosTick}`}
           unidadeProcessoId={data.unidadeProcessoAberto.id}
           numero={data.unidadeProcessoAberto.numero}
         />

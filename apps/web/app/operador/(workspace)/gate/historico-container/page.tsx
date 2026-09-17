@@ -206,7 +206,7 @@ export default function HistoricoContainerPage() {
                     className="p-0 text-xs text-[var(--accent)]"
                     onClick={() =>
                       router.push(
-                        `/operador/gate/operacao?processo=${encodeURIComponent(passagem.processoId)}`,
+                        `/operador/gate/patio`,
                       )
                     }
                   >

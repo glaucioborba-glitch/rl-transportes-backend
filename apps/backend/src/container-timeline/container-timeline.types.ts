@@ -32,7 +32,11 @@ export type ContainerTimelineResponse = {
   isoFormatado: string;
   geradoEm: string;
   eventos: ContainerTimelineEvent[];
-  unidadeProcessoAberto?: { id: string; numero: number } | null;
+  unidadeProcessoAberto?: {
+    id: string;
+    numero: number;
+    tipoContainer?: string | null;
+  } | null;
   bloqueios?: Array<{
     tipo: string;
     motivo: string;

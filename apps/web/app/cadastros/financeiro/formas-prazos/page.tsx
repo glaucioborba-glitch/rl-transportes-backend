@@ -24,6 +24,7 @@ import {
   type TipoOpcaoPagamento,
 } from "@/lib/api/cadastros-opcoes-pagamento-client";
 import { toast } from "@/lib/toast";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 
 type DialogState =
@@ -166,7 +167,7 @@ function OpcoesTable({
 
 export default function FormasPrazosPage() {
   const user = useStaffAuthStore((s) => s.user);
-  const canWrite = user?.role === "ADMIN" || user?.role === "GERENTE";
+  const canWrite = isIntranetGestorRole(user?.role);
   const [formas, setFormas] = useState<CadastroOpcaoPagamento[]>([]);
   const [prazos, setPrazos] = useState<CadastroOpcaoPagamento[]>([]);
   const [loading, setLoading] = useState(true);

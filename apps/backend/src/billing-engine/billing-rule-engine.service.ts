@@ -1,10 +1,12 @@
 import { Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import {
   EventoGatilhoTarifa,
+  PatioStatus,
   PatioTomadaEventType,
   Prisma,
   StatusContainer,
   StatusContainerTarifa,
+  StatusUnidadeProcesso,
   type RegraTarifaria,
   type TabelaPreco,
   TipoContainerTarifa,
@@ -403,8 +405,9 @@ export class BillingRuleEngineService {
   }
 
   /**
-   * Dias de energia: histórico CONECTADO/DESCONECTADO do pátio;
-   * sem histórico, fallback para flag `refrigerado` da solicitação.
+   * Dias de energia: pares CONECTADO/DESCONECTADO do pátio.
+   * Pedido do portal (SOLICITADO) sem ligar não conta. Sem unidade de pátio,
+   * cai no legado (flag refrigerado = todos os dias no terminal).
    */
   async resolveDiasEnergiaReeferForCycle(params: {
     container: ContainerBillingContext;
@@ -415,7 +418,7 @@ export class BillingRuleEngineService {
   }): Promise<number> {
     const diasNoPatio = diffDiasCalendario(params.gateInAt, params.asOf);
 
-    if (!params.gateInId || !params.containerIso) {
+    if (!params.containerIso) {
       return resolveDiasEnergiaReefer({
         diasNoPatio,
         refrigerado: params.container.refrigerado,
@@ -424,7 +427,17 @@ export class BillingRuleEngineService {
 
     const iso = params.containerIso.replace(/\s/g, '').toUpperCase();
     const unit = await this.prisma.patioUnidade.findFirst({
-      where: { gateInId: params.gateInId, unidadeIso: iso },
+      where: {
+        unidadeIso: iso,
+        OR: [
+          ...(params.gateInId
+            ? [{ gateInId: params.gateInId }, { unidadeProcessoId: params.gateInId }]
+            : []),
+          { unidadeProcesso: { status: StatusUnidadeProcesso.ABERTO } },
+          { gateIn: { checkOut: null } },
+          { status: { not: PatioStatus.AGUARDANDO_GATE_OUT } },
+        ],
+      },
       include: {
         tomadaEventos: {
           where: {
@@ -434,21 +447,23 @@ export class BillingRuleEngineService {
           select: { tipo: true, createdAt: true },
         },
       },
+      orderBy: { createdAt: 'desc' },
     });
 
-    if (unit?.tomadaEventos?.length) {
-      return computeDiasEnergiaFromTomadaEvents(
-        unit.tomadaEventos.map((e) => ({
-          tipo: e.tipo as 'CONECTADO' | 'DESCONECTADO',
-          at: e.createdAt,
-        })),
-        params.asOf,
-      );
+    if (unit) {
+      const eventos = unit.tomadaEventos.map((e) => ({
+        tipo: e.tipo as 'CONECTADO' | 'DESCONECTADO',
+        at: e.createdAt,
+      }));
+      const dias = computeDiasEnergiaFromTomadaEvents(eventos, params.asOf);
+      if (dias >= 1) return dias;
+      const teveConexao = unit.refrigerado || eventos.some((e) => e.tipo === 'CONECTADO');
+      return teveConexao ? 1 : 0;
     }
 
     return resolveDiasEnergiaReefer({
       diasNoPatio,
-      refrigerado: params.container.refrigerado || unit?.refrigerado,
+      refrigerado: params.container.refrigerado,
     });
   }
 

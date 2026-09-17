@@ -1,6 +1,7 @@
 import {
   mergeIntegracoesCredenciais,
   parseGoogleServiceAccountJson,
+  resolveGoogleMaps,
   resolveGoogleVision,
   resolveS3,
   resolveWhatsapp,
@@ -92,6 +93,33 @@ describe('integration-credentials.util', () => {
     expect(resolved.lockedByEnv).toBe(true);
     expect(resolved.accessKeyId).toBe('env-key');
     expect(resolved.bucket).toBe('rl-transportes');
+  });
+
+  it('grava Google Maps, Routes e PIX autônomo no tenant', () => {
+    const merged = mergeIntegracoesCredenciais(
+      {},
+      {
+        googleMaps: { apiKey: 'AIza-maps' },
+        googleRoutes: { apiKey: 'AIza-routes' },
+        pix: { apiBaseUrl: 'https://pix.exemplo/api', apiToken: 'pix-tok', chavePix: '03650163900' },
+        boleto: { apiBaseUrl: 'https://boleto.exemplo/api', apiToken: 'bol-tok' },
+      },
+    );
+    expect(merged.googleMaps?.apiKey).toBe('AIza-maps');
+    expect(merged.googleRoutes?.apiKey).toBe('AIza-routes');
+    expect(merged.pix?.chavePix).toBe('03650163900');
+    expect(merged.boleto?.apiToken).toBe('bol-tok');
+    expect(merged.banking?.apiToken).toBe('bol-tok');
+  });
+
+  it('env do Maps vence a chave do tenant e não mistura com Routes', () => {
+    const resolved = resolveGoogleMaps(
+      snapshotIntegrationEnv({ GOOGLE_MAPS_API_KEY: 'env-key' }),
+      { apiKey: 'tenant-key' },
+    );
+    expect(resolved.origem).toBe('env');
+    expect(resolved.lockedByEnv).toBe(true);
+    expect(resolved.apiKey).toBe('env-key');
   });
 
   it('remove credenciais cruas do payload enviado ao cliente', () => {

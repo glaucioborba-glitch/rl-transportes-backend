@@ -39,7 +39,8 @@ const AUDIT_FIELD_LABELS: Record<string, string> = {
   enderecoCidade: 'Cidade',
   enderecoUf: 'UF',
   enderecoCep: 'CEP',
-  condicaoPagamento: 'Condição de Pagamento',
+  condicaoPagamento: 'Forma de Pagamento',
+  prazoPagamento: 'Prazo de Pagamento',
   papeis: 'Tipo de cadastro',
   deletedAt: 'Status',
 };
@@ -319,6 +320,7 @@ export class CadastrosClientesService {
       uf: cliente.enderecoUf ?? '',
       observacoes: '',
       condicaoPagamento: cliente.condicaoPagamento ?? '',
+      prazoPagamento: cliente.prazoPagamento ?? '',
       limiteCredito: '',
       tipoCliente: cliente.tipo ?? 'PJ',
       papeis: defaultClientePapeis(cliente.papeis),
@@ -363,6 +365,7 @@ export class CadastrosClientesService {
       responsavelEmail: dto.email,
       papeis,
       condicaoPagamento: dto.condicaoPagamento,
+      prazoPagamento: dto.prazoPagamento,
     };
 
     return createDto;
@@ -394,6 +397,7 @@ export class CadastrosClientesService {
       responsavelEmail: dto.email,
       papeis,
       condicaoPagamento: dto.condicaoPagamento,
+      prazoPagamento: dto.prazoPagamento,
     };
     return update;
   }

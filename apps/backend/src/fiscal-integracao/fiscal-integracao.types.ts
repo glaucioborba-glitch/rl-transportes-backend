@@ -25,3 +25,12 @@ export type BoletoRegistroResult = {
   provedor: string;
   referenciaExterna: string;
 };
+
+/** PIX avulso (ex.: recarga da conta corrente no portal). */
+export type PixCobrancaResult = {
+  pixCopiaCola: string;
+  pixQrCodeUrl: string;
+  provedor: string;
+  referenciaExterna: string;
+  sandbox: boolean;
+};

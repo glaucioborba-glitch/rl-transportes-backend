@@ -4,12 +4,18 @@ import { TenantContextService } from './tenant-context.service';
 import { DEFAULT_TENANT_ID } from './tenant.constants';
 import {
   resolveBanking,
+  resolveGoogleMaps,
+  resolveGoogleRoutes,
   resolveGoogleVision,
+  resolvePix,
   resolveS3,
   resolveWhatsapp,
   snapshotIntegrationEnv,
   type ResolvedBanking,
+  type ResolvedGoogleMaps,
+  type ResolvedGoogleRoutes,
   type ResolvedGoogleVision,
+  type ResolvedPix,
   type ResolvedS3,
   type ResolvedWhatsapp,
   type TenantIntegracoesCredenciais,
@@ -60,12 +66,27 @@ export class IntegrationCredentialsService {
 
   async resolveBanking(tenantId = this.currentTenantId()): Promise<ResolvedBanking> {
     const creds = await this.load(tenantId);
-    return resolveBanking(snapshotIntegrationEnv(), creds.banking);
+    return resolveBanking(snapshotIntegrationEnv(), creds.boleto ?? creds.banking);
+  }
+
+  async resolvePix(tenantId = this.currentTenantId()): Promise<ResolvedPix> {
+    const creds = await this.load(tenantId);
+    return resolvePix(snapshotIntegrationEnv(), creds.pix);
   }
 
   async resolveS3(tenantId = this.currentTenantId()): Promise<ResolvedS3> {
     const creds = await this.load(tenantId);
     return resolveS3(snapshotIntegrationEnv(), creds.s3);
+  }
+
+  async resolveGoogleMaps(tenantId = this.currentTenantId()): Promise<ResolvedGoogleMaps> {
+    const creds = await this.load(tenantId);
+    return resolveGoogleMaps(snapshotIntegrationEnv(), creds.googleMaps);
+  }
+
+  async resolveGoogleRoutes(tenantId = this.currentTenantId()): Promise<ResolvedGoogleRoutes> {
+    const creds = await this.load(tenantId);
+    return resolveGoogleRoutes(snapshotIntegrationEnv(), creds.googleRoutes);
   }
 
   peekGoogleVision(tenantId = this.currentTenantId()): ResolvedGoogleVision {
@@ -77,10 +98,23 @@ export class IntegrationCredentialsService {
   }
 
   peekBanking(tenantId = this.currentTenantId()): ResolvedBanking {
-    return resolveBanking(snapshotIntegrationEnv(), this.peek(tenantId).banking);
+    const creds = this.peek(tenantId);
+    return resolveBanking(snapshotIntegrationEnv(), creds.boleto ?? creds.banking);
+  }
+
+  peekPix(tenantId = this.currentTenantId()): ResolvedPix {
+    return resolvePix(snapshotIntegrationEnv(), this.peek(tenantId).pix);
   }
 
   peekS3(tenantId = this.currentTenantId()): ResolvedS3 {
     return resolveS3(snapshotIntegrationEnv(), this.peek(tenantId).s3);
+  }
+
+  peekGoogleMaps(tenantId = this.currentTenantId()): ResolvedGoogleMaps {
+    return resolveGoogleMaps(snapshotIntegrationEnv(), this.peek(tenantId).googleMaps);
+  }
+
+  peekGoogleRoutes(tenantId = this.currentTenantId()): ResolvedGoogleRoutes {
+    return resolveGoogleRoutes(snapshotIntegrationEnv(), this.peek(tenantId).googleRoutes);
   }
 }

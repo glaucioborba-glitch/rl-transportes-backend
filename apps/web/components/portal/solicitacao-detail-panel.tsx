@@ -10,6 +10,10 @@ import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-
 import { formatContainerISO } from "@/utils/containerFormatter";
 import { PreFaturaCustosCard } from "@/components/portal/pre-fatura-custos-card";
 import { PortalTomadaReeferActions } from "@/components/portal/portal-tomada-reefer-actions";
+import { usePortalTiposContainer } from "@/hooks/use-portal-tipos-container";
+import { findPortalTipo } from "@/components/portal/container-form-fields";
+import { rotuloTomadaPedido } from "@/lib/cadastros/tomada-display";
+import { TomadaPedidoBadge } from "@/components/gate/tomada-pedido-badge";
 
 function PhotoStrip({ title, urls }: { title: string; urls: unknown }) {
   const list = Array.isArray(urls) ? urls.filter((u) => typeof u === "string") : [];
@@ -55,6 +59,7 @@ function phaseDetail(phase: unknown): string | undefined {
 export function SolicitacaoDetailPanel({ row }: { row: SolicitacaoRow }) {
   const isCorporativa = Boolean(row.transporteSolicitacao);
   const p = row.portaria;
+  const { tipos } = usePortalTiposContainer(true);
 
   return (
     <Tabs defaultValue={isCorporativa ? "corporativa" : "unidades"} className="w-full">
@@ -109,12 +114,22 @@ export function SolicitacaoDetailPanel({ row }: { row: SolicitacaoRow }) {
                     <p className="mt-1 text-xs text-slate-500">Unidade #{c.ordem}</p>
                     <p className="text-slate-400">
                       {formatTipoTamanhoContainerLabel(c.tipo, c.tamanho) ?? "—"} · {c.status}
-                      {c.refrigerado ? ` · tomada Sim (${c.setPoint ?? "—"}°C)` : " · tomada Não"}
                     </p>
+                    <div className="mt-2">
+                      <TomadaPedidoBadge
+                        label={rotuloTomadaPedido({
+                          tipo: c.tipo,
+                          refrigerado: c.refrigerado,
+                          setPoint: c.setPoint,
+                          tipos,
+                        })}
+                      />
+                    </div>
                     <PortalTomadaReeferActions
                       unidadeIso={c.unidade}
                       solicitacaoStatus={row.status}
                       tipoCodigo={c.tipo}
+                      requerTomada={Boolean(findPortalTipo(tipos, c.tipo)?.tomadaReefer)}
                     />
                   </div>
                 ))}

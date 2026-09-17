@@ -44,6 +44,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ControleEntradaSaidaDossie, type CorrecaoRascunho } from "@/components/gate/controle-entrada-saida-dossie";
+import { formatIsoDisplay } from "@/lib/container-display";
+import { formatSetPointTomada } from "@/lib/cadastros/tomada-display";
+import { TomadaPedidoBadge } from "@/components/gate/tomada-pedido-badge";
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api/staff-client";
 
@@ -142,7 +145,8 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
   const voltarHref = fromConsulta
     ? "/operador/gate/consulta-ric"
     : "/operador/gate/controle-entrada-saida";
-  const voltarLabel = fromConsulta ? "Consulta RIC" : "Fila";
+  const voltarLabel = fromConsulta ? "Consulta RIC" : "Controle de Gate";
+  const prontoSaida = operacao?.coluna === "PRONTO_SAIDA";
 
   function cancelarEdicao() {
     setEditando(false);
@@ -431,7 +435,7 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
           >
             <ArrowLeft className="mr-1 h-4 w-4" /> {voltarLabel}
           </Link>
-          <h1 className="text-2xl font-bold">Controle de Entrada e Saída</h1>
+          <h1 className="text-2xl font-bold">Controle de Gate</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {operacao.unidadeProcesso?.label ? `${operacao.unidadeProcesso.label} · ` : ""}
             {operacao.direcaoUnidadeLabel ?? ""}
@@ -633,10 +637,24 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <Field label="Contêiner" value={operacao.containerNumero} />
+            <Field label="Contêiner" value={formatIsoDisplay(operacao.containerNumero)} />
             <Field label="Placa" value={operacao.placa} />
             <Field label="Motorista" value={operacao.motoristaNome} />
             <Field label="Cliente" value={operacao.clienteNome} />
+            {operacao.caboTomadaFotoObrigatoria || operacao.containerRefrigerado ? (
+              <div>
+                <p className="text-xs text-muted-foreground">Tomada</p>
+                <TomadaPedidoBadge
+                  label={
+                    operacao.containerRefrigerado
+                      ? formatSetPointTomada(operacao.containerSetPoint)
+                        ? `Tomada Sim · ${formatSetPointTomada(operacao.containerSetPoint)}`
+                        : "Tomada Sim"
+                      : "Tomada Não"
+                  }
+                />
+              </div>
+            ) : null}
           </div>
           <fieldset>
             <legend className="mb-3 flex items-center gap-2 text-base font-semibold">
@@ -742,17 +760,33 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
         </div>
       ) : null}
 
-      {liberada ? (
+      {prontoSaida ? (
+        <div className="rounded-lg border border-violet-500/40 bg-violet-500/10 p-5">
+          <p className="font-semibold text-violet-200">Pronto para saída do caminhão.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            A operação no pátio já foi concluída. Confirme a vistoria de saída e libere o caminhão.
+          </p>
+          {operacao.gateInId ? (
+            <Button asChild className="mt-3">
+              <Link href={`/operador/gate/checkout/${operacao.gateInId}`}>Liberar saída</Link>
+            </Button>
+          ) : (
+            <p className="mt-2 text-sm text-amber-300">
+              Não há check-in aberto para esta solicitação.
+            </p>
+          )}
+        </div>
+      ) : liberada ? (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-5">
           <p className="font-semibold text-emerald-300">Unidade liberada para operação.</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            A RIC já foi emitida. O restante segue em Operação Ativa / Despacho.
+            A RIC já foi emitida. A unidade segue no pátio.
           </p>
           <Link
-            href="/operador/gate/operacao"
+            href="/operador/gate/patio"
             className="mt-3 inline-block text-sm text-primary hover:underline"
           >
-            Ir para Operação Ativa
+            Ir para o pátio
           </Link>
         </div>
       ) : null}

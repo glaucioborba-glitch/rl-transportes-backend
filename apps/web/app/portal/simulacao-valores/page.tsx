@@ -19,6 +19,7 @@ import {
   type PortalSimulacaoServico,
 } from "@/lib/api/portal-client";
 import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
+import { formatIsoDisplay } from "@/lib/container-display";
 import { formatBRL } from "@/lib/financeiro/format";
 import { formatDate } from "@/lib/portal-tracking";
 import { toast } from "@/lib/toast";
@@ -37,7 +38,7 @@ function todayLocalIso(): string {
 
 function unidadeLabel(item: PortalPatioSaldoItem): string {
   const tipo = formatTipoTamanhoContainerLabel(item.tipo, item.tamanho) ?? item.tipo;
-  return `${item.unidadeIso} · ${tipo}`;
+  return `${formatIsoDisplay(item.unidadeIso)} · ${tipo}`;
 }
 
 export default function PortalSimulacaoValoresPage() {

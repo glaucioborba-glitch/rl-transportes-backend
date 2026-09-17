@@ -14,6 +14,8 @@ import { ApiStatusBanner } from "@/components/ui/api-status-banner";
 import { PageBackButton } from "@/components/ui/page-back-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { resolvePageBackHref } from "@/lib/intranet/page-back-href";
+import { SuperAdminActingBanner } from "@/components/intranet/super-admin-acting-banner";
+import { sairIntranetTenant } from "@/lib/api/super-admin-client";
 
 type Props = {
   children: ReactNode;
@@ -28,15 +30,29 @@ export function IntranetShell({ children, flush = false }: Props) {
   const clear = useStaffAuthStore((s) => s.clear);
   const moduleId = resolveIntranetModule(pathname);
 
-  function logout() {
+  async function logout() {
+    if (user?.role === "SUPER_ADMIN") {
+      try {
+        await sairIntranetTenant();
+      } catch {
+        /* segue o logout */
+      }
+      clear();
+      clearStaffSessionCookie();
+      router.replace("/super-admin/login");
+      return;
+    }
     clear();
     clearStaffSessionCookie();
     router.replace("/login/staff");
   }
 
+  const fillLocalizacao = pathname.startsWith("/operador/localizacao-motoristas");
+
   if (isFretesFocusPath(pathname)) {
     return (
       <div className="flex h-screen flex-col bg-[#080a0d] text-slate-100">
+        <SuperAdminActingBanner />
         <ApiStatusBanner />
         <main className="min-h-0 min-w-0 flex-1 overflow-hidden">{children}</main>
       </div>
@@ -45,6 +61,7 @@ export function IntranetShell({ children, flush = false }: Props) {
 
   return (
     <div className="flex h-screen flex-col bg-[#080a0d] text-slate-100">
+      <SuperAdminActingBanner />
       <header className="flex h-14 shrink-0 items-center gap-4 border-b border-white/10 px-4">
         <Link href="/operador/dashboard" className="flex shrink-0 items-center gap-2">
           <RlLogo />
@@ -55,7 +72,7 @@ export function IntranetShell({ children, flush = false }: Props) {
             {user?.email ?? "Operador"}
           </span>
           <ThemeToggle />
-          <Button type="button" variant="outline" size="sm" onClick={() => logout()}>
+          <Button type="button" variant="outline" size="sm" onClick={() => void logout()}>
             Sair
           </Button>
         </div>
@@ -67,12 +84,22 @@ export function IntranetShell({ children, flush = false }: Props) {
         <IntranetSidebar moduleId={moduleId} />
         <main
           className={
-            flush
-              ? "min-w-0 flex-1 overflow-y-auto"
-              : "min-w-0 flex-1 overflow-y-auto px-4 py-6 lg:px-6"
+            fillLocalizacao
+              ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+              : flush
+                ? "min-w-0 flex-1 overflow-y-auto"
+                : "min-w-0 flex-1 overflow-y-auto px-4 py-6 lg:px-6"
           }
         >
-          <div className={flush ? undefined : "mx-auto w-[90%]"}>
+          <div
+            className={
+              fillLocalizacao
+                ? "flex h-full min-h-0 flex-col"
+                : flush
+                  ? undefined
+                  : "mx-auto w-[90%]"
+            }
+          >
             {!flush && resolvePageBackHref(pathname) ? (
               <div className="mb-2">
                 <PageBackButton />

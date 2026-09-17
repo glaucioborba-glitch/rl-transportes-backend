@@ -7,10 +7,9 @@ export function defaultStaffHome(role: string | undefined | null): string {
       return "/operador/gate/controle-entrada-saida";
     case "OPERADOR_PATIO":
       return "/operador/patio";
-    case "SUPER_ADMIN":
-      return "/super-admin";
     case "ADMIN":
     case "GERENTE":
+    case "SUPER_ADMIN":
       return "/operador/dashboard";
     default:
       return "/operador/dashboard";

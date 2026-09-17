@@ -91,6 +91,67 @@ export async function setupPortalApiMocks(page: Page, opts?: { solicitacao?: Ret
       return;
     }
 
+    if (path === "/cliente/portal/financeiro/conta-corrente" && method === "GET") {
+      await fulfillJson(route, {
+        cliente: { saldo: 0, situacao: "ZERADO", situacaoLabel: "Saldo zerado", lancamentos: 0 },
+        lancamentos: [],
+      });
+      return;
+    }
+
+    if (path === "/cliente/portal/financeiro/conta-corrente/pix-credito" && method === "POST") {
+      await fulfillJson(route, {
+        valor: 50,
+        pixCopiaCola: "00020126580014br.gov.bcb.pix0136e2epixcreditocontacorrente00005204000053039865802BR5913RL Transportes6009Navegantes62070503***6304ABCD",
+        pixQrCodeUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        provedor: "sandbox",
+        sandbox: true,
+        referenciaExterna: "CC-E2E-PIX",
+      });
+      return;
+    }
+
+    if (path === "/cliente/portal/financeiro/faturas" && method === "GET") {
+      await fulfillJson(route, [
+        {
+          id: "e2e-fat-1",
+          origem: "FATURAMENTO",
+          numeroFat: "FAT-202609-E2E001",
+          periodo: "2026-09",
+          referencia: "2026-09",
+          valorTotal: 0,
+          statusNfe: "pendente",
+          statusBoleto: "pendente",
+          statusPagamento: null,
+          createdAt: new Date().toISOString(),
+          itens: [],
+          nfsEmitidas: [],
+          boletos: [],
+          solicitacoesVinculadas: [],
+          faturasArmazenagem: [],
+          linkNfse: null,
+          linkBoleto: null,
+          linkPix: null,
+        },
+      ]);
+      return;
+    }
+
+    if (path === "/cliente/portal/financeiro/faturas-armazenagem" && method === "GET") {
+      await fulfillJson(route, []);
+      return;
+    }
+
+    if (path === "/cliente/portal/financeiro/boletos" && method === "GET") {
+      await fulfillJson(route, []);
+      return;
+    }
+
+    if (path === "/cliente/portal/financeiro/nfse" && method === "GET") {
+      await fulfillJson(route, []);
+      return;
+    }
+
     if (path === "/cliente/portal/notificacoes/nao-lidas" && method === "GET") {
       await fulfillJson(route, { count: 0 });
       return;

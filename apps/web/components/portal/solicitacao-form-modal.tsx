@@ -11,6 +11,7 @@ import {
   ApiError,
   criarSolicitacaoV2,
   criarSolicitacaoV2ComAnexos,
+  fetchPortalCatalogoContainer,
   type CreateSolicitacaoV2Payload,
   type PortalPatioSaldoItem,
   type TipoOperacaoSolicitacaoIntent,
@@ -38,14 +39,15 @@ import { usePortalTiposContainer } from "@/hooks/use-portal-tipos-container";
 import { usePortalEstoqueCliente } from "@/hooks/use-portal-estoque-cliente";
 import { peekPortalSaidaPrefill, clearPortalSaidaPrefill } from "@/lib/portal-saida-prefill";
 import { formatTamanhoContainerDisplay, normalizeTamanhoContainer } from "@/lib/cadastros/tipo-container-tamanhos";
+import { catalogoContainerHint, patchFromCatalogo } from "@/lib/catalogo-container-iso";
 import {
   SOLICITACAO_CARD_C as CARD_C,
   SOLICITACAO_CARD_H as CARD_H,
   SOLICITACAO_FORM_GRID as GRID,
   SOLICITACAO_SELECT_CLS as SELECT_CLS,
   SOLICITACAO_SPAN2 as SPAN2,
-  SOLICITACAO_SPAN4 as SPAN4,
 } from "@/components/portal/solicitacao-form-layout";
+import { useMotoristaCpfAutofill } from "@/hooks/use-motorista-cpf-autofill";
 
 type TipoCaminhao = "LS" | "RODOTREM";
 
@@ -108,12 +110,11 @@ export function SolicitacaoFormModal({
   const [localDestino, setLocalDestino] = useState("");
 
   const [containers, setContainers] = useState<ContainerDraft[]>([emptyContainer(1)]);
+  const [catalogoHints, setCatalogoHints] = useState<Record<number, string>>({});
 
   const [dataRef, setDataRef] = useState("");
   const { turnos } = useTenantTurnos();
   const [turno, setTurno] = useState("");
-  const [atendimentoEspecial, setAtendimentoEspecial] = useState(false);
-  const [atendimentoEspecialTexto, setAtendimentoEspecialTexto] = useState("");
 
   const [solNome, setSolNome] = useState("");
   const [solTelefone, setSolTelefone] = useState("");
@@ -130,6 +131,12 @@ export function SolicitacaoFormModal({
   const user = usePortalClienteAuthStore((s) => s.user);
 
   const isFrotaFL = useMemo(() => intentUsesFlFrete(intent), [intent]);
+  const { hint: motoristaHint, bloqueio: motoristaBloqueio } = useMotoristaCpfAutofill({
+    cpf: isFrotaFL ? "" : cpfMotorista,
+    nome: nomeMotorista,
+    setNome: setNomeMotorista,
+    source: "portal",
+  });
   const usesEstoqueDoCliente = useMemo(() => intentUsesEstoqueDoCliente(intent), [intent]);
   const showPrevisaoRetirada = useMemo(() => intentUsesPrevisaoRetirada(intent), [intent]);
   const showBookingDeadline = useMemo(() => intentUsesBookingDeadline(intent), [intent]);
@@ -258,12 +265,11 @@ export function SolicitacaoFormModal({
     setContainers([emptyContainer(1)]);
     setDataRef("");
     setTurno(turnos[0]?.id ?? "MANHA");
-    setAtendimentoEspecial(false);
-    setAtendimentoEspecialTexto("");
     setFiles([]);
     setPrevisaoRetirada("");
     setBookingDeadline("");
     setUnidadeFieldErrors({});
+    setCatalogoHints({});
   }
 
   function handleClose() {
@@ -300,6 +306,28 @@ export function SolicitacaoFormModal({
     });
   }
 
+  async function applyCatalogo(i: number, iso: string) {
+    try {
+      const hit = await fetchPortalCatalogoContainer(iso);
+      if (!hit) {
+        setCatalogoHints((prev) => ({ ...prev, [i]: "" }));
+        return;
+      }
+      setCatalogoHints((prev) => ({ ...prev, [i]: catalogoContainerHint(hit) }));
+      setContainers((rows) => {
+        const atual = rows[i];
+        if (!atual) return rows;
+        const patch = patchFromCatalogo(atual, hit, tiposContainer.map((t) => t.codigo));
+        if (!Object.keys(patch).length) return rows;
+        const next = [...rows];
+        next[i] = { ...atual, ...patch };
+        return next;
+      });
+    } catch {
+      /* catálogo é só atalho */
+    }
+  }
+
   function applyEstoque(idx: number, item: PortalPatioSaldoItem | null) {
     if (!item) {
       updateContainer(idx, { unidade: "" });
@@ -316,6 +344,7 @@ export function SolicitacaoFormModal({
       navio: item.navio ?? "",
       refrigerado: item.refrigerado,
     });
+    void applyCatalogo(idx, stripContainerISO(item.unidadeIso));
   }
 
   function buildPayload(): CreateSolicitacaoV2Payload {
@@ -364,10 +393,6 @@ export function SolicitacaoFormModal({
       agendamento: {
         dataRef,
         turno: resolveAgendamentoTurno(turnos, turno),
-        atendimentoEspecial,
-        atendimentoEspecialTexto: atendimentoEspecial
-          ? atendimentoEspecialTexto.trim() || undefined
-          : undefined,
       },
       solicitante: {
         nome: solNome.trim(),
@@ -399,6 +424,10 @@ export function SolicitacaoFormModal({
     if (!isFrotaFL) {
       if (!nomeMotorista.trim() || cpfMotorista.replace(/\D/g, "").length !== 11) {
         toast.error("Informe nome e CPF válido do motorista.");
+        return;
+      }
+      if (motoristaBloqueio) {
+        toast.error(motoristaBloqueio);
         return;
       }
     }
@@ -475,7 +504,7 @@ export function SolicitacaoFormModal({
       aria-labelledby="solicitacao-form-title"
     >
       <div className="flex min-h-full items-start justify-center p-4 py-8">
-        <div className="relative w-[min(1440px,95vw)] rounded-2xl border border-white/10 bg-[#0f1419] p-4 shadow-2xl">
+        <div className="relative w-[min(1440px,95vw)] rounded-2xl border border-white/10 bg-[#0f1419] p-3 shadow-2xl">
           <button
             type="button"
             aria-label="Fechar"
@@ -484,14 +513,14 @@ export function SolicitacaoFormModal({
           >
             <X className="h-4 w-4" />
           </button>
-          <div className="mb-3 pr-8">
+          <div className="mb-2 pr-8">
             <h2 id="solicitacao-form-title" className="text-lg font-semibold text-white">
               {label}
             </h2>
             <p className="text-sm text-slate-400">
               {isFrotaFL
-                ? "Transporte Frota FL — caminhão LS (1 contêiner). Informe endereço e dados operacionais."
-                : "Frota do cliente — escolha LS ou Rodotrem e informe os dados do motorista."}
+                ? "Transporte Frota FL — 1 contêiner. Informe endereço e dados da unidade."
+                : "Frota do cliente — escolha LS ou Rodotrem e informe o motorista."}
             </p>
           </div>
 
@@ -545,9 +574,6 @@ export function SolicitacaoFormModal({
                       onChange={(e) => setPrevisaoRetirada(e.target.value)}
                       className="bg-black/40"
                     />
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Ajuda a posicionar o contêiner para uma saída mais rápida.
-                    </p>
                   </div>
                 ) : null}
                 {showBookingDeadline ? (
@@ -559,9 +585,6 @@ export function SolicitacaoFormModal({
                       onChange={(e) => setBookingDeadline(e.target.value)}
                       className="bg-black/40"
                     />
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Data-limite de embarque — prioriza o posicionamento no pátio.
-                    </p>
                   </div>
                 ) : null}
               </CardContent>
@@ -593,6 +616,11 @@ export function SolicitacaoFormModal({
                       minLength={11}
                       className="bg-black/40"
                     />
+                    {motoristaBloqueio ? (
+                      <p className="mt-1 text-[11px] text-red-400">{motoristaBloqueio}</p>
+                    ) : motoristaHint ? (
+                      <p className="mt-1 text-[11px] text-slate-400">{motoristaHint}</p>
+                    ) : null}
                   </div>
                 </>
               ) : null}
@@ -672,12 +700,15 @@ export function SolicitacaoFormModal({
                     <ContainerIsoInput
                       value={c.unidade}
                       onChange={(v) => updateContainer(idx, { unidade: v })}
+                      onIsoComplete={(iso) => void applyCatalogo(idx, iso)}
                       required
                       className="bg-black/40 font-mono"
                     />
                   )}
                   {unidadeFieldErrors[idx] ? (
                     <p className="mt-1 text-xs text-red-400">{unidadeFieldErrors[idx]}</p>
+                  ) : catalogoHints[idx] ? (
+                    <p className="mt-1 text-[11px] text-slate-400">{catalogoHints[idx]}</p>
                   ) : null}
                 </div>
                 <div>
@@ -747,18 +778,15 @@ export function SolicitacaoFormModal({
                 ) : null}
                 {findPortalTipo(tiposContainer, c.tipo)?.tomadaReefer ? (
                   <>
-                    <div className={SPAN2}>
+                    <div>
                       <label className="mb-1 block text-xs text-slate-500">
-                        Conectar à tomada reefer?
+                        Tomada reefer
                       </label>
                       <ContainerRefrigeradoSelect
                         value={c.refrigerado}
                         onChange={(v) => updateContainer(idx, { refrigerado: v })}
                         selectClassName={selectCls}
                       />
-                      <p className="mt-1 text-[11px] text-slate-500">
-                        Sim = diária de energia. Não = só armazenagem.
-                      </p>
                     </div>
                     {c.refrigerado ? (
                       <div>
@@ -783,7 +811,12 @@ export function SolicitacaoFormModal({
 
           <Card className="border-white/10 bg-black/25">
             <CardHeader className={CARD_H}>
-              <CardTitle className="text-sm text-white">Agendamento</CardTitle>
+              <CardTitle className="text-sm text-white">Agendamento e contato</CardTitle>
+              {pessoa && user?.cpfCnpj ? (
+                <CardDescription>
+                  Responsável: {pessoa.nome} (CNPJ/CPF {formatCpfCnpjBr(user.cpfCnpj)})
+                </CardDescription>
+              ) : null}
             </CardHeader>
             <CardContent className={`${GRID} ${CARD_C}`}>
               <div>
@@ -796,7 +829,7 @@ export function SolicitacaoFormModal({
                   className="bg-black/40"
                 />
               </div>
-              <div className={SPAN2}>
+              <div>
                 <label className="mb-1 block text-xs text-slate-500">Turno</label>
                 <select
                   className={selectCls}
@@ -810,49 +843,6 @@ export function SolicitacaoFormModal({
                     </option>
                   ))}
                 </select>
-              </div>
-              <div className="flex items-end pb-2">
-                <label htmlFor="atesp-modal" className="flex items-center gap-2 text-sm text-slate-300">
-                  <input
-                    type="checkbox"
-                    id="atesp-modal"
-                    checked={atendimentoEspecial}
-                    onChange={(e) => setAtendimentoEspecial(e.target.checked)}
-                  />
-                  Atendimento especial
-                </label>
-              </div>
-              {atendimentoEspecial ? (
-                <div className={SPAN4}>
-                  <label className="mb-1 block text-xs text-slate-500">Detalhes (opcional)</label>
-                  <Input
-                    value={atendimentoEspecialTexto}
-                    onChange={(e) => setAtendimentoEspecialTexto(e.target.value)}
-                    className="bg-black/40"
-                  />
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
-
-          <Card className="border-white/10 bg-black/25">
-            <CardHeader className={CARD_H}>
-              <CardTitle className="text-sm text-white">Contato do solicitante</CardTitle>
-              {pessoa && user?.cpfCnpj ? (
-                <CardDescription>
-                  Responsável: {pessoa.nome} (CNPJ/CPF {formatCpfCnpjBr(user.cpfCnpj)})
-                </CardDescription>
-              ) : null}
-            </CardHeader>
-            <CardContent className={`${GRID} ${CARD_C}`}>
-              <div className={SPAN2}>
-                <label className="mb-1 block text-xs text-slate-500">Nome</label>
-                <Input
-                  value={solNome}
-                  onChange={(e) => setSolNome(e.target.value)}
-                  required
-                  className="bg-black/40"
-                />
               </div>
               <div>
                 <label className="mb-1 block text-xs text-slate-500">Telefone</label>
@@ -869,6 +859,15 @@ export function SolicitacaoFormModal({
                   type="email"
                   value={solEmail}
                   onChange={(e) => setSolEmail(e.target.value)}
+                  required
+                  className="bg-black/40"
+                />
+              </div>
+              <div className={SPAN2}>
+                <label className="mb-1 block text-xs text-slate-500">Nome</label>
+                <Input
+                  value={solNome}
+                  onChange={(e) => setSolNome(e.target.value)}
                   required
                   className="bg-black/40"
                 />

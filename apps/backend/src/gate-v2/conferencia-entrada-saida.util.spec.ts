@@ -53,6 +53,12 @@ describe('conferencia-entrada-saida.util', () => {
     expect(itens.find((i) => i.campo === 'placaCarreta')?.status).toBe('CONFERE');
     expect(itens.find((i) => i.campo === 'lacre')?.status).toBe('CONFERE');
     expect(itens.find((i) => i.campo === 'placaCarreta02')).toBeUndefined();
+    expect(itens.map((i) => i.campo)).toEqual([
+      'container',
+      'placaCavalo',
+      'placaCarreta',
+      'lacre',
+    ]);
   });
 
   it('inclui placa carreta 02 só no rodotrem', () => {
@@ -78,6 +84,7 @@ describe('conferencia-entrada-saida.util', () => {
     expect(colunaControle('RIC_GERADO')).toBe('RIC_PENDENTE');
     expect(colunaControle('CHECKIN_PORTARIA')).toBe('NA_PORTARIA');
     expect(colunaControle('LIBERADA_OPERACAO', new Date())).toBe('LIBERADO');
+    expect(colunaControle('CONCLUIDA')).toBeNull();
   });
 
   it('rotula baixa e coleta', () => {

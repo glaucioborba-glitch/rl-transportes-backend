@@ -10,6 +10,7 @@ import {
   type ControleColuna,
   type OperacaoDto,
 } from "@/lib/gate/operacao-api";
+import { formatIsoDisplay } from "@/lib/container-display";
 import { toast } from "@/lib/toast";
 
 const COLUNAS: Array<{ id: ControleColuna | "TODAS"; label: string }> = [
@@ -17,6 +18,7 @@ const COLUNAS: Array<{ id: ControleColuna | "TODAS"; label: string }> = [
   { id: "A_CONFERIR", label: "A conferir" },
   { id: "RIC_PENDENTE", label: "RIC pendente" },
   { id: "NA_PORTARIA", label: "Na portaria" },
+  { id: "PRONTO_SAIDA", label: "Pronto para saída" },
   { id: "LIBERADO", label: "Liberado hoje" },
 ];
 
@@ -32,6 +34,10 @@ const COLUNA_BADGE: Record<ControleColuna, { label: string; className: string }>
   NA_PORTARIA: {
     label: "Na portaria",
     className: "border-white/15 bg-white/5 text-slate-300",
+  },
+  PRONTO_SAIDA: {
+    label: "Pronto para saída",
+    className: "border-violet-500/40 bg-violet-500/15 text-violet-200",
   },
   LIBERADO: {
     label: "Liberado",
@@ -87,16 +93,18 @@ export function ControleEntradaSaidaList() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Controle de Entrada e Saída</h1>
+        <h1 className="text-2xl font-bold">Controle de Gate</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Conferência da solicitação com o que a portaria capturou. O Gate valida e emite a RIC.
+          Conferência da solicitação com o que a portaria capturou. O Gate valida, emite a RIC e
+          libera a saída.
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Kpi label="A conferir" value={aConferir} />
         <Kpi label="RIC pendente" value={countByColuna(items, "RIC_PENDENTE")} />
         <Kpi label="Na portaria" value={countByColuna(items, "NA_PORTARIA")} />
+        <Kpi label="Pronto para saída" value={countByColuna(items, "PRONTO_SAIDA")} />
         <Kpi label="Liberado hoje" value={countByColuna(items, "LIBERADO")} />
       </div>
 
@@ -125,27 +133,35 @@ export function ControleEntradaSaidaList() {
 
       {visiveis.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Nenhuma unidade nesta etapa. Quando a portaria concluir a vistoria, ela aparece aqui.
+          {filtro === "PRONTO_SAIDA"
+            ? "Nenhum caminhão aguardando liberação de saída."
+            : "Nenhuma unidade nesta etapa. Quando a portaria concluir a vistoria, ela aparece aqui."}
         </p>
       ) : (
         <ul className="space-y-3">
           {visiveis.map((op) => {
             const col = op.coluna ? COLUNA_BADGE[op.coluna] : null;
             const divergentes = op.conferencia?.resumo.divergentes ?? 0;
+            const prontoSaida = op.coluna === "PRONTO_SAIDA";
+            const href =
+              prontoSaida && op.gateInId
+                ? `/operador/gate/checkout/${op.gateInId}`
+                : `/operador/gate/controle-entrada-saida/${encodeURIComponent(op.protocolo)}`;
             return (
               <li key={op.protocolo}>
                 <Link
-                  href={`/operador/gate/controle-entrada-saida/${encodeURIComponent(op.protocolo)}`}
+                  href={href}
                   className="flex items-center justify-between gap-4 rounded-lg border border-border bg-card p-4 transition-colors hover:border-primary/30"
                 >
                   <div className="min-w-0">
                     <p className="font-bold">{op.protocolo}</p>
                     <p className="truncate text-sm text-muted-foreground">
-                      {op.containerNumero} · {op.placa} · {op.clienteNome}
+                      {formatIsoDisplay(op.containerNumero)} · {op.placa} · {op.clienteNome}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {op.tipoOperacaoLabel ?? op.tipoOperacao}
                       {op.fotosCount ? ` · ${op.fotosCount} foto(s)` : ""}
+                      {prontoSaida && op.gateInId ? " · Liberar saída" : ""}
                     </p>
                     {divergentes > 0 ? (
                       <p className="mt-1 flex items-center gap-1 text-xs text-red-400">

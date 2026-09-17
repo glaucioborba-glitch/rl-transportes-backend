@@ -5,6 +5,7 @@ import { ArrowRight, Loader2, Search, Truck, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { fetchAguardandoChegada, type AguardandoChegadaItem } from "@/lib/gate/operacao-api";
+import { formatIsoDisplay } from "@/lib/container-display";
 
 type Props = {
   onSelect: (protocolo: string) => void;
@@ -74,7 +75,7 @@ export function BuscaUnidade({ onSelect, onCancel }: Props) {
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-bold">{item.protocolo}</p>
               <p className="truncate text-xs text-muted-foreground">
-                {item.containerNumero} · {item.containerTipo} · {item.placa}
+                {formatIsoDisplay(item.containerNumero)} · {item.containerTipo} · {item.placa}
               </p>
               <p className="truncate text-xs text-muted-foreground">{item.clienteNome}</p>
             </div>

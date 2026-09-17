@@ -10,6 +10,7 @@ import { Observable } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantContextService } from './tenant-context.service';
 import { resolveRequestTenant } from './resolve-request-tenant.util';
+import { isSuperAdminConsolePath, readSaActingTenantCookie } from './sa-acting-tenant.util';
 
 type AuthUser = {
   role?: Role;
@@ -29,11 +30,30 @@ export class TenantInterceptor implements NestInterceptor {
       user?: AuthUser;
       cxUser?: { tenantId?: string; staffRole?: Role; portalPapel?: string };
       tenantId?: string;
+      cookies?: Record<string, string | undefined>;
+      path?: string;
+      url?: string;
     }>();
     const { tenantId, role } = resolveRequestTenant(req);
+    const path = req.path || req.url?.split('?')[0] || '';
+    const actingId =
+      role === Role.SUPER_ADMIN && !isSuperAdminConsolePath(path)
+        ? readSaActingTenantCookie(req.cookies)
+        : null;
+
+    let effectiveTenant = tenantId;
+    let acting = false;
+    if (actingId) {
+      const actingTenant = await this.prisma.tenant.findUnique({ where: { id: actingId } });
+      if (actingTenant) {
+        effectiveTenant = actingTenant.id;
+        acting = true;
+        if (req.user) req.user.tenantId = actingTenant.id;
+      }
+    }
 
     if (role && role !== Role.SUPER_ADMIN) {
-      const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+      const tenant = await this.prisma.tenant.findUnique({ where: { id: effectiveTenant } });
       if (!tenant || tenant.status === TenantStatus.BLOQUEADO) {
         throw new ForbiddenException('Terminal bloqueado ou inexistente');
       }
@@ -42,8 +62,10 @@ export class TenantInterceptor implements NestInterceptor {
       }
     }
 
-    const state = this.tenantContext.setFromAuth(role ?? Role.CLIENTE, tenantId);
-    req.tenantId = state.tenantId ?? tenantId;
+    const state = this.tenantContext.setFromAuth(role ?? Role.CLIENTE, effectiveTenant, {
+      acting,
+    });
+    req.tenantId = state.tenantId ?? effectiveTenant;
 
     return new Observable((subscriber) => {
       this.tenantContext.run(state, () => {

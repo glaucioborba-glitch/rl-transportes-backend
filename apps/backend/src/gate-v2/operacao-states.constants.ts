@@ -81,6 +81,17 @@ export type OperacaoFluxoJson = {
       ocrMatch?: boolean;
       ocrConfianca?: number;
       ocrProvider?: string;
+      ocrTextoBruto?: string;
+      ocrExtras?: {
+        tipoIso?: string;
+        tamanhoPes?: string;
+        perfil?: string;
+        rotulo?: string;
+        mgwKg?: string;
+        taraKg?: string;
+        payloadKg?: string;
+        owner?: string;
+      };
     }>;
     avarias: Array<{
       foto: string;

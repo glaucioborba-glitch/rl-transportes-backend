@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import type { Response } from 'express';
 import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -9,7 +10,9 @@ import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { PatioMovimentarDto } from './dto/movimentar.dto';
 import { PatioPosicionarDto, PatioPrepararGateOutDto } from './dto/posicionar.dto';
+import { PatioSaldoQueryDto } from './dto/saldo-query.dto';
 import { PatioTomadaConectarDto, PatioTomadaDesconectarDto } from './dto/tomada.dto';
+import { PatioSaldoRelatorioService } from './patio-saldo-relatorio.service';
 import { PatioV2Service } from './patio.service';
 
 const PATIO_ROLES: Role[] = [
@@ -25,7 +28,10 @@ const PATIO_ROLES: Role[] = [
 @UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
 @Controller('v2/patio')
 export class PatioV2Controller {
-  constructor(private readonly patio: PatioV2Service) {}
+  constructor(
+    private readonly patio: PatioV2Service,
+    private readonly saldoRelatorio: PatioSaldoRelatorioService,
+  ) {}
 
   @Post('posicionar')
   @ApiOperation({ summary: 'Posicionar unidade recém-entrada (Gate In) em baia' })
@@ -52,11 +58,45 @@ export class PatioV2Controller {
   }
 
   @Get('inventario')
-  @ApiOperation({ summary: 'Inventário em tempo real — baias, lotação, divergências' })
+  @ApiOperation({ summary: 'Inventário em tempo real — saldo de unidades, baias, lotação' })
   @Roles(...PATIO_ROLES)
   @Permissions('solicitacoes:patio')
   inventario() {
     return this.patio.inventario();
+  }
+
+  @Get('saldo/pdf')
+  @ApiOperation({ summary: 'Relatório PDF do saldo de unidades (timbre da empresa)' })
+  @ApiProduces('application/pdf')
+  @Roles(...PATIO_ROLES)
+  @Permissions('solicitacoes:patio')
+  async saldoPdf(
+    @Query() query: PatioSaldoQueryDto,
+    @CurrentUser() user: AuthUser,
+    @Res() res: Response,
+  ) {
+    const buf = await this.saldoRelatorio.pdf(query, user.tenantId);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="saldo-unidades.pdf"');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.send(buf);
+  }
+
+  @Get('saldo/xml')
+  @ApiOperation({ summary: 'Relatório XML do saldo de unidades' })
+  @ApiProduces('application/xml')
+  @Roles(...PATIO_ROLES)
+  @Permissions('solicitacoes:patio')
+  async saldoXml(
+    @Query() query: PatioSaldoQueryDto,
+    @CurrentUser() user: AuthUser,
+    @Res() res: Response,
+  ) {
+    const xml = await this.saldoRelatorio.xml(query, user.tenantId);
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="saldo-unidades.xml"');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.send(xml);
   }
 
   @Get('unidade/:iso')
@@ -73,6 +113,30 @@ export class PatioV2Controller {
   @Permissions('solicitacoes:patio')
   statusTomada(@Param('iso') iso: string) {
     return this.patio.statusTomada(iso);
+  }
+
+  @Post('unidade/:iso/tomada/conectar')
+  @ApiOperation({ summary: 'Conectar tomada reefer pelo ISO (Gate / pátio)' })
+  @Roles(...PATIO_ROLES)
+  @Permissions('solicitacoes:patio')
+  conectarTomadaPorIso(
+    @Param('iso') iso: string,
+    @Body() dto: PatioTomadaConectarDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.patio.conectarTomadaPorIso(iso, user.id, dto);
+  }
+
+  @Post('unidade/:iso/tomada/desconectar')
+  @ApiOperation({ summary: 'Desconectar tomada reefer pelo ISO (Gate / pátio)' })
+  @Roles(...PATIO_ROLES)
+  @Permissions('solicitacoes:patio')
+  desconectarTomadaPorIso(
+    @Param('iso') iso: string,
+    @Body() dto: PatioTomadaDesconectarDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.patio.desconectarTomadaPorIso(iso, user.id, dto);
   }
 
   @Post('unidades/:id/tomada/conectar')

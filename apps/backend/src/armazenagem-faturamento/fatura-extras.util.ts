@@ -1,6 +1,7 @@
 import { EventoGatilhoTarifa, Prisma, StatusFrete } from '@prisma/client';
 import { pairLocaisTransporte, valorCobradoTransporte } from '../cadastros/local-transporte-pair.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { isLancamentoAutomaticoTabela } from '../unidade-processo/servicos-abertura-tabela.util';
 import { roundMoney, toDecimal } from './armazenagem-billing.util';
 
 type Db = Prisma.TransactionClient | PrismaService;
@@ -29,6 +30,7 @@ export async function syncExtrasOnPreFatura(
       where: { unidadeProcessoId: input.unidadeProcessoId },
     });
     for (const s of servicos) {
+      if (isLancamentoAutomaticoTabela(s.payload)) continue;
       const qtd = Number(s.quantidade);
       linhas.push({
         preFaturaId: input.preFaturaId,

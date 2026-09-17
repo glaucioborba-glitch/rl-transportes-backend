@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { parseFaixasDiaria } from '../billing-engine/faixa-diaria.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizeTamanhoAluguel } from '../aluguel/aluguel-pricing.util';
 import {
@@ -43,6 +44,7 @@ export class CadastrosTabelasAluguelService {
     const row = await this.prisma.$transaction(async (tx) => {
       const tabela = await tx.cadastroTabelaAluguel.create({ data: this.toTabelaData(dto) });
       if (dto.padrao) await this.unsetOutrosPadroes(tx, tabela.id);
+      if (dto.itens) await this.replaceItens(tx, tabela.id, dto.itens);
       return tabela;
     });
     return this.findOne(row.id);
@@ -59,6 +61,7 @@ export class CadastrosTabelasAluguelService {
         },
       });
       if (dto.padrao) await this.unsetOutrosPadroes(tx, id);
+      if (dto.itens) await this.replaceItens(tx, id, dto.itens);
     });
     return this.findOne(id);
   }
@@ -109,6 +112,52 @@ export class CadastrosTabelasAluguelService {
     });
   }
 
+  private async replaceItens(
+    tx: Prisma.TransactionClient,
+    tabelaId: string,
+    itens: CadastrosTabelaAluguelItemFormDto[],
+  ) {
+    const seen = new Set<string>();
+    for (const dto of itens) {
+      const tipo = dto.tipoContainerCodigo.trim().toUpperCase();
+      const tamanho = normalizeTamanhoAluguel(dto.containerTamanho);
+      const key = `${tipo}|${tamanho}`;
+      if (seen.has(key)) {
+        throw new ConflictException(`Item duplicado na tabela: ${tipo} ${tamanho}.`);
+      }
+      seen.add(key);
+      const existing = await tx.cadastroTabelaAluguelItem.findFirst({
+        where: { tabelaId, tipoContainerCodigo: tipo, containerTamanho: tamanho },
+      });
+      const data = this.toItemData(tabelaId, dto, tipo, tamanho);
+      if (existing) {
+        await tx.cadastroTabelaAluguelItem.update({
+          where: { id: existing.id },
+          data: { ...data, deletedAt: null },
+        });
+      } else {
+        await tx.cadastroTabelaAluguelItem.create({ data });
+      }
+    }
+    await tx.cadastroTabelaAluguelItem.updateMany({
+      where: {
+        tabelaId,
+        deletedAt: null,
+        ...(seen.size
+          ? {
+              NOT: {
+                OR: [...seen].map((key) => {
+                  const [tipoContainerCodigo, containerTamanho] = key.split('|');
+                  return { tipoContainerCodigo, containerTamanho };
+                }),
+              },
+            }
+          : {}),
+      },
+      data: { deletedAt: new Date() },
+    });
+  }
+
   private toTabelaData(dto: CadastrosTabelaAluguelFormDto) {
     return {
       tenantId: DEFAULT_TENANT,
@@ -127,14 +176,21 @@ export class CadastrosTabelasAluguelService {
     tipo: string,
     tamanho: string,
   ) {
+    const faixas = parseFaixasDiaria(dto.faixasDiaria);
+    const valorRef =
+      dto.valorDiaria != null && Number(dto.valorDiaria) > 0
+        ? Number(dto.valorDiaria)
+        : (faixas[0]?.valorDiaria ?? 0);
     return {
       tabelaId,
       tipoContainerCodigo: tipo,
       containerTamanho: tamanho,
-      valorDiaria: new Prisma.Decimal(Number(dto.valorDiaria).toFixed(2)),
+      valorDiaria: new Prisma.Decimal(valorRef.toFixed(2)),
       diasFreeTime: dto.diasFreeTime ?? 0,
-      valorEntrega: new Prisma.Decimal(Number(dto.valorEntrega ?? 0).toFixed(2)),
-      valorColeta: new Prisma.Decimal(Number(dto.valorColeta ?? 0).toFixed(2)),
+      valorHandling: new Prisma.Decimal(Number(dto.valorHandling ?? 0).toFixed(2)),
+      faixasDiaria: faixas.length
+        ? (JSON.parse(JSON.stringify(faixas)) as Prisma.InputJsonValue)
+        : Prisma.JsonNull,
       ativo: dto.ativo ?? true,
     };
   }
@@ -205,8 +261,8 @@ export class CadastrosTabelasAluguelService {
     containerTamanho: string;
     valorDiaria: Prisma.Decimal;
     diasFreeTime: number;
-    valorEntrega: Prisma.Decimal;
-    valorColeta: Prisma.Decimal;
+    valorHandling: Prisma.Decimal;
+    faixasDiaria?: unknown;
     ativo: boolean;
   }) {
     return {
@@ -216,8 +272,8 @@ export class CadastrosTabelasAluguelService {
       containerTamanho: row.containerTamanho,
       valorDiaria: Number(row.valorDiaria),
       diasFreeTime: row.diasFreeTime,
-      valorEntrega: Number(row.valorEntrega),
-      valorColeta: Number(row.valorColeta),
+      valorHandling: Number(row.valorHandling),
+      faixasDiaria: parseFaixasDiaria(row.faixasDiaria),
       ativo: row.ativo,
     };
   }

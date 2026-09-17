@@ -22,17 +22,24 @@ export function ContainerIsoInput({
   required,
   disabled,
   className,
+  onIsoComplete,
 }: {
   value: string;
   onChange: (value: string) => void;
   required?: boolean;
   disabled?: boolean;
   className?: string;
+  onIsoComplete?: (iso: string) => void;
 }) {
   return (
     <Input
       value={value}
-      onChange={(e) => onChange(formatContainerISO(e.target.value))}
+      onChange={(e) => {
+        const formatted = formatContainerISO(e.target.value);
+        onChange(formatted);
+        const iso = formatted.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+        if (iso.length === 11) onIsoComplete?.(iso);
+      }}
       placeholder="AAAA 000000-0"
       required={required}
       disabled={disabled}

@@ -11,6 +11,7 @@ import { AuditoriaService } from '../auditoria/auditoria.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CadastrosMotoristaFormDto } from './dto/cadastros-motorista-form.dto';
 import { CadastrosMotoristaQueryDto } from './dto/cadastros-motorista-query.dto';
+import { parseOptionalPlacaPreferencial } from './motorista-placas-preferenciais.util';
 
 const PAGE_SIZE = 10;
 
@@ -18,6 +19,8 @@ const AUDIT_FIELD_LABELS: Record<string, string> = {
   nome: 'Nome',
   cpf: 'CPF',
   transportadoraId: 'Transportadora',
+  placaCavalo: 'Placa cavalo',
+  placaCarreta: 'Placa carreta',
   cnhNumero: 'Número CNH',
   cnhCategoria: 'Categoria CNH',
   cnhValidade: 'Validade CNH',
@@ -60,11 +63,18 @@ export class CadastrosMotoristasService {
     const search = query.search?.trim();
     if (search) {
       const digits = search.replace(/\D/g, '');
+      const placa = search.replace(/[\s-]/g, '').toUpperCase();
       const orClause: Prisma.CadastroMotoristaWhereInput[] = [
         { nome: { contains: search, mode: 'insensitive' } },
         { transportadora: { razaoSocial: { contains: search, mode: 'insensitive' } } },
       ];
       if (digits.length >= 3) orClause.push({ cpf: { contains: digits } });
+      if (/^[A-Z0-9]{5,10}$/.test(placa)) {
+        orClause.push(
+          { placaCavalo: { contains: placa, mode: 'insensitive' } },
+          { placaCarreta: { contains: placa, mode: 'insensitive' } },
+        );
+      }
       where.AND = [
         ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
         { OR: orClause },
@@ -121,6 +131,7 @@ export class CadastrosMotoristasService {
   ) {
     this.assertCpfValido(dto.cpf);
     await this.assertTransportadoraExists(dto.transportadoraId);
+    this.assertPlacasPreferenciais(dto);
     const cpf = dto.cpf.replace(/\D/g, '');
     const dup = await this.checkCpf(cpf);
     if (dup.exists) {
@@ -158,6 +169,7 @@ export class CadastrosMotoristasService {
   ) {
     this.assertCpfValido(dto.cpf);
     await this.assertTransportadoraExists(dto.transportadoraId);
+    this.assertPlacasPreferenciais(dto);
     const antes = await this.getRowOrThrow(id);
     const cpf = dto.cpf.replace(/\D/g, '');
     if (cpf !== antes.cpf) {
@@ -270,6 +282,23 @@ export class CadastrosMotoristasService {
     }
   }
 
+  private assertPlacasPreferenciais(dto: CadastrosMotoristaFormDto) {
+    const cavalo = parseOptionalPlacaPreferencial(dto.placaCavalo);
+    if (!cavalo.ok) {
+      throw new BadRequestException(
+        'Cavalo: placa inválida. Use Mercosul (ABC1D23) ou o formato antigo (ABC1234).',
+      );
+    }
+    const carreta = parseOptionalPlacaPreferencial(dto.placaCarreta);
+    if (!carreta.ok) {
+      throw new BadRequestException(
+        'Carreta: placa inválida. Use Mercosul (ABC1D23) ou o formato antigo (ABC1234).',
+      );
+    }
+    dto.placaCavalo = cavalo.placa ?? undefined;
+    dto.placaCarreta = carreta.placa ?? undefined;
+  }
+
   private buildDadosJson(dto: CadastrosMotoristaFormDto): Prisma.InputJsonValue {
     return {
       rg: dto.rg ?? '',
@@ -296,6 +325,8 @@ export class CadastrosMotoristasService {
       nome: dto.nome.trim(),
       cpf,
       transportadora: { connect: { id: dto.transportadoraId } },
+      placaCavalo: dto.placaCavalo || null,
+      placaCarreta: dto.placaCarreta || null,
       cnhNumero: dto.cnhNumero.trim(),
       cnhCategoria: dto.cnhCategoria,
       cnhValidade: new Date(dto.cnhValidade),
@@ -316,6 +347,8 @@ export class CadastrosMotoristasService {
       nome: dto.nome.trim(),
       cpf,
       transportadora: { connect: { id: dto.transportadoraId } },
+      placaCavalo: dto.placaCavalo || null,
+      placaCarreta: dto.placaCarreta || null,
       cnhNumero: dto.cnhNumero.trim(),
       cnhCategoria: dto.cnhCategoria,
       cnhValidade: new Date(dto.cnhValidade),
@@ -343,6 +376,8 @@ export class CadastrosMotoristasService {
             cnpj: row.transportadora.cnpj,
           }
         : null,
+      placaCavalo: row.placaCavalo,
+      placaCarreta: row.placaCarreta,
       viagensMes: 0,
       ultimaViagem: null,
     };
@@ -367,6 +402,8 @@ export class CadastrosMotoristasService {
       cidade: (dados.cidade as string) ?? '',
       uf: (dados.uf as string) ?? '',
       transportadoraId: row.transportadoraId,
+      placaCavalo: row.placaCavalo ?? '',
+      placaCarreta: row.placaCarreta ?? '',
       cnhNumero: row.cnhNumero ?? '',
       cnhCategoria: row.cnhCategoria ?? '',
       cnhValidade: row.cnhValidade?.toISOString().slice(0, 10) ?? '',

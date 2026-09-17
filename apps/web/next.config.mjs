@@ -42,12 +42,12 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: `
       default-src 'self';
-      script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:;
-      style-src 'self' 'unsafe-inline';
-      img-src 'self' data: blob: http://localhost:3001 http://127.0.0.1:3001 ${storageImgHosts.join(" ")};
-      connect-src ${buildConnectSrc()};
-      font-src 'self';
-      frame-src 'self';
+      script-src 'self' 'unsafe-eval' 'unsafe-inline' blob: https://maps.googleapis.com https://maps.gstatic.com https://*.googleapis.com https://*.gstatic.com;
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+      img-src 'self' data: blob: http://localhost:3001 http://127.0.0.1:3001 https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.ggpht.com ${storageImgHosts.join(" ")};
+      connect-src ${buildConnectSrc()} https://maps.googleapis.com https://maps.gstatic.com https://*.googleapis.com https://*.gstatic.com;
+      font-src 'self' https://fonts.gstatic.com;
+      frame-src 'self' https://maps.google.com https://www.google.com;
     `.replace(/\s{2,}/g, " "),
   },
 ];
@@ -107,6 +107,11 @@ const nextConfig = {
       {
         source: "/admin/config/regua-cobranca",
         destination: "/cadastros/parametros/financeiro",
+        permanent: false,
+      },
+      {
+        source: "/operador/patio/alugueis",
+        destination: "/operador/gate/alugueis",
         permanent: false,
       },
     ];

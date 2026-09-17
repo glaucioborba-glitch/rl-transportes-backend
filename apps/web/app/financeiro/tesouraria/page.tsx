@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { toast } from "@/lib/toast";
 import { defaultRange90d, formatBRL, parseDecimal } from "@/lib/financeiro/format";
@@ -31,7 +32,7 @@ export default function TesourariaPage() {
   const pi = di.slice(0, 7);
   const pf = df.slice(0, 7);
   const user = useStaffAuthStore((s) => s.user);
-  const ok = user?.role === "ADMIN" || user?.role === "GERENTE";
+  const ok = isIntranetGestorRole(user?.role);
 
   const [dash, setDash] = useState<Record<string, unknown> | null>(null);
   const [boletosPagos, setBoletosPagos] = useState(0);

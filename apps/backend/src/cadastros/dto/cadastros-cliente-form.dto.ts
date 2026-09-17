@@ -127,6 +127,12 @@ export class CadastrosClienteFormDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @MaxLength(64)
+  prazoPagamento?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   limiteCredito?: string;
 
   @ApiPropertyOptional({ default: 'PJ' })

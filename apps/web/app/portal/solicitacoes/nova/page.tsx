@@ -12,8 +12,10 @@ import {
   criarSolicitacaoV2,
   criarSolicitacaoV2ComAnexos,
   type CreateSolicitacaoV2Payload,
+  fetchPortalCatalogoContainer,
   type PortalPatioSaldoItem,
 } from "@/lib/api/portal-client";
+import { catalogoContainerHint, patchFromCatalogo } from "@/lib/catalogo-container-iso";
 import { toast } from "@/lib/toast";
 import { usePessoaAutorizadaStore } from "@/stores/pessoaAutorizadaStore";
 import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
@@ -41,8 +43,8 @@ import {
   SOLICITACAO_FORM_GRID as GRID,
   SOLICITACAO_SELECT_CLS as SELECT_CLS,
   SOLICITACAO_SPAN2 as SPAN2,
-  SOLICITACAO_SPAN4 as SPAN4,
 } from "@/components/portal/solicitacao-form-layout";
+import { useMotoristaCpfAutofill } from "@/hooks/use-motorista-cpf-autofill";
 
 type TipoCaminhao = "LS" | "RODOTREM";
 
@@ -83,18 +85,23 @@ export default function NovaSolicitacaoCorporativaPage() {
 
   const [nomeMotorista, setNomeMotorista] = useState("");
   const [cpfMotorista, setCpfMotorista] = useState("");
+  const { hint: motoristaHint, bloqueio: motoristaBloqueio } = useMotoristaCpfAutofill({
+    cpf: cpfMotorista,
+    nome: nomeMotorista,
+    setNome: setNomeMotorista,
+    source: "portal",
+  });
   const [placaCavalo, setPlacaCavalo] = useState("");
   const [placaCarreta01, setPlacaCarreta01] = useState("");
   const [placaCarreta02, setPlacaCarreta02] = useState("");
 
   const [containers, setContainers] = useState<ContainerDraft[]>([emptyContainer(1)]);
   const [unidadeFieldErrors, setUnidadeFieldErrors] = useState<Record<number, string>>({});
+  const [catalogoHints, setCatalogoHints] = useState<Record<number, string>>({});
 
   const [dataRef, setDataRef] = useState("");
   const { turnos } = useTenantTurnos();
   const [turno, setTurno] = useState("");
-  const [atendimentoEspecial, setAtendimentoEspecial] = useState(false);
-  const [atendimentoEspecialTexto, setAtendimentoEspecialTexto] = useState("");
 
   const [solNome, setSolNome] = useState("");
   const [solTelefone, setSolTelefone] = useState("");
@@ -168,9 +175,32 @@ export default function NovaSolicitacaoCorporativaPage() {
     });
   }
 
+  async function applyCatalogo(idx: number, iso: string) {
+    try {
+      const hit = await fetchPortalCatalogoContainer(iso);
+      if (!hit) {
+        setCatalogoHints((prev) => ({ ...prev, [idx]: "" }));
+        return;
+      }
+      setCatalogoHints((prev) => ({ ...prev, [idx]: catalogoContainerHint(hit) }));
+      setContainers((rows) => {
+        const atual = rows[idx];
+        if (!atual) return rows;
+        const patch = patchFromCatalogo(atual, hit, tiposContainer.map((t) => t.codigo));
+        if (!Object.keys(patch).length) return rows;
+        const next = [...rows];
+        next[idx] = { ...atual, ...patch };
+        return next;
+      });
+    } catch {
+      /* catálogo é só atalho */
+    }
+  }
+
   function applyEstoque(idx: number, item: PortalPatioSaldoItem | null) {
     if (!item) {
       updateContainer(idx, { unidade: "" });
+      setCatalogoHints((prev) => ({ ...prev, [idx]: "" }));
       return;
     }
     updateContainer(idx, {
@@ -183,6 +213,7 @@ export default function NovaSolicitacaoCorporativaPage() {
       navio: item.navio ?? "",
       refrigerado: item.refrigerado,
     });
+    void applyCatalogo(idx, stripContainerISO(item.unidadeIso));
   }
 
   function buildPayload(): CreateSolicitacaoV2Payload {
@@ -219,8 +250,6 @@ export default function NovaSolicitacaoCorporativaPage() {
       agendamento: {
         dataRef,
         turno: resolveAgendamentoTurno(turnos, turno),
-        atendimentoEspecial,
-        atendimentoEspecialTexto: atendimentoEspecial ? atendimentoEspecialTexto.trim() || undefined : undefined,
       },
       solicitante: {
         nome: solNome.trim(),
@@ -233,6 +262,10 @@ export default function NovaSolicitacaoCorporativaPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (motoristaBloqueio) {
+      toast.error(motoristaBloqueio);
+      return;
+    }
     const ordens = containers.slice(0, containerCount);
     const allowed = new Set(estoque.items.map((i) => stripContainerISO(i.unidadeIso)));
     const seen = new Set<string>();
@@ -314,6 +347,11 @@ export default function NovaSolicitacaoCorporativaPage() {
             <div>
               <label className="mb-1 block text-xs text-slate-500">CPF (apenas dígitos)</label>
               <Input value={cpfMotorista} onChange={(e) => setCpfMotorista(e.target.value)} required minLength={11} className="bg-black/40" />
+              {motoristaBloqueio ? (
+                <p className="mt-1 text-[11px] text-red-400">{motoristaBloqueio}</p>
+              ) : motoristaHint ? (
+                <p className="mt-1 text-[11px] text-slate-400">{motoristaHint}</p>
+              ) : null}
             </div>
             <div>
               <label className="mb-1 block text-xs text-slate-500">Tipo de caminhão</label>
@@ -380,6 +418,8 @@ export default function NovaSolicitacaoCorporativaPage() {
                 />
                 {unidadeFieldErrors[idx] ? (
                   <p className="mt-1 text-xs text-red-400">{unidadeFieldErrors[idx]}</p>
+                ) : catalogoHints[idx] ? (
+                  <p className="mt-1 text-[11px] text-slate-400">{catalogoHints[idx]}</p>
                 ) : null}
               </div>
               <div>
@@ -432,18 +472,15 @@ export default function NovaSolicitacaoCorporativaPage() {
               ) : null}
               {findPortalTipo(tiposContainer, c.tipo)?.tomadaReefer ? (
                 <>
-                  <div className={SPAN2}>
+                  <div>
                     <label className="mb-1 block text-xs text-slate-500">
-                      Conectar à tomada reefer?
+                      Tomada reefer
                     </label>
                     <ContainerRefrigeradoSelect
                       value={c.refrigerado}
                       onChange={(v) => updateContainer(idx, { refrigerado: v })}
                       selectClassName={SELECT_CLS}
                     />
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Sim = diária de energia. Não = só armazenagem.
-                    </p>
                   </div>
                   {c.refrigerado ? (
                     <div>
@@ -468,14 +505,19 @@ export default function NovaSolicitacaoCorporativaPage() {
 
         <Card className="border-white/10 bg-black/25">
           <CardHeader className={CARD_H}>
-            <CardTitle className="text-sm text-white">3 · Agendamento</CardTitle>
+            <CardTitle className="text-sm text-white">3 · Agendamento e contato</CardTitle>
+            {pessoa && user?.cpfCnpj ? (
+              <CardDescription>
+                Responsável: {pessoa.nome} (CNPJ/CPF {formatCpfCnpjBr(user.cpfCnpj)})
+              </CardDescription>
+            ) : null}
           </CardHeader>
           <CardContent className={`${GRID} ${CARD_C}`}>
             <div>
               <label className="mb-1 block text-xs text-slate-500">Data</label>
               <Input type="date" value={dataRef} onChange={(e) => setDataRef(e.target.value)} required className="bg-black/40" />
             </div>
-            <div className={SPAN2}>
+            <div>
               <label className="mb-1 block text-xs text-slate-500">Turno</label>
               <select
                 className={SELECT_CLS}
@@ -490,40 +532,6 @@ export default function NovaSolicitacaoCorporativaPage() {
                 ))}
               </select>
             </div>
-            <div className="flex items-end pb-2">
-              <label htmlFor="atesp" className="flex items-center gap-2 text-sm text-slate-300">
-                <input
-                  type="checkbox"
-                  id="atesp"
-                  checked={atendimentoEspecial}
-                  onChange={(e) => setAtendimentoEspecial(e.target.checked)}
-                />
-                Atendimento especial
-              </label>
-            </div>
-            {atendimentoEspecial ? (
-              <div className={SPAN4}>
-                <label className="mb-1 block text-xs text-slate-500">Detalhes (opcional)</label>
-                <Input value={atendimentoEspecialTexto} onChange={(e) => setAtendimentoEspecialTexto(e.target.value)} className="bg-black/40" />
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-
-        <Card className="border-white/10 bg-black/25">
-          <CardHeader className={CARD_H}>
-            <CardTitle className="text-sm text-white">4 · Contato do solicitante</CardTitle>
-            {pessoa && user?.cpfCnpj ? (
-              <CardDescription>
-                Responsável: {pessoa.nome} (CNPJ/CPF {formatCpfCnpjBr(user.cpfCnpj)})
-              </CardDescription>
-            ) : null}
-          </CardHeader>
-          <CardContent className={`${GRID} ${CARD_C}`}>
-            <div className={SPAN2}>
-              <label className="mb-1 block text-xs text-slate-500">Nome</label>
-              <Input value={solNome} onChange={(e) => setSolNome(e.target.value)} required className="bg-black/40" />
-            </div>
             <div>
               <label className="mb-1 block text-xs text-slate-500">Telefone</label>
               <Input value={solTelefone} onChange={(e) => setSolTelefone(e.target.value)} required className="bg-black/40" />
@@ -532,12 +540,16 @@ export default function NovaSolicitacaoCorporativaPage() {
               <label className="mb-1 block text-xs text-slate-500">E-mail</label>
               <Input type="email" value={solEmail} onChange={(e) => setSolEmail(e.target.value)} required className="bg-black/40" />
             </div>
+            <div className={SPAN2}>
+              <label className="mb-1 block text-xs text-slate-500">Nome</label>
+              <Input value={solNome} onChange={(e) => setSolNome(e.target.value)} required className="bg-black/40" />
+            </div>
           </CardContent>
         </Card>
 
         <Card className="border-white/10 bg-black/25">
           <CardHeader className={CARD_H}>
-            <CardTitle className="text-sm text-white">5 · Anexos (opcional)</CardTitle>
+            <CardTitle className="text-sm text-white">4 · Anexos (opcional)</CardTitle>
             <CardDescription>JPG ou PDF, até 5MB. Pode enviar sem anexos.</CardDescription>
           </CardHeader>
           <CardContent className={`${CARD_C} space-y-2`}>

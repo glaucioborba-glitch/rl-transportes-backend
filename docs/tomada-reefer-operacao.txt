@@ -1,0 +1,166 @@
+TOMADA REEFER — COMO FUNCIONA E COMO OPERAR
+RL Transportes
+========================================
+
+A cobrança de Tomada é por DIAS LIGADOS, não pela baixa (RIC de entrada).
+A opção "Tomada" só aparece quando o TIPO DE CONTÊINER no cadastro está
+com "Requer tomada reefer no pátio" marcado.
+
+Cadastro: Super Admin → Tipos de contêiner
+  http://localhost:3000/super-admin/tipos-container
+
+Exemplo: tipo REEFER (nome Reefer), 20' / 40', flag "Requer tomada" ligada.
+DRY, HC, tanque etc. sem essa flag NÃO mostram Tomada na solicitação
+nem o cartão de ligar/desligar no Gate.
+
+
+----------------------------------------
+1. FLUXO DA INFORMAÇÃO
+----------------------------------------
+
+Solicitação (portal do cliente ou Gate → Criar agendamento)
+        |
+        |-- Tipo COM "Requer tomada" + Tomada = Sim
+        |     → na RIC de entrada o pátio já nasce CONECTADO
+        |       (o relógio da diária começa na hora)
+        |
+        |-- Tipo COM "Requer tomada" + Tomada = Não
+        |     → só Handling no ID
+        |     → depois o cliente pode pedir no portal
+        |       (evento SOLICITADO — ainda NÃO cobra)
+        |     → ou o operador LIGA no Gate
+        |       (evento CONECTADO — começa a diária)
+        |
+        +-- Tipo SEM "Requer tomada"
+              → campo Tomada nem aparece
+              → Gate não oferece ligar/desligar
+
+
+No ID (Consulta RIC → Serviços):
+  - Handling entra sozinho na abertura, da tabela de preços
+    (célula tipo × tamanho × cheio/vazio).
+  - Tomada entra ao LIGAR. Quantidade = dias ligados.
+    Um dia ligado (mesmo ligar e desligar no mesmo dia) conta 1.
+  - Lavagem, lacre, transbordo: o operador lança pelo catálogo
+    Cadastros → Serviços. Não entram sozinhos.
+
+Na fatura:
+  Handling e Tomada do ID são automáticos (selo "Tabela") e não
+  se repetem como extra. O motor de fatura cobra energia pelos
+  mesmos eventos CONECTADO / DESCONECTADO.
+  Pedido do portal sem ligar no pátio NÃO gera dia.
+
+Preço:
+  Vem da tabela de preços (diária / faixas de energia).
+  Sem valor na tabela, a tomada liga no pátio mas a linha no ID
+  não é criada — não inventamos preço.
+
+Aluguel:
+  Continua outro ID (modalidade ALUGUEL). Esta tomada é só do
+  ID de PÁTIO.
+
+
+----------------------------------------
+2. ANTES DE COBRAR — TABELA E CADASTRO
+----------------------------------------
+
+A) Tipo de contêiner
+   Cadastros → Operacional → Tipos de contêiner
+   Abra o tipo (ex.: REEFER) e marque:
+     [x] Requer tomada reefer no pátio
+   Sem isso, ninguém vê a opção Tomada.
+
+B) Tabela de preços
+   Cadastros → Financeiro → Tabelas de preços
+   Na célula do tipo (em especial REEFER), preencha a diária
+   ou as faixas de energia. Sem isso o Gate liga, mas o ID
+   fica sem valor.
+
+
+----------------------------------------
+3. COMO OPERAR NO DIA A DIA
+----------------------------------------
+
+3.1 Reefer que já chega para plugar
+    Na solicitação (portal ou Gate → Criar agendamento):
+      Tipo = REEFER (ou outro com a flag)
+      Tomada = Sim + set point
+    Autorize, portaria, Controle de Gate → RIC de entrada.
+    O ID abre com Handling e a tomada já conta o primeiro dia.
+
+3.2 Reefer que só liga depois (caso do início da operação)
+    Na solicitação: Tomada = Não.
+    Faça a baixa / RIC normalmente. Só Handling no ID.
+    Quando for plugar, o operador liga NO GATE
+    (não precisa do portal).
+
+    Caminho A — Consulta RIC (ficha do ID)
+      1. Login da intranet: /login/staff
+         (ADMIN / GERENTE / operador do terminal.
+          O CPF do Super Admin NÃO entra aqui.)
+      2. Gate CPO → Consulta RIC
+      3. Se a lista vier vazia, em "De" coloque data antiga
+         (ex. 01/01/2026) e Filtrar.
+      4. Clique em Serviços no ID.
+      5. Cartão "Tomada reefer": set point e Conectar tomada.
+      6. A linha TOMADA aparece embaixo, selo Tabela.
+         Não dá para apagar.
+      7. Desconectar quando desligar no pátio.
+
+    Caminho B — Saldo de Unidades
+      Gate CPO → Saldo de Unidades
+      Coluna Tomada: Ligar / Ligada
+      (só nas unidades cujo tipo requer tomada)
+      Abre o mesmo cartão embaixo da tabela.
+
+    Caminho C — Dossiê 360º
+      Operações → Consulta Container
+      Busque o ISO. O cartão aparece se o tipo requer tomada.
+
+3.3 Cliente pede depois (portal)
+    Na ficha da solicitação ou em Portal → Pátio:
+      Tomada Sim / Não fica visível; se for Não (ou ainda
+      não ligou), o cliente clica em Solicitar conexão.
+    Só registra o pedido (faixa amarela no Gate).
+    AINDA NÃO COBRA. O pátio/Gate precisa Conectar.
+    No começo, se o cliente ainda não usa o portal,
+    ignore este passo e ligue direto no Gate.
+
+    Autorizações e o dossiê/RIC mostram a mesma escolha
+    (Tomada Sim · set point / Tomada Não) — só leitura.
+
+3.4 Extras (lavagem, lacre, transbordo)
+    Mesmo cartão Serviços no ID, combo do cadastro de Serviços.
+
+3.5 Saída
+    Na RIC de saída o relógio da tomada para na hora da saída.
+    A quantidade no ID fica o total de dias ligados daquele ciclo.
+
+
+----------------------------------------
+4. QUEM FAZ O QUÊ NO COMEÇO
+----------------------------------------
+
+Situação                         O que fazer
+-------------------------------  --------------------------------
+Reefer já chega para plugar      Tomada = Sim na solicitação
+Reefer que só liga depois        Tomada = Não; ligar no Gate
+Cliente ainda sem portal         Só Gate
+Precisa parar a diária           Desconectar no Gate
+Valor errado / zerado            Conferir diária de energia na
+                                 tabela + flag no tipo REEFER
+DRY / tipo sem "Requer tomada"   Campo Tomada não aparece.
+                                 Correto.
+
+
+----------------------------------------
+5. LOGIN
+----------------------------------------
+
+Intranet do terminal:  /login/staff
+Super Admin (dono):    /super-admin/login
+  Para o dono ver a intranet de um terminal:
+  Super Admin → Abrir intranet na linha do terminal.
+
+Lista padrão da Consulta RIC: últimos 10 dias.
+IDs mais antigos: alargue o campo "De".

@@ -1,4 +1,11 @@
 import type { EmpresaLogoMeta, EmpresaLogoSlot } from './empresa-logo.util';
+import {
+  MOEDA_PADRAO,
+  parseMoedaCorrente,
+  type MoedaCorrenteCodigo,
+} from './tenant-locale.util';
+
+export { MOEDAS_CORRENTES, parseMoedaCorrente, type MoedaCorrenteCodigo } from './tenant-locale.util';
 
 export type EmpresaRegimeTributario = 'SIMPLES_NACIONAL' | 'LUCRO_PRESUMIDO' | 'LUCRO_REAL';
 
@@ -21,6 +28,7 @@ export type EmpresaOperadoraDados = {
   bairro: string;
   cidade: string;
   uf: string;
+  moedaCorrente: MoedaCorrenteCodigo;
   regimeTributario: EmpresaRegimeTributario;
   simplesAnexo: string;
   aliquotaIss: number;
@@ -50,6 +58,7 @@ export const DEFAULT_EMPRESA_OPERADORA: EmpresaOperadoraDados = {
   bairro: '',
   cidade: '',
   uf: '',
+  moedaCorrente: MOEDA_PADRAO,
   regimeTributario: 'SIMPLES_NACIONAL',
   simplesAnexo: '',
   aliquotaIss: 2,
@@ -78,6 +87,8 @@ export function mergeEmpresaOperadora(
     aliquotaCofins: num(r.aliquotaCofins, DEFAULT_EMPRESA_OPERADORA.aliquotaCofins),
     aliquotaCsll: num(r.aliquotaCsll, DEFAULT_EMPRESA_OPERADORA.aliquotaCsll),
     aliquotaIrpj: num(r.aliquotaIrpj, DEFAULT_EMPRESA_OPERADORA.aliquotaIrpj),
+    uf: (r.uf ?? '').toString().trim().toUpperCase().slice(0, 2),
+    moedaCorrente: parseMoedaCorrente(r.moedaCorrente),
     regimeTributario: parseRegime(r.regimeTributario),
   };
 }

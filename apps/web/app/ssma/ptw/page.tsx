@@ -7,6 +7,7 @@ import { SafetyChecklist } from "@/components/ssma/safety-checklist";
 import { RcaVisualizer } from "@/components/ssma/rca-visualizer";
 import { MaturityRadar } from "@/components/ssma/maturity-radar";
 import { ActionPlanBoard } from "@/components/ssma/action-plan-board";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { ssmaStorage } from "@/lib/ssma/storage";
 import { cn } from "@/lib/utils";
@@ -20,7 +21,7 @@ const TABS = [
 ] as const;
 
 export default function SsmaPtwPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("ptw");
   const [, bump] = useState(0);
 

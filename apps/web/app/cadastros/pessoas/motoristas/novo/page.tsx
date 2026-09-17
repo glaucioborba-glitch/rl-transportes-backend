@@ -11,7 +11,7 @@ export default function NovoMotoristaPage() {
           </Link>
           <span>/</span>
           <Link href="/cadastros/pessoas/motoristas" className="hover:text-white">
-            Motoristas
+            Motoristas Internos
           </Link>
           <span>/</span>
           <span>Novo</span>

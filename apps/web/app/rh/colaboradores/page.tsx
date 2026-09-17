@@ -7,6 +7,7 @@ import { fetchRhDirectoryMerged } from "@/lib/rh/merge-directory";
 import type { RhStaffRole } from "@/lib/rh/types";
 import type { RhColaboradorDirectoryItem } from "@/lib/rh/types";
 import { RhCard } from "@/components/rh/rh-card";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 
 const ROLES: RhStaffRole[] = [
@@ -18,7 +19,7 @@ const ROLES: RhStaffRole[] = [
 ];
 
 export default function RhColaboradoresPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [rows, setRows] = useState<RhColaboradorDirectoryItem[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [roleF, setRoleF] = useState<string>("");

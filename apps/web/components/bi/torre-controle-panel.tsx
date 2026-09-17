@@ -17,9 +17,10 @@ import {
 import { BiCsvExportButton } from "@/components/bi/bi-csv-export-button";
 import type { TorreControleResponse } from "@/lib/api/bi-analytics-types";
 import { cn } from "@/lib/utils";
+import { formatBRL } from "@/lib/financeiro/format";
 
 function brl(n: number) {
-  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  return formatBRL(n);
 }
 
 function tatColor(minutos: number, verde: number, vermelho: number) {

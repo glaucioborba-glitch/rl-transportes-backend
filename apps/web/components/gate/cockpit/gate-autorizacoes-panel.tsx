@@ -29,13 +29,17 @@ import { Input } from "@/components/ui/input";
 import { ContainerNumber } from "@/components/ui/container-number";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
-import { useGateCockpitContext } from "./gate-cockpit-context";
+import { rotuloTomadaPedido } from "@/lib/cadastros/tomada-display";
+import { TomadaPedidoBadge } from "@/components/gate/tomada-pedido-badge";
+import { listCadastrosTiposContainer } from "@/lib/api/cadastros-tipos-container-client";
 
 type ContainerRow = {
   tipo?: string;
   tamanho?: string;
   status?: string;
   unidade?: string;
+  refrigerado?: boolean;
+  setPoint?: number | null;
 };
 
 type AutorizacaoItem = {
@@ -45,6 +49,7 @@ type AutorizacaoItem = {
   containers: string[];
   tipoTamanho: string | null;
   situacao: GateContainerSituacao | null;
+  tomadaLabel: string | null;
   status: string;
   criadoEm: string;
 };
@@ -66,13 +71,17 @@ function SituacaoBadge({ situacao }: { situacao: GateContainerSituacao }) {
   );
 }
 
-function mapItem(row: Record<string, unknown>): AutorizacaoItem {
+function mapItem(
+  row: Record<string, unknown>,
+  tipos: Array<{ codigo: string; tomadaReefer: boolean }>,
+): AutorizacaoItem {
   const containers = (row.containersSolicitacao as ContainerRow[] | undefined) ?? [];
   const cs = containers[0];
   const isos = collectSolicitacaoContainerISOs({ containersSolicitacao: containers });
   const cliente = row.cliente as { razaoSocial?: string } | undefined;
   const situacao =
     cs?.status === "CHEIO" ? "CHEIO" : cs?.status === "VAZIO" ? "VAZIO" : null;
+  const comTomada = containers.find((c) => rotuloTomadaPedido({ tipo: c.tipo, tipos }));
 
   return {
     id: String(row.id),
@@ -81,13 +90,18 @@ function mapItem(row: Record<string, unknown>): AutorizacaoItem {
     containers: isos.length ? isos : ["—"],
     tipoTamanho: formatTipoTamanhoContainerLabel(cs?.tipo, cs?.tamanho),
     situacao,
+    tomadaLabel: rotuloTomadaPedido({
+      tipo: (comTomada ?? cs)?.tipo,
+      refrigerado: (comTomada ?? cs)?.refrigerado,
+      setPoint: (comTomada ?? cs)?.setPoint,
+      tipos,
+    }),
     status: String(row.status ?? ""),
     criadoEm: String(row.createdAt ?? ""),
   };
 }
 
 export function GateAutorizacoesPanel() {
-  const { refresh } = useGateCockpitContext();
   const user = useStaffAuthStore((s) => s.user);
   const podeAutorizar = podeAprovarOs(user);
   const [loading, setLoading] = useState(true);
@@ -99,13 +113,15 @@ export function GateAutorizacoesPanel() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [pendente, analise] = await Promise.all([
+      const [pendente, analise, catalogo] = await Promise.all([
         staffListarSolicitacoesV2({ status: "PENDENTE", limit: 100, page: 1 }),
         staffListarSolicitacoesV2({ status: "EM_ANALISE", limit: 100, page: 1 }),
+        listCadastrosTiposContainer().catch(() => ({ items: [] as Array<{ codigo: string; tomadaReefer: boolean }> })),
       ]);
+      const tiposNext = catalogo.items ?? [];
       const merged = new Map<string, AutorizacaoItem>();
       for (const row of [...pendente.items, ...analise.items]) {
-        const mapped = mapItem(row as Record<string, unknown>);
+        const mapped = mapItem(row as Record<string, unknown>, tiposNext);
         merged.set(mapped.id, mapped);
       }
       const list = Array.from(merged.values()).sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
@@ -127,7 +143,6 @@ export function GateAutorizacoesPanel() {
       await staffAprovarSolicitacaoV2(id);
       toast.success("Solicitação aprovada");
       await load();
-      void refresh(true);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Falha ao aprovar");
     } finally {
@@ -144,7 +159,6 @@ export function GateAutorizacoesPanel() {
       setRejeitarId(null);
       setMotivo("");
       await load();
-      void refresh(true);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Falha ao rejeitar");
     } finally {
@@ -153,19 +167,36 @@ export function GateAutorizacoesPanel() {
   }
 
   if (loading) {
-    return <Skeleton className="h-96 w-full" />;
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">Autorizações</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Aprovar solicitações antes da portaria.
+          </p>
+        </div>
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
   }
 
   return (
-    <>
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          {items.length} solicitação{items.length === 1 ? "" : "ões"} aguardando autorização
-        </p>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Autorizações</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Aprovar solicitações antes da portaria.
+          </p>
+        </div>
         <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => void load()}>
           Atualizar
         </Button>
       </div>
+
+      <p className="text-sm text-muted-foreground">
+        {items.length} solicitação{items.length === 1 ? "" : "ões"} aguardando autorização
+      </p>
 
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nenhuma autorização pendente.</p>
@@ -187,10 +218,13 @@ export function GateAutorizacoesPanel() {
                 ))}
               </div>
 
-              {item.tipoTamanho ? (
+              {item.tipoTamanho || item.situacao || item.tomadaLabel ? (
                 <div className="mb-1 flex flex-wrap items-center gap-2">
-                  <span className="text-sm text-muted-foreground">{item.tipoTamanho}</span>
+                  {item.tipoTamanho ? (
+                    <span className="text-sm text-muted-foreground">{item.tipoTamanho}</span>
+                  ) : null}
                   {item.situacao ? <SituacaoBadge situacao={item.situacao} /> : null}
+                  <TomadaPedidoBadge label={item.tomadaLabel} />
                 </div>
               ) : null}
 
@@ -271,6 +305,6 @@ export function GateAutorizacoesPanel() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }

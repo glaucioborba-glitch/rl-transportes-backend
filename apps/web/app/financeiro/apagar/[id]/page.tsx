@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { toast } from "@/lib/toast";
 import { formatBRL, parseDecimal } from "@/lib/financeiro/format";
@@ -46,7 +47,7 @@ export default function ApagarDetalhePage() {
   const params = useParams();
   const id = String(params.id ?? "");
   const user = useStaffAuthStore((s) => s.user);
-  const ok = user?.role === "ADMIN" || user?.role === "GERENTE";
+  const ok = isIntranetGestorRole(user?.role);
   const [fat, setFat] = useState<FatDetail | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
@@ -55,8 +55,19 @@ export class TenantConfigController {
   @ApiBearerAuth('access-token')
   @Roles(...PARAMETROS_ROLES)
   @ApiOperation({ summary: 'Parâmetros gerais do terminal (operacional, financeiro, fiscal, etc.)' })
-  async getParametrosGerais(@Req() req: Request & { tenantId?: string }) {
-    return this.config.getParametrosGerais(req.tenantId ?? DEFAULT_TENANT_ID);
+  async getParametrosGerais(@Req() req: Request & { tenantId?: string; user?: { role?: Role } }) {
+    const data = await this.config.getParametrosGerais(req.tenantId ?? DEFAULT_TENANT_ID);
+    if (req.user?.role === Role.SUPER_ADMIN) return data;
+    const { integracoes: _hidden, ...rest } = data;
+    return rest;
+  }
+
+  @Get('maps-config')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Chave Maps JS do terminal (restrita por referrer no Google Cloud)' })
+  async mapsConfig(@Req() req: Request & { tenantId?: string }) {
+    return this.config.getMapsConfig(req.tenantId ?? DEFAULT_TENANT_ID);
   }
 
   @Patch('parametros-gerais')
@@ -68,6 +79,9 @@ export class TenantConfigController {
     @Req() req: Request & { tenantId?: string },
     @Body() dto: UpdateParametrosGeraisDto,
   ) {
+    if (dto.integracoes) {
+      throw new ForbiddenException('Integrações do sistema só o Super Admin configura.');
+    }
     return this.config.updateParametrosGerais(req.tenantId ?? DEFAULT_TENANT_ID, dto);
   }
 
@@ -119,7 +133,7 @@ export class TenantConfigController {
   @Get('test/whatsapp')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @ApiBearerAuth('access-token')
-  @Roles(...PARAMETROS_ROLES)
+  @Roles(Role.SUPER_ADMIN)
   async testWhatsapp() {
     const r = await this.config.testWhatsappConnection();
     return { connected: r.connected, message: r.message, latency: r.latencyMs };
@@ -128,7 +142,7 @@ export class TenantConfigController {
   @Get('test/google-vision')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @ApiBearerAuth('access-token')
-  @Roles(...PARAMETROS_ROLES)
+  @Roles(Role.SUPER_ADMIN)
   async testGoogleVision() {
     const r = await this.config.testGoogleVisionConnection();
     return { connected: r.connected, message: r.message, latency: r.latencyMs };
@@ -137,7 +151,7 @@ export class TenantConfigController {
   @Get('test/banking')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @ApiBearerAuth('access-token')
-  @Roles(...PARAMETROS_ROLES)
+  @Roles(Role.SUPER_ADMIN)
   async testBanking() {
     const r = await this.config.testBankingConnection();
     return { connected: r.connected, message: r.message, latency: r.latencyMs };
@@ -146,7 +160,7 @@ export class TenantConfigController {
   @Get('test/s3')
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @ApiBearerAuth('access-token')
-  @Roles(...PARAMETROS_ROLES)
+  @Roles(Role.SUPER_ADMIN)
   async testS3() {
     const r = await this.config.testS3Connection();
     return { connected: r.connected, message: r.message, latency: r.latencyMs };

@@ -73,7 +73,7 @@ export default function StaffGateCheckOutPage() {
       } else {
         toast.success("Check-out finalizado");
       }
-      window.setTimeout(() => router.push("/operador/gate/fila"), 800);
+      window.setTimeout(() => router.push("/operador/gate/controle-entrada-saida"), 800);
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) {
         let bloqueioId: string | undefined;
@@ -117,7 +117,7 @@ export default function StaffGateCheckOutPage() {
           }
           actions={
             <Button variant="outline" className="border-zinc-600" asChild>
-              <Link href="/operador/gate/fila">Fila</Link>
+              <Link href="/operador/gate/controle-entrada-saida">Controle de Gate</Link>
             </Button>
           }
         />

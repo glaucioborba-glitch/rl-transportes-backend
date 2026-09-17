@@ -284,9 +284,15 @@ export class CreateClienteDto {
   @IsIn(['CLIENTE', 'TRANSPORTADOR'], { each: true })
   papeis?: string[];
 
-  @ApiProperty({ required: false, description: 'Condição comercial de pagamento.' })
+  @ApiProperty({ required: false, description: 'Forma comercial de pagamento (catálogo do tenant).' })
   @IsOptional()
   @IsString()
   @MaxLength(64)
   condicaoPagamento?: string;
+
+  @ApiProperty({ required: false, description: 'Prazo comercial (catálogo do tenant).' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  prazoPagamento?: string;
 }

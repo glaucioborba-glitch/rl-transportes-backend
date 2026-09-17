@@ -15,6 +15,7 @@ import {
   type TurnoEscala,
 } from "@/lib/api/workforce-rh-client";
 import { toast } from "@/lib/toast";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { cn } from "@/lib/utils";
 
@@ -41,7 +42,7 @@ function isoDate(d: Date): string {
 const DOW = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
 
 export default function RhEquipeEscalasPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [weekStart, setWeekStart] = useState(() => startOfWeekMonday(new Date()));
   const [funcionarios, setFuncionarios] = useState<FuncionarioRow[]>([]);
   const [assignments, setAssignments] = useState<Record<string, TurnoEscala | "">>({});

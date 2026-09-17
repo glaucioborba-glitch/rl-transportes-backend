@@ -115,6 +115,10 @@ function MotoristaLoginInner() {
             <Link href="/login/staff" className="text-slate-400 hover:underline">
               Operação
             </Link>
+            {" · "}
+            <Link href="/motorista/gps" className="text-slate-400 hover:underline">
+              Localização
+            </Link>
           </p>
         </form>
       </div>

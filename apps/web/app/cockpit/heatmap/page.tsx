@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -23,7 +24,7 @@ function IaBadge({ p }: { p: number }) {
 
 export default function CockpitHeatmapPage() {
   const role = useStaffAuthStore((s) => s.user?.role ?? "");
-  const isGestao = role === "ADMIN" || role === "GERENTE";
+  const isGestao = isIntranetGestorRole(role);
 
   const [perf, setPerf] = useState<Record<string, unknown> | null>(null);
   const [cap, setCap] = useState<Record<string, unknown> | null>(null);

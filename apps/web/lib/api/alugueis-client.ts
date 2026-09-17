@@ -22,7 +22,7 @@ export type AluguelFrotaItem = {
   unidadeIso: string;
   tipoContainerCodigo: string;
   containerTamanho: string;
-  status: "DISPONIVEL" | "ALUGADA" | "MANUTENCAO" | "INATIVA";
+  status: "DISPONIVEL" | "ALUGADA" | "MANUTENCAO" | "USO_PROPRIO" | "INATIVA";
   aluguelAtivo: {
     id: string;
     clienteNome: string;

@@ -11,9 +11,10 @@ import { SolicitacoesV2Controller } from './solicitacoes-v2.controller';
 import { YardAllocationModule } from '../../yard-allocation/yard-allocation.module';
 import { HoldReleaseModule } from '../../hold-release/hold-release.module';
 import { UnidadeProcessoModule } from '../../unidade-processo/unidade-processo.module';
+import { CatalogoMotoristasExternosModule } from '../../catalogo-motoristas-externos/catalogo-motoristas-externos.module';
 
 @Module({
-  imports: [PrismaModule, AuditoriaModule, AuditLogModule, AgendamentosModule, RedisModule, SecurityEventsModule, YardAllocationModule, HoldReleaseModule, UnidadeProcessoModule],
+  imports: [PrismaModule, AuditoriaModule, AuditLogModule, AgendamentosModule, RedisModule, SecurityEventsModule, YardAllocationModule, HoldReleaseModule, UnidadeProcessoModule, CatalogoMotoristasExternosModule],
   controllers: [SolicitacoesV2Controller],
   providers: [SolicitacoesV2Service, SolicitacaoAnexoStorageService],
   exports: [SolicitacoesV2Service, SolicitacaoAnexoStorageService],

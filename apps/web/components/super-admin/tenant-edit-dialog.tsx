@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { CnpjPuxarField, empresaFromReceita } from "@/components/super-admin/cnpj-puxar-field";
+import { TenantLocaleFields } from "@/components/super-admin/tenant-locale-fields";
 import {
   SAAS_PLANOS,
   type SaasEmpresaIdentidade,
@@ -38,6 +39,8 @@ type Props = {
     status: SaasTenantRow["status"];
     cnpj: string;
     empresa?: SaasEmpresaIdentidade;
+    moedaCorrente: string;
+    idiomaPadrao: string;
   }) => void;
 };
 
@@ -47,6 +50,8 @@ export function TenantEditDialog({ tenant, open, saving, onClose, onSave }: Prop
   const [status, setStatus] = useState<SaasTenantRow["status"]>("ATIVO");
   const [cnpj, setCnpj] = useState("");
   const [empresa, setEmpresa] = useState<SaasEmpresaIdentidade | undefined>();
+  const [moedaCorrente, setMoedaCorrente] = useState("BRL");
+  const [idiomaPadrao, setIdiomaPadrao] = useState("pt-BR");
 
   useEffect(() => {
     if (!tenant) return;
@@ -55,6 +60,8 @@ export function TenantEditDialog({ tenant, open, saving, onClose, onSave }: Prop
     setStatus(tenant.status);
     setCnpj(tenant.cnpj ?? "");
     setEmpresa(undefined);
+    setMoedaCorrente(tenant.moedaCorrente || "BRL");
+    setIdiomaPadrao(tenant.idiomaPadrao || "pt-BR");
   }, [tenant]);
 
   if (!tenant) return null;
@@ -113,6 +120,13 @@ export function TenantEditDialog({ tenant, open, saving, onClose, onSave }: Prop
           {tenant.ehBase ? (
             <p className="text-xs text-zinc-500">O terminal base permanece sempre ativo.</p>
           ) : null}
+          <TenantLocaleFields
+            moedaCorrente={moedaCorrente}
+            idiomaPadrao={idiomaPadrao}
+            disabled={saving}
+            onMoeda={setMoedaCorrente}
+            onIdioma={setIdiomaPadrao}
+          />
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
@@ -122,7 +136,7 @@ export function TenantEditDialog({ tenant, open, saving, onClose, onSave }: Prop
             type="button"
             disabled={saving || !nome.trim()}
             onClick={() =>
-              onSave({ nome: nome.trim(), plano, status, cnpj, empresa })
+              onSave({ nome: nome.trim(), plano, status, cnpj, empresa, moedaCorrente, idiomaPadrao })
             }
           >
             {saving ? "Salvando…" : "Salvar"}

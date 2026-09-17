@@ -216,11 +216,6 @@
       <div class="box">
         <div class="kv"><span class="label">Data agendada</span> {{fmtIsoDate pdfView.agendamentoDataRef}}</div>
         <div class="kv"><span class="label">Turno</span> {{pdfView.turnoLabel}}</div>
-        <div class="kv"><span class="label">Atendimento especial</span>
-          {{#if pdfView.atendimentoEspecial}}
-          Sim{{#if pdfView.atendimentoEspecialTexto}} — {{pdfView.atendimentoEspecialTexto}}{{/if}}
-          {{else}}Não{{/if}}
-        </div>
       </div>
     </section>
 

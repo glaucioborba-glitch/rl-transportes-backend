@@ -13,11 +13,15 @@ Quando for a hora: o terminal **base (`default`) nunca é limitado por plano**. 
 
 ## Acesso do dono
 
-Super Admin hoje é o mesmo site da intranet RL (`/login/staff` → `/super-admin` com papel SUPER_ADMIN). ADMIN não entra nessa tela.
+Porta própria: `/super-admin` (login em `/super-admin/login`). Papel `SUPER_ADMIN`. ADMIN e o login da intranet (`/login/staff`) **não** entram nessa tela.
 
-Login do dono (ambiente local / seed): CPF `036.501.639-00`. Senha em `SEED_SUPER_ADMIN_PASSWORD` no `.env` da raiz (não versionar).
+Login do dono (ambiente local / seed): CPF `036.501.639-00`. Senha em `SEED_SUPER_ADMIN_PASSWORD` no `.env` da raiz (não versionar). Sem `#` na senha (quebra o `.env`).
 
-Depois: porta própria (URL/login “dono do software”), sem passar pela cara da intranet operacional.
+Intranet do terminal: `/login/staff` com ADMIN/GERENTE/operador daquele tenant. O mesmo CPF do dono **não** autentica em `/login/staff`.
+
+Para o dono ver a intranet de qualquer tenant: login em `/super-admin` → **Abrir intranet** na linha do terminal. Isso grava o cookie `rl_sa_tenant` e isola os dados daquele tenant. **Voltar ao Super Admin** limpa o cookie. Sem o cookie, `/operador/*` devolve o dono ao cockpit.
+
+Com o cookie, o dono **vê e opera tudo** da intranet daquele tenant (Financeiro, Gate, Cadastros, etc.). Não esconder tela com `role === ADMIN || GERENTE` — use `isIntranetGestorRole` (inclui `SUPER_ADMIN`). Fase de testes.
 
 ## Onboarding do terminal (ainda não existe)
 

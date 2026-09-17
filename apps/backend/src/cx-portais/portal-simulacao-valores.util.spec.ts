@@ -13,6 +13,7 @@ describe('portal-simulacao-valores.util', () => {
     expect(isServicoAdicionalCodigo('BAIXA')).toBe(false);
     expect(isServicoAdicionalCodigo('COLETA')).toBe(false);
     expect(isServicoAdicionalCodigo('HANDLING')).toBe(false);
+    expect(isServicoAdicionalCodigo('TOMADA')).toBe(false);
   });
 
   it('escolhe o item mais específico da tabela', () => {

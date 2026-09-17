@@ -32,7 +32,12 @@ export default function ServicosCadastroPage() {
         <div>
           <h1 className="text-2xl font-bold">Serviços adicionais</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Valores lançáveis no ID (lavagem, lacre, pesagem…). Entram na mesma fatura do pátio.
+            Valores lançáveis no ID (inspeção, reparo, lavagem, lacre, pesagem…). Entram na mesma fatura do pátio. Qual
+            tabela vale para cada cliente é definida em{" "}
+            <a href="/financeiro/condicoes-clientes" className="text-primary underline-offset-2 hover:underline">
+              Financeiro → Forma e prazo
+            </a>
+            .
           </p>
         </div>
         {canCreate ? (

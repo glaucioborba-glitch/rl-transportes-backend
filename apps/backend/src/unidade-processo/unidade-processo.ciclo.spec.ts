@@ -17,6 +17,7 @@ describe('UnidadeProcessoService ciclo', () => {
   const patio = { provisionFromProcesso: jest.fn(), finalizeFromProcesso: jest.fn() };
   const billing = { openPreFaturasForProcesso: jest.fn(), consolidateOnProcesso: jest.fn() };
   const outbox = { enqueue: jest.fn() };
+  const servicos = { aplicarNaAbertura: jest.fn(), sincronizarTomadaNaSaida: jest.fn() };
 
   it('baixa abre ID, outro CNPJ não coleta, dono coleta e encerra', async () => {
     const box: { current: Aberto | null } = { current: null };
@@ -72,6 +73,7 @@ describe('UnidadeProcessoService ciclo', () => {
       patio as never,
       billing as never,
       outbox as never,
+      servicos as never,
     );
 
     tx.solicitacao.findUnique.mockResolvedValueOnce({
@@ -85,6 +87,10 @@ describe('UnidadeProcessoService ciclo', () => {
     await svc.onLiberarOperacao('sol-in', 'actor', tx as never);
     expect(box.current?.numero).toBe(1284);
     expect(billing.openPreFaturasForProcesso).toHaveBeenCalled();
+    expect(servicos.aplicarNaAbertura).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ processoId: 'up1', clienteId: 'c1', refrigerado: false }),
+    );
 
     await expect(
       svc.assertPodeCriarSolicitacao({
@@ -156,6 +162,7 @@ describe('UnidadeProcessoService ciclo', () => {
       patio as never,
       billing as never,
       outbox as never,
+      servicos as never,
     );
     const solIn = {
       id: 'sol-in',

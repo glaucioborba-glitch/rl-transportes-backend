@@ -8,6 +8,7 @@ import { CnabModule } from '../../cnab/cnab.module';
 import { FiscalIntegracaoModule } from '../../fiscal-integracao/fiscal-integracao.module';
 import { OutboxModule } from '../../outbox/outbox.module';
 import { TesourariaModule } from '../../tesouraria/tesouraria.module';
+import { ContaCorrenteModule } from '../../conta-corrente/conta-corrente.module';
 import { isBillingCronLazy } from '../phase-imports';
 
 /**
@@ -24,12 +25,14 @@ import { isBillingCronLazy } from '../phase-imports';
     FinanceiroConciliacaoModule,
     CnabModule,
     TesourariaModule,
+    ContaCorrenteModule,
   ],
   exports: [
     OutboxModule,
     FiscalIntegracaoModule,
     ArmazenagemFaturamentoModule,
     FaturamentoModule,
+    ContaCorrenteModule,
   ],
 })
 export class BillingDomainModule {}

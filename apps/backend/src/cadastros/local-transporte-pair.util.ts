@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 
-export const TIPOS_LOCAL_TRANSPORTE = ['TERMINAL', 'PORTO', 'DEPOSITO', 'CIDADE', 'OUTRO'] as const;
+export const TIPOS_LOCAL_TRANSPORTE = ['TERMINAL', 'PORTO', 'DEPOSITO', 'DEPOT', 'CIDADE', 'OUTRO'] as const;
 export type TipoLocalTransporte = (typeof TIPOS_LOCAL_TRANSPORTE)[number];
 
 /** Ordena os dois locais para que FL×Portonave e Portonave×FL sejam o mesmo trecho. */

@@ -1,5 +1,6 @@
 import { staffJson } from "@/lib/api/staff-client";
 import { defaultClientePapeisSafe } from "@/lib/cadastros/cliente-papeis";
+import { splitFormaPrazoSalvos } from "@/lib/condicao-pagamento-portal";
 
 export type CadastrosClienteListItem = {
   id: string;
@@ -35,6 +36,7 @@ export type CadastrosClienteFormData = {
   uf: string;
   observacoes: string;
   condicaoPagamento: string;
+  prazoPagamento: string;
   limiteCredito: string;
   tipoCliente: string;
   papeis: string[];
@@ -175,6 +177,7 @@ export const EMPTY_CLIENTE_FORM: CadastrosClienteFormData = {
   uf: "",
   observacoes: "",
   condicaoPagamento: "",
+  prazoPagamento: "",
   limiteCredito: "",
   tipoCliente: "PJ",
   papeis: ["CLIENTE"],
@@ -189,6 +192,7 @@ function str(value: unknown): string {
 /** Aceita o shape da API de cadastros e o objeto bruto do Prisma (cpfCnpj, enderecoCep, …). */
 export function mapCadastrosClienteForm(raw: unknown): CadastrosClienteFormData {
   const data = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const pagamento = splitFormaPrazoSalvos(str(data.condicaoPagamento), str(data.prazoPagamento));
   return {
     ...EMPTY_CLIENTE_FORM,
     id: str(data.id) || undefined,
@@ -208,7 +212,8 @@ export function mapCadastrosClienteForm(raw: unknown): CadastrosClienteFormData 
     cidade: str(data.cidade ?? data.enderecoCidade),
     uf: str(data.uf ?? data.enderecoUf).toUpperCase().slice(0, 2),
     observacoes: str(data.observacoes),
-    condicaoPagamento: str(data.condicaoPagamento),
+    condicaoPagamento: pagamento.forma,
+    prazoPagamento: pagamento.prazo,
     limiteCredito: str(data.limiteCredito),
     tipoCliente: str(data.tipoCliente ?? data.tipo) || "PJ",
     papeis: defaultClientePapeisSafe(data.papeis),

@@ -18,6 +18,7 @@ import { SolicitacaoAnexoStorageService } from './solicitacao-anexo.storage';
 import { YardAllocationService } from '../../yard-allocation/yard-allocation.service';
 import { HoldReleaseService } from '../../hold-release/hold-release.service';
 import { UnidadeProcessoService } from '../../unidade-processo/unidade-processo.service';
+import { CatalogoMotoristasExternosService } from '../../catalogo-motoristas-externos/catalogo-motoristas-externos.service';
 import type { CreateSolicitacaoV2Dto } from './dto/create-solicitacao-v2.dto';
 import type { CxPortalRequestUser } from '../../cx-portais/types/cx-portal.types';
 import { TipoOperacaoSolicitacaoIntent } from '@prisma/client';
@@ -47,7 +48,6 @@ function lsDto(): CreateSolicitacaoV2Dto {
     agendamento: {
       dataRef: '2026-06-01',
       turno: TurnoAgendamento.MANHA,
-      atendimentoEspecial: false,
     },
     solicitante: {
       nome: 'Fulano',
@@ -150,6 +150,13 @@ describe('SolicitacoesV2Service', () => {
           useValue: {
             assertPodeCriarSolicitacao: jest.fn().mockResolvedValue(undefined),
             vincularSaidaNaTransacao: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: CatalogoMotoristasExternosService,
+          useValue: {
+            assertNaoSuspenso: jest.fn().mockResolvedValue(undefined),
+            registrarDaSolicitacao: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],

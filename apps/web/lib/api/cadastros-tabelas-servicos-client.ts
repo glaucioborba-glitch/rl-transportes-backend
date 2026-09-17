@@ -110,24 +110,30 @@ export function updateCadastroServicoItem(
   );
 }
 
-export function listCatalogoServicosAtivos() {
+export function listCatalogoServicosAtivos(unidadeProcessoId?: string) {
+  const qs = unidadeProcessoId
+    ? `?unidadeProcessoId=${encodeURIComponent(unidadeProcessoId)}`
+    : "";
   return staffJson<{ tabelaId: string | null; items: CadastroServicoItem[] }>(
-    "/v2/unidade-processos/catalogo-servicos",
+    `/v2/unidade-processos/catalogo-servicos${qs}`,
   );
 }
 
+export type UnidadeProcessoServicoLancado = {
+  id: string;
+  codigo: string;
+  nome: string;
+  quantidade: number;
+  valorUnitario: number;
+  valorTotal: number;
+  createdAt: string;
+  payload?: { automatico?: boolean; origem?: string } | null;
+};
+
 export function listUnidadeProcessoServicos(id: string) {
-  return staffJson<{
-    items: Array<{
-      id: string;
-      codigo: string;
-      nome: string;
-      quantidade: number;
-      valorUnitario: number;
-      valorTotal: number;
-      createdAt: string;
-    }>;
-  }>(`/v2/unidade-processos/${encodeURIComponent(id)}/servicos`);
+  return staffJson<{ items: UnidadeProcessoServicoLancado[] }>(
+    `/v2/unidade-processos/${encodeURIComponent(id)}/servicos`,
+  );
 }
 
 export function lancarUnidadeProcessoServico(

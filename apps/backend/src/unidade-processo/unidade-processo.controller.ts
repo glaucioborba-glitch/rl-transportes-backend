@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
@@ -62,8 +63,8 @@ export class UnidadeProcessoController {
   constructor(private readonly servicos: UnidadeProcessoServicosService) {}
 
   @Get('catalogo-servicos')
-  catalogo() {
-    return this.servicos.catalogo();
+  catalogo(@Query('unidadeProcessoId') unidadeProcessoId?: string) {
+    return this.servicos.catalogo(unidadeProcessoId);
   }
 
   @Get(':id/servicos')

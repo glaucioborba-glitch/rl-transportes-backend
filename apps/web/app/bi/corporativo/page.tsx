@@ -9,6 +9,7 @@ import { CapexSimulationChart } from "@/components/bi/capex-simulation-chart";
 import { ExecutiveRecommendationTile } from "@/components/bi/executive-recommendation-tile";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
 import { toast } from "@/lib/toast";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -71,7 +72,7 @@ const TIPO_LABEL: Record<string, string> = {
 };
 
 export default function BiCorporativoPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [exp, setExp] = useState<Expansao | null>(null);
   const [cenario, setCenario] = useState<Cenario | null>(null);
   const [proj, setProj] = useState<{ saturacaoAtualPct?: number; projecoes?: { dias: number; saturacaoPatioPrevistaPct: number }[] } | null>(null);

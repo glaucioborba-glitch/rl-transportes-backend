@@ -3,6 +3,8 @@
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
+import { formatContabil, simboloMoeda } from "@/lib/financeiro/format";
 
 export type FaixaDiariaForm = {
   diaInicio: string;
@@ -25,7 +27,7 @@ export function FaixasDiariaEditor({
   onChange,
   freeTimeDias,
   title = "Faixas de diária (após free time)",
-  emptyHint = "Nenhuma faixa — usa padrão 8–15 @ R$30, 16+ @ R$45.",
+  emptyHint = `Nenhuma faixa — usa padrão 8–15 @ ${simboloMoeda()} ${formatContabil(30)}, 16+ @ ${simboloMoeda()} ${formatContabil(45)}.`,
   defaultStartDay,
   defaultValor = "30",
 }: Props) {
@@ -72,13 +74,10 @@ export function FaixasDiariaEditor({
               value={f.diaFim}
               onChange={(e) => update(i, "diaFim", e.target.value)}
             />
-            <Input
-              type="number"
-              min={0}
-              step="0.01"
-              placeholder="R$/dia"
+            <MoneyInput
+              className="h-10"
               value={f.valorDiaria}
-              onChange={(e) => update(i, "valorDiaria", e.target.value)}
+              onChange={(v) => update(i, "valorDiaria", v)}
             />
             <Button type="button" variant="ghost" size="icon" onClick={() => remove(i)}>
               <Trash2 className="h-4 w-4 text-destructive" />

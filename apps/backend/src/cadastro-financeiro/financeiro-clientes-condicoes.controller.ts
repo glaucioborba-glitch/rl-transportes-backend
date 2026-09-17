@@ -33,6 +33,22 @@ export class FinanceiroClientesCondicoesController {
     return this.cadastroFinanceiro.listarTabelasTransporteAtribuicao();
   }
 
+  @Get('tabelas-servicos')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('cadastro-financeiro:analisar')
+  @ApiOperation({ summary: 'Tabelas de serviços ativas para atribuir ao cliente' })
+  tabelasServicos() {
+    return this.cadastroFinanceiro.listarTabelasServicoAtribuicao();
+  }
+
+  @Get('tabelas-aluguel')
+  @Roles(Role.ADMIN, Role.GERENTE)
+  @Permissions('cadastro-financeiro:analisar')
+  @ApiOperation({ summary: 'Tabelas de aluguel ativas para atribuir ao cliente' })
+  tabelasAluguel() {
+    return this.cadastroFinanceiro.listarTabelasAluguelAtribuicao();
+  }
+
   @Get()
   @Roles(Role.ADMIN, Role.GERENTE)
   @Permissions('cadastro-financeiro:analisar')
@@ -44,7 +60,7 @@ export class FinanceiroClientesCondicoesController {
   @Patch(':id')
   @Roles(Role.ADMIN, Role.GERENTE)
   @Permissions('cadastro-financeiro:analisar')
-  @ApiOperation({ summary: 'Atualizar forma, prazo, tabela de preços e tabela de transportes' })
+  @ApiOperation({ summary: 'Atualizar forma, prazo e tabelas comerciais do cliente' })
   atualizar(
     @Param('id') id: string,
     @Body() body: AtualizarCondicaoClienteDto,

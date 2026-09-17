@@ -49,6 +49,13 @@ export function MotoristaCard({ motorista, canEdit, onEdit, onAuditoria }: Props
               <Truck className="h-3 w-3" />
               {motorista.transportadora?.razaoSocial || "Sem transportadora"}
             </p>
+            {motorista.placaCavalo || motorista.placaCarreta ? (
+              <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">
+                {motorista.placaCavalo ? `Cavalo ${motorista.placaCavalo}` : null}
+                {motorista.placaCavalo && motorista.placaCarreta ? " · " : null}
+                {motorista.placaCarreta ? `Carreta ${motorista.placaCarreta}` : null}
+              </p>
+            ) : null}
           </div>
         </div>
         <Badge

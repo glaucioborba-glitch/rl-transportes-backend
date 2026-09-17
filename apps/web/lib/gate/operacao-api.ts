@@ -2,7 +2,30 @@ import { ApiError, staffJson, staffRequest } from "@/lib/api/staff-client";
 import type { OperacaoState } from "./operacao-states";
 
 export type ConferenciaStatus = "CONFERE" | "DIVERGENTE" | "SEM_CAPTURA";
-export type ControleColuna = "NA_PORTARIA" | "A_CONFERIR" | "RIC_PENDENTE" | "LIBERADO";
+export type ControleColuna = "NA_PORTARIA" | "A_CONFERIR" | "RIC_PENDENTE" | "LIBERADO" | "PRONTO_SAIDA";
+
+export type ContainerOcrExtras = {
+  tipoIso?: string;
+  tamanhoPes?: string;
+  perfil?: string;
+  rotulo?: string;
+  mgwKg?: string;
+  taraKg?: string;
+  payloadKg?: string;
+  owner?: string;
+};
+
+export type OcrIndicativoTipo = {
+  tipoIso: string;
+  rotulo: string;
+  mgwKg?: string;
+  taraKg?: string;
+  payloadKg?: string;
+  owner?: string;
+  status: ConferenciaStatus;
+  cadastroLabel: string;
+  mensagem: string;
+};
 
 export type ConferenciaCampo = {
   campo:
@@ -27,10 +50,13 @@ export type OperacaoDto = {
   state: OperacaoState;
   stateLabel: string;
   coluna?: ControleColuna | null;
+  gateInId?: string | null;
   containerNumero: string;
   containerTipo: string;
   containerTamanho: string;
   containerSituacao: string;
+  containerRefrigerado?: boolean;
+  containerSetPoint?: number | null;
   placa: string;
   motoristaNome: string;
   transportadoraNome: string;
@@ -59,6 +85,8 @@ export type OperacaoDto = {
       ocrMatch?: boolean;
       ocrConfianca?: number;
       ocrProvider?: string;
+      ocrTextoBruto?: string;
+      ocrExtras?: ContainerOcrExtras;
     }>;
     avarias: Array<{ foto: string; descricao: string; localizacao: string }>;
   } | null;
@@ -84,6 +112,9 @@ export type OperacaoDto = {
     itens: ConferenciaCampo[];
     resumo: { conferem: number; divergentes: number; semCaptura: number };
   };
+  ocrIndicativos?: {
+    tipo: OcrIndicativoTipo | null;
+  };
   dossie?: {
     solicitacao: {
       container: string;
@@ -94,6 +125,8 @@ export type OperacaoDto = {
       booking?: string;
       processo?: string;
       navio?: string;
+      refrigerado?: boolean;
+      setPoint?: number | null;
       unidadeProcessoNumero?: number | null;
       unidadeProcessoLabel?: string;
       direcaoUnidade?: string;
@@ -174,6 +207,8 @@ export async function postVistoria(
       ocrMatch?: boolean;
       ocrConfianca?: number;
       ocrProvider?: string;
+      ocrTextoBruto?: string;
+      ocrExtras?: ContainerOcrExtras;
     }>;
     avarias: Array<{ foto: string; descricao: string; localizacao: string }>;
   },
@@ -184,6 +219,12 @@ export async function postVistoria(
   });
 }
 
+export async function fetchStaffCatalogoContainer(iso: string) {
+  return staffJson<import("@/lib/catalogo-container-iso").CatalogoContainerIso | null>(
+    `/v2/catalogo-containers/${encodeURIComponent(iso)}`,
+  );
+}
+
 export async function processarOcr(imagem: string, tipo: "CONTAINER" | "PLACA", esperado?: string) {
   return staffJson<{
     sucesso: boolean;
@@ -192,6 +233,7 @@ export async function processarOcr(imagem: string, tipo: "CONTAINER" | "PLACA", 
     confianca: number;
     provider: string;
     ocrMatch: boolean;
+    extras?: ContainerOcrExtras;
     erro?: string;
   }>("/v2/ocr/processar", {
     method: "POST",
@@ -213,6 +255,7 @@ export async function fetchControleEntradaSaida() {
     count: number;
     aConferir: number;
     ricPendente: number;
+    prontoSaida?: number;
   }>("/v2/gate/controle-entrada-saida");
 }
 
@@ -235,6 +278,11 @@ export type ConsultaRicItem = {
   label: string;
   unidadeIso: string;
   status: "ABERTO" | "ENCERRADO";
+  tipoContainer?: string | null;
+  tamanhoContainer?: string | null;
+  situacao?: string | null;
+  tomadaReefer?: boolean;
+  tomadaConectada?: boolean;
   clienteNome: string;
   titularNome?: string;
   solicitanteNome?: string;
@@ -260,9 +308,12 @@ export async function fetchConsultaRic(params: {
 }
 
 export async function fetchControleEntradaSaidaCount() {
-  return staffJson<{ count: number; aConferir: number; ricPendente: number }>(
-    "/v2/gate/controle-entrada-saida/count",
-  );
+  return staffJson<{
+    count: number;
+    aConferir: number;
+    ricPendente: number;
+    prontoSaida?: number;
+  }>("/v2/gate/controle-entrada-saida/count");
 }
 
 export type CatalogoTipoContainer = {
@@ -296,6 +347,9 @@ export async function postCorrecoesGate(
     tipo?: string;
     tamanho?: string;
     situacao?: string;
+    booking?: string;
+    processo?: string;
+    navio?: string;
     lacre?: string;
     placaCavalo?: string;
     placaCarreta?: string;
@@ -399,19 +453,6 @@ export async function postLiberarOperacao(protocolo: string) {
     `/v2/gate/operacoes/${encodeURIComponent(protocolo)}/liberar-operacao`,
     { method: "POST" },
   );
-}
-
-export async function postIniciarOperacao(protocolo: string, equipamentoId?: string) {
-  return staffJson<OperacaoDto>(`/v2/gate/operacoes/${encodeURIComponent(protocolo)}/iniciar`, {
-    method: "POST",
-    body: JSON.stringify({ equipamentoId }),
-  });
-}
-
-export async function postConcluirOperacao(protocolo: string) {
-  return staffJson<OperacaoDto>(`/v2/gate/operacoes/${encodeURIComponent(protocolo)}/concluir`, {
-    method: "POST",
-  });
 }
 
 export async function fetchEquipamentoAtual() {

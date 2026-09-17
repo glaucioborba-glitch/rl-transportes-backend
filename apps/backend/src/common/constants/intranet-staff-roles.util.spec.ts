@@ -1,10 +1,16 @@
-import { canIntranetStaffLogin, isGerenteMinimo } from './intranet-staff-roles.util';
+import { canIntranetStaffLogin, canSuperAdminLogin, isGerenteMinimo } from './intranet-staff-roles.util';
 import { Role } from '@prisma/client';
 
 describe('canIntranetStaffLogin', () => {
   it('permite perfis operacionais staff', () => {
     expect(canIntranetStaffLogin(Role.ADMIN)).toBe(true);
     expect(canIntranetStaffLogin(Role.OPERADOR_GATE)).toBe(true);
+  });
+
+  it('recusa SUPER_ADMIN na intranet (porta própria)', () => {
+    expect(canIntranetStaffLogin(Role.SUPER_ADMIN)).toBe(false);
+    expect(canSuperAdminLogin(Role.SUPER_ADMIN)).toBe(true);
+    expect(canSuperAdminLogin(Role.ADMIN)).toBe(false);
   });
 
   it('gerente mínimo aceita ADMIN/GERENTE e recusa operador', () => {

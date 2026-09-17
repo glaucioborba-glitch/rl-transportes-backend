@@ -14,6 +14,7 @@ import {
   updateCadastroLocalTransporte,
   type CadastroLocalTransporte,
 } from "@/lib/api/cadastros-locais-transporte-client";
+import { LocalTransporteMapaPin } from "./local-transporte-mapa-pin";
 import { toast } from "@/lib/toast";
 
 const SELECT_CLASS =
@@ -25,6 +26,8 @@ const EMPTY: Omit<CadastroLocalTransporte, "id"> = {
   tipo: "PORTO",
   cidade: "",
   uf: "",
+  lat: null,
+  lng: null,
   ativo: true,
 };
 
@@ -49,6 +52,8 @@ export function LocalTransporteForm({ localId }: Props) {
             tipo: data.tipo,
             cidade: data.cidade ?? "",
             uf: data.uf ?? "",
+            lat: data.lat,
+            lng: data.lng,
             ativo: data.ativo,
           });
         }
@@ -77,6 +82,8 @@ export function LocalTransporteForm({ localId }: Props) {
         nome: formData.nome.trim(),
         cidade: formData.cidade?.trim() || null,
         uf: formData.uf?.trim().toUpperCase() || null,
+        lat: Number.isFinite(formData.lat as number) ? formData.lat : null,
+        lng: Number.isFinite(formData.lng as number) ? formData.lng : null,
       };
       if (localId) {
         await updateCadastroLocalTransporte(localId, payload);
@@ -104,7 +111,7 @@ export function LocalTransporteForm({ localId }: Props) {
           {localId ? "Editar origem/destino" : "Nova origem/destino"}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Pontos usados nas tarifas de transporte. O sentido do trecho não altera o valor.
+          Pontos usados nas tarifas e no mapa de Localização. O Fretes vai designar o destino a partir desta lista.
         </p>
       </div>
 
@@ -157,6 +164,48 @@ export function LocalTransporteForm({ localId }: Props) {
               className="font-mono uppercase"
             />
           </FormField>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          <p className="text-sm font-medium">Ponto no mapa</p>
+          <p className="text-xs text-muted-foreground">
+            Clique no mapa ou arraste o pino. Sem coordenada o local não entra na tela de Localização.
+          </p>
+          <LocalTransporteMapaPin
+            lat={formData.lat}
+            lng={formData.lng}
+            onChange={(lat, lng) => setFormData((prev) => ({ ...prev, lat, lng }))}
+          />
+          <div className="flex flex-wrap gap-4">
+            <FormField label="Latitude" size="md">
+              <Input
+                type="number"
+                step="any"
+                value={formData.lat ?? ""}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    lat: e.target.value === "" ? null : Number(e.target.value),
+                  })
+                }
+                placeholder="-26.8915"
+              />
+            </FormField>
+            <FormField label="Longitude" size="md">
+              <Input
+                type="number"
+                step="any"
+                value={formData.lng ?? ""}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    lng: e.target.value === "" ? null : Number(e.target.value),
+                  })
+                }
+                placeholder="-48.6578"
+              />
+            </FormField>
+          </div>
         </div>
 
         <FormField label="Status" className="mt-4">

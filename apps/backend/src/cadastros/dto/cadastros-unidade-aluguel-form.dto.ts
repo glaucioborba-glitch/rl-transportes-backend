@@ -31,7 +31,7 @@ export class CadastrosUnidadeAluguelFormDto {
 
   @ApiPropertyOptional({ default: 'DISPONIVEL' })
   @IsOptional()
-  @IsIn(['DISPONIVEL', 'ALUGADA', 'MANUTENCAO', 'INATIVA'])
+  @IsIn(['DISPONIVEL', 'ALUGADA', 'MANUTENCAO', 'USO_PROPRIO', 'INATIVA'])
   status?: string;
 
   @ApiPropertyOptional()

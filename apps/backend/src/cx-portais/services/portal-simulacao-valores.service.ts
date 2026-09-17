@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { CategoriaItemTabelaPreco, PatioStatus, StatusSolicitacao } from '@prisma/client';
+import { PatioStatus, StatusSolicitacao } from '@prisma/client';
+import { CadastrosTabelasServicosService } from '../../cadastros/cadastros-tabelas-servicos.service';
 import { BillingRuleEngineService } from '../../billing-engine/billing-rule-engine.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { CxPortalRequestUser } from '../types/cx-portal.types';
@@ -10,9 +11,7 @@ import {
   labelUnidadeCobranca,
   normalizeOperacaoCodigo,
   parseDataSaida,
-  pickOperacaoItem,
 } from '../portal-simulacao-valores.util';
-import { resolveCadastroTabelaVigente } from '../../cadastros/cadastro-tabela-preco-vigente';
 
 const PATIO_ATIVO: PatioStatus[] = [PatioStatus.ESTOCADO, PatioStatus.MOVIMENTANDO, PatioStatus.SEPARADO];
 
@@ -40,15 +39,13 @@ export class PortalSimulacaoValoresService {
     private readonly prisma: PrismaService,
     private readonly patio: PortalClienteDataService,
     private readonly rules: BillingRuleEngineService,
+    private readonly tabelasServicos: CadastrosTabelasServicosService,
   ) {}
 
-  async catalogo(cx: CxPortalRequestUser, clienteIdParam?: string, unidadeId?: string) {
+  async catalogo(cx: CxPortalRequestUser, clienteIdParam?: string, _unidadeId?: string) {
     const saldo = await this.patio.saldoPatio(cx, clienteIdParam);
     const clienteId = await this.resolveClienteId(cx, clienteIdParam);
-    const unidade = unidadeId
-      ? saldo.items.find((i) => i.id === unidadeId || i.unidadeIso === unidadeId)
-      : undefined;
-    const servicos = await this.listarServicos(clienteId, unidade);
+    const servicos = await this.listarServicos(clienteId);
     return {
       unidades: saldo.items,
       servicos,
@@ -104,12 +101,7 @@ export class PortalSimulacaoValoresService {
     }));
 
     const avisos: string[] = [];
-    const extras = await this.precificarExtras(
-      clienteId,
-      unidade,
-      dto.servicos ?? [],
-      avisos,
-    );
+    const extras = await this.precificarExtras(dto.servicos ?? [], avisos, clienteId);
     itens.push(...extras);
 
     const total = Math.round(itens.reduce((acc, i) => acc + i.valorTotal, 0) * 100) / 100;
@@ -147,107 +139,49 @@ export class PortalSimulacaoValoresService {
     return id;
   }
 
-  private async listarServicos(
-    clienteId: string,
-    unidade?: { tipo: string; tamanho: string | null; refrigerado: boolean },
-  ): Promise<PortalSimulacaoServico[]> {
-    const tabela = await this.loadTabelaVigente(clienteId);
-    if (!tabela) return [];
-
-    const tipos = await this.prisma.cadastroTipoOperacao.findMany({
-      where: { deletedAt: null },
-      select: { codigo: true, nome: true, descricao: true },
-    });
-    const nomeByCodigo = new Map(tipos.map((t) => [normalizeOperacaoCodigo(t.codigo), t]));
-
-    const extras = tabela.itens.filter(
-      (i) =>
-        i.categoriaItem === CategoriaItemTabelaPreco.OPERACAO &&
-        isServicoAdicionalCodigo(i.tipoOperacaoCodigo),
-    );
-    const seen = new Set<string>();
-    const out: PortalSimulacaoServico[] = [];
-    for (const item of extras) {
-      const codigo = normalizeOperacaoCodigo(item.tipoOperacaoCodigo);
-      if (seen.has(codigo)) continue;
-      seen.add(codigo);
-      const cadastro = nomeByCodigo.get(codigo);
-      const priced = unidade
-        ? pickOperacaoItem(
-            extras.map((i) => ({
-              tipoOperacaoCodigo: i.tipoOperacaoCodigo,
-              tipoContainerCodigo: i.tipoContainerCodigo,
-              containerTamanho: i.containerTamanho,
-              valor: Number(i.valor),
-              unidade: i.unidade,
-            })),
-            codigo,
-            unidade.tipo,
-            unidade.tamanho,
-            unidade.refrigerado,
-          )
-        : null;
-      out.push({
-        codigo,
-        nome: cadastro?.nome ?? codigo,
-        descricao: cadastro?.descricao ?? null,
-        unidadeCobranca: priced?.unidade ?? item.unidade,
-        unidadeCobrancaLabel: labelUnidadeCobranca(priced?.unidade ?? item.unidade),
-        valorEstimado: priced ? Number(priced.valor) : null,
-      });
-    }
-    return out.sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  private async listarServicos(clienteId: string): Promise<PortalSimulacaoServico[]> {
+    const catalogo = await this.tabelasServicos.listCatalogoAtivo('default', { clienteId });
+    return catalogo.items
+      .filter((i) => isServicoAdicionalCodigo(i.codigo))
+      .map((i) => ({
+        codigo: i.codigo,
+        nome: i.nome,
+        descricao: null,
+        unidadeCobranca: i.unidade,
+        unidadeCobrancaLabel: labelUnidadeCobranca(i.unidade),
+        valorEstimado: i.valor,
+      }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   }
 
   private async precificarExtras(
-    clienteId: string,
-    unidade: { tipo: string; tamanho: string | null; refrigerado: boolean },
     servicos: string[],
     avisos: string[],
+    clienteId: string,
   ): Promise<PortalSimulacaoItem[]> {
     const wanted = [...new Set(servicos.map(normalizeOperacaoCodigo).filter(isServicoAdicionalCodigo))];
     if (!wanted.length) return [];
 
-    const tabela = await this.loadTabelaVigente(clienteId);
-    if (!tabela) {
-      avisos.push('Não há tabela de preços vigente para os serviços adicionais.');
+    const catalogo = await this.tabelasServicos.listCatalogoAtivo('default', { clienteId });
+    if (!catalogo.items.length) {
+      avisos.push('Não há tabela de serviços vigente para os adicionais.');
       return [];
     }
-
-    const extras = tabela.itens
-      .filter(
-        (i) =>
-          i.categoriaItem === CategoriaItemTabelaPreco.OPERACAO &&
-          isServicoAdicionalCodigo(i.tipoOperacaoCodigo),
-      )
-      .map((i) => ({
-        tipoOperacaoCodigo: i.tipoOperacaoCodigo,
-        tipoContainerCodigo: i.tipoContainerCodigo,
-        containerTamanho: i.containerTamanho,
-        valor: Number(i.valor),
-        unidade: i.unidade,
-      }));
-
-    const tipos = await this.prisma.cadastroTipoOperacao.findMany({
-      where: { deletedAt: null },
-      select: { codigo: true, nome: true },
-    });
-    const nomeByCodigo = new Map(tipos.map((t) => [normalizeOperacaoCodigo(t.codigo), t.nome]));
+    const byCodigo = new Map(catalogo.items.map((i) => [normalizeOperacaoCodigo(i.codigo), i]));
 
     const itens: PortalSimulacaoItem[] = [];
     for (const codigo of wanted) {
-      const hit = pickOperacaoItem(extras, codigo, unidade.tipo, unidade.tamanho, unidade.refrigerado);
+      const hit = byCodigo.get(codigo);
       if (!hit) {
-        avisos.push(`Sem preço vigente para ${nomeByCodigo.get(codigo) ?? codigo} nesta unidade.`);
+        avisos.push(`Sem preço vigente para ${codigo} na tabela de serviços.`);
         continue;
       }
-      const nome = nomeByCodigo.get(codigo) ?? codigo;
       const porHora = hit.unidade.toUpperCase() === 'POR_HORA';
       if (porHora) {
-        avisos.push(`${nome}: valor por hora — estimativa com 1 hora.`);
+        avisos.push(`${hit.nome}: valor por hora — estimativa com 1 hora.`);
       }
       itens.push({
-        descricao: porHora ? `${nome} (1 hora)` : nome,
+        descricao: porHora ? `${hit.nome} (1 hora)` : hit.nome,
         quantidade: 1,
         valorUnitario: hit.valor,
         valorTotal: hit.valor,
@@ -255,10 +189,6 @@ export class PortalSimulacaoValoresService {
       });
     }
     return itens;
-  }
-
-  private async loadTabelaVigente(clienteId: string) {
-    return resolveCadastroTabelaVigente(this.prisma, clienteId);
   }
 
   private async resolveCiclo(

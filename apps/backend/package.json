@@ -27,7 +27,8 @@
     "seed:clean": "ts-node scripts/seed-all.ts --clean",
     "seed:cadastros": "ts-node scripts/seed-all.ts --cadastros",
     "seed:gate": "ts-node scripts/seed-all.ts --gate",
-    "seed:portal": "ts-node scripts/seed-all.ts --portal"
+    "seed:portal": "ts-node scripts/seed-all.ts --portal",
+    "ensure-super-admin": "ts-node scripts/ensure-super-admin.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1047.0",
@@ -79,7 +80,8 @@
     "socket.io": "^4.8.3",
     "tesseract.js": "^7.0.0",
     "uuid": "^14.0.0",
-    "winston": "^3.19.0"
+    "winston": "^3.19.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.5",

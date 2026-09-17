@@ -16,8 +16,8 @@ export default function NovaTabelaPrecoPage() {
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {duplicarId
-            ? "Matriz e operações já vêm preenchidas. Altere só o que for diferente e salve."
-            : "Pricing por tipo de operação × tipo de contêiner"}
+            ? "Matriz de armazenagem já vem preenchida. Altere só o que for diferente e salve."
+            : "Handling, estadia e tomada. Serviços adicionais ficam em Financeiro → Serviços."}
         </p>
       </div>
       <TabelaPrecoForm duplicarId={duplicarId} />

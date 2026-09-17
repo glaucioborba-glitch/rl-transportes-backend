@@ -8,6 +8,7 @@ import { mockNrPack, mockOperacionalProfile } from "@/lib/rh/nr-skills-mock";
 import type { RhColaboradorDirectoryItem } from "@/lib/rh/types";
 import { NrBadge } from "@/components/rh/nr-badge";
 import { RhCard } from "@/components/rh/rh-card";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { toast } from "@/lib/toast";
 import { rhUserOverridesKey, readJson, writeJson } from "@/lib/rh/storage";
@@ -25,7 +26,7 @@ type AuditRow = {
 export default function RhColaboradorDetailPage() {
   const params = useParams();
   const idRaw = typeof params.id === "string" ? params.id : Array.isArray(params.id) ? params.id[0] : "";
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [row, setRow] = useState<RhColaboradorDirectoryItem | null>(null);
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [turnoEdit, setTurnoEdit] = useState("MANHÃ");

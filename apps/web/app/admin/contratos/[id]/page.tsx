@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { staffJson } from "@/lib/api/staff-client";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import type { AdminContract } from "@/lib/admin/types";
 import { readJson, adminContractsKey } from "@/lib/admin/storage";
@@ -19,7 +20,7 @@ type Tab = "resumo" | "sla" | "penal" | "docs";
 export default function AdminContratoDetailPage() {
   const params = useParams();
   const id = typeof params.id === "string" ? decodeURIComponent(params.id) : "";
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [c, setC] = useState<AdminContract | null>(null);
   const [tab, setTab] = useState<Tab>("resumo");
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);

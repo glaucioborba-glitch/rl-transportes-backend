@@ -99,6 +99,8 @@ export type ClienteCondicaoRow = {
   analisadoEm: string | null;
   cadastroTabelaPrecoId: string | null;
   cadastroTabelaTransporteId: string | null;
+  cadastroTabelaServicoId: string | null;
+  cadastroTabelaAluguelId: string | null;
 };
 
 export type TabelaPrecoAtribuicao = {
@@ -127,6 +129,26 @@ export async function listarTabelasTransporteAtribuicao() {
   return staffJson<TabelaTransporteAtribuicao[]>("/financeiro/clientes-condicoes/tabelas-transporte");
 }
 
+export type TabelaServicoAtribuicao = {
+  id: string;
+  nome: string;
+  padrao: boolean;
+};
+
+export async function listarTabelasServicoAtribuicao() {
+  return staffJson<TabelaServicoAtribuicao[]>("/financeiro/clientes-condicoes/tabelas-servicos");
+}
+
+export type TabelaAluguelAtribuicao = {
+  id: string;
+  nome: string;
+  padrao: boolean;
+};
+
+export async function listarTabelasAluguelAtribuicao() {
+  return staffJson<TabelaAluguelAtribuicao[]>("/financeiro/clientes-condicoes/tabelas-aluguel");
+}
+
 export async function atualizarClienteCondicao(
   id: string,
   body: {
@@ -134,6 +156,8 @@ export async function atualizarClienteCondicao(
     prazoPagamento: string;
     cadastroTabelaPrecoId?: string;
     cadastroTabelaTransporteId?: string;
+    cadastroTabelaServicoId?: string;
+    cadastroTabelaAluguelId?: string;
   },
 ) {
   return staffJson(`/financeiro/clientes-condicoes/${encodeURIComponent(id)}`, {

@@ -2,6 +2,7 @@ import type { IntranetModuleId } from "./intranet-nav-config";
 
 /** Resolve o módulo ativo a partir do pathname (ordem importa). */
 export function resolveIntranetModule(pathname: string): IntranetModuleId {
+  if (pathname.startsWith("/operador/portaria")) return "portaria";
   if (pathname.startsWith("/operador/gate")) return "gate";
   if (pathname.startsWith("/cadastros")) return "cadastros";
   if (
@@ -39,6 +40,7 @@ export function isIntranetDesktopPath(pathname: string): boolean {
     "/operador/transportes",
     "/operador/fretes",
     "/operador/dispatch",
+    "/operador/localizacao-motoristas",
     "/operador/gate",
     "/operador/patio",
     "/cadastros",

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { LazyCockpitKpisPanel as CockpitKpisPanel } from "@/components/lazy/heavy-charts";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -20,7 +21,7 @@ function HeatBar({ value, max }: { value: number; max: number }) {
 
 export default function CockpitPage() {
   const role = useStaffAuthStore((s) => s.user?.role ?? "");
-  const isGestao = role === "ADMIN" || role === "GERENTE";
+  const isGestao = isIntranetGestorRole(role);
 
   const [dash, setDash] = useState<Record<string, unknown> | null>(null);
   const [perf, setPerf] = useState<Record<string, unknown> | null>(null);

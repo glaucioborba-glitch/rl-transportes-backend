@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { fetchOperacao, postCheckin, type OperacaoDto } from "@/lib/gate/operacao-api";
 import { STATE_LABELS } from "@/lib/gate/operacao-states";
 import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
+import { formatIsoDisplay } from "@/lib/container-display";
 import { toast } from "@/lib/toast";
 
 export default function CheckinPage({ params }: { params: { protocolo: string } }) {
@@ -81,7 +82,7 @@ export default function CheckinPage({ params }: { params: { protocolo: string } 
           <span className="text-xs uppercase tracking-wider text-slate-500">Protocolo</span>
           <span className="font-bold text-[var(--accent)]">{operacao.protocolo}</span>
         </div>
-        <DataRow icon={Package} label="Contêiner" value={operacao.containerNumero} />
+        <DataRow icon={Package} label="Contêiner" value={formatIsoDisplay(operacao.containerNumero)} />
         <DataRow
           icon={Package}
           label="Tipo/Tamanho"

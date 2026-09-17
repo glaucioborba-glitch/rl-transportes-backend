@@ -16,9 +16,13 @@ import {
   type CatalogoTransportadora,
   type ConferenciaCampo,
   type ConferenciaStatus,
+  type OcrIndicativoTipo,
   type OperacaoDto,
 } from "@/lib/gate/operacao-api";
 import { cn } from "@/lib/utils";
+import { formatIsoDisplay } from "@/lib/container-display";
+import { rotuloTomadaPedido } from "@/lib/cadastros/tomada-display";
+import { TomadaPedidoBadge } from "@/components/gate/tomada-pedido-badge";
 import { toast } from "@/lib/toast";
 import {
   Dialog,
@@ -101,6 +105,9 @@ export type CorrecaoRascunho = {
   tamanho?: string;
   situacao?: string;
   lacre?: string;
+  booking?: string;
+  processo?: string;
+  navio?: string;
   placaCavalo?: string;
   placaCarreta?: string;
   placaCarreta02?: string;
@@ -187,12 +194,22 @@ export function ControleEntradaSaidaDossie({
   const rodotrem = String(tipoCaminhao ?? "").toUpperCase() === "RODOTREM";
   const tipoExibido = rascunho.tipo ?? sol?.tipo ?? operacao.containerTipo;
   const tamanhoExibido = rascunho.tamanho ?? sol?.tamanho ?? operacao.containerTamanho;
+  const situacaoExibida = rascunho.situacao ?? sol?.situacao ?? operacao.containerSituacao;
+  const situacaoCheia = String(situacaoExibida ?? "").trim().toUpperCase() === "CHEIO";
+  const idLabel = operacao.unidadeProcesso?.label || sol?.unidadeProcessoLabel || "—";
+  const checkinLabel = por?.checkinEm ? new Date(por.checkinEm).toLocaleString("pt-BR") : "—";
   const tipoTamanho =
     formatTipoTamanhoContainerLabel(
       tipoExibido,
       tamanhoExibido,
       tiposContainer.map((t) => t.codigo),
     ) ?? "—";
+  const tomadaLabel = rotuloTomadaPedido({
+    tipo: tipoExibido,
+    refrigerado: sol?.refrigerado ?? operacao.containerRefrigerado,
+    setPoint: sol?.setPoint ?? operacao.containerSetPoint,
+    tipos: tiposContainer,
+  });
 
   const usados = new Set(
     Object.values(FOTO_TIPOS)
@@ -269,27 +286,112 @@ export function ControleEntradaSaidaDossie({
 
   return (
     <div className="rounded-lg border border-border bg-card p-3">
-      <div className="mb-2 flex items-baseline justify-between gap-3">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 className="text-sm font-semibold">Dados da solicitação</h2>
-        <p className="text-[11px] text-muted-foreground">
-          {liberarOcr
-            ? "Vermelho = travado · Verde = pode alterar · Laranja = alterado nesta edição"
-            : "Verde = conferido · Laranja / sem OCR = Gate corrige · Enter confirma"}
-        </p>
+        <div className="flex flex-wrap items-baseline gap-x-5 text-sm">
+          <p>
+            <span className="mr-1.5 text-[11px] font-medium text-muted-foreground">ID</span>
+            <span className="font-semibold text-foreground">{idLabel}</span>
+          </p>
+          <p>
+            <span className="mr-1.5 text-[11px] font-medium text-muted-foreground">Check-in</span>
+            <span className="font-semibold text-foreground">{checkinLabel}</span>
+          </p>
+        </div>
       </div>
+      <p className="mb-2 text-[11px] text-muted-foreground">
+        {liberarOcr
+          ? "Vermelho = travado · Verde = pode alterar · Laranja = alterado nesta edição"
+          : "Verde = conferido · Laranja / sem OCR = Gate corrige · Enter confirma"}
+      </p>
 
       <div className={FORM}>
+        <BlocoTitulo>Unidade</BlocoTitulo>
         <Dado
-          span="col-span-6 sm:col-span-3"
-          label="Cliente"
-          value={sol?.cliente ?? operacao.clienteNome}
+          span="col-span-6 sm:col-span-4"
+          label="Contêiner"
+          value={formatIsoDisplay(sol?.container ?? operacao.containerNumero)}
+          ocr={byCampo.container}
+          foto={fotoPorTipos(fotos, FOTO_TIPOS.container)}
+          onOpen={abrir}
+          editavel={liberarOcr ? false : ocrEditavel(byCampo.container)}
+          disabled={salvando}
+          enfatizar
           sinalEdicao={sinal(false)}
+          onCommit={(v) => void corrigir({ container: v })}
+          onConfirmar={() => void corrigir({ confirmar: ["container"] })}
+        />
+        <TipoTamanhoCampo
+          span="col-span-6 sm:col-span-3"
+          tipo={tipoExibido}
+          tamanho={tamanhoExibido}
+          label={tipoTamanho}
+          catalogo={tiposContainer}
+          editavel={podeEditar}
+          disabled={salvando}
+          sinalEdicao={sinal(podeEditar, rascunho.tipo != null || rascunho.tamanho != null)}
+          ocrIndicativo={operacao.ocrIndicativos?.tipo}
+          onChange={(next) => void corrigir(next)}
         />
         <Dado
           span="col-span-6 sm:col-span-2"
+          label="Situação"
+          value={situacaoExibida ?? "—"}
+          editavel={podeEditar}
+          disabled={salvando}
+          sinalEdicao={sinal(podeEditar, rascunho.situacao != null)}
+          opcoes={[
+            { value: "CHEIO", label: "CHEIO" },
+            { value: "VAZIO", label: "VAZIO" },
+          ]}
+          onCommit={(v) => void corrigir({ situacao: v })}
+        />
+        {situacaoCheia ? (
+          <Dado
+            span="col-span-6 sm:col-span-3"
+            label="Lacre"
+            value={rascunho.lacre ?? sol?.lacre || ""}
+            displayValue={(rascunho.lacre ?? sol?.lacre) || "—"}
+            ocr={byCampo.lacre}
+            foto={fotoPorTipos(fotos, FOTO_TIPOS.lacre)}
+            fotoObrigatoriaAusente={Boolean(
+              operacao.lacreFotoObrigatoria && !operacao.lacreFotoPresente,
+            )}
+            alertaFoto="Foto obrigatória — contêiner cheio (exceto IsoTank)"
+            onOpen={abrir}
+            editavel={ocrEditavel(byCampo.lacre)}
+            disabled={salvando}
+            sinalEdicao={sinal(ocrEditavel(byCampo.lacre), rascunho.lacre != null)}
+            onCommit={(v) => void corrigir({ lacre: v })}
+            onConfirmar={() => void corrigir({ confirmar: ["lacre"] })}
+          />
+        ) : null}
+        {tomadaLabel ? (
+          <div className="col-span-6 sm:col-span-3">
+            <label className={LABEL}>Tomada</label>
+            <div className="flex h-9 items-center">
+              <TomadaPedidoBadge label={tomadaLabel} />
+            </div>
+          </div>
+        ) : null}
+        <Dado
+          span="col-span-6 sm:col-span-2"
+          label="Direção"
+          value={operacao.direcaoUnidadeLabel || sol?.direcaoUnidadeLabel || "—"}
+          destaque
+          sinalEdicao={sinal(false)}
+        />
+        <Dado
+          span="col-span-6 sm:col-span-3"
           label="Operação"
           value={sol?.tipoOperacao ?? operacao.tipoOperacaoLabel ?? "—"}
           destaque
+          sinalEdicao={sinal(false)}
+        />
+        <Dado
+          span="col-span-6 sm:col-span-4"
+          label="Cliente"
+          value={sol?.cliente ?? operacao.clienteNome}
           sinalEdicao={sinal(false)}
         />
         <Dado
@@ -297,6 +399,71 @@ export function ControleEntradaSaidaDossie({
           label="Agendamento"
           value={formatarAgenda(sol?.dataRef, sol?.turno)}
           sinalEdicao={sinal(false)}
+        />
+
+        <BlocoTitulo>Navio, processo e booking</BlocoTitulo>
+        <Dado
+          span="col-span-6 sm:col-span-4"
+          label="Navio"
+          value={rascunho.navio ?? sol?.navio?.trim() ?? ""}
+          displayValue={(rascunho.navio ?? sol?.navio)?.trim() || "—"}
+          editavel={podeEditar}
+          disabled={salvando}
+          sinalEdicao={sinal(podeEditar, rascunho.navio != null)}
+          onCommit={(v) => void corrigir({ navio: v })}
+        />
+        <Dado
+          span="col-span-6 sm:col-span-4"
+          label="Processo"
+          value={rascunho.processo ?? sol?.processo?.trim() ?? ""}
+          displayValue={(rascunho.processo ?? sol?.processo)?.trim() || "—"}
+          editavel={podeEditar}
+          disabled={salvando}
+          sinalEdicao={sinal(podeEditar, rascunho.processo != null)}
+          onCommit={(v) => void corrigir({ processo: v })}
+        />
+        <Dado
+          span="col-span-6 sm:col-span-4"
+          label="Booking"
+          value={rascunho.booking ?? sol?.booking?.trim() ?? ""}
+          displayValue={(rascunho.booking ?? sol?.booking)?.trim() || "—"}
+          editavel={podeEditar}
+          disabled={salvando}
+          sinalEdicao={sinal(podeEditar, rascunho.booking != null)}
+          onCommit={(v) => void corrigir({ booking: v })}
+        />
+
+        <BlocoTitulo>Transporte</BlocoTitulo>
+        <Dado
+          span="col-span-6 sm:col-span-4"
+          label="Transportadora"
+          value={
+            rascunho.transportadoraId !== undefined
+              ? rascunho.transportadoraId
+              : (por?.transportadoraId ||
+                (por?.transportadora && por.transportadora !== "—" ? por.transportadora : "") ||
+                "")
+          }
+          displayValue={
+            rascunho.transportadoraId !== undefined
+              ? rascunho.transportadoraId
+                ? (transportadoras.find((t) => t.id === rascunho.transportadoraId)?.label ?? "—")
+                : "—"
+              : por?.transportadora && por.transportadora !== "—"
+                ? por.transportadora
+                : "—"
+          }
+          editavel={podeEditar}
+          disabled={salvando}
+          sinalEdicao={sinal(podeEditar, rascunho.transportadoraId != null)}
+          opcoes={[
+            { value: "", label: "—" },
+            ...transportadoras.map((t) => ({
+              value: t.id,
+              label: `${t.label} · ${formatCNPJ(t.cnpj)}`,
+            })),
+          ]}
+          onCommit={(v) => void corrigir({ transportadoraId: v })}
         />
         <Dado
           span="col-span-6 sm:col-span-2"
@@ -318,101 +485,6 @@ export function ControleEntradaSaidaDossie({
           ]}
           onCommit={(v) => void corrigir({ tipoCaminhao: v })}
         />
-        <Dado
-          span="col-span-6 sm:col-span-2"
-          label="Check-in"
-          value={por?.checkinEm ? new Date(por.checkinEm).toLocaleString("pt-BR") : "—"}
-          sinalEdicao={sinal(false)}
-        />
-
-        <Dado
-          span="col-span-6 sm:col-span-2"
-          label="ID"
-          value={operacao.unidadeProcesso?.label || sol?.unidadeProcessoLabel || "—"}
-          sinalEdicao={sinal(false)}
-        />
-        <Dado
-          span="col-span-6 sm:col-span-2"
-          label="Direção"
-          value={operacao.direcaoUnidadeLabel || sol?.direcaoUnidadeLabel || "—"}
-          destaque
-          sinalEdicao={sinal(false)}
-        />
-        <Dado
-          span="col-span-6 sm:col-span-4"
-          label="Booking"
-          value={sol?.booking?.trim() || "—"}
-          sinalEdicao={sinal(false)}
-        />
-        <Dado
-          span="col-span-6 sm:col-span-4"
-          label="Processo"
-          value={sol?.processo?.trim() || "—"}
-          sinalEdicao={sinal(false)}
-        />
-        <Dado
-          span="col-span-6 sm:col-span-4"
-          label="Navio"
-          value={sol?.navio?.trim() || "—"}
-          sinalEdicao={sinal(false)}
-        />
-
-        <Dado
-          span="col-span-6 sm:col-span-3"
-          label="Contêiner"
-          value={sol?.container ?? operacao.containerNumero}
-          ocr={byCampo.container}
-          foto={fotoPorTipos(fotos, FOTO_TIPOS.container)}
-          onOpen={abrir}
-          editavel={liberarOcr ? false : ocrEditavel(byCampo.container)}
-          disabled={salvando}
-          sinalEdicao={sinal(false)}
-          onCommit={(v) => void corrigir({ container: v })}
-          onConfirmar={() => void corrigir({ confirmar: ["container"] })}
-        />
-        <TipoTamanhoCampo
-          span="col-span-6 sm:col-span-4"
-          tipo={tipoExibido}
-          tamanho={tamanhoExibido}
-          label={tipoTamanho}
-          catalogo={tiposContainer}
-          editavel={podeEditar}
-          disabled={salvando}
-          sinalEdicao={sinal(podeEditar, rascunho.tipo != null || rascunho.tamanho != null)}
-          onChange={(next) => void corrigir(next)}
-        />
-        <Dado
-          span="col-span-6 sm:col-span-2"
-          label="Situação"
-          value={rascunho.situacao ?? sol?.situacao ?? operacao.containerSituacao}
-          editavel={podeEditar}
-          disabled={salvando}
-          sinalEdicao={sinal(podeEditar, rascunho.situacao != null)}
-          opcoes={[
-            { value: "CHEIO", label: "CHEIO" },
-            { value: "VAZIO", label: "VAZIO" },
-          ]}
-          onCommit={(v) => void corrigir({ situacao: v })}
-        />
-        <Dado
-          span="col-span-6 sm:col-span-3"
-          label="Lacre"
-          value={rascunho.lacre ?? sol?.lacre || ""}
-          displayValue={(rascunho.lacre ?? sol?.lacre) || "—"}
-          ocr={byCampo.lacre}
-          foto={fotoPorTipos(fotos, FOTO_TIPOS.lacre)}
-          fotoObrigatoriaAusente={Boolean(
-            operacao.lacreFotoObrigatoria && !operacao.lacreFotoPresente,
-          )}
-          alertaFoto="Foto obrigatória — contêiner cheio (exceto IsoTank)"
-          onOpen={abrir}
-          editavel={ocrEditavel(byCampo.lacre)}
-          disabled={salvando}
-          sinalEdicao={sinal(ocrEditavel(byCampo.lacre), rascunho.lacre != null)}
-          onCommit={(v) => void corrigir({ lacre: v })}
-          onConfirmar={() => void corrigir({ confirmar: ["lacre"] })}
-        />
-
         <Dado
           span={rodotrem ? "col-span-6 sm:col-span-2" : "col-span-6 sm:col-span-3"}
           label="Placa cavalo"
@@ -479,37 +551,6 @@ export function ControleEntradaSaidaDossie({
           disabled={salvando}
           sinalEdicao={sinal(podeEditar, rascunho.cpf != null)}
           onCommit={(v) => void corrigir({ cpf: v })}
-        />
-        <Dado
-          span="col-span-6 sm:col-span-6"
-          label="Transportadora"
-          value={
-            rascunho.transportadoraId !== undefined
-              ? rascunho.transportadoraId
-              : (por?.transportadoraId ||
-                (por?.transportadora && por.transportadora !== "—" ? por.transportadora : "") ||
-                "")
-          }
-          displayValue={
-            rascunho.transportadoraId !== undefined
-              ? rascunho.transportadoraId
-                ? (transportadoras.find((t) => t.id === rascunho.transportadoraId)?.label ?? "—")
-                : "—"
-              : por?.transportadora && por.transportadora !== "—"
-                ? por.transportadora
-                : "—"
-          }
-          editavel={podeEditar}
-          disabled={salvando}
-          sinalEdicao={sinal(podeEditar, rascunho.transportadoraId != null)}
-          opcoes={[
-            { value: "", label: "—" },
-            ...transportadoras.map((t) => ({
-              value: t.id,
-              label: `${t.label} · ${formatCNPJ(t.cnpj)}`,
-            })),
-          ]}
-          onCommit={(v) => void corrigir({ transportadoraId: v })}
         />
       </div>
 
@@ -685,6 +726,7 @@ function TipoTamanhoCampo({
   disabled,
   onChange,
   sinalEdicao,
+  ocrIndicativo,
 }: {
   span: string;
   tipo: string;
@@ -695,6 +737,7 @@ function TipoTamanhoCampo({
   disabled?: boolean;
   onChange: (patch: { tipo?: string; tamanho?: string }) => void;
   sinalEdicao?: SinalEdicao;
+  ocrIndicativo?: OcrIndicativoTipo | null;
 }) {
   const tiposOpcoes = catalogo.map((t) => ({
     ...t,
@@ -800,7 +843,38 @@ function TipoTamanhoCampo({
           <span className="truncate">{label || "—"}</span>
         </div>
       )}
+      {ocrIndicativo?.tipoIso || ocrIndicativo?.mgwKg ? (
+        <p
+          className={cn(
+            "mt-1 text-[10px] leading-snug",
+            ocrIndicativo.status === "CONFERE" && "text-emerald-600/90",
+            ocrIndicativo.status === "DIVERGENTE" && "text-amber-600/90",
+            ocrIndicativo.status === "SEM_CAPTURA" && "text-muted-foreground",
+          )}
+        >
+          {ocrIndicativo.mensagem}
+          {(ocrIndicativo.mgwKg || ocrIndicativo.taraKg || ocrIndicativo.payloadKg) && (
+            <span className="mt-0.5 block text-muted-foreground">
+              {[
+                ocrIndicativo.mgwKg ? `MGW ${ocrIndicativo.mgwKg} kg` : null,
+                ocrIndicativo.taraKg ? `Tara ${ocrIndicativo.taraKg} kg` : null,
+                ocrIndicativo.payloadKg ? `Payload ${ocrIndicativo.payloadKg} kg` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          )}
+        </p>
+      ) : null}
     </div>
+  );
+}
+
+function BlocoTitulo({ children }: { children: ReactNode }) {
+  return (
+    <p className="col-span-12 mt-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400 first:mt-0">
+      {children}
+    </p>
   );
 }
 
@@ -820,6 +894,7 @@ function Dado({
   onCommit,
   onConfirmar,
   destaque,
+  enfatizar,
   sinalEdicao,
 }: {
   label: string;
@@ -837,6 +912,7 @@ function Dado({
   onCommit?: (valor: string) => void;
   onConfirmar?: () => void;
   destaque?: boolean;
+  enfatizar?: boolean;
   sinalEdicao?: SinalEdicao;
 }) {
   const mostrado = displayValue ?? value;
@@ -898,11 +974,13 @@ function Dado({
               }
               if (next) onCommit?.(next);
             }}
-            className={inputClass(borda)}
+            className={cn(inputClass(borda), enfatizar && "text-base font-bold")}
           />
         ) : (
-          <div className={cn(inputClass(borda), "flex items-center")}>
-            <span className="truncate font-medium">{mostrado || "—"}</span>
+          <div className={cn(inputClass(borda), "flex items-center", enfatizar && "min-h-[2.35rem]")}>
+            <span className={cn("truncate font-medium", enfatizar && "text-base font-bold tracking-wide")}>
+              {mostrado || "—"}
+            </span>
             {ocr?.status === "DIVERGENTE" && ocr.capturado && ocr.capturado !== "—" ? (
               <span className="ml-2 truncate text-[10px] text-orange-300">OCR {ocr.capturado}</span>
             ) : null}

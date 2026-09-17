@@ -27,8 +27,15 @@ export class TenantContextService {
     return this.als.getStore()?.bypassIsolation === true;
   }
 
-  setFromAuth(role: Role, tenantId?: string | null): TenantContextState {
+  setFromAuth(
+    role: Role,
+    tenantId?: string | null,
+    opts?: { acting?: boolean },
+  ): TenantContextState {
     if (role === Role.SUPER_ADMIN) {
+      if (opts?.acting && tenantId) {
+        return { tenantId, bypassIsolation: false };
+      }
       return { tenantId: tenantId ?? null, bypassIsolation: true };
     }
     return { tenantId: tenantId ?? 'default', bypassIsolation: false };

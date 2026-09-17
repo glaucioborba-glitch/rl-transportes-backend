@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class AprovarCadastroFinanceiroDto {
   @IsString()
@@ -24,12 +24,24 @@ export class AtualizarCondicaoClienteDto {
   prazoPagamento!: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @MaxLength(64)
   cadastroTabelaPrecoId?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
+  @MaxLength(64)
   cadastroTabelaTransporteId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  cadastroTabelaServicoId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  cadastroTabelaAluguelId?: string;
 }
 
 export class RejeitarCadastroFinanceiroDto {

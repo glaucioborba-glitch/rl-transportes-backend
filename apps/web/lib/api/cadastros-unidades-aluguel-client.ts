@@ -1,6 +1,6 @@
 import { staffJson } from "@/lib/api/staff-client";
 
-export type UnidadeAluguelStatus = "DISPONIVEL" | "ALUGADA" | "MANUTENCAO" | "INATIVA";
+export type UnidadeAluguelStatus = "DISPONIVEL" | "ALUGADA" | "MANUTENCAO" | "USO_PROPRIO" | "INATIVA";
 
 export type CadastroUnidadeAluguel = {
   id: string;

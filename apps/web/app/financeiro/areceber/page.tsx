@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { toast } from "@/lib/toast";
 import { defaultRange90d, formatBRL, parseDecimal } from "@/lib/financeiro/format";
@@ -50,7 +51,7 @@ type CobLog = { t: string; clienteId: string; nota: string };
 export default function AreceberPage() {
   const { di, df } = defaultRange90d();
   const user = useStaffAuthStore((s) => s.user);
-  const ok = user?.role === "ADMIN" || user?.role === "GERENTE";
+  const ok = isIntranetGestorRole(user?.role);
   const pi = di.slice(0, 7);
   const pf = df.slice(0, 7);
 

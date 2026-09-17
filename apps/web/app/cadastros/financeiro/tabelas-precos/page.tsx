@@ -50,7 +50,7 @@ export default function TabelasPrecosPage() {
         <div>
           <h1 className="text-2xl font-bold">Tabelas de Preços</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Catálogo de pricing por operação × contêiner. Qual tabela vale para cada cliente é definida em{" "}
+            Handling, estadia e tomada. Serviços adicionais ficam em Financeiro → Serviços. Qual tabela vale para cada cliente é definida em{" "}
             <a href="/financeiro/condicoes-clientes" className="text-primary underline-offset-2 hover:underline">
               Financeiro → Forma e prazo
             </a>
@@ -153,7 +153,7 @@ export default function TabelasPrecosPage() {
                 {expirada ? (
                   <div className="flex items-center gap-1 rounded bg-red-500/10 px-2 py-1 text-xs text-red-400">
                     <AlertTriangle className="h-3 w-3" />
-                    Tabela expirada — operações usam a vigente
+                    Tabela expirada — o faturamento usa a vigente
                   </div>
                 ) : null}
 

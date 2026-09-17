@@ -6,6 +6,7 @@ import { ObjectStorageService } from '../common/storage/object-storage.service';
 import { OCRService } from '../modules/ocr/ocr.service';
 import { WhatsappService } from '../notification/whatsapp.service';
 import { IntegrationCredentialsService } from './integration-credentials.service';
+import { maskPixKey } from './integration-credentials.util';
 import type { TenantParametrosIntegracoes, WhatsAppTemplateStatus } from './tenant-config.types';
 
 export type IntegrationTestResult = {
@@ -26,11 +27,23 @@ export class TenantConfigProbesService {
     private readonly integrationCreds: IntegrationCredentialsService,
   ) {}
 
-  buildIntegracoesStatus(): TenantParametrosIntegracoes {
-    const google = this.integrationCreds.peekGoogleVision();
-    const wa = this.integrationCreds.peekWhatsapp();
-    const banking = this.integrationCreds.peekBanking();
-    const s3 = this.integrationCreds.peekS3();
+  buildIntegracoesStatus(tenantId?: string): TenantParametrosIntegracoes {
+    const tid = tenantId ?? this.integrationCreds.currentTenantId();
+    const google = this.integrationCreds.peekGoogleVision(tid);
+    const maps = this.integrationCreds.peekGoogleMaps(tid);
+    const routes = this.integrationCreds.peekGoogleRoutes(tid);
+    const wa = this.integrationCreds.peekWhatsapp(tid);
+    const boleto = this.integrationCreds.peekBanking(tid);
+    const pix = this.integrationCreds.peekPix(tid);
+    const s3 = this.integrationCreds.peekS3(tid);
+
+    const boletoStatus = {
+      enabled: boleto.configured,
+      configured: boleto.configured,
+      origem: boleto.origem,
+      lockedByEnv: boleto.lockedByEnv,
+      apiBaseUrl: boleto.apiBaseUrl,
+    };
 
     return {
       whatsapp: {
@@ -51,13 +64,31 @@ export class TenantConfigProbesService {
         apiKeyPresent: google.configured,
         clientEmail: google.clientEmail ?? (google.apiKey ? 'API key' : undefined),
       },
-      banking: {
-        enabled: banking.configured,
-        configured: banking.configured,
-        origem: banking.origem,
-        lockedByEnv: banking.lockedByEnv,
-        provider: banking.provider,
-        apiBaseUrl: banking.apiBaseUrl,
+      googleMaps: {
+        enabled: maps.configured,
+        configured: maps.configured,
+        origem: maps.origem,
+        lockedByEnv: maps.lockedByEnv,
+        apiKeyPresent: maps.configured,
+      },
+      googleRoutes: {
+        enabled: routes.configured,
+        configured: routes.configured,
+        origem: routes.origem,
+        lockedByEnv: routes.lockedByEnv,
+        apiKeyPresent: routes.configured,
+      },
+      banking: boletoStatus,
+      boleto: boletoStatus,
+      pix: {
+        enabled: pix.configured,
+        configured: pix.configured || pix.chavePixPresent,
+        origem: pix.origem,
+        lockedByEnv: pix.lockedByEnv,
+        apiBaseUrl: pix.apiBaseUrl,
+        chavePixPresent: pix.chavePixPresent,
+        chavePixHint: maskPixKey(pix.chavePix),
+        apiTokenPresent: Boolean(pix.apiToken),
       },
       s3: {
         enabled: s3.configured || this.storage.usesS3(),
@@ -132,6 +163,85 @@ export class TenantConfigProbesService {
       message: result.message,
       latencyMs: Date.now() - start,
     };
+  }
+
+  async testGoogleMapsConnection(): Promise<IntegrationTestResult> {
+    const start = Date.now();
+    const maps = await this.integrationCreds.resolveGoogleMaps();
+    if (!maps.apiKey) {
+      return { connected: false, message: 'Google Maps API key não configurada' };
+    }
+    try {
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=Brasil&key=${encodeURIComponent(maps.apiKey)}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+      const json = (await res.json()) as { status?: string; error_message?: string };
+      const ok = json.status === 'OK' || json.status === 'ZERO_RESULTS';
+      return {
+        connected: ok,
+        message: ok
+          ? 'Google Maps JavaScript / Geocoding acessível'
+          : json.error_message || json.status || `HTTP ${res.status}`,
+        latencyMs: Date.now() - start,
+      };
+    } catch (err) {
+      return {
+        connected: false,
+        message: (err as Error).message,
+        latencyMs: Date.now() - start,
+      };
+    }
+  }
+
+  async testGoogleRoutesConnection(): Promise<IntegrationTestResult> {
+    const start = Date.now();
+    const routes = await this.integrationCreds.resolveGoogleRoutes();
+    if (!routes.apiKey) {
+      return { connected: false, message: 'Google Routes API key não configurada' };
+    }
+    try {
+      const res = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': routes.apiKey,
+          'X-Goog-FieldMask': 'routes.duration',
+        },
+        body: JSON.stringify({
+          origin: { location: { latLng: { latitude: -26.907, longitude: -48.661 } } },
+          destination: { location: { latLng: { latitude: -26.91, longitude: -48.66 } } },
+          travelMode: 'DRIVE',
+        }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      const json = (await res.json()) as { error?: { message?: string } };
+      const ok = res.ok;
+      return {
+        connected: ok,
+        message: ok ? 'Google Routes acessível' : json.error?.message || `HTTP ${res.status}`,
+        latencyMs: Date.now() - start,
+      };
+    } catch (err) {
+      return {
+        connected: false,
+        message: (err as Error).message,
+        latencyMs: Date.now() - start,
+      };
+    }
+  }
+
+  async testPixConnection(): Promise<IntegrationTestResult> {
+    const pix = await this.integrationCreds.resolvePix();
+    if (pix.configured) {
+      const r = await this.banking.testPixConnection();
+      return { connected: r.ok, message: r.message, latencyMs: r.latencyMs };
+    }
+    if (pix.chavePixPresent) {
+      return {
+        connected: true,
+        message: `Chave PIX salva (${maskPixKey(pix.chavePix)}). Cobrança em sandbox até informar a API PIX.`,
+      };
+    }
+    return { connected: false, message: 'Informe a API PIX (URL + token) e a chave de recebimento.' };
   }
 
   async revalidateWhatsappTemplates(): Promise<{ name: string; status: WhatsAppTemplateStatus }[]> {

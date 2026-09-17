@@ -1,5 +1,5 @@
 /**
- * @deprecated Preferir catálogo MDM via GET /cliente/portal/catalogo/tipos-container.
+ * @deprecated Preferir catálogo MDM via GET /cliente/portal/catalogo/tipos-container (tipos globais do Super Admin).
  * Mantido só para compatibilidade de imports legados.
  */
 export const TAMANHOS_PERMITIDOS = ["20", "40", "45"] as const;

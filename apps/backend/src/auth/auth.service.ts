@@ -14,6 +14,7 @@ import * as bcrypt from 'bcrypt';
 import { permissionsForRole } from '../common/constants/role-permissions';
 import {
   canIntranetStaffLogin,
+  canSuperAdminLogin,
   isGerenteMinimo,
 } from '../common/constants/intranet-staff-roles.util';
 import { maskCpfDisplay, onlyDigits } from '../common/utils/br-documents';
@@ -162,6 +163,27 @@ export class AuthService {
     audit?: { ip?: string; userAgent?: string },
     req?: Request,
   ) {
+    return this.authenticateStaff(tenantId, documento, password, audit, req, 'intranet');
+  }
+
+  async loginSuperAdmin(
+    tenantId: string,
+    documento: string,
+    password: string,
+    audit?: { ip?: string; userAgent?: string },
+    req?: Request,
+  ) {
+    return this.authenticateStaff(tenantId, documento, password, audit, req, 'super-admin');
+  }
+
+  private async authenticateStaff(
+    tenantId: string,
+    documento: string,
+    password: string,
+    audit: { ip?: string; userAgent?: string } | undefined,
+    req: Request | undefined,
+    mode: 'intranet' | 'super-admin',
+  ) {
     const normalized = this.resolveLoginDocumento(documento);
     const tenant = tenantId.trim() || DEFAULT_TENANT_ID;
     await this.assertBruteForceNotLocked(tenant, normalized);
@@ -177,7 +199,29 @@ export class AuthService {
       return this.recordBruteForceFailure(tenant, normalized);
     }
 
-    if (!canIntranetStaffLogin(user.role)) {
+    if (mode === 'super-admin') {
+      if (!canSuperAdminLogin(user.role)) {
+        await this.loginTelemetry.record({
+          documento: normalized,
+          userId: user.id,
+          sucesso: false,
+          motivo: 'Perfil não autorizado no Super Admin',
+          req,
+        });
+        throw new UnauthorizedException('Este acesso é exclusivo do Super Admin.');
+      }
+    } else if (user.role === 'SUPER_ADMIN') {
+      await this.loginTelemetry.record({
+        documento: normalized,
+        userId: user.id,
+        sucesso: false,
+        motivo: 'SUPER_ADMIN recusado na intranet',
+        req,
+      });
+      throw new UnauthorizedException(
+        'Acesso do dono do software: use /super-admin',
+      );
+    } else if (!canIntranetStaffLogin(user.role)) {
       await this.loginTelemetry.record({
         documento: normalized,
         userId: user.id,
@@ -193,6 +237,7 @@ export class AuthService {
     await this.clearBruteForceCounter(tenant, normalized);
 
     const ttlSec = await this.sessionTtlSeconds(tenant);
+    const channel = mode === 'super-admin' ? 'super-admin' : 'staff';
 
     let sessionBundle:
       | { sessionId: string; fingerprint: string; ttlSec: number }
@@ -210,7 +255,7 @@ export class AuthService {
             fingerprint: fp,
             ip,
             userAgent: ua,
-            channel: 'staff',
+            channel,
           },
           ttlSec,
           tenant,
@@ -218,7 +263,7 @@ export class AuthService {
         await this.bindActiveSession(user.id, sessionId, ttlSec);
         sessionBundle = { sessionId, fingerprint: fp, ttlSec };
       } catch (e) {
-        this.logger.warn(`Sessão Redis (staff) não registrada: ${(e as Error).message}`);
+        this.logger.warn(`Sessão Redis (${channel}) não registrada: ${(e as Error).message}`);
       }
     }
     const tokens = this.issueTokens(user, sessionBundle);
@@ -231,7 +276,7 @@ export class AuthService {
         acao: AcaoAuditoria.INSERT,
         usuario: user.id,
         dadosDepois: {
-          event: 'LOGIN_INTRANET',
+          event: mode === 'super-admin' ? 'LOGIN_SUPER_ADMIN' : 'LOGIN_INTRANET',
           cpfMascarado: maskCpfDisplay(cpf11),
           role: user.role,
           clienteId: user.clienteId ?? null,

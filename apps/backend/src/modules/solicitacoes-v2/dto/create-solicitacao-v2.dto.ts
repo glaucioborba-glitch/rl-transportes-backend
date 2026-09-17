@@ -130,16 +130,6 @@ export class AgendamentoFormDto {
   @ApiProperty({ enum: TurnoAgendamento })
   @IsEnum(TurnoAgendamento)
   turno!: TurnoAgendamento;
-
-  @ApiProperty()
-  @IsBoolean()
-  atendimentoEspecial!: boolean;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(500)
-  atendimentoEspecialTexto?: string;
 }
 
 export class SolicitanteDto {

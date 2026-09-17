@@ -225,7 +225,7 @@ export class CadastrosTarifasTransporteService {
 
   private async resolveTipoCodigo(codigo: string, requireAtivo: boolean) {
     const tipo = await this.prisma.cadastroTipoContainer.findFirst({
-      where: { tenantId: DEFAULT_TENANT, codigo, deletedAt: null },
+      where: { codigo, deletedAt: null },
     });
     if (!tipo || (requireAtivo && !tipo.ativo)) {
       throw new BadRequestException(`Tipo de contêiner inválido: ${codigo}.`);
@@ -284,7 +284,7 @@ export class CadastrosTarifasTransporteService {
     const unicos = [...new Set(codigos.filter(Boolean))];
     if (!unicos.length) return new Map<string, string>();
     const tipos = await this.prisma.cadastroTipoContainer.findMany({
-      where: { tenantId: DEFAULT_TENANT, codigo: { in: unicos } },
+      where: { codigo: { in: unicos } },
       select: { codigo: true, nome: true },
     });
     return new Map(tipos.map((t) => [t.codigo, t.nome]));

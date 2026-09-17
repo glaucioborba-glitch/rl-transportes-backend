@@ -7,9 +7,12 @@ export const TENANT_SCOPED_MODELS = new Set([
   'AuditLog',
   'Fatura',
   'Faturamento',
+  'ClienteContaCorrenteLancamento',
   'AgendamentoTerminal',
   'GateCheckIn',
   'TabelaPreco',
+  'CatalogoMotoristaExterno',
+  'MotoristaPosicao',
 ]);
 
 export const DEFAULT_TENANT_ID = 'default';

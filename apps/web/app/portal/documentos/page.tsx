@@ -14,26 +14,40 @@ import {
   fetchBoletosPaginated,
   fetchFaturamentoPaginated,
   fetchNfsePaginated,
+  fetchPortalDashboard,
+  hrefPortalFat,
+  type PortalFatEnvelope,
 } from "@/lib/api/portal-client";
 import { toast } from "@/lib/toast";
+import { isLayoutPixPortal } from "@/lib/condicao-pagamento-portal";
 
 export default function PortalDocumentosPage() {
   const [loading, setLoading] = useState(true);
-  const [fats, setFats] = useState<Record<string, unknown>[]>([]);
+  const [fats, setFats] = useState<PortalFatEnvelope[]>([]);
   const [boletos, setBoletos] = useState<Record<string, unknown>[]>([]);
   const [nfs, setNfs] = useState<Record<string, unknown>[]>([]);
+  const [layoutPix, setLayoutPix] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [fat, bol, nf] = await Promise.all([
+      const [fat, bol, nf, dash] = await Promise.all([
         fetchFaturamentoPaginated({ page: 1, limit: 50 }),
         fetchBoletosPaginated({ page: 1, limit: 100 }),
         fetchNfsePaginated({ page: 1, limit: 100 }),
+        fetchPortalDashboard({ recentPage: 1, recentLimit: 1 }).catch(() => null),
       ]);
-      setFats((fat as { items?: Record<string, unknown>[] }).items ?? []);
+      setFats(fat.items ?? []);
       setBoletos(bol.items ?? []);
       setNfs(nf.items ?? []);
+      if (dash) {
+        setLayoutPix(
+          isLayoutPixPortal({
+            statusCadastro: dash.statusCadastro ?? null,
+            condicaoPagamento: dash.condicaoPagamento ?? null,
+          }),
+        );
+      }
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Erro ao carregar documentos");
     } finally {
@@ -88,6 +102,7 @@ export default function PortalDocumentosPage() {
         </CardContent>
       </Card>
 
+      {layoutPix ? null : (
       <Card>
         <CardHeader>
           <CardTitle>Boletos</CardTitle>
@@ -120,29 +135,30 @@ export default function PortalDocumentosPage() {
           />
         </CardContent>
       </Card>
+      )}
 
       <Card>
         <CardHeader>
-          <CardTitle>Faturas</CardTitle>
+          <CardTitle>FAT</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <PortalTable
             columns={[
-              { key: "p", header: "Período" },
-              { key: "v", header: "Valor" },
-              { key: "b", header: "Boleto" },
+              { key: "p", header: "FAT" },
+              { key: "r", header: "Referência" },
+              ...(layoutPix ? [] : [{ key: "b", header: "Boleto" }]),
               { key: "dl", header: "Acesso" },
             ]}
             rows={fats}
-            getRowKey={(r) => String(r.id)}
+            getRowKey={(r) => `${r.origem}-${r.id}`}
             renderCell={(r, key) => {
-              if (key === "p") return String(r.periodo ?? "—");
-              if (key === "v") return String(r.valorTotal ?? "—");
+              if (key === "p") return r.numeroFat || String(r.periodo ?? "—");
+              if (key === "r") return r.referencia || String(r.periodo ?? "—");
               if (key === "b") return String(r.statusBoleto ?? "—");
               if (key === "dl")
                 return (
                   <Button variant="link" className="h-auto p-0 text-[var(--accent)]" asChild>
-                    <Link href={`/portal/financeiro/faturas/${String(r.id)}`}>Abrir fatura</Link>
+                    <Link href={hrefPortalFat(r)}>Abrir FAT</Link>
                   </Button>
                 );
               return null;

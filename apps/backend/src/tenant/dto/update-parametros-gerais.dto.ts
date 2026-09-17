@@ -365,10 +365,17 @@ export class UpdateWhatsappIntegracaoDto {
 
 export class UpdateBankingIntegracaoDto {
   @IsOptional()
-  @IsString()
-  @MaxLength(32)
-  provider?: string;
+  @ValidateIf((_, v) => v != null && v !== '')
+  @IsUrl({ require_tld: false })
+  apiBaseUrl?: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(512)
+  apiToken?: string;
+}
+
+export class UpdatePixIntegracaoDto {
   @IsOptional()
   @ValidateIf((_, v) => v != null && v !== '')
   @IsUrl({ require_tld: false })
@@ -378,6 +385,25 @@ export class UpdateBankingIntegracaoDto {
   @IsString()
   @MaxLength(512)
   apiToken?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  chavePix?: string;
+}
+
+export class UpdateGoogleMapsDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  apiKey?: string;
+}
+
+export class UpdateGoogleRoutesDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  apiKey?: string;
 }
 
 export class UpdateS3IntegracaoDto {
@@ -427,6 +453,26 @@ export class UpdateIntegracoesDto {
   @ValidateNested()
   @Type(() => UpdateBankingIntegracaoDto)
   banking?: UpdateBankingIntegracaoDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateBankingIntegracaoDto)
+  boleto?: UpdateBankingIntegracaoDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdatePixIntegracaoDto)
+  pix?: UpdatePixIntegracaoDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateGoogleMapsDto)
+  googleMaps?: UpdateGoogleMapsDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateGoogleRoutesDto)
+  googleRoutes?: UpdateGoogleRoutesDto;
 
   @IsOptional()
   @ValidateNested()

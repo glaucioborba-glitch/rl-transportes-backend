@@ -18,7 +18,10 @@ import { CadastrosMotoristasController } from './cadastros-motoristas.controller
 import { CadastrosMotoristasService } from './cadastros-motoristas.service';
 import { CadastrosCapacidadesContainerController } from './cadastros-capacidades-container.controller';
 import { CadastrosCapacidadesContainerService } from './cadastros-capacidades-container.service';
-import { CadastrosTiposContainerController } from './cadastros-tipos-container.controller';
+import {
+  CadastrosTiposContainerController,
+  CadastrosTiposContainerSuperAdminController,
+} from './cadastros-tipos-container.controller';
 import { CadastrosTiposContainerService } from './cadastros-tipos-container.service';
 import { CadastrosPosicoesPatioController } from './cadastros-posicoes-patio.controller';
 import { CadastrosPosicoesPatioService } from './cadastros-posicoes-patio.service';
@@ -68,6 +71,7 @@ import { CadastrosTerceirosService } from './cadastros-terceiros.service';
     CadastrosTransportadorasController,
     CadastrosMotoristasController,
     CadastrosTiposContainerController,
+    CadastrosTiposContainerSuperAdminController,
     CadastrosCapacidadesContainerController,
     CadastrosContainerCacheController,
     CadastrosEquipamentosController,
@@ -116,6 +120,6 @@ import { CadastrosTerceirosService } from './cadastros-terceiros.service';
     CadastrosTerceirosDocumentosService,
     OperacionalVinculoService,
   ],
-  exports: [CadastrosContainerCacheService, CadastrosTiposContainerService],
+  exports: [CadastrosContainerCacheService, CadastrosTiposContainerService, CadastrosTabelasServicosService],
 })
 export class CadastrosModule {}

@@ -5,6 +5,7 @@ import { HoldReleaseService } from '../hold-release/hold-release.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PRISMA_SERIALIZABLE_TX } from '../prisma/transaction-options';
 import type { CnabLinhaRetorno, ConciliacaoCnabResult } from './types/cnab.types';
+import { formatMoeda } from '../common/finance/format-moeda.util';
 
 const SISTEMA = 'SISTEMA';
 const BOLETO_PAGO = [BOLETO_STATUS.PAGO, 'PAGO'];
@@ -22,7 +23,7 @@ function num(d: Prisma.Decimal | null | undefined): number {
 }
 
 function formatBrl(v: number): string {
-  return v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return formatMoeda(v);
 }
 
 @Injectable()

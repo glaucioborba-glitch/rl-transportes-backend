@@ -1,3 +1,5 @@
-export default function GateDashboardPage() {
-  return null;
+import { redirect } from "next/navigation";
+
+export default function LegacyGateDashboardPage() {
+  redirect("/operador/gate/controle-entrada-saida");
 }

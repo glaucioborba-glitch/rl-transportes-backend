@@ -270,6 +270,22 @@ describe('AuthService', () => {
     });
   });
 
+  it('login intranet rejeita SUPER_ADMIN (porta própria)', async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'sa-1',
+      cpfCnpj: CPF_STORED,
+      email: 'superadmin@rl.com',
+      password: await bcrypt.hash('ok', 4),
+      role: Role.SUPER_ADMIN,
+      tokenVersion: 0,
+      tenantId: TENANT_TEST,
+      clienteId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await expect(service.login(TENANT_TEST, CPF_TEST, 'ok')).rejects.toThrow(/super-admin/i);
+  });
+
   it('login rejeita perfil CLIENTE (somente intranet staff)', async () => {
     prisma.user.findUnique.mockResolvedValue({
       id: 'c1',

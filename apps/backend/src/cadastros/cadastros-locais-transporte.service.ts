@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -61,6 +62,13 @@ export class CadastrosLocaisTransporteService {
 
   private toData(dto: CadastrosLocalTransporteFormDto, codigo: string) {
     const uf = dto.uf?.trim().toUpperCase() || null;
+    const lat = dto.lat == null ? null : Number(dto.lat);
+    const lng = dto.lng == null ? null : Number(dto.lng);
+    const temLat = lat != null && Number.isFinite(lat);
+    const temLng = lng != null && Number.isFinite(lng);
+    if (temLat !== temLng) {
+      throw new BadRequestException('Informe latitude e longitude juntas, ou deixe as duas em branco.');
+    }
     return {
       tenantId: DEFAULT_TENANT,
       codigo,
@@ -68,6 +76,8 @@ export class CadastrosLocaisTransporteService {
       tipo: (dto.tipo?.trim().toUpperCase() || 'OUTRO') as string,
       cidade: dto.cidade?.trim() || null,
       uf: uf && uf.length === 2 ? uf : null,
+      lat: temLat ? lat : null,
+      lng: temLng ? lng : null,
       ativo: dto.ativo ?? true,
     };
   }
@@ -99,6 +109,8 @@ export class CadastrosLocaisTransporteService {
     tipo: string;
     cidade: string | null;
     uf: string | null;
+    lat: number | null;
+    lng: number | null;
     ativo: boolean;
   }) {
     return {
@@ -108,6 +120,8 @@ export class CadastrosLocaisTransporteService {
       tipo: row.tipo,
       cidade: row.cidade,
       uf: row.uf,
+      lat: row.lat,
+      lng: row.lng,
       ativo: row.ativo,
     };
   }

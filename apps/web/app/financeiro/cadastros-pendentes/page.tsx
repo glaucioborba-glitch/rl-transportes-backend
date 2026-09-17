@@ -26,6 +26,7 @@ import {
   type CondicaoPagamentoOption,
 } from "@/lib/condicao-pagamento-portal";
 import { cn } from "@/lib/utils";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { toast } from "@/lib/toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -95,7 +96,7 @@ function EmpresaDisclosurePanel({ row }: { row: CadastroPendenteRow }) {
 
 export default function CadastrosPendentesPage() {
   const user = useStaffAuthStore((s) => s.user);
-  const ok = user?.role === "ADMIN" || user?.role === "GERENTE";
+  const ok = isIntranetGestorRole(user?.role);
   const [rows, setRows] = useState<CadastroPendenteRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);

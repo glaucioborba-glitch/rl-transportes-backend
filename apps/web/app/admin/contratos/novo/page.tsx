@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { staffJson } from "@/lib/api/staff-client";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import type { AdminContract } from "@/lib/admin/types";
 import { readJson, writeJson, adminContractsKey } from "@/lib/admin/storage";
@@ -17,7 +18,7 @@ import { toast } from "@/lib/toast";
 type Tab = "dados" | "comercial" | "sla" | "penal" | "revisao";
 
 export default function AdminContratoNovoPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("dados");
   const [clientes, setClientes] = useState<{ id: string; razaoSocial: string }[]>([]);

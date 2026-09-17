@@ -1,0 +1,30 @@
+---
+description: Nomenclatura de Fatura — envelope FAT por cliente, vários IDs dentro
+alwaysApply: true
+---
+
+# Fatura (vocabulário do produto)
+
+Quando o usuário ou a tela disser **Fatura**, é o **pacote de cobrança**, não uma linha avulsa e não o UUID interno.
+
+## O que entra no pacote
+
+- **Relatório demonstrativo** (o que está sendo cobrado, por ID)
+- **NFS-e**
+- **Boleto**, se a forma de faturamento do cliente for boleto
+- Se for **PIX**: demonstrativo + NFS-e (sem boleto)
+
+## Regras
+
+- Numeração única visível, prefixo **`FAT`** (além do `id` UUID).
+- Sempre de **um único cliente**.
+- Dentro dela podem entrar **vários IDs** (pátio, aluguel, handling, etc.) — linhas do demonstrativo, **uma NFS-e** (e um boleto, se houver).
+
+## Código atual (não confundir)
+
+- Tabela `faturas_armazenagem` (`model Fatura`) = fechamento de **um** Gate-Out.
+- Tabela `faturamentos` = recorte mensal legado.
+
+A **Fatura FAT-…** do produto é o envelope que agrupa IDs + demonstrativo + NFS-e + boleto/PIX. Não implementar consolidação em cima do Gate-Out 1:1 sem o usuário pedir a tela.
+
+Na UI e nos textos, use **Fatura** só nesse sentido. Linha de um ID = item/demonstrativo, não “outra fatura”.

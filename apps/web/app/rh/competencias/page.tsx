@@ -14,11 +14,12 @@ import {
   trainingCoursesCatalog,
 } from "@/lib/rh/nr-skills-mock";
 import type { RhColaboradorDirectoryItem, RhCompetencyId } from "@/lib/rh/types";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { NrBadge } from "@/components/rh/nr-badge";
 
 export default function RhCompetenciasPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [rows, setRows] = useState<RhColaboradorDirectoryItem[]>([]);
 
   useEffect(() => {

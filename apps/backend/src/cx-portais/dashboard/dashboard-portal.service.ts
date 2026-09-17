@@ -1,6 +1,14 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
-import { StatusCadastroCliente, StatusSolicitacao, type TipoCliente, TipoUnidade, ValidacaoDominio } from '@prisma/client';
+import {
+  StatusCadastroCliente,
+  StatusSolicitacao,
+  TipoOpcaoPagamento,
+  type TipoCliente,
+  TipoUnidade,
+  ValidacaoDominio,
+} from '@prisma/client';
+import { DEFAULT_TENANT_ID } from '../../tenant/tenant.constants';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { PlataformaTenantStore } from '../../plataforma-integracao/stores/plataforma-tenant.store';
@@ -130,6 +138,8 @@ export type DashboardPortalConsolidated = {
   validacaoDominio: ValidacaoDominio | null;
   condicaoPagamento: string | null;
   prazoPagamento: string | null;
+  condicaoPagamentoLabel: string | null;
+  prazoPagamentoLabel: string | null;
   cadastroOperacionalLiberado: boolean;
 };
 
@@ -605,6 +615,8 @@ export class DashboardPortalService {
       validacaoDominio: null,
       condicaoPagamento: null,
       prazoPagamento: null,
+      condicaoPagamentoLabel: null,
+      prazoPagamentoLabel: null,
       cadastroOperacionalLiberado: false,
     };
   }
@@ -613,19 +625,51 @@ export class DashboardPortalService {
     const c = await this.prisma.cliente.findFirst({
       where: { id: clienteId, deletedAt: null },
       select: {
+        tenantId: true,
         statusCadastro: true,
         validacaoDominio: true,
         condicaoPagamento: true,
         prazoPagamento: true,
       },
     });
+    const condicaoPagamento = formaEfetivaCadastro(c?.statusCadastro, c?.condicaoPagamento);
+    const prazoPagamento = prazoEfetivoCadastro(c?.statusCadastro, c?.prazoPagamento);
+    const labels = await this.rotulosPagamentoCatalogo(c?.tenantId, condicaoPagamento, prazoPagamento);
     return {
       statusCadastro: c?.statusCadastro ?? null,
       validacaoDominio: c?.validacaoDominio ?? null,
-      condicaoPagamento: formaEfetivaCadastro(c?.statusCadastro, c?.condicaoPagamento),
-      prazoPagamento: prazoEfetivoCadastro(c?.statusCadastro, c?.prazoPagamento),
+      condicaoPagamento,
+      prazoPagamento,
+      condicaoPagamentoLabel: labels.forma,
+      prazoPagamentoLabel: labels.prazo,
       cadastroOperacionalLiberado: cadastroPermiteSolicitacoes(c?.statusCadastro),
     };
+  }
+
+  private async rotulosPagamentoCatalogo(
+    tenantId: string | undefined,
+    forma: string | null,
+    prazo: string | null,
+  ): Promise<{ forma: string | null; prazo: string | null }> {
+    if (!forma && !prazo) return { forma: null, prazo: null };
+    const tid = tenantId?.trim() || DEFAULT_TENANT_ID;
+    const config = await this.prisma.tenantConfig.findFirst({
+      where: {
+        OR: [{ tenantId: tid }, { tenantKey: tid === DEFAULT_TENANT_ID ? 'default' : tid }],
+      },
+      select: { id: true },
+    });
+    const rows = config
+      ? await this.prisma.condicaoPagamentoPersonalizada.findMany({
+          where: { tenantId: config.id, ativo: true },
+          select: { tipo: true, value: true, label: true },
+        })
+      : [];
+    const formaLabel =
+      rows.find((r) => r.tipo === TipoOpcaoPagamento.FORMA && r.value === forma)?.label ?? forma;
+    const prazoLabel =
+      rows.find((r) => r.tipo === TipoOpcaoPagamento.PRAZO && r.value === prazo)?.label ?? prazo;
+    return { forma: formaLabel ?? null, prazo: prazoLabel ?? null };
   }
 
   async buildConsolidated(
@@ -639,7 +683,7 @@ export class DashboardPortalService {
     const skip = (page - 1) * limit;
 
     try {
-      const cacheKey = `cxportal:dash:v4:${clienteId}:${clienteIdParam ?? 'self'}:${page}:${limit}`;
+      const cacheKey = `cxportal:dash:v5:${clienteId}:${clienteIdParam ?? 'self'}:${page}:${limit}`;
       try {
         const hit = await this.redis.get(cacheKey);
         if (hit) {

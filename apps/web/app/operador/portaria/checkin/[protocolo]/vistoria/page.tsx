@@ -17,6 +17,7 @@ import {
   fetchOperacao,
   postVistoria,
   processarOcr,
+  type ContainerOcrExtras,
   type OperacaoDto,
 } from "@/lib/gate/operacao-api";
 import { toast } from "@/lib/toast";
@@ -41,6 +42,8 @@ type FotoVistoria = {
   ocrMatch?: boolean;
   ocrConfianca?: number;
   ocrProvider?: string;
+  ocrTextoBruto?: string;
+  ocrExtras?: ContainerOcrExtras;
 };
 
 const FOTOS_OBRIGATORIAS: FotoVistoria[] = [
@@ -81,6 +84,8 @@ function hidratarFotos(op: OperacaoDto): FotoVistoria[] {
           ocrMatch: hit.ocrMatch,
           ocrConfianca: hit.ocrConfianca,
           ocrProvider: hit.ocrProvider,
+          ocrTextoBruto: hit.ocrTextoBruto,
+          ocrExtras: hit.ocrExtras,
         }
       : { ...slot };
     if (slot.tipo === "LACRE") {
@@ -175,6 +180,8 @@ export default function VistoriaPage({ params }: { params: { protocolo: string }
                   ocrMatch: result.ocrMatch,
                   ocrConfianca: result.confianca,
                   ocrProvider: result.provider,
+                  ocrTextoBruto: result.textoBruto,
+                  ocrExtras: result.extras,
                 }
               : f,
           ),
@@ -220,6 +227,8 @@ export default function VistoriaPage({ params }: { params: { protocolo: string }
             ocrMatch: f.ocrMatch,
             ocrConfianca: f.ocrConfianca,
             ocrProvider: f.ocrProvider,
+            ocrTextoBruto: f.ocrTextoBruto,
+            ocrExtras: f.ocrExtras,
           })),
         avarias,
       });
@@ -298,7 +307,7 @@ export default function VistoriaPage({ params }: { params: { protocolo: string }
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-white">{foto.label}</p>
-              <div className="mt-0.5 flex items-center gap-2">
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                 {foto.foto ? (
                   <>
                     <Check className="h-3 w-3 text-green-400" />
@@ -315,6 +324,12 @@ export default function VistoriaPage({ params }: { params: { protocolo: string }
                         )}
                       </span>
                     )}
+                    {foto.tipo === "CONTAINER_OCR" && foto.ocrExtras?.tipoIso ? (
+                      <span className="basis-full text-[11px] text-slate-400">
+                        Tipo na porta: {foto.ocrExtras.tipoIso}
+                        {foto.ocrExtras.rotulo ? ` · ${foto.ocrExtras.rotulo}` : ""} (indicativo)
+                      </span>
+                    ) : null}
                   </>
                 ) : (
                   <span className={`text-xs ${foto.obrigatoria ? "text-orange-300" : "text-slate-500"}`}>

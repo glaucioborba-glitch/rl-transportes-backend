@@ -1,12 +1,12 @@
 export const TAMANHOS_CONTAINER_OPCOES = ["20", "40", "45"] as const;
 
 /**
- * Códigos legados → código atual do cadastro MDM (matriz operacional).
+ * Códigos curtos / compostos legados → tipo MDM.
+ * DRY é o tipo; DC/HC são capacidade, não código de tipo.
  */
 export const TIPO_CONTAINER_LEGACY_ALIASES: Record<string, string> = {
-  DRY: "DRYDC",
-  DC: "DRYDC",
-  HC: "DRYHC",
+  DRYDC: "DRY",
+  DRYHC: "DRY",
   OT: "OPENTOP",
   FR: "FLATRACK",
   TANK: "ISOTANK",
@@ -72,7 +72,7 @@ export function formatTamanhoContainerDisplay(value: unknown): string {
 }
 
 /**
- * Label padrão intranet/portal alinhado ao cadastro: `DRYDC / 20'`.
+ * Label padrão intranet/portal alinhado ao cadastro: `DRY / 20'`.
  */
 export function formatTipoTamanhoContainerLabel(
   tipo?: unknown,
@@ -87,7 +87,7 @@ export function formatTipoTamanhoContainerLabel(
   return null;
 }
 
-/** Re-normaliza label composto legado (`DRY / 20DC` → `DRYDC / 20'`). */
+/** Re-normaliza label composto legado (`DRYDC / 20'` → `DRY / 20'`). */
 export function coerceTipoTamanhoContainerLabel(
   value: unknown,
   catalogCodigos?: Iterable<string>,

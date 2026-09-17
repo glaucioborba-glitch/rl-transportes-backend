@@ -302,7 +302,12 @@ export class ContainerTimelineService {
     const unidadeProcessos = await this.prisma.unidadeProcesso.findMany({
       where: { unidadeIso: iso },
       include: {
-        entradaSolicitacao: { select: { protocolo: true } },
+        entradaSolicitacao: {
+          select: {
+            protocolo: true,
+            containersSolicitacao: { select: { unidade: true, tipo: true } },
+          },
+        },
         saidaSolicitacao: { select: { protocolo: true } },
       },
       orderBy: { entradaEm: 'asc' },
@@ -398,8 +403,6 @@ export class ContainerTimelineService {
           dataRef: String(ags.dataRef).slice(0, 10),
           turno: ags.turno,
           statusSolicitacao: ags.solicitacao.status,
-          atendimentoEspecial: ags.atendimentoEspecial,
-          ...(mode === 'admin' ? { atendimentoEspecialTexto: ags.atendimentoEspecialTexto } : {}),
         },
       });
     }
@@ -568,7 +571,17 @@ export class ContainerTimelineService {
               const abertos = ctx.unidadeProcessos.filter((p) => p.status === 'ABERTO');
               const patio = abertos.find((p) => p.modalidade !== 'ALUGUEL');
               const aberto = patio ?? abertos[0];
-              return aberto ? { id: aberto.id, numero: aberto.numero } : null;
+              if (!aberto) return null;
+              const form = aberto.entradaSolicitacao?.containersSolicitacao?.find(
+                (c: { unidade?: string | null; tipo?: string | null }) =>
+                  (c.unidade ?? '').replace(/\s/g, '').toUpperCase() ===
+                  aberto.unidadeIso.replace(/\s/g, '').toUpperCase(),
+              );
+              return {
+                id: aberto.id,
+                numero: aberto.numero,
+                tipoContainer: form?.tipo ?? aberto.entradaSolicitacao?.containersSolicitacao?.[0]?.tipo ?? null,
+              };
             })(),
           }
         : {}),

@@ -10,6 +10,7 @@ import { boletoStatusVariant } from "@/lib/portal-status";
 import { ApiError, fetchBoleto } from "@/lib/api/portal-client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/lib/toast";
+import { formatBRL, parseDecimal } from "@/lib/financeiro/format";
 
 export default function BoletoDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -60,7 +61,7 @@ export default function BoletoDetailPage() {
         <CardContent className="space-y-3 text-sm">
           <div className="flex justify-between">
             <span className="text-slate-500">Valor</span>
-            <span className="text-white">R$ {String(b.valorBoleto ?? "—")}</span>
+            <span className="text-white">{formatBRL(parseDecimal(b.valorBoleto))}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-slate-500">Vencimento</span>

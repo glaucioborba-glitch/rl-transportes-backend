@@ -15,13 +15,14 @@ import {
   type FuncionarioRow,
 } from "@/lib/api/workforce-rh-client";
 import { toast } from "@/lib/toast";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { cn } from "@/lib/utils";
 
 const CARGOS: CargoFuncionario[] = ["GATE_CHECKER", "OPERADOR_EMPILHADEIRA", "ADMINISTRATIVO"];
 
 export default function RhEquipePage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [rows, setRows] = useState<FuncionarioRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

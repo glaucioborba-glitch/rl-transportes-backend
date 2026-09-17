@@ -6,6 +6,7 @@ import { RhCard } from "@/components/rh/rh-card";
 import { ScheduleMatrix, type ScheduleCell } from "@/components/rh/schedule-matrix";
 import { rhEscalaKey, readJson, writeJson } from "@/lib/rh/storage";
 import { hashSeed } from "@/lib/rh/hash";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 
 type EscalaStore = {
@@ -47,7 +48,7 @@ const DEFAULT: EscalaStore = {
 };
 
 export default function RhJornadaEscalaPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [store, setStore] = useState<EscalaStore>(DEFAULT);
   const [names, setNames] = useState<string[]>([]);
 

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, StatusUnidadeProcesso } from '@prisma/client';
 import { ArmazenagemBillingService } from '../armazenagem-faturamento/armazenagem-billing.service';
+import { resolveCadastroTabelaVigente } from '../cadastros/cadastro-tabela-preco-vigente';
 import { CadastrosTabelasServicosService } from '../cadastros/cadastros-tabelas-servicos.service';
 import {
   parseServicoEfeito,
@@ -11,6 +12,11 @@ import {
 } from '../cadastros/servico-efeito';
 import { PrismaService } from '../prisma/prisma.service';
 import { ServicoEfeitoAplicarService } from './servico-efeito-aplicar.service';
+import { sincronizarTomadaDiariaDoProcesso } from './tomada-diaria-id.util';
+import {
+  buildLinhasAberturaTabela,
+  isLancamentoAutomaticoTabela,
+} from './servicos-abertura-tabela.util';
 
 @Injectable()
 export class UnidadeProcessoServicosService {
@@ -22,7 +28,10 @@ export class UnidadeProcessoServicosService {
   ) {}
 
   async listar(unidadeProcessoId: string) {
-    await this.getAbertoOuEncerrado(unidadeProcessoId);
+    const processo = await this.getAbertoOuEncerrado(unidadeProcessoId);
+    if (processo.status === StatusUnidadeProcesso.ABERTO) {
+      await sincronizarTomadaDiariaDoProcesso(this.prisma, unidadeProcessoId);
+    }
     const rows = await this.prisma.unidadeProcessoServico.findMany({
       where: { unidadeProcessoId },
       orderBy: { createdAt: 'asc' },
@@ -41,8 +50,72 @@ export class UnidadeProcessoServicosService {
     };
   }
 
-  async catalogo() {
-    return this.tabelasServicos.listCatalogoAtivo();
+  async catalogo(unidadeProcessoId?: string) {
+    let clienteId: string | null = null;
+    if (unidadeProcessoId) {
+      const processo = await this.prisma.unidadeProcesso.findFirst({
+        where: { id: unidadeProcessoId },
+        select: { clienteId: true },
+      });
+      clienteId = processo?.clienteId ?? null;
+    }
+    return this.tabelasServicos.listCatalogoAtivo('default', { clienteId });
+  }
+
+  /** Handling da tabela de preços na abertura do ID. Tomada entra ao ligar (dias conectados). */
+  async aplicarNaAbertura(
+    tx: Prisma.TransactionClient,
+    input: {
+      processoId: string;
+      clienteId: string;
+      tipo?: string | null;
+      tamanho?: string | null;
+      status?: string | null;
+      refrigerado?: boolean;
+      userId?: string;
+    },
+  ) {
+    const existentes = await tx.unidadeProcessoServico.findMany({
+      where: { unidadeProcessoId: input.processoId },
+      select: { codigo: true },
+    });
+    const jaTem = new Set(existentes.map((r) => r.codigo.toUpperCase()));
+
+    const tabela = await resolveCadastroTabelaVigente(tx, input.clienteId);
+    if (!tabela) return;
+
+    const linhas = buildLinhasAberturaTabela({
+      itens: tabela.itens,
+      tabelaId: tabela.id,
+      tipo: input.tipo,
+      tamanho: input.tamanho,
+      status: input.status,
+      refrigerado: input.refrigerado,
+    }).filter((l) => !jaTem.has(l.codigo.toUpperCase()));
+    if (!linhas.length) return;
+
+    await tx.unidadeProcessoServico.createMany({
+      data: linhas.map((l) => ({
+        unidadeProcessoId: input.processoId,
+        codigo: l.codigo,
+        nome: l.nome,
+        quantidade: new Prisma.Decimal(l.quantidade.toFixed(2)),
+        valorUnitario: new Prisma.Decimal(l.valorUnitario.toFixed(2)),
+        valorTotal: new Prisma.Decimal(l.valorTotal.toFixed(2)),
+        lancadoPorUserId: input.userId ?? null,
+        payload: l.payload as Prisma.InputJsonValue,
+      })),
+    });
+    await sincronizarTomadaDiariaDoProcesso(tx, input.processoId, { userId: input.userId });
+  }
+
+  async sincronizarTomadaNaSaida(
+    tx: Prisma.TransactionClient,
+    processoId: string,
+    saidaEm: Date,
+    userId?: string,
+  ) {
+    await sincronizarTomadaDiariaDoProcesso(tx, processoId, { asOf: saidaEm, userId });
   }
 
   async lancar(
@@ -107,14 +180,29 @@ export class UnidadeProcessoServicosService {
       where: { id: lancamentoId, unidadeProcessoId },
     });
     if (!row) throw new NotFoundException('Lançamento não encontrado.');
-    const payload = (row.payload ?? {}) as ServicoEfeitoPayload;
-    const efeito = parseServicoEfeito(payload.efeito);
-    if (efeito !== 'NENHUM' || payload.vinculado) {
+    if (isLancamentoAutomaticoTabela(row.payload)) {
       throw new BadRequestException(
-        'Este lançamento já alterou lacre ou status. Não estorne por aqui — evite desfazer a operação pela metade.',
+        'Handling e Tomada da tabela de preços são automáticos e não podem ser excluídos.',
       );
     }
-    await this.prisma.unidadeProcessoServico.delete({ where: { id: lancamentoId } });
+    const payload = (row.payload ?? {}) as ServicoEfeitoPayload;
+    const efeito = parseServicoEfeito(payload.efeito);
+    if (efeito !== 'NENHUM') {
+      await this.efeitos.reverter(unidadeProcessoId, payload);
+    }
+    const extras =
+      efeito === 'SUBSTITUIR_LACRE_SAIDA'
+        ? await this.prisma.unidadeProcessoServico.findMany({
+            where: { unidadeProcessoId, id: { not: lancamentoId } },
+            select: { id: true, payload: true },
+          })
+        : [];
+    const extraIds = extras
+      .filter((r) => (r.payload as ServicoEfeitoPayload | null)?.vinculado)
+      .map((r) => r.id);
+    await this.prisma.unidadeProcessoServico.deleteMany({
+      where: { id: { in: [lancamentoId, ...extraIds] } },
+    });
     await this.billing.refreshExtrasForProcesso(unidadeProcessoId);
     return { ok: true };
   }

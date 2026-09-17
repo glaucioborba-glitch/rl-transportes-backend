@@ -34,6 +34,7 @@ export function isStaffJwtExemptPath(path: string): boolean {
   if (p.startsWith('/portal/')) return true;
   if (p.startsWith('/cliente/') && !p.startsWith('/clientes')) return true;
   if (p.startsWith('/fornecedor/')) return true;
+  if (p.startsWith('/v2/motorista-gps')) return true;
   if (p.startsWith('/mobile/v1/')) return true;
   if (p === '/mobile' || p.startsWith('/mobile/')) return true;
   if (p.startsWith('/public/')) return true;

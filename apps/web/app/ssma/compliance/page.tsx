@@ -9,6 +9,7 @@ import { NrControlHeatmap } from "@/components/ssma/nr-control-heatmap";
 import { CriticalAlertsPanel, type AlertItem } from "@/components/ssma/critical-alerts-panel";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
 import { toast } from "@/lib/toast";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { Button } from "@/components/ui/button";
 
@@ -32,7 +33,7 @@ function mapAud(d: unknown): AuditRow[] {
 }
 
 export default function SsmaCompliancePage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [audSol, setAudSol] = useState<AuditRow[]>([]);
   const [audUsers, setAudUsers] = useState<AuditRow[]>([]);
   const [audGates, setAudGates] = useState<AuditRow[]>([]);

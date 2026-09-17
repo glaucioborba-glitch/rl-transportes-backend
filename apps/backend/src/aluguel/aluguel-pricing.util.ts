@@ -5,6 +5,7 @@ import type {
   ContainerBillingContext,
   ItemFaturaCalculado,
 } from '../billing-engine/billing-rule-engine.types';
+import { parseFaixasDiaria } from '../billing-engine/faixa-diaria.types';
 import { roundMoney } from '../armazenagem-faturamento/armazenagem-billing.util';
 
 export type AluguelItemLike = {
@@ -12,10 +13,14 @@ export type AluguelItemLike = {
   containerTamanho: string;
   valorDiaria: number;
   diasFreeTime: number;
-  valorEntrega: number;
-  valorColeta: number;
+  valorHandling: number;
+  faixasDiaria?: unknown;
   ativo: boolean;
 };
+
+export function aluguelTemDiaria(item: AluguelItemLike): boolean {
+  return parseFaixasDiaria(item.faixasDiaria).length > 0 || Number(item.valorDiaria) > 0;
+}
 
 export function normalizeTamanhoAluguel(raw: string): string {
   const digits = raw.replace(/\D/g, '');
@@ -83,11 +88,13 @@ export function evaluateAluguelCycle(input: {
     pricingOverrides: {
       diasFreeTime: input.item.diasFreeTime,
       valorDiaria: Number(input.item.valorDiaria),
+      faixasDiaria: parseFaixasDiaria(input.item.faixasDiaria),
     },
   });
 
-  if (minimoUmDia && result.diasFaturaveis === 0 && Number(input.item.valorDiaria) > 0) {
-    const valorUnitario = roundMoney(Number(input.item.valorDiaria));
+  if (minimoUmDia && result.diasFaturaveis === 0 && aluguelTemDiaria(input.item)) {
+    const faixas = parseFaixasDiaria(input.item.faixasDiaria);
+    const valorUnitario = roundMoney(faixas[0]?.valorDiaria ?? Number(input.item.valorDiaria));
     result.items.push({
       regraTarifariaId: null,
       eventoGatilho: EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
@@ -102,23 +109,12 @@ export function evaluateAluguelCycle(input: {
   }
 
   const extras: ItemFaturaCalculado[] = [];
-  if (input.fase === 'INICIO' && Number(input.item.valorEntrega) > 0) {
-    const valor = roundMoney(Number(input.item.valorEntrega));
+  if (input.fase === 'INICIO' && Number(input.item.valorHandling) > 0) {
+    const valor = roundMoney(Number(input.item.valorHandling));
     extras.push({
       regraTarifariaId: null,
       eventoGatilho: EventoGatilhoTarifa.GATE_IN,
-      descricao: 'Entrega do container (aluguel)',
-      quantidade: 1,
-      valorUnitario: valor,
-      valorTotal: valor,
-    });
-  }
-  if (input.fase === 'DEVOLUCAO' && Number(input.item.valorColeta) > 0) {
-    const valor = roundMoney(Number(input.item.valorColeta));
-    extras.push({
-      regraTarifariaId: null,
-      eventoGatilho: EventoGatilhoTarifa.GATE_OUT,
-      descricao: 'Coleta do container (aluguel)',
+      descricao: 'Handling (aluguel)',
       quantidade: 1,
       valorUnitario: valor,
       valorTotal: valor,

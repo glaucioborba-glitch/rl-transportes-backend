@@ -9,7 +9,8 @@ export const PESSOAS_TABS = [
   { label: "Clientes", href: "/cadastros/pessoas/clientes" },
   { label: "Colaboradores", href: "/cadastros/pessoas/colaboradores" },
   { label: "Transportadoras", href: "/cadastros/pessoas/transportadoras" },
-  { label: "Motoristas", href: "/cadastros/pessoas/motoristas" },
+  { label: "Motoristas Internos", href: "/cadastros/pessoas/motoristas" },
+  { label: "Motoristas externos", href: "/cadastros/pessoas/motoristas-externos" },
   { label: "Terceiros", href: "/cadastros/pessoas/terceiros" },
 ] as const;
 
@@ -18,7 +19,7 @@ export function PessoasTabs() {
   return (
     <div className="flex flex-wrap gap-2 border-b border-border pb-2">
       {PESSOAS_TABS.map((tab) => {
-        const active = pathname.startsWith(tab.href);
+        const active = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
         return (
           <Button
             key={tab.href}

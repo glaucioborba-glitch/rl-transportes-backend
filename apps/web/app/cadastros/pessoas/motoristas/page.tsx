@@ -9,6 +9,7 @@ import {
   MotoristasEmptyState,
   MotoristasSkeleton,
 } from "@/components/cadastros/motoristas-list-ui";
+import { PessoasTabs } from "../components/pessoas-tabs";
 import { PaginationSimple } from "@/components/cadastros/pagination-simple";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,9 +68,9 @@ export default function MotoristasListPage() {
               Pessoas & Entidades
             </Link>
             <span>/</span>
-            <span>Motoristas</span>
+            <span>Motoristas Internos</span>
           </div>
-          <h1 className="text-2xl font-bold">Motoristas</h1>
+          <h1 className="text-2xl font-bold">Motoristas Internos</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {total} motorista(s) cadastrado(s) · Fonte única para Gate CPO
           </p>
@@ -91,6 +92,8 @@ export default function MotoristasListPage() {
           ) : null}
         </div>
       </div>
+
+      <PessoasTabs />
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative max-w-md flex-1">

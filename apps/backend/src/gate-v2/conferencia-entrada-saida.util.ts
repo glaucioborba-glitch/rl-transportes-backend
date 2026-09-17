@@ -25,7 +25,7 @@ export type ConferenciaResumo = {
   semCaptura: number;
 };
 
-export type ControleColuna = 'NA_PORTARIA' | 'A_CONFERIR' | 'RIC_PENDENTE' | 'LIBERADO';
+export type ControleColuna = 'NA_PORTARIA' | 'A_CONFERIR' | 'RIC_PENDENTE' | 'LIBERADO' | 'PRONTO_SAIDA';
 
 const LABELS: Record<ConferenciaCampoId, string> = {
   container: 'Contêiner',

@@ -23,7 +23,13 @@ describe('UnidadeProcessoService.assertPodeCriarSolicitacao', () => {
       },
       cadastroLocalTransporte: { findFirst: jest.fn().mockResolvedValue(null) },
     };
-    return new UnidadeProcessoService(prisma as never, patio as never, billing as never, outbox as never);
+    return new UnidadeProcessoService(
+      prisma as never,
+      patio as never,
+      billing as never,
+      outbox as never,
+      { aplicarNaAbertura: jest.fn(), sincronizarTomadaNaSaida: jest.fn() } as never,
+    );
   }
 
   it('bloqueia coleta sem ID aberto', async () => {

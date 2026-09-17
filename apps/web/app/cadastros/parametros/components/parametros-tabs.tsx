@@ -10,7 +10,6 @@ export const PARAMETROS_TABS = [
   { label: "Financeiro", href: "/cadastros/parametros/financeiro" },
   { label: "Fiscal", href: "/cadastros/parametros/fiscal" },
   { label: "Segurança", href: "/cadastros/parametros/seguranca" },
-  { label: "Integrações", href: "/cadastros/parametros/integracoes" },
   { label: "Notificações", href: "/cadastros/parametros/notificacoes" },
   { label: "Feature Flags", href: "/cadastros/parametros/feature-flags" },
 ] as const;

@@ -43,6 +43,8 @@ import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { buildPessoaAuditMeta } from '../../pessoas-autorizadas/pessoa-context.util';
 import { HoldReleaseService } from '../../hold-release/hold-release.service';
 import { UnidadeProcessoService } from '../../unidade-processo/unidade-processo.service';
+import { CatalogoMotoristasExternosService } from '../../catalogo-motoristas-externos/catalogo-motoristas-externos.service';
+import { isCpfFrotaPlaceholder } from '../../catalogo-motoristas-externos/catalogo-motoristas-externos.util';
 import { freteUncheckedCreateFromAgendamento } from '../../fretes/frete-from-agendamento';
 import { CreateBloqueioDto } from '../../hold-release/dto/create-bloqueio.dto';
 import {
@@ -76,6 +78,7 @@ export class SolicitacoesV2Service {
     private readonly yardAllocation: YardAllocationService,
     private readonly holdRelease: HoldReleaseService,
     private readonly unidadeProcesso: UnidadeProcessoService,
+    private readonly catalogoMotoristas: CatalogoMotoristasExternosService,
   ) {}
 
   /** Rótulo para PDF/relatório sem mudar o enum PostgreSQL (`APROVADO` → `APROVADA`). */
@@ -108,7 +111,7 @@ export class SolicitacoesV2Service {
     return n;
   }
 
-  private validateDto(dto: CreateSolicitacaoV2Dto) {
+  private async validateDto(dto: CreateSolicitacaoV2Dto) {
     const resolved = resolveAgendamentoFromTipoOperacao(dto.tipoOperacao);
 
     if (resolved.exigeLocalOrigem && !dto.localOrigem?.trim()) {
@@ -132,6 +135,9 @@ export class SolicitacoesV2Service {
       throw new BadRequestException('CPF do motorista inválido');
     }
     dto.transporte.cpfMotorista = cpf;
+    if (!isCpfFrotaPlaceholder(cpf)) {
+      await this.catalogoMotoristas.assertNaoSuspenso(cpf);
+    }
     dto.transporte.placaCavalo = this.assertPlaca(transporte.placaCavalo, 'Placa cavalo');
     dto.transporte.placaCarreta01 = this.assertPlaca(transporte.placaCarreta01, 'Placa carreta 01');
     if (transporte.tipoCaminhao === TipoCaminhao.LS) {
@@ -178,15 +184,16 @@ export class SolicitacoesV2Service {
 
   /** Garante tipo/tamanho contra cadastros_tipos_container ativos (MDM). */
   private async assertContainersAgainstCatalog(
-    containers: Array<{ ordem: number; tipo: string; tamanho: string }>,
+    containers: Array<{ ordem: number; tipo: string; tamanho: string; refrigerado?: boolean }>,
   ) {
     const tipos = await this.prisma.cadastroTipoContainer.findMany({
       where: { deletedAt: null, ativo: true },
-      select: { codigo: true, tamanhos: true },
+      select: { codigo: true, tamanhos: true, tomadaReefer: true },
     });
     const byCodigo = new Map(
       tipos.map((t) => [t.codigo.toUpperCase(), normalizeTamanhosContainer(t.tamanhos)]),
     );
+    const tomadaPorCodigo = new Map(tipos.map((t) => [t.codigo.toUpperCase(), t.tomadaReefer]));
 
     for (const c of containers) {
       const codigo = resolveTipoContainerCodigo(c.tipo, byCodigo.keys());
@@ -206,6 +213,11 @@ export class SolicitacoesV2Service {
       }
       c.tipo = codigo;
       c.tamanho = formatTamanhoContainerMatrix(tamanhoNorm);
+      if (c.refrigerado && !tomadaPorCodigo.get(codigo)) {
+        throw new BadRequestException(
+          `Tomada só é permitida para tipos com “Requer tomada reefer no pátio” (ordem ${c.ordem}).`,
+        );
+      }
     }
   }
 
@@ -420,10 +432,13 @@ export class SolicitacoesV2Service {
     req: Request,
     opts?: { anexos?: Express.Multer.File[] },
   ) {
-    if (cx.portalPapel !== 'CLIENTE' || !cx.clienteId) {
+    if (cx.auth !== 'staff' && (cx.portalPapel !== 'CLIENTE' || !cx.clienteId)) {
       throw new ForbiddenException('Somente cliente autenticado no portal pode criar solicitação v2');
     }
-    this.validateDto(dto);
+    if (!cx.clienteId) {
+      throw new BadRequestException('Informe o cliente da solicitação.');
+    }
+    await this.validateDto(dto);
     await this.assertContainersAgainstCatalog(dto.containers);
     await this.unidadeProcesso.assertPodeCriarSolicitacao({
       clienteId: cx.clienteId,
@@ -437,10 +452,12 @@ export class SolicitacoesV2Service {
     if (opts?.anexos !== undefined && !opts.anexos.length) {
       throw new BadRequestException('Anexo obrigatório: envie ao menos um arquivo (JPG/PDF).');
     }
-    await this.assertPreCriacaoPortalPermitida(cx, req);
+    if (cx.auth !== 'staff') {
+      await this.assertPreCriacaoPortalPermitida(cx, req);
+    }
 
-    const pessoaMeta = buildPessoaAuditMeta(cx, req, 'criarSolicitacao');
-    if (cx.pessoaAutorizada) {
+    const pessoaMeta = cx.auth === 'staff' ? null : buildPessoaAuditMeta(cx, req, 'criarSolicitacao');
+    if (cx.auth !== 'staff' && cx.pessoaAutorizada) {
       dto.solicitante = {
         nome: cx.pessoaAutorizada.nome,
         email: cx.pessoaAutorizada.email,
@@ -559,8 +576,6 @@ export class SolicitacoesV2Service {
                 solicitacaoId: sol.id,
                 dataRef,
                 turno: dto.agendamento.turno,
-                atendimentoEspecial: dto.agendamento.atendimentoEspecial,
-                atendimentoEspecialTexto: dto.agendamento.atendimentoEspecialTexto?.trim() || null,
               },
             });
 
@@ -651,6 +666,7 @@ export class SolicitacoesV2Service {
                   protocolo,
                   tipoOperacao: dto.tipoOperacao,
                   clienteId: cx.clienteId,
+                  origem: cx.auth === 'staff' ? 'GATE_STAFF' : 'PORTAL',
                   ...(pessoaMeta
                     ? {
                         pessoaResponsavel: {
@@ -678,7 +694,9 @@ export class SolicitacoesV2Service {
           await this.agendamentos.posCriacao(agId, cx.sub);
         }
 
-        void this.registrarMetricasSegurancaPortal({ cx, req, dto, solicitacaoId: result.id });
+        if (cx.auth !== 'staff') {
+          void this.registrarMetricasSegurancaPortal({ cx, req, dto, solicitacaoId: result.id });
+        }
 
         this.securityEvents.emit({
           type: 'CRITICAL_EVENT',
@@ -696,6 +714,18 @@ export class SolicitacoesV2Service {
           }
         }
 
+        if (!isCpfFrotaPlaceholder(dto.transporte!.cpfMotorista)) {
+          void this.catalogoMotoristas
+            .registrarDaSolicitacao({
+              cpf: dto.transporte!.cpfMotorista,
+              nome: dto.transporte!.nomeMotorista,
+              origem: cx.auth === 'staff' ? 'INTRANET' : 'PORTAL',
+            })
+            .catch((err) =>
+              this.logger.warn(`Catálogo de motorista não atualizou: ${(err as Error).message}`),
+            );
+        }
+
         return result;
       } catch (e) {
         if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
@@ -706,6 +736,26 @@ export class SolicitacoesV2Service {
       }
     }
     throw new ConflictException('Não foi possível gerar protocolo único');
+  }
+
+  async criarStaff(dto: CreateSolicitacaoV2Dto & { clienteId: string }, user: AuthUser, req: Request) {
+    const cliente = await this.prisma.cliente.findFirst({
+      where: { id: dto.clienteId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!cliente) throw new BadRequestException('Cliente não encontrado.');
+    const cx: CxPortalRequestUser = {
+      sub: user.id,
+      email: user.email,
+      cpfCnpj: user.cpfCnpj,
+      portalPapel: 'STAFF',
+      staffRole: user.role,
+      tenantId: user.tenantId || 'default',
+      clienteId: cliente.id,
+      tokenVersion: 0,
+      auth: 'staff',
+    };
+    return this.criarPortal(dto, cx, req);
   }
 
   async anexarPortal(

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight, Send, SquareArrowOutUpRight, Truck } from "lucide-react";
+import { ChevronRight, MapPin, Send, SquareArrowOutUpRight, Truck } from "lucide-react";
 
 export default function TransportesLandingPage() {
   return (
@@ -13,7 +13,7 @@ export default function TransportesLandingPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Link
           href="/operador/fretes"
           target="_blank"
@@ -45,6 +45,22 @@ export default function TransportesLandingPage() {
           <h2 className="mt-4 text-base font-semibold">Dispatch Board</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Arraste agendamentos de frota FL para o motorista disponível.
+          </p>
+        </Link>
+
+        <Link
+          href="/operador/localizacao-motoristas"
+          className="group rounded-lg border border-border bg-card p-5 transition-colors hover:border-[var(--accent)]/40 hover:bg-white/[0.02]"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--accent)]/10">
+              <MapPin className="h-5 w-5 text-[var(--accent)]" />
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+          </div>
+          <h2 className="mt-4 text-base font-semibold">Localização</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Mapa ao vivo dos motoristas internos e terceiros — celular com GPS ligado.
           </p>
         </Link>
       </div>

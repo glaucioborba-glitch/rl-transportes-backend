@@ -18,7 +18,9 @@ import { normalizeContainerIso } from '../common/utils/data-sanitize';
 import { OutboxService } from '../outbox/outbox.service';
 import { PatioV2Service } from '../patio-v2/patio.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { tipoRequerTomadaReefer } from '../cadastros/tipo-container-tomada.util';
 import { rotuloTipoOperacao } from '../gate-v2/conferencia-entrada-saida.util';
+import { UnidadeProcessoServicosService } from './unidade-processo-servicos.service';
 import {
   type ConsultaRicFiltro,
   prismaWhereConsultaRic,
@@ -34,6 +36,19 @@ import {
 
 type Db = Prisma.TransactionClient | PrismaService;
 
+function pickContainerDaSolicitacao<T extends { unidade?: string | null }>(
+  list: T[] | undefined,
+  unidadeIso?: string,
+): T | undefined {
+  if (!list?.length) return undefined;
+  if (!unidadeIso) return list[0];
+  const iso = normalizeContainerIso(unidadeIso).replace(/\s/g, '').toUpperCase();
+  return (
+    list.find((c) => normalizeContainerIso(c.unidade ?? '').replace(/\s/g, '').toUpperCase() === iso) ??
+    list[0]
+  );
+}
+
 @Injectable()
 export class UnidadeProcessoService {
   constructor(
@@ -41,6 +56,7 @@ export class UnidadeProcessoService {
     private readonly patio: PatioV2Service,
     private readonly billing: ArmazenagemBillingService,
     private readonly outbox: OutboxService,
+    private readonly servicos: UnidadeProcessoServicosService,
   ) {}
 
   async findAbertoPorIso(
@@ -179,6 +195,9 @@ export class UnidadeProcessoService {
             clienteId: sol.cliente.id,
             unidadeIso: iso,
             solicitacaoId: sol.id,
+            tipo: c.tipo,
+            tamanho: c.tamanho,
+            status: c.status,
             refrigerado: c.refrigerado,
             setPoint: c.setPoint,
             gateInId,
@@ -247,6 +266,9 @@ export class UnidadeProcessoService {
           clienteId: sol.cliente.id,
           unidadeIso: iso,
           solicitacaoId: sol.id,
+          tipo: c.tipo,
+          tamanho: c.tamanho,
+          status: c.status,
           refrigerado: c.refrigerado,
           setPoint: c.setPoint,
           gateInId,
@@ -274,6 +296,9 @@ export class UnidadeProcessoService {
       clienteId: string;
       unidadeIso: string;
       solicitacaoId: string;
+      tipo?: string | null;
+      tamanho?: string | null;
+      status?: string | null;
       refrigerado: boolean;
       setPoint: number | null;
       gateInId: string | null;
@@ -323,6 +348,16 @@ export class UnidadeProcessoService {
       },
       tx,
     );
+
+    await this.servicos.aplicarNaAbertura(tx, {
+      processoId: processo.id,
+      clienteId: input.clienteId,
+      tipo: input.tipo,
+      tamanho: input.tamanho,
+      status: input.status,
+      refrigerado: input.refrigerado,
+      userId: input.actorUserId,
+    });
 
     if (isBillingEligibleIntent(input.intent as TipoOperacaoSolicitacaoIntent)) {
       await this.billing.openPreFaturasForProcesso(
@@ -387,6 +422,7 @@ export class UnidadeProcessoService {
     });
 
     await this.patio.finalizeFromProcesso(aberto.id, input.actorUserId, tx);
+    await this.servicos.sincronizarTomadaNaSaida(tx, aberto.id, input.saidaEm, input.actorUserId);
 
     if (isBillingEligibleIntent(input.intent as TipoOperacaoSolicitacaoIntent)) {
       await this.billing.consolidateOnProcesso(aberto.id, input.saidaEm, tx);
@@ -519,8 +555,15 @@ export class UnidadeProcessoService {
             },
             containersSolicitacao: {
               orderBy: { ordem: 'asc' },
-              take: 1,
-              select: { booking: true, processo: true, navio: true, status: true },
+              select: {
+                unidade: true,
+                tipo: true,
+                tamanho: true,
+                booking: true,
+                processo: true,
+                navio: true,
+                status: true,
+              },
             },
           },
         },
@@ -533,33 +576,63 @@ export class UnidadeProcessoService {
             },
             containersSolicitacao: {
               orderBy: { ordem: 'asc' },
-              take: 1,
-              select: { booking: true, processo: true, navio: true, status: true },
+              select: {
+                unidade: true,
+                tipo: true,
+                tamanho: true,
+                booking: true,
+                processo: true,
+                navio: true,
+                status: true,
+              },
             },
           },
+        },
+        patioUnidades: {
+          select: { refrigerado: true, unidadeIso: true },
+          orderBy: { updatedAt: 'desc' },
         },
       },
       orderBy: [{ entradaEm: 'desc' }, { numero: 'desc' }],
       take: 200,
     });
 
+    const tipos = await this.prisma.cadastroTipoContainer.findMany({
+      where: { deletedAt: null, ativo: true },
+      select: { codigo: true, tomadaReefer: true },
+    });
+
     return {
-      items: rows.map((row) => ({
-        id: row.id,
-        numero: row.numero,
-        label: formatUnidadeProcessoId(row.numero),
-        unidadeIso: row.unidadeIso,
-        status: row.status,
-        clienteNome: row.cliente.nomeFantasia || row.cliente.razaoSocial,
-        titularNome: row.cliente.nomeFantasia || row.cliente.razaoSocial,
-        solicitanteNome:
-          row.entradaSolicitacao?.cliente.nomeFantasia ||
-          row.entradaSolicitacao?.cliente.razaoSocial ||
-          row.cliente.nomeFantasia ||
-          row.cliente.razaoSocial,
-        entrada: this.mapConsultaRicLeg(row.entradaEm, row.entradaSolicitacao),
-        saida: row.saidaEm ? this.mapConsultaRicLeg(row.saidaEm, row.saidaSolicitacao) : null,
-      })),
+      items: rows.map((row) => {
+        const form =
+          pickContainerDaSolicitacao(row.entradaSolicitacao?.containersSolicitacao, row.unidadeIso) ??
+          pickContainerDaSolicitacao(row.saidaSolicitacao?.containersSolicitacao, row.unidadeIso);
+        const patioU =
+          row.patioUnidades.find((p) => p.unidadeIso === row.unidadeIso) ?? row.patioUnidades[0];
+        return {
+          id: row.id,
+          numero: row.numero,
+          label: formatUnidadeProcessoId(row.numero),
+          unidadeIso: row.unidadeIso,
+          status: row.status,
+          tipoContainer: form?.tipo ?? null,
+          tamanhoContainer: form?.tamanho ?? null,
+          situacao: form?.status ?? null,
+          tomadaReefer: tipoRequerTomadaReefer(tipos, form?.tipo),
+          tomadaConectada: patioU?.refrigerado === true,
+          clienteNome: row.cliente.nomeFantasia || row.cliente.razaoSocial,
+          titularNome: row.cliente.nomeFantasia || row.cliente.razaoSocial,
+          solicitanteNome:
+            row.entradaSolicitacao?.cliente.nomeFantasia ||
+            row.entradaSolicitacao?.cliente.razaoSocial ||
+            row.cliente.nomeFantasia ||
+            row.cliente.razaoSocial,
+          entrada: this.mapConsultaRicLeg(row.entradaEm, row.entradaSolicitacao, row.unidadeIso),
+          saida: row.saidaEm
+            ? this.mapConsultaRicLeg(row.saidaEm, row.saidaSolicitacao, row.unidadeIso)
+            : null,
+        };
+      }),
     };
   }
 
@@ -574,14 +647,17 @@ export class UnidadeProcessoService {
         nomeMotorista: string | null;
       } | null;
       containersSolicitacao: Array<{
+        unidade?: string | null;
+        tipo?: string | null;
         booking: string | null;
         processo: string | null;
         navio: string | null;
         status: string | null;
       }>;
     } | null,
+    unidadeIso?: string,
   ) {
-    const c = sol?.containersSolicitacao[0];
+    const c = pickContainerDaSolicitacao(sol?.containersSolicitacao, unidadeIso);
     const t = sol?.transporteSolicitacao;
     return {
       em: em.toISOString(),

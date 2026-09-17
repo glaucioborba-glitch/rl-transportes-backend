@@ -5,13 +5,14 @@ import { Calculator, Loader2, Play, Save } from "lucide-react";
 import { FormField, FormSection } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { ApiError } from "@/lib/api/staff-client";
 import {
   gerarEmpresaEncargosAgora,
   simularEmpresaEncargos,
   type EncargosSnapshot,
 } from "@/lib/api/empresa-client";
-import { formatBRL } from "@/lib/financeiro/format";
+import { formatBRL, parseMoeda } from "@/lib/financeiro/format";
 import { toast } from "@/lib/toast";
 
 function competenciaMesAnterior() {
@@ -51,7 +52,7 @@ export function EncargosSimulator({ canEdit = true, historicoInicial = [] }: Pro
   async function rodar(salvar: boolean) {
     setBusy(true);
     try {
-      const manual = receitaManual.trim() ? Number(receitaManual.replace(",", ".")) : undefined;
+      const manual = receitaManual.trim() ? parseMoeda(receitaManual) : undefined;
       const out = await simularEmpresaEncargos({
         competencia,
         receitaManual: Number.isFinite(manual) ? manual : undefined,
@@ -121,13 +122,10 @@ export function EncargosSimulator({ canEdit = true, historicoInicial = [] }: Pro
           />
         </FormField>
         <FormField label="Receita manual (opcional)">
-          <Input
-            type="number"
-            min={0}
-            step={0.01}
+          <MoneyInput
             placeholder="Deixe vazio para usar as faturas do mês"
             value={receitaManual}
-            onChange={(e) => setReceitaManual(e.target.value)}
+            onChange={setReceitaManual}
             disabled={!canEdit || busy}
           />
         </FormField>

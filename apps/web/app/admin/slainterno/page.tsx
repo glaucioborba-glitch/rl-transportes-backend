@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import type { SlaInternoTicket } from "@/lib/admin/types";
 import { readJson, writeJson, adminSlaInternoKey } from "@/lib/admin/storage";
@@ -22,7 +23,7 @@ function pctResolved(tickets: SlaInternoTicket[], alvo: number) {
 }
 
 export default function AdminSlaInternoPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [tickets, setTickets] = useState<SlaInternoTicket[]>([]);
 
   useEffect(() => {

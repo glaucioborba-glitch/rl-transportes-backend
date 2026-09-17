@@ -43,7 +43,7 @@ function writeCredentialsFile(portalClientes: SeedPortalIds['clientes']) {
     'URLs:',
     '  Staff login:  http://localhost:3000/auth/login',
     '  Portal login: http://localhost:3000/portal/login',
-    '  Gate CPO:     http://localhost:3000/operador/gate/dashboard',
+    '  Gate CPO:     http://localhost:3000/operador/gate/controle-entrada-saida',
     '  Histórico:    http://localhost:3000/operador/gate/historico-container',
     '',
     'STAFF (intranet — login com CPF 11 dígitos)',

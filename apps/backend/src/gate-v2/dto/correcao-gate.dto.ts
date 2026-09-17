@@ -24,6 +24,21 @@ export class CorrecaoGateDto {
   @IsOptional()
   @IsString()
   @MaxLength(120)
+  booking?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  processo?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  navio?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
   lacre?: string;
 
   @IsOptional()

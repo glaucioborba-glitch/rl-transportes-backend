@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ApiError } from "@/lib/api/staff-client";
 import {
   atualizarClienteCondicao,
@@ -9,9 +9,13 @@ import {
   listarPrazosPagamento,
   listarTabelasPrecoAtribuicao,
   listarTabelasTransporteAtribuicao,
+  listarTabelasServicoAtribuicao,
+  listarTabelasAluguelAtribuicao,
   type ClienteCondicaoRow,
   type TabelaPrecoAtribuicao,
   type TabelaTransporteAtribuicao,
+  type TabelaServicoAtribuicao,
+  type TabelaAluguelAtribuicao,
 } from "@/lib/api/cadastro-financeiro-client";
 import {
   CONDICAO_PAGAMENTO_PADRAO_VALUE,
@@ -21,6 +25,7 @@ import {
   toCondicaoPagamentoApiValue,
   type CondicaoPagamentoOption,
 } from "@/lib/condicao-pagamento-portal";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { toast } from "@/lib/toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,10 +38,48 @@ type Draft = {
   prazoPagamento: string;
   cadastroTabelaPrecoId: string;
   cadastroTabelaTransporteId: string;
+  cadastroTabelaServicoId: string;
+  cadastroTabelaAluguelId: string;
 };
 
 const SELECT_CLASS =
-  "rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-60";
+  "h-9 w-full min-w-0 max-w-full rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-white disabled:cursor-not-allowed disabled:opacity-60";
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block min-w-0">
+      <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-zinc-500">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function TabelaSelect({
+  label,
+  value,
+  options,
+  ariaLabel,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: { id: string; nome: string; padrao: boolean }[];
+  ariaLabel: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Field label={label}>
+      <select className={SELECT_CLASS} value={value} onChange={(e) => onChange(e.target.value)} aria-label={ariaLabel}>
+        {options.length === 0 ? <option value="">Sem tabela vigente</option> : null}
+        {options.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.padrao ? `${t.nome} (padrão)` : t.nome}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
+}
 
 function tabelaPadraoId(tabelas: { id: string; padrao: boolean }[]): string {
   return tabelas.find((t) => t.padrao)?.id ?? tabelas[0]?.id ?? "";
@@ -47,6 +90,8 @@ function savedValues(
   opcoesPrazo: CondicaoPagamentoOption[],
   tabelas: TabelaPrecoAtribuicao[],
   tabelasTransporte: TabelaTransporteAtribuicao[],
+  tabelasServico: TabelaServicoAtribuicao[],
+  tabelasAluguel: TabelaAluguelAtribuicao[],
 ): Draft {
   const prazoSalvo = row.prazoPagamento?.trim() ?? "";
   const formaSalva = row.condicaoPagamento?.trim() ?? "";
@@ -55,6 +100,8 @@ function savedValues(
     prazoPagamento: prazoSalvo || opcoesPrazo[0]?.value || "30_DIAS",
     cadastroTabelaPrecoId: row.cadastroTabelaPrecoId || tabelaPadraoId(tabelas),
     cadastroTabelaTransporteId: row.cadastroTabelaTransporteId || tabelaPadraoId(tabelasTransporte),
+    cadastroTabelaServicoId: row.cadastroTabelaServicoId || tabelaPadraoId(tabelasServico),
+    cadastroTabelaAluguelId: row.cadastroTabelaAluguelId || tabelaPadraoId(tabelasAluguel),
   };
 }
 
@@ -74,7 +121,7 @@ function mergeValorOption(opcoes: CondicaoPagamentoOption[], saved: string | nul
 
 export default function CondicoesClientesPage() {
   const user = useStaffAuthStore((s) => s.user);
-  const ok = user?.role === "ADMIN" || user?.role === "GERENTE";
+  const ok = isIntranetGestorRole(user?.role);
   const [rows, setRows] = useState<ClienteCondicaoRow[]>([]);
   const [edits, setEdits] = useState<Record<string, Draft>>({});
   const [loading, setLoading] = useState(false);
@@ -86,6 +133,8 @@ export default function CondicoesClientesPage() {
   const [opcoesPrazo, setOpcoesPrazo] = useState<CondicaoPagamentoOption[]>([...PRAZOS_PAGAMENTO]);
   const [tabelas, setTabelas] = useState<TabelaPrecoAtribuicao[]>([]);
   const [tabelasTransporte, setTabelasTransporte] = useState<TabelaTransporteAtribuicao[]>([]);
+  const [tabelasServico, setTabelasServico] = useState<TabelaServicoAtribuicao[]>([]);
+  const [tabelasAluguel, setTabelasAluguel] = useState<TabelaAluguelAtribuicao[]>([]);
 
   const load = useCallback(async () => {
     if (!ok) return;
@@ -107,12 +156,16 @@ export default function CondicoesClientesPage() {
       listarPrazosPagamento(),
       listarTabelasPrecoAtribuicao(),
       listarTabelasTransporteAtribuicao(),
+      listarTabelasServicoAtribuicao(),
+      listarTabelasAluguelAtribuicao(),
     ])
-      .then(([formas, prazos, tabs, tabsTransporte]) => {
+      .then(([formas, prazos, tabs, tabsTransporte, tabsServico, tabsAluguel]) => {
         if (formas.length) setOpcoesForma(formas);
         if (prazos.length) setOpcoesPrazo(prazos);
         if (tabs.length) setTabelas(tabs);
         if (tabsTransporte.length) setTabelasTransporte(tabsTransporte);
+        if (tabsServico.length) setTabelasServico(tabsServico);
+        if (tabsAluguel.length) setTabelasAluguel(tabsAluguel);
       })
       .catch(() => {
         /* fallback estático */
@@ -126,10 +179,17 @@ export default function CondicoesClientesPage() {
 
   const displayOf = useCallback(
     (row: ClienteCondicaoRow): Draft => {
-      const saved = savedValues(row, opcoesPrazo, tabelas, tabelasTransporte);
+      const saved = savedValues(
+        row,
+        opcoesPrazo,
+        tabelas,
+        tabelasTransporte,
+        tabelasServico,
+        tabelasAluguel,
+      );
       return edits[row.id] ?? saved;
     },
-    [edits, opcoesPrazo, tabelas, tabelasTransporte],
+    [edits, opcoesPrazo, tabelas, tabelasTransporte, tabelasServico, tabelasAluguel],
   );
 
   const dirtyIds = useMemo(() => {
@@ -137,18 +197,27 @@ export default function CondicoesClientesPage() {
     for (const row of rows) {
       const edit = edits[row.id];
       if (!edit) continue;
-      const saved = savedValues(row, opcoesPrazo, tabelas, tabelasTransporte);
+      const saved = savedValues(
+        row,
+        opcoesPrazo,
+        tabelas,
+        tabelasTransporte,
+        tabelasServico,
+        tabelasAluguel,
+      );
       if (
         edit.condicaoPagamento !== saved.condicaoPagamento ||
         edit.prazoPagamento !== saved.prazoPagamento ||
         edit.cadastroTabelaPrecoId !== saved.cadastroTabelaPrecoId ||
-        edit.cadastroTabelaTransporteId !== saved.cadastroTabelaTransporteId
+        edit.cadastroTabelaTransporteId !== saved.cadastroTabelaTransporteId ||
+        edit.cadastroTabelaServicoId !== saved.cadastroTabelaServicoId ||
+        edit.cadastroTabelaAluguelId !== saved.cadastroTabelaAluguelId
       ) {
         ids.add(row.id);
       }
     }
     return ids;
-  }, [rows, edits, opcoesPrazo, tabelas, tabelasTransporte]);
+  }, [rows, edits, opcoesPrazo, tabelas, tabelasTransporte, tabelasServico, tabelasAluguel]);
 
   function patchDraft(row: ClienteCondicaoRow, patch: Partial<Draft>) {
     const current = displayOf(row);
@@ -165,6 +234,8 @@ export default function CondicoesClientesPage() {
         prazoPagamento: draft.prazoPagamento,
         cadastroTabelaPrecoId: draft.cadastroTabelaPrecoId || undefined,
         cadastroTabelaTransporteId: draft.cadastroTabelaTransporteId || undefined,
+        cadastroTabelaServicoId: draft.cadastroTabelaServicoId || undefined,
+        cadastroTabelaAluguelId: draft.cadastroTabelaAluguelId || undefined,
       });
       toast.success(`Condição de ${row.razaoSocial} atualizada.`);
       setEdits((prev) => {
@@ -189,16 +260,24 @@ export default function CondicoesClientesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 max-w-full space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-white">Forma e prazo</h1>
         <p className="mt-1 text-sm text-zinc-400">
           Os valores exibidos são os gravados de cada cliente. Altere e clique em Salvar só o que for mudar. Novos
-          cadastros entram nas tabelas padrão. Só ADMIN e GERENTE alteram.
+          cadastros entram nas tabelas padrão. Catálogos em{" "}
+          <a href="/cadastros/financeiro/servicos" className="text-sky-400 underline-offset-2 hover:underline">
+            Cadastros → Serviços
+          </a>{" "}
+          e{" "}
+          <a href="/cadastros/financeiro/aluguel" className="text-sky-400 underline-offset-2 hover:underline">
+            Cadastros → Aluguel
+          </a>
+          . Só ADMIN e GERENTE alteram.
         </p>
       </div>
 
-      <Card className="border-zinc-800 bg-zinc-950/80">
+      <Card className="min-w-0 border-zinc-800 bg-zinc-950/80">
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle className="text-base text-zinc-100">Clientes aprovados</CardTitle>
           <Input
@@ -209,139 +288,140 @@ export default function CondicoesClientesPage() {
             aria-label="Buscar cliente"
           />
         </CardHeader>
-        <CardContent className="overflow-x-auto">
+        <CardContent className="min-w-0 space-y-3">
           {loading && rows.length === 0 ? (
             <p className="text-sm text-zinc-500">Carregando…</p>
           ) : rows.length === 0 ? (
             <p className="text-sm text-zinc-500">Nenhum cliente aprovado encontrado.</p>
           ) : (
-            <table className="w-full min-w-[1240px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-zinc-800 text-xs uppercase tracking-wide text-zinc-500">
-                  <th className="px-2 py-3 font-medium">Empresa</th>
-                  <th className="px-2 py-3 font-medium">CNPJ</th>
-                  <th className="px-2 py-3 font-medium">Forma de pagamento</th>
-                  <th className="px-2 py-3 font-medium">Prazo</th>
-                  <th className="px-2 py-3 font-medium">Tabela de preços</th>
-                  <th className="px-2 py-3 font-medium">Tabela de transportes</th>
-                  <th className="px-2 py-3 font-medium">Ação</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => {
-                  const draft = displayOf(row);
-                  const formas = mergeValorOption(opcoesForma, draft.condicaoPagamento);
-                  const prazos = mergeValorOption(opcoesPrazo, draft.prazoPagamento);
-                  const tabsPreco = mergeTabelaOption(tabelas, draft.cadastroTabelaPrecoId);
-                  const tabsTransporte = mergeTabelaOption(tabelasTransporte, draft.cadastroTabelaTransporteId);
-                  return (
-                    <tr key={row.id} className="border-b border-zinc-900/80">
-                      <td className="px-2 py-3 text-zinc-200">
-                        <span className="font-medium">{row.razaoSocial}</span>
-                        {row.nomeFantasia ? (
-                          <span className="mt-0.5 block text-xs text-zinc-500">{row.nomeFantasia}</span>
-                        ) : null}
-                      </td>
-                      <td className="px-2 py-3 font-mono text-xs text-zinc-300">
-                        {formatCpfCnpjBr(row.cpfCnpj)}
-                      </td>
-                      <td className="px-2 py-3">
-                        <select
-                          className={SELECT_CLASS}
-                          value={draft.condicaoPagamento}
-                          disabled={Boolean(
-                            opcoesPrazo.find((p) => p.value === draft.prazoPagamento)?.formaVinculada,
-                          )}
-                          title="Definida pelo prazo comercial"
-                          onChange={(e) => patchDraft(row, { condicaoPagamento: e.target.value })}
-                          aria-label={`Forma de pagamento de ${row.razaoSocial}`}
-                        >
-                          {formas.map((item) => (
+            rows.map((row) => {
+              const draft = displayOf(row);
+              const formas = mergeValorOption(opcoesForma, draft.condicaoPagamento);
+              const prazos = mergeValorOption(opcoesPrazo, draft.prazoPagamento);
+              const tabsPreco = mergeTabelaOption(tabelas, draft.cadastroTabelaPrecoId);
+              const tabsTransporte = mergeTabelaOption(tabelasTransporte, draft.cadastroTabelaTransporteId);
+              const tabsServico = mergeTabelaOption(tabelasServico, draft.cadastroTabelaServicoId);
+              const tabsAluguel = mergeTabelaOption(tabelasAluguel, draft.cadastroTabelaAluguelId);
+              return (
+                <article
+                  key={row.id}
+                  className="grid grid-cols-12 items-end gap-x-3 gap-y-3 rounded-lg border-2 border-white/80 bg-zinc-900/40 p-3"
+                >
+                  <div className="col-span-12 min-w-0 xl:col-span-4">
+                    <p className="truncate font-medium text-zinc-200" title={row.razaoSocial}>
+                      {row.razaoSocial}
+                    </p>
+                    {row.nomeFantasia ? (
+                      <p className="mt-0.5 truncate text-xs text-zinc-500" title={row.nomeFantasia}>
+                        {row.nomeFantasia}
+                      </p>
+                    ) : null}
+                    <p className="mt-0.5 font-mono text-xs text-zinc-400">{formatCpfCnpjBr(row.cpfCnpj)}</p>
+                  </div>
+                  <div className="col-span-6 xl:col-span-2">
+                    <Field label="Forma">
+                      <select
+                        className={SELECT_CLASS}
+                        value={draft.condicaoPagamento}
+                        disabled={Boolean(
+                          opcoesPrazo.find((p) => p.value === draft.prazoPagamento)?.formaVinculada,
+                        )}
+                        title="Definida pelo prazo comercial"
+                        onChange={(e) => patchDraft(row, { condicaoPagamento: e.target.value })}
+                        aria-label={`Forma de pagamento de ${row.razaoSocial}`}
+                      >
+                        {formas.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                  <div className="col-span-6 xl:col-span-4">
+                    <Field label="Prazo">
+                      <select
+                        className={SELECT_CLASS}
+                        value={draft.prazoPagamento}
+                        onChange={(e) => {
+                          const prazo = e.target.value;
+                          const vinculo = opcoesPrazo.find((p) => p.value === prazo)?.formaVinculada;
+                          patchDraft(row, {
+                            prazoPagamento: prazo,
+                            ...(vinculo && isCondicaoPagamentoApiValue(vinculo, opcoesForma)
+                              ? { condicaoPagamento: vinculo }
+                              : {}),
+                          });
+                        }}
+                        aria-label={`Prazo de ${row.razaoSocial}`}
+                      >
+                        {prazos.map((item) => {
+                          const venc =
+                            item.vencimentos?.length
+                              ? item.vencimentos.join("/")
+                              : item.dias != null
+                                ? String(item.dias)
+                                : "";
+                          return (
                             <option key={item.value} value={item.value}>
                               {item.label}
+                              {venc ? ` (${item.vencimentos?.length || 1}x · ${venc})` : ""}
                             </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-2 py-3">
-                        <select
-                          className={SELECT_CLASS}
-                          value={draft.prazoPagamento}
-                          onChange={(e) => {
-                            const prazo = e.target.value;
-                            const vinculo = opcoesPrazo.find((p) => p.value === prazo)?.formaVinculada;
-                            patchDraft(row, {
-                              prazoPagamento: prazo,
-                              ...(vinculo && isCondicaoPagamentoApiValue(vinculo, opcoesForma)
-                                ? { condicaoPagamento: vinculo }
-                                : {}),
-                            });
-                          }}
-                          aria-label={`Prazo de ${row.razaoSocial}`}
-                        >
-                          {prazos.map((item) => {
-                            const venc =
-                              item.vencimentos?.length
-                                ? item.vencimentos.join("/")
-                                : item.dias != null
-                                  ? String(item.dias)
-                                  : "";
-                            return (
-                              <option key={item.value} value={item.value}>
-                                {item.label}
-                                {venc ? ` (${item.vencimentos?.length || 1}x · ${venc})` : ""}
-                              </option>
-                            );
-                          })}
-                        </select>
-                      </td>
-                      <td className="px-2 py-3">
-                        <select
-                          className={SELECT_CLASS}
-                          value={draft.cadastroTabelaPrecoId}
-                          onChange={(e) => patchDraft(row, { cadastroTabelaPrecoId: e.target.value })}
-                          aria-label={`Tabela de preços de ${row.razaoSocial}`}
-                        >
-                          {tabsPreco.length === 0 ? <option value="">Sem tabela vigente</option> : null}
-                          {tabsPreco.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.padrao ? `${t.nome} (padrão)` : t.nome}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-2 py-3">
-                        <select
-                          className={SELECT_CLASS}
-                          value={draft.cadastroTabelaTransporteId}
-                          onChange={(e) => patchDraft(row, { cadastroTabelaTransporteId: e.target.value })}
-                          aria-label={`Tabela de transportes de ${row.razaoSocial}`}
-                        >
-                          {tabsTransporte.length === 0 ? (
-                            <option value="">Sem tabela vigente</option>
-                          ) : null}
-                          {tabsTransporte.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.padrao ? `${t.nome} (padrão)` : t.nome}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-2 py-3">
-                        <Button
-                          type="button"
-                          size="sm"
-                          disabled={savingId === row.id || !dirtyIds.has(row.id)}
-                          onClick={() => void onSalvar(row)}
-                        >
-                          Salvar
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          );
+                        })}
+                      </select>
+                    </Field>
+                  </div>
+                  <div className="col-span-12 flex justify-end xl:col-span-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="w-full xl:w-auto"
+                      disabled={savingId === row.id || !dirtyIds.has(row.id)}
+                      onClick={() => void onSalvar(row)}
+                    >
+                      Salvar
+                    </Button>
+                  </div>
+                  <div className="col-span-6 sm:col-span-3">
+                    <TabelaSelect
+                      label="Preços"
+                      value={draft.cadastroTabelaPrecoId}
+                      options={tabsPreco}
+                      ariaLabel={`Tabela de preços de ${row.razaoSocial}`}
+                      onChange={(cadastroTabelaPrecoId) => patchDraft(row, { cadastroTabelaPrecoId })}
+                    />
+                  </div>
+                  <div className="col-span-6 sm:col-span-3">
+                    <TabelaSelect
+                      label="Transportes"
+                      value={draft.cadastroTabelaTransporteId}
+                      options={tabsTransporte}
+                      ariaLabel={`Tabela de transportes de ${row.razaoSocial}`}
+                      onChange={(cadastroTabelaTransporteId) => patchDraft(row, { cadastroTabelaTransporteId })}
+                    />
+                  </div>
+                  <div className="col-span-6 sm:col-span-3">
+                    <TabelaSelect
+                      label="Serviços"
+                      value={draft.cadastroTabelaServicoId}
+                      options={tabsServico}
+                      ariaLabel={`Tabela de serviços de ${row.razaoSocial}`}
+                      onChange={(cadastroTabelaServicoId) => patchDraft(row, { cadastroTabelaServicoId })}
+                    />
+                  </div>
+                  <div className="col-span-6 sm:col-span-3">
+                    <TabelaSelect
+                      label="Aluguel"
+                      value={draft.cadastroTabelaAluguelId}
+                      options={tabsAluguel}
+                      ariaLabel={`Tabela de aluguel de ${row.razaoSocial}`}
+                      onChange={(cadastroTabelaAluguelId) => patchDraft(row, { cadastroTabelaAluguelId })}
+                    />
+                  </div>
+                </article>
+              );
+            })
           )}
         </CardContent>
       </Card>

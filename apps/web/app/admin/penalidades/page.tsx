@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { staffJson } from "@/lib/api/staff-client";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { lastNDays } from "@/lib/admin/dates";
 import { readJson, adminContractsKey } from "@/lib/admin/storage";
 import type { AdminContract } from "@/lib/admin/types";
 import { ContractCard } from "@/components/admin/contract-card";
+import { formatBRL } from "@/lib/financeiro/format";
 
 type Row = {
   cliente: string;
@@ -16,7 +18,7 @@ type Row = {
 };
 
 export default function AdminPenalidadesPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [rows, setRows] = useState<Row[]>([]);
 
   useEffect(() => {
@@ -82,7 +84,7 @@ export default function AdminPenalidadesPage() {
                 <th className="py-2">Cliente</th>
                 <th className="py-2">Operação</th>
                 <th className="py-2">SLA falho</th>
-                <th className="py-2">Penalidade (proxy R$)</th>
+                <th className="py-2">Penalidade (proxy)</th>
               </tr>
             </thead>
             <tbody>
@@ -91,7 +93,7 @@ export default function AdminPenalidadesPage() {
                   <td className="py-2">{r.cliente}</td>
                   <td className="py-2">{r.operacao}</td>
                   <td className="py-2 text-amber-200/90">{r.slaFalho}</td>
-                  <td className="py-2 font-mono text-emerald-300">{r.penalidade}</td>
+                  <td className="py-2 font-mono text-emerald-300">{formatBRL(Number(r.penalidade))}</td>
                 </tr>
               ))}
             </tbody>

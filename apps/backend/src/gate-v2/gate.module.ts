@@ -21,6 +21,7 @@ import { UnidadeProcessoModule } from '../unidade-processo/unidade-processo.modu
 import { AuthModule } from '../auth/auth.module';
 import { CessaoTitularidadeModule } from '../cessao-titularidade/cessao-titularidade.module';
 import { TenantModule } from '../tenant/tenant.module';
+import { CatalogoContainersModule } from '../catalogo-containers/catalogo-containers.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { TenantModule } from '../tenant/tenant.module';
     AuthModule,
     CessaoTitularidadeModule,
     TenantModule,
+    CatalogoContainersModule,
   ],
   controllers: [GateV2Controller, GateQrController, VistoriaGateController, GateOperacaoFlowController],
   providers: [GateV2Service, GateOperacaoFlowService, PrevisaoNaviosService],

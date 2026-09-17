@@ -10,6 +10,7 @@ import {
 } from "@/lib/api/cnab-client";
 import { ApiError } from "@/lib/api/staff-client";
 import { toast } from "@/lib/toast";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,7 +35,7 @@ function formatDt(iso: string | null) {
 }
 
 export default function ConciliacaoBancariaPage() {
-  const ok = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const ok = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [arquivos, setArquivos] = useState<ArquivoBancarioRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);

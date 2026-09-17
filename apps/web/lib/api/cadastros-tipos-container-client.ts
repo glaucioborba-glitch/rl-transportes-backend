@@ -32,24 +32,3 @@ export async function listCadastrosTiposContainer(
 export async function getCadastrosTipoContainer(id: string): Promise<CadastrosTipoContainer> {
   return staffJson(`/v2/cadastros/tipos-container/${encodeURIComponent(id)}`);
 }
-
-export async function createCadastrosTipoContainer(
-  data: Omit<CadastrosTipoContainer, "id">,
-): Promise<CadastrosTipoContainer> {
-  return staffJson("/v2/cadastros/tipos-container", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-}
-
-export async function updateCadastrosTipoContainer(
-  id: string,
-  data: Omit<CadastrosTipoContainer, "id">,
-): Promise<CadastrosTipoContainer> {
-  return staffJson(`/v2/cadastros/tipos-container/${encodeURIComponent(id)}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-}

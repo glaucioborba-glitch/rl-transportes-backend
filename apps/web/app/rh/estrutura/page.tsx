@@ -8,10 +8,11 @@ import { OrganogramaTree } from "@/components/rh/organograma-tree";
 import { TurnoAllocationBoard } from "@/components/rh/turno-allocation-board";
 import { SkillComplianceMatrix } from "@/components/rh/skill-compliance-matrix";
 import { RhCard } from "@/components/rh/rh-card";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 
 export default function RhEstruturaPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [rows, setRows] = useState<RhColaboradorDirectoryItem[]>([]);
 
   useEffect(() => {

@@ -6,11 +6,12 @@ import { EncargosSimulator } from "@/components/cadastros/encargos-simulator";
 import { fetchEmpresaEncargos, type EncargosSnapshot } from "@/lib/api/empresa-client";
 import { ApiError } from "@/lib/api/staff-client";
 import { toast } from "@/lib/toast";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 
 export default function ProvisaoEncargosPage() {
   const user = useStaffAuthStore((s) => s.user);
-  const ok = user?.role === "ADMIN" || user?.role === "GERENTE";
+  const ok = isIntranetGestorRole(user?.role);
   const [historico, setHistorico] = useState<EncargosSnapshot[]>([]);
 
   useEffect(() => {

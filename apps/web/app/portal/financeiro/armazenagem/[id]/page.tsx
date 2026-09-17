@@ -3,25 +3,41 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RawStatusBadge } from "@/components/portal/status-badge";
 import { FaturaArmazenagemLinks } from "@/components/portal/fatura-armazenagem-links";
 import { faturaArmazenagemStatusLabel, faturaArmazenagemStatusVariant } from "@/lib/portal-status";
-import { ApiError, fetchFaturaArmazenagem, type FaturaArmazenagemPortal } from "@/lib/api/portal-client";
+import { ApiError, fetchFaturaArmazenagem, fetchPortalDashboard, type FaturaArmazenagemPortal } from "@/lib/api/portal-client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/lib/toast";
+import { isLayoutPixPortal } from "@/lib/condicao-pagamento-portal";
+import { formatBRL } from "@/lib/financeiro/format";
 
 export default function FaturaArmazenagemDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [row, setRow] = useState<FaturaArmazenagemPortal | null>(null);
+  const [layoutPix, setLayoutPix] = useState(false);
 
   useEffect(() => {
     if (!id) return;
     void (async () => {
       try {
-        setRow(await fetchFaturaArmazenagem(id));
+        const [fat, dash] = await Promise.all([
+          fetchFaturaArmazenagem(id),
+          fetchPortalDashboard({ recentPage: 1, recentLimit: 1 }).catch(() => null),
+        ]);
+        setRow(fat);
+        if (dash) {
+          setLayoutPix(
+            isLayoutPixPortal({
+              statusCadastro: dash.statusCadastro ?? null,
+              condicaoPagamento: dash.condicaoPagamento ?? null,
+            }),
+          );
+        }
       } catch (e) {
         toast.error(e instanceof ApiError ? e.message : "Erro");
         router.push("/portal/financeiro");
@@ -45,14 +61,19 @@ export default function FaturaArmazenagemDetailPage() {
     <main className="mx-auto w-[90%] space-y-6 px-4 py-8">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-white">Armazenagem — {iso}</h1>
+          <h1 className="text-2xl font-bold text-white">
+            FAT · {iso}
+          </h1>
           <p className="text-sm text-slate-400">
-            {dias} diária(s) · R$ {Number(row.valorTotal ?? 0).toFixed(2)} ·{" "}
+            {dias} diária(s) · {formatBRL(Number(row.valorTotal ?? 0))} ·{" "}
             {row.dataEmissao ? new Date(row.dataEmissao).toLocaleDateString("pt-BR") : "—"}
           </p>
         </div>
         <Button variant="outline" asChild>
-          <Link href="/portal/financeiro">Voltar</Link>
+          <Link href="/portal/financeiro">
+            <ArrowLeft className="mr-1 h-4 w-4" />
+            Voltar
+          </Link>
         </Button>
       </div>
 
@@ -82,7 +103,7 @@ export default function FaturaArmazenagemDetailPage() {
           <CardTitle>Pagamento e documentos fiscais</CardTitle>
         </CardHeader>
         <CardContent>
-          <FaturaArmazenagemLinks fatura={row} />
+          <FaturaArmazenagemLinks fatura={row} hideBoleto={layoutPix} />
         </CardContent>
       </Card>
     </main>

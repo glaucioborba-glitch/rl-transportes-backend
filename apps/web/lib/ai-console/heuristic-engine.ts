@@ -1,5 +1,6 @@
 import { maxGargaloProb, type IaGargaloBlob, type OperationalSnapshot } from "@/lib/ai-console/operational-snapshot";
 import { modeLabel } from "@/lib/digital-twin/derive";
+import { formatBRL } from "@/lib/financeiro/format";
 
 export type PriorityEvent = {
   rank: 1 | 2 | 3 | 4 | 5;
@@ -217,9 +218,9 @@ export function answerCfoQuestion(
   if (/inadimpl|pagar|atras/.test(t)) {
     return {
       priority,
-      reply: `Inadimplência projetada: ${(inad?.forecastInadimplenciaPercent ?? 0).toFixed(1)}%. Forecast próximo mês: R$ ${(
-        inad?.forecastFaturamentoProximoMes ?? 0
-      ).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}. ${
+      reply: `Inadimplência projetada: ${(inad?.forecastInadimplenciaPercent ?? 0).toFixed(1)}%. Forecast próximo mês: ${formatBRL(
+        inad?.forecastFaturamentoProximoMes ?? 0,
+      )}. ${
         (inad?.forecastInadimplenciaPercent ?? 0) > 6
           ? "Recomendo cobrança ativa e revisão de limites."
           : "Risco moderado — manter ritmo de conciliação."
@@ -229,7 +230,7 @@ export function answerCfoQuestion(
   if (/pre(c|ç)o|pricing|elastic/.test(t)) {
     return {
       priority,
-      reply: `Ticket médio ~R$ ${(finSnap?.mediaTicketPorSolicitacao ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}. Com elasticidade nos indicadores comerciais, ${
+      reply: `Ticket médio ~${formatBRL(finSnap?.mediaTicketPorSolicitacao ?? 0)}. Com elasticidade nos indicadores comerciais, ${
         margem < 14
           ? "subidas devem ser cirúrgicas (clientes A/B com baixo risco de fuga)."
           : "há espaço para testes de preço em faixas de menor sensibilidade."
@@ -248,9 +249,9 @@ export function answerCfoQuestion(
 
   return {
     priority,
-    reply: `Indicadores-chave: margem ~${margem.toFixed(1)}%, ticket médio alinhado ao período. Próxima receita prevista R$ ${(
-      inad?.forecastFaturamentoProximoMes ?? 0
-    ).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}. ${recItens[0]?.titulo ?? ""}`,
+    reply: `Indicadores-chave: margem ~${margem.toFixed(1)}%, ticket médio alinhado ao período. Próxima receita prevista ${formatBRL(
+      inad?.forecastFaturamentoProximoMes ?? 0,
+    )}. ${recItens[0]?.titulo ?? ""}`,
   };
 }
 

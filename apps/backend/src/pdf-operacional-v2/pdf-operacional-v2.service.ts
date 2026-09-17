@@ -373,8 +373,6 @@ export class PdfOperacionalV2Service {
       placaCarreta02: ts?.placaCarreta02 != null ? String(ts.placaCarreta02) : null,
       agendamentoDataRef: ag?.dataRef,
       turnoLabel: ag ? this.labelTurno(String(ag.turno)) : '—',
-      atendimentoEspecial: ag ? Boolean(ag.atendimentoEspecial) : false,
-      atendimentoEspecialTexto: ag?.atendimentoEspecialTexto != null ? String(ag.atendimentoEspecialTexto) : null,
       container1: c1
         ? {
             ordem: Number(c1.ordem),

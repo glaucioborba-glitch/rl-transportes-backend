@@ -36,12 +36,6 @@ export type ToleranciaChegadaConfig = {
   ativo: boolean;
 };
 
-export type AtendimentoEspecialAudit = {
-  motivo: string;
-  aprovadoPor: string;
-  dataAprovacao: string;
-};
-
 export type TenantParametrosOperacional = {
   capacidadeTotalSlots: number;
   teuMaximoSimultaneo: number;
@@ -175,7 +169,16 @@ export type TenantParametrosIntegracoes = {
     businessAccountIdPresent: boolean;
   };
   googleVision: TenantIntegracaoStatus & { apiKeyPresent: boolean; clientEmail?: string };
-  banking: TenantIntegracaoStatus & { provider?: string; apiBaseUrl?: string };
+  googleMaps: TenantIntegracaoStatus & { apiKeyPresent: boolean };
+  googleRoutes: TenantIntegracaoStatus & { apiKeyPresent: boolean };
+  banking: TenantIntegracaoStatus & { apiBaseUrl?: string };
+  boleto: TenantIntegracaoStatus & { apiBaseUrl?: string };
+  pix: TenantIntegracaoStatus & {
+    apiBaseUrl?: string;
+    chavePixPresent: boolean;
+    chavePixHint?: string;
+    apiTokenPresent: boolean;
+  };
   s3: TenantIntegracaoStatus & { bucket?: string; endpoint?: string; region?: string };
 };
 
@@ -482,8 +485,25 @@ export function mergeTenantParametros(raw: unknown): TenantParametros {
           whatsapp: r.integracoesCredenciais.whatsapp
             ? { ...r.integracoesCredenciais.whatsapp }
             : undefined,
-          banking: r.integracoesCredenciais.banking
-            ? { ...r.integracoesCredenciais.banking }
+          banking: r.integracoesCredenciais.boleto
+            ? { ...r.integracoesCredenciais.boleto }
+            : r.integracoesCredenciais.banking
+              ? { ...r.integracoesCredenciais.banking }
+              : undefined,
+          boleto: r.integracoesCredenciais.boleto
+            ? { ...r.integracoesCredenciais.boleto }
+            : r.integracoesCredenciais.banking
+              ? {
+                  apiBaseUrl: r.integracoesCredenciais.banking.apiBaseUrl,
+                  apiToken: r.integracoesCredenciais.banking.apiToken,
+                }
+              : undefined,
+          pix: r.integracoesCredenciais.pix ? { ...r.integracoesCredenciais.pix } : undefined,
+          googleMaps: r.integracoesCredenciais.googleMaps
+            ? { apiKey: r.integracoesCredenciais.googleMaps.apiKey }
+            : undefined,
+          googleRoutes: r.integracoesCredenciais.googleRoutes
+            ? { ...r.integracoesCredenciais.googleRoutes }
             : undefined,
           s3: r.integracoesCredenciais.s3 ? { ...r.integracoesCredenciais.s3 } : undefined,
         }

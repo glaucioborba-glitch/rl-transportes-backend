@@ -53,7 +53,7 @@ export function defaultApiCredentials(): RequestCredentials {
   return typeof window === "undefined" ? "same-origin" : "include";
 }
 
-function authUrl(path: "login" | "refresh"): string {
+function authUrl(path: "login" | "refresh" | "super-admin/login"): string {
   if (typeof window === "undefined") return `${getApiBase()}/auth/${path}`;
   return `/api/auth/${path}`;
 }
@@ -95,7 +95,7 @@ export function buildStaffLoginBody(data: StaffLoginPayload): { documento: strin
 export async function authLogin(
   documento: string,
   password: string,
-  opts?: { cookieMode?: boolean },
+  opts?: { cookieMode?: boolean; superAdmin?: boolean },
 ): Promise<AuthLoginResponse> {
   const cookieMode = opts?.cookieMode ?? false;
   const documentoLimpo = sanitizeCorporateDocumento(documento);
@@ -106,8 +106,10 @@ export async function authLogin(
   let res: Response;
   try {
     const devHeaders = typeof window !== "undefined" ? await getDeviceSecurityHeaders() : {};
+    const loginPath = opts?.superAdmin ? "/api/auth/super-admin-login" : "/api/auth/login";
+    const loginApi = opts?.superAdmin ? authUrl("super-admin/login") : authUrl("login");
     if (cookieMode && typeof window !== "undefined") {
-      res = await fetch("/api/auth/login", {
+      res = await fetch(loginPath, {
         method: "POST",
         credentials: "include",
         headers: {
@@ -119,7 +121,7 @@ export async function authLogin(
         signal: controller.signal,
       });
     } else {
-      res = await fetch(authUrl("login"), {
+      res = await fetch(loginApi, {
         method: "POST",
         headers: { ...devHeaders, "Content-Type": "application/json" },
         body: JSON.stringify(payload),

@@ -39,9 +39,24 @@ export class CadastrosTabelasServicosService {
     return { items: rows.map((r) => this.toItemShape(r)), total: rows.length };
   }
 
-  async listCatalogoAtivo(tenantId = DEFAULT_TENANT) {
-    const tabela = await this.resolveTabelaVigente(tenantId);
-    if (!tabela) return { tabelaId: null, items: [] as ReturnType<typeof this.toItemShape>[] };
+  async listCatalogoAtivo(
+    tenantId = DEFAULT_TENANT,
+    opts?: { tabelaId?: string | null; clienteId?: string | null },
+  ): Promise<{ tabelaId: string | null; items: ReturnType<CadastrosTabelasServicosService['toItemShape']>[] }> {
+    let tabelaId = opts?.tabelaId?.trim() || null;
+    if (!tabelaId && opts?.clienteId) {
+      const cliente = await this.prisma.cliente.findFirst({
+        where: { id: opts.clienteId, deletedAt: null },
+        select: { cadastroTabelaServicoId: true },
+      });
+      tabelaId = cliente?.cadastroTabelaServicoId ?? null;
+    }
+    const tabela = tabelaId
+      ? await this.prisma.cadastroTabelaServico.findFirst({
+          where: { id: tabelaId, deletedAt: null, ativo: true },
+        })
+      : await this.resolveTabelaVigente(tenantId);
+    if (!tabela) return { tabelaId: null, items: [] };
     const rows = await this.prisma.cadastroServicoItem.findMany({
       where: { tabelaId: tabela.id, deletedAt: null, ativo: true },
       orderBy: { nome: 'asc' },

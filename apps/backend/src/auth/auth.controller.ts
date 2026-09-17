@@ -91,6 +91,38 @@ export class AuthController {
     return out;
   }
 
+  @Post('super-admin/login')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Login exclusivo do dono do software (Super Admin)' })
+  async loginSuperAdmin(
+    @Body(StaffLoginCpfPipe) dto: LoginDto,
+    @Request() req: ExpressRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const cookieMode = wantsCookieAuth(req);
+    if (cookieMode) {
+      clearAuthCookies(res);
+    }
+    const ip = req.ip || req.socket?.remoteAddress || undefined;
+    const userAgent = req.get('user-agent') || undefined;
+    const tenantId = resolveLoginTenantId({ bodyTenantId: dto.tenantId, req });
+    const out = await this.authService.loginSuperAdmin(
+      tenantId,
+      dto.documento,
+      dto.password,
+      { ip, userAgent },
+      req,
+    );
+    if (cookieMode) {
+      attachAuthCookies(res, out.accessToken, out.refreshToken);
+      attachFreshCsrfCookie(res);
+      return { user: out.user };
+    }
+    attachFreshCsrfCookie(res);
+    return out;
+  }
+
   @Post('refresh')
   @Public()
   @HttpCode(HttpStatus.OK)

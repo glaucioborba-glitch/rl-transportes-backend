@@ -10,7 +10,7 @@ export default function OperacionalPage() {
       <div>
         <h1 className="text-2xl font-bold">Operacional</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Tipos de contêiner, equipamentos, posições, operações, turnos, motivos de rejeição, origens/destinos e unidades de aluguel
+          Equipamentos, posições, operações, turnos, motivos de rejeição, origens/destinos e unidades de aluguel
         </p>
       </div>
 

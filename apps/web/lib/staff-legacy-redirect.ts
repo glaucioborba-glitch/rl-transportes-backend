@@ -5,13 +5,13 @@ export function staffLegacyRedirect(pathname: string): string | null {
   if (pathname === "/staff/gate") return "/operador/gate/controle-entrada-saida";
   if (pathname.startsWith("/staff/gate/checkin/")) {
     const id = pathname.slice("/staff/gate/checkin/".length).split("/")[0];
-    return id ? `/operador/gate/checkin/${id}` : "/operador/gate/fila";
+    return id ? `/operador/gate/checkin/${id}` : "/operador/gate/controle-entrada-saida";
   }
   if (pathname.startsWith("/staff/gate/checkout/")) {
     const id = pathname.slice("/staff/gate/checkout/".length).split("/")[0];
-    return id ? `/operador/gate/checkout/${id}` : "/operador/gate/despacho";
+    return id ? `/operador/gate/checkout/${id}` : "/operador/gate/controle-entrada-saida";
   }
-  if (pathname === "/staff/fila-operacional") return "/operador/gate/fila";
+  if (pathname === "/staff/fila-operacional") return "/operador/gate/controle-entrada-saida";
   if (pathname === "/staff/triagem") return "/operador/gate/triagem";
   if (pathname === "/staff/patio") return "/operador/patio";
   if (pathname === "/staff/consulta-container") return "/intranet/consulta-container";

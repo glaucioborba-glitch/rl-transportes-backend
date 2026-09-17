@@ -129,7 +129,7 @@ export class CadastrosTabelasPrecosService {
 
   async gerarMatrizCombinacoes() {
     const tipos = await this.prisma.cadastroTipoContainer.findMany({
-      where: { tenantId: DEFAULT_TENANT, deletedAt: null, ativo: true },
+      where: { deletedAt: null, ativo: true },
       orderBy: { codigo: 'asc' },
     });
 
@@ -264,7 +264,9 @@ export class CadastrosTabelasPrecosService {
 
   async create(dto: CadastrosTabelaPrecoFormDto, actorUserId?: string) {
 
-    this.assertItens(dto.itens);
+    const itens = this.onlyArmazenagem(dto.itens);
+
+    this.assertItens(itens);
 
     const row = await this.prisma.$transaction(async (tx) => {
 
@@ -274,11 +276,11 @@ export class CadastrosTabelasPrecosService {
 
       });
 
-      if (dto.itens?.length) {
+      if (itens.length) {
 
         await tx.cadastroTabelaPrecoItem.createMany({
 
-          data: dto.itens.map((i) => this.toItemData(i, tabela.id)),
+          data: itens.map((i) => this.toItemData(i, tabela.id)),
 
         });
 
@@ -312,7 +314,9 @@ export class CadastrosTabelasPrecosService {
 
     await this.getRowOrThrow(id);
 
-    if (dto.itens) this.assertItens(dto.itens);
+    const itens = dto.itens ? this.onlyArmazenagem(dto.itens) : undefined;
+
+    if (itens) this.assertItens(itens);
 
     await this.prisma.$transaction(async (tx) => {
 
@@ -342,13 +346,13 @@ export class CadastrosTabelasPrecosService {
 
       }
 
-      if (dto.itens) {
+      if (itens) {
 
         await tx.cadastroTabelaPrecoItem.deleteMany({ where: { tabelaId: id } });
 
         await tx.cadastroTabelaPrecoItem.createMany({
 
-          data: dto.itens.map((i) => this.toItemData(i, id)),
+          data: itens.map((i) => this.toItemData(i, id)),
 
         });
 
@@ -455,11 +459,19 @@ export class CadastrosTabelasPrecosService {
 
 
 
+  private onlyArmazenagem(itens?: CadastrosTabelaPrecoItemDto[]) {
+    return (itens ?? []).filter(
+      (i) =>
+        i.categoriaItem === 'ARMAZENAGEM' ||
+        i.tipoOperacaoCodigo?.toUpperCase() === 'ARMAZENAGEM',
+    );
+  }
+
   private assertItens(itens?: CadastrosTabelaPrecoItemDto[]) {
 
     if (!itens?.length) {
 
-      throw new BadRequestException('Adicione pelo menos 1 item à tabela.');
+      throw new BadRequestException('Adicione a matriz de armazenagem.');
 
     }
 

@@ -16,10 +16,8 @@ import {
 } from "@/lib/api/cadastros-tabelas-servicos-client";
 import { ApiError } from "@/lib/api/staff-client";
 import { toast } from "@/lib/toast";
-
-function money(n: number) {
-  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
+import { formatBRL, parseMoeda } from "@/lib/financeiro/format";
+import { MoneyInput } from "@/components/ui/money-input";
 
 export default function TabelaServicoPage({ params }: { params: { id: string } }) {
   const { id } = params;
@@ -34,7 +32,7 @@ export default function TabelaServicoPage({ params }: { params: { id: string } }
 
   async function adicionar(e: React.FormEvent) {
     e.preventDefault();
-    const v = Number(valor.replace(",", "."));
+    const v = parseMoeda(valor);
     if (!codigo.trim() || !nome.trim() || !Number.isFinite(v) || v < 0) {
       toast.error("Informe código, nome e valor.");
       return;
@@ -104,8 +102,8 @@ export default function TabelaServicoPage({ params }: { params: { id: string } }
           <FormField label="Nome" required className="min-w-[12rem] flex-1">
             <Input value={nome} onChange={(e) => setNome(e.target.value)} />
           </FormField>
-          <FormField label="Valor (R$)" required size="sm">
-            <Input value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" />
+          <FormField label="Valor" required size="sm">
+            <MoneyInput value={valor} onChange={setValor} />
           </FormField>
           <FormField label="Unidade" size="md">
             <select
@@ -165,7 +163,7 @@ export default function TabelaServicoPage({ params }: { params: { id: string } }
                 <tr key={item.id} className="border-b last:border-0">
                   <td className="py-2 font-mono">{item.codigo}</td>
                   <td>{item.nome}</td>
-                  <td>{money(item.valor)}</td>
+                  <td>{formatBRL(item.valor)}</td>
                   <td>{item.unidade}</td>
                   <td>{item.efeito === "SUBSTITUIR_LACRE_SAIDA" ? "Lacre saída" : item.efeito === "TRANSBORDO_CARGA" ? "Transbordo" : "—"}</td>
                   <td className="text-right">

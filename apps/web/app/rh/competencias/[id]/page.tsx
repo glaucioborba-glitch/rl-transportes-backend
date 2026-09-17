@@ -14,12 +14,13 @@ import { CertificateUploader } from "@/components/rh/certificate-uploader";
 import { RadarCompetencyChart } from "@/components/rh/radar-competency-chart";
 import { TrainingTimeline } from "@/components/rh/training-timeline";
 import { RhCard } from "@/components/rh/rh-card";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 
 export default function RhCompetenciaDetailPage() {
   const params = useParams();
   const idRaw = typeof params.id === "string" ? params.id : Array.isArray(params.id) ? params.id[0] : "";
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [row, setRow] = useState<RhColaboradorDirectoryItem | null>(null);
 
   const load = useCallback(async () => {

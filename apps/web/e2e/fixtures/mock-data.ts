@@ -180,8 +180,6 @@ export function buildColetaSolicitacao(overrides?: Partial<SolicitacaoRow>): Sol
     agendamentoSolicitacao: {
       dataRef: "2026-06-15",
       turno: "MANHA",
-      atendimentoEspecial: false,
-      atendimentoEspecialTexto: null,
     },
     solicitanteContato: {
       nome: "Responsável QA",

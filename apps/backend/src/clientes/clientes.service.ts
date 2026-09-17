@@ -20,6 +20,8 @@ import { clienteCreateInputFromDto, parseDataNascimentoPf } from './cliente-fisc
 import { normalizeClientePapeis } from '../cadastros/cliente-papeis.util';
 import { resolveBillingTabelaPrecoIdPadrao } from '../cadastros/cadastro-tabela-preco-vigente';
 import { resolveCadastroTabelaTransportePadraoId } from '../cadastros/cadastro-tabela-transporte';
+import { resolveCadastroTabelaServicoPadraoId } from '../cadastros/cadastro-tabela-servico';
+import { resolveCadastroTabelaAluguelPadraoId } from '../cadastros/cadastro-tabela-aluguel';
 import { SessionService } from '../auth/session/session.service';
 import { AddressService } from '../common/address/address.service';
 import {
@@ -199,6 +201,18 @@ export class ClientesService {
       const tabelaTransporteId = await resolveCadastroTabelaTransportePadraoId(this.prisma, 'default');
       if (tabelaTransporteId) {
         data.cadastroTabelaTransporte = { connect: { id: tabelaTransporteId } };
+      }
+    }
+    if (!data.cadastroTabelaServico) {
+      const tabelaServicoId = await resolveCadastroTabelaServicoPadraoId(this.prisma, 'default');
+      if (tabelaServicoId) {
+        data.cadastroTabelaServico = { connect: { id: tabelaServicoId } };
+      }
+    }
+    if (!data.cadastroTabelaAluguel) {
+      const tabelaAluguelId = await resolveCadastroTabelaAluguelPadraoId(this.prisma, 'default');
+      if (tabelaAluguelId) {
+        data.cadastroTabelaAluguel = { connect: { id: tabelaAluguelId } };
       }
     }
     await assertClienteDocumentoDisponivel(this.prisma, data.cpfCnpj, {
@@ -461,6 +475,9 @@ export class ClientesService {
           v == null || v === ('' as unknown) ? null : Number(v),
         );
         assign('condicaoPagamento', (v) =>
+          v == null || String(v).trim() === '' ? null : String(v).trim(),
+        );
+        assign('prazoPagamento', (v) =>
           v == null || String(v).trim() === '' ? null : String(v).trim(),
         );
         if (updateClienteDto.papeis !== undefined) {

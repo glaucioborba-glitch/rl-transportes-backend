@@ -25,6 +25,9 @@ import { SecurityCenterModule } from '../../security-center/security-center.modu
 import { SecurityEngineModule } from '../../security-engine/security-engine.module';
 import { TenantModule } from '../../tenant/tenant.module';
 import { SuperAdminModule } from '../../super-admin/super-admin.module';
+import { CatalogoContainersModule } from '../../catalogo-containers/catalogo-containers.module';
+import { CatalogoMotoristasExternosModule } from '../../catalogo-motoristas-externos/catalogo-motoristas-externos.module';
+import { MotoristaGpsModule } from '../../motorista-gps/motorista-gps.module';
 import { BillingEngineModule } from '../../billing-engine/billing-engine.module';
 import { FeaturePhasesBootService } from '../../config/feature-phases-boot.service';
 import { SolicitacoesModule } from '../../solicitacoes/solicitacoes.module';
@@ -60,6 +63,9 @@ import { SolicitacoesV2Module } from '../solicitacoes-v2/solicitacoes-v2.module'
     SecurityEngineModule,
     TenantModule,
     SuperAdminModule,
+    CatalogoContainersModule,
+    CatalogoMotoristasExternosModule,
+    MotoristaGpsModule,
     BillingEngineModule,
   ],
   providers: [FeaturePhasesBootService],

@@ -25,6 +25,7 @@ const STAFF_PATH_PREFIXES = [
   "/agi",
   "/staff",
   "/intranet",
+  "/super-admin",
 ];
 
 function isStaffArea(path: string | null): boolean {
@@ -32,7 +33,8 @@ function isStaffArea(path: string | null): boolean {
   if (
     path.startsWith("/login/staff") ||
     path.startsWith("/auth/login") ||
-    path.startsWith("/operador/login")
+    path.startsWith("/operador/login") ||
+    path.startsWith("/super-admin/login")
   ) {
     return false;
   }

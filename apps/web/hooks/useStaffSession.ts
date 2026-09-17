@@ -21,6 +21,7 @@ const STAFF_PATH_PREFIXES = [
   "/aog",
   "/agi",
   "/staff",
+  "/super-admin",
 ];
 
 function isStaffArea(path: string | null): boolean {
@@ -28,7 +29,8 @@ function isStaffArea(path: string | null): boolean {
   if (
     path.startsWith("/login/staff") ||
     path.startsWith("/auth/login") ||
-    path.startsWith("/operador/login")
+    path.startsWith("/operador/login") ||
+    path.startsWith("/super-admin/login")
   ) {
     return false;
   }
@@ -54,9 +56,14 @@ export function useStaffSession(intervalMs = 60_000): void {
         await corporateAuthClient.checkHealth();
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) {
+          const role = useStaffAuthStore.getState().user?.role;
           useStaffAuthStore.getState().clear();
           clearStaffSessionCookie();
-          router.replace("/login/staff");
+          router.replace(
+            role === "SUPER_ADMIN" || pathname?.startsWith("/super-admin")
+              ? "/super-admin/login"
+              : "/login/staff",
+          );
         }
         /* Erros de rede ou 5xx: ignorar silenciosamente — não deslogar */
       } finally {

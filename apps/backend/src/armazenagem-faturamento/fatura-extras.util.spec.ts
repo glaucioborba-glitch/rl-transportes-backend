@@ -15,6 +15,14 @@ describe('syncExtrasOnPreFatura', () => {
             valorUnitario: 120,
             valorTotal: 120,
           },
+          {
+            nome: 'Handling',
+            codigo: 'HANDLING',
+            quantidade: 1,
+            valorUnitario: 180,
+            valorTotal: 180,
+            payload: { automatico: true, origem: 'TABELA_PRECO' },
+          },
         ]),
       },
       frete: {
@@ -54,6 +62,11 @@ describe('syncExtrasOnPreFatura', () => {
         }),
       ]),
     });
+    expect(createMany.mock.calls[0][0].data).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ descricao: 'Handling (HANDLING)' }),
+      ]),
+    );
   });
 
   it('não inventa frete quando não há valor nem trecho', async () => {

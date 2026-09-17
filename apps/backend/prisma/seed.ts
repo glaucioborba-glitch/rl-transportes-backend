@@ -184,7 +184,10 @@ async function main() {
     process.env.SEED_SUPER_ADMIN_CPF ?? process.env.SEED_SUPER_ADMIN_CPF_CNPJ,
     STAFF_CPF.SUPER_ADMIN,
   );
-  const superPwd = process.env.SEED_SUPER_ADMIN_PASSWORD ?? 'Gl@ucioSuper1425';
+  const superPwd = process.env.SEED_SUPER_ADMIN_PASSWORD;
+  if (!superPwd) {
+    throw new Error('SEED_SUPER_ADMIN_PASSWORD é obrigatório no .env da raiz.');
+  }
   await prisma.user.upsert({
     where: { tenantId_email: { tenantId: DEFAULT_TENANT, email: superEmail } },
     create: {

@@ -17,6 +17,8 @@ export type CadastrosMotoristaListItem = {
   cnhValidade: string | null;
   ativo: boolean;
   transportadora: TransportadoraRef | null;
+  placaCavalo: string | null;
+  placaCarreta: string | null;
   viagensMes: number;
   ultimaViagem: string | null;
 };
@@ -38,6 +40,8 @@ export type CadastrosMotoristaFormData = {
   cidade: string;
   uf: string;
   transportadoraId: string;
+  placaCavalo: string;
+  placaCarreta: string;
   cnhNumero: string;
   cnhCategoria: string;
   cnhValidade: string;
@@ -93,6 +97,8 @@ export const EMPTY_MOTORISTA_FORM: CadastrosMotoristaFormData = {
   cidade: "",
   uf: "",
   transportadoraId: "",
+  placaCavalo: "",
+  placaCarreta: "",
   cnhNumero: "",
   cnhCategoria: "",
   cnhValidade: "",

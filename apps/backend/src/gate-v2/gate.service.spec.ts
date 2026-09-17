@@ -19,7 +19,6 @@ import { PatioV2Service } from '../patio-v2/patio.service';
 import { YardAllocationService } from '../yard-allocation/yard-allocation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { HoldReleaseService } from '../hold-release/hold-release.service';
-import { CadastrosTiposContainerService } from '../cadastros/cadastros-tipos-container.service';
 import { GateV2Service } from './gate.service';
 
 describe('GateV2Service', () => {
@@ -137,16 +136,6 @@ describe('GateV2Service', () => {
         { provide: YardAllocationService, useValue: { applyGiroEstimado: jest.fn().mockResolvedValue(null) } },
         { provide: VistoriaService, useValue: vistoria },
         { provide: HoldReleaseService, useValue: holdRelease },
-        {
-          provide: CadastrosTiposContainerService,
-          useValue: {
-            listActiveCodigos: jest
-              .fn()
-              .mockResolvedValue(['DRYDC', 'DRYHC', 'REEFER', 'OPENTOP', 'FLATRACK', 'ISOTANK', 'REEFERDRY']),
-            formatTipoTamanhoLabel: jest.fn(),
-            invalidateCatalogCache: jest.fn(),
-          },
-        },
       ],
     }).compile();
 

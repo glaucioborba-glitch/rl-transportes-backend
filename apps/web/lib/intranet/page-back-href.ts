@@ -15,13 +15,16 @@ const INTRANET_HUBS = new Set([
   "/ai-console",
   "/digital-twin",
   "/operador/dashboard",
+  "/operador/portaria",
   "/operador",
 ]);
 
 /** Destino quando o nível acima no path não tem página. */
 const BACK_HREF_OVERRIDES: Array<[RegExp, string]> = [
   [/^\/financeiro\/areceber\/boletos\/[^/]+$/, "/financeiro/areceber"],
+  [/^\/financeiro\/conta-corrente\/[^/]+$/, "/financeiro/conta-corrente"],
   [/^\/admin\/config\/regua-cobranca$/, "/admin"],
+  [/^\/operador\/gate\/alugueis$/, "/operador/gate/controle-entrada-saida"],
 ];
 
 export function normalizeIntranetPath(pathname: string): string {

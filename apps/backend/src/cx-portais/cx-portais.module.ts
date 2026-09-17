@@ -23,6 +23,7 @@ import { PortalAnalyticsStore } from './stores/portal-analytics.store';
 import { PortalMarketplaceCxStore } from './stores/portal-marketplace-cx.store';
 import { PortalClienteDataService } from './services/portal-cliente-data.service';
 import { PlataformaCoreModule } from '../plataforma-integracao/plataforma-core.module';
+import { FiscalIntegracaoModule } from '../fiscal-integracao/fiscal-integracao.module';
 import { DashboardPortalService } from './dashboard/dashboard-portal.service';
 import { PortalAuditService } from './audit/portal-audit.service';
 import { PortalFornecedorDataService } from './services/portal-fornecedor-data.service';
@@ -65,6 +66,8 @@ import { PortalNotificacoesModule } from '../portal-notificacoes/portal-notifica
 import { PortalNotificacaoController } from './portal-notificacao.controller';
 import { PortalSimulacaoValoresController } from './portal-simulacao-valores.controller';
 import { PortalSimulacaoValoresService } from './services/portal-simulacao-valores.service';
+import { CatalogoContainersModule } from '../catalogo-containers/catalogo-containers.module';
+import { CatalogoMotoristasExternosModule } from '../catalogo-motoristas-externos/catalogo-motoristas-externos.module';
 
 /**
  * Fase 20 — Camada CX: portais cliente/fornecedor, IAM dedicado, branding, tickets e analytics.
@@ -98,6 +101,9 @@ import { PortalSimulacaoValoresService } from './services/portal-simulacao-valor
     DominioCorporativoModule,
     TransportadorasAutorizadasModule,
     TenantModule,
+    FiscalIntegracaoModule,
+    CatalogoContainersModule,
+    CatalogoMotoristasExternosModule,
     PlataformaCoreModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

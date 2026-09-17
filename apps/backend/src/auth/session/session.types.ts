@@ -1,4 +1,4 @@
-export type AuthChannel = 'staff' | 'portal' | 'mobile';
+export type AuthChannel = 'staff' | 'portal' | 'mobile' | 'super-admin';
 
 export type PessoaAutorizadaSessionPayload = {
   id: string;

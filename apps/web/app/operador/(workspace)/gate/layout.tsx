@@ -1,6 +1,8 @@
-import { GateCockpitLayout } from "@/components/gate/cockpit/gate-cockpit-layout";
-
-/** Gate usa shell unificado da intranet; aqui só o provider + topbar + conteúdo. */
+/** Páginas do Gate CPO — sem o cockpit antigo (Dashboard/Fila/Despacho). */
 export default function GateWorkspaceLayout({ children }: { children: React.ReactNode }) {
-  return <GateCockpitLayout>{children}</GateCockpitLayout>;
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 overflow-auto p-4">{children}</div>
+    </div>
+  );
 }

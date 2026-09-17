@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export const OPERACIONAL_TABS = [
-  { label: "Tipos de Contêiner", href: "/cadastros/operacional/tipos-container" },
   { label: "Equipamentos", href: "/cadastros/operacional/equipamentos" },
   { label: "Posições de Pátio", href: "/cadastros/operacional/posicoes-patio" },
   { label: "Tipos de Operação", href: "/cadastros/operacional/tipos-operacao" },

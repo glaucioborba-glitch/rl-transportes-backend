@@ -10,7 +10,8 @@ export default function PessoasPage() {
       <div>
         <h1 className="text-2xl font-bold">Pessoas & Entidades</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Clientes, Colaboradores, Motoristas, Transportadoras, Terceiros, Fornecedores, Visitantes
+          Clientes, Colaboradores, Motoristas Internos, Motoristas externos, Transportadoras, Terceiros,
+          Fornecedores, Visitantes
         </p>
       </div>
 
@@ -42,7 +43,14 @@ export default function PessoasPage() {
             href="/cadastros/pessoas/motoristas"
             className="text-[var(--accent)] hover:underline"
           >
-            Motoristas
+            Motoristas Internos
+          </Link>
+          {", "}
+          <Link
+            href="/cadastros/pessoas/motoristas-externos"
+            className="text-[var(--accent)] hover:underline"
+          >
+            Motoristas externos
           </Link>{" "}
           ou{" "}
           <Link href="/cadastros/pessoas/terceiros" className="text-[var(--accent)] hover:underline">

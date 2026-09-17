@@ -36,6 +36,12 @@ describe('ClientesService', () => {
     cadastroTabelaTransporte: {
       findMany: jest.fn().mockResolvedValue([]),
     },
+    cadastroTabelaServico: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    cadastroTabelaAluguel: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     user: {
       findFirst: jest.fn().mockResolvedValue(null),
     },

@@ -14,6 +14,7 @@ import {
   type UnidadeAluguelStatus,
 } from "@/lib/api/cadastros-unidades-aluguel-client";
 import { listCadastrosTiposContainer } from "@/lib/api/cadastros-tipos-container-client";
+import { formatContainerISO, stripContainerISO } from "@/utils/containerFormatter";
 import { toast } from "@/lib/toast";
 
 const SELECT_CLASS =
@@ -42,7 +43,7 @@ export function UnidadeAluguelForm({ unidadeId }: { unidadeId?: string }) {
       try {
         const data = await getCadastroUnidadeAluguel(unidadeId);
         if (!on) return;
-        setIso(data.unidadeIso);
+        setIso(formatContainerISO(data.unidadeIso) || data.unidadeIso);
         setTipo(data.tipoContainerCodigo);
         setTamanho(data.containerTamanho);
         setStatus(data.status);
@@ -70,7 +71,7 @@ export function UnidadeAluguelForm({ unidadeId }: { unidadeId?: string }) {
     setSaving(true);
     try {
       const payload = {
-        unidadeIso: iso,
+        unidadeIso: stripContainerISO(iso),
         tipoContainerCodigo: tipo,
         containerTamanho: tamanho,
         status: alugada ? undefined : status,
@@ -107,7 +108,7 @@ export function UnidadeAluguelForm({ unidadeId }: { unidadeId?: string }) {
           <FormField label="ISO" required size="md">
             <Input
               value={iso}
-              onChange={(e) => setIso(e.target.value.toUpperCase())}
+              onChange={(e) => setIso(formatContainerISO(e.target.value))}
               className="uppercase"
               maxLength={16}
               disabled={alugada}
@@ -157,9 +158,15 @@ export function UnidadeAluguelForm({ unidadeId }: { unidadeId?: string }) {
             >
               <option value="DISPONIVEL">Disponível</option>
               <option value="MANUTENCAO">Manutenção</option>
+              <option value="USO_PROPRIO">Uso próprio</option>
               <option value="INATIVA">Inativa</option>
               {alugada ? <option value="ALUGADA">Alugada</option> : null}
             </select>
+            {status === "USO_PROPRIO" ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Uso interno (escritório, depósito, etc.). Não entra na lista de aluguel.
+              </p>
+            ) : null}
           </FormField>
           <FormField label="Observação" className="min-w-[16rem] flex-1">
             <Input value={observacao} onChange={(e) => setObservacao(e.target.value)} />

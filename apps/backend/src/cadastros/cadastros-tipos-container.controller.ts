@@ -21,18 +21,46 @@ import { CadastrosTiposContainerService } from './cadastros-tipos-container.serv
 import { CadastrosTipoContainerFormDto } from './dto/cadastros-tipo-container-form.dto';
 import { CadastrosTipoContainerQueryDto } from './dto/cadastros-tipo-container-query.dto';
 
-const CADASTROS_ROLES = [Role.ADMIN, Role.GERENTE] as const;
+const TIPOS_CONTAINER_LEITURA_ROLES = [
+  Role.ADMIN,
+  Role.GERENTE,
+  Role.SUPER_ADMIN,
+  Role.OPERADOR_GATE,
+  Role.OPERADOR_PORTARIA,
+  Role.OPERADOR_PATIO,
+] as const;
 
 @ApiTags('cadastros')
 @ApiBearerAuth('access-token')
 @Controller('v2/cadastros/tipos-container')
 @UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
-@Roles(...CADASTROS_ROLES)
+@Roles(...TIPOS_CONTAINER_LEITURA_ROLES)
 export class CadastrosTiposContainerController {
   constructor(private readonly service: CadastrosTiposContainerService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Listar tipos de contêiner' })
+  @ApiOperation({ summary: 'Listar tipos de contêiner (catálogo global, só leitura no tenant)' })
+  list(@Query() query: CadastrosTipoContainerQueryDto, @CurrentUser() user: AuthUser) {
+    return this.service.list(query, user);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Detalhe do tipo de contêiner (catálogo global, só leitura no tenant)' })
+  findOne(@Param('id') id: string) {
+    return this.service.findOne(id);
+  }
+}
+
+@ApiTags('super-admin')
+@ApiBearerAuth('access-token')
+@Controller('super-admin/tipos-container')
+@UseGuards(AuthGuard('jwt'), RolesGuard)
+@Roles(Role.SUPER_ADMIN)
+export class CadastrosTiposContainerSuperAdminController {
+  constructor(private readonly service: CadastrosTiposContainerService) {}
+
+  @Get()
+  @ApiOperation({ summary: 'Listar tipos de contêiner (catálogo global)' })
   list(@Query() query: CadastrosTipoContainerQueryDto, @CurrentUser() user: AuthUser) {
     return this.service.list(query, user);
   }
@@ -45,13 +73,13 @@ export class CadastrosTiposContainerController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Criar tipo de contêiner' })
+  @ApiOperation({ summary: 'Criar tipo de contêiner (global, todos os terminais)' })
   create(@Body() dto: CadastrosTipoContainerFormDto) {
     return this.service.create(dto);
   }
 
   @Put(':id')
-  @ApiOperation({ summary: 'Atualizar tipo de contêiner' })
+  @ApiOperation({ summary: 'Atualizar tipo de contêiner (global, todos os terminais)' })
   update(@Param('id') id: string, @Body() dto: CadastrosTipoContainerFormDto) {
     return this.service.update(id, dto);
   }

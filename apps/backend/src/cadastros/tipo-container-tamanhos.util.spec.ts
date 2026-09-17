@@ -17,11 +17,11 @@ describe('tipo-container-tamanhos.util', () => {
     expect(normalizeTamanhoContainer("45'")).toBe('45');
   });
 
-  it('resolve aliases legados para códigos MDM', () => {
-    const catalog = ['DRYDC', 'DRYHC', 'REEFER', 'OPENTOP', 'FLATRACK', 'ISOTANK'];
-    expect(resolveTipoContainerCodigo('DRY', catalog)).toBe('DRYDC');
-    expect(resolveTipoContainerCodigo('HC', catalog)).toBe('DRYHC');
-    expect(resolveTipoContainerCodigo('DRYDC', catalog)).toBe('DRYDC');
+  it('resolve aliases: DRYDC vira DRY; OT vira OPENTOP', () => {
+    const catalog = ['DRY', 'REEFER', 'OPENTOP', 'FLATRACK', 'ISOTANK'];
+    expect(resolveTipoContainerCodigo('DRY', catalog)).toBe('DRY');
+    expect(resolveTipoContainerCodigo('DRYDC', catalog)).toBe('DRY');
+    expect(resolveTipoContainerCodigo('DRYHC', catalog)).toBe('DRY');
     expect(resolveTipoContainerCodigo('OT', catalog)).toBe('OPENTOP');
   });
 
@@ -30,8 +30,8 @@ describe('tipo-container-tamanhos.util', () => {
     expect(formatTamanhoContainerMatrix('20DC')).toBe("20'");
   });
 
-  it("monta label padrão DRYDC / 20'", () => {
-    expect(formatTipoTamanhoContainerLabel('dry', '20DC')).toBe("DRYDC / 20'");
+  it("monta label padrão DRY / 20'", () => {
+    expect(formatTipoTamanhoContainerLabel('dry', '20DC')).toBe("DRY / 20'");
     expect(formatTipoTamanhoContainerLabel('REEFER', "40'")).toBe("REEFER / 40'");
     expect(formatTipoTamanhoContainerLabel('OT', null)).toBe('OPENTOP');
   });

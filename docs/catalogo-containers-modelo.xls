@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Worksheet ss:Name="catalogo">
+  <Table>
+   <Row><Cell><Data ss:Type="String">unidade_iso</Data></Cell><Cell><Data ss:Type="String">tipo</Data></Cell><Cell><Data ss:Type="String">tamanho</Data></Cell><Cell><Data ss:Type="String">capacidade</Data></Cell><Cell><Data ss:Type="String">tara_kg</Data></Cell><Cell><Data ss:Type="String">mgw_kg</Data></Cell><Cell><Data ss:Type="String">payload_kg</Data></Cell></Row>
+   <Row><Cell><Data ss:Type="String">SEGU6254167</Data></Cell><Cell><Data ss:Type="String">REEFER</Data></Cell><Cell><Data ss:Type="String">40</Data></Cell><Cell><Data ss:Type="String">HC</Data></Cell><Cell><Data ss:Type="String">4800</Data></Cell><Cell><Data ss:Type="String">34000</Data></Cell><Cell><Data ss:Type="String">29200</Data></Cell></Row>
+  </Table>
+ </Worksheet>
+ <Worksheet ss:Name="instrucoes">
+  <Table>
+   <Row><Cell><Data ss:Type="String">Coluna</Data></Cell><Cell><Data ss:Type="String">Obrigatorio</Data></Cell><Cell><Data ss:Type="String">Exemplo</Data></Cell><Cell><Data ss:Type="String">Observacao</Data></Cell></Row>
+   <Row><Cell><Data ss:Type="String">unidade_iso</Data></Cell><Cell><Data ss:Type="String">sim</Data></Cell><Cell><Data ss:Type="String">SEGU6254167</Data></Cell><Cell><Data ss:Type="String">11 caracteres, com ou sem hifen.</Data></Cell></Row>
+   <Row><Cell><Data ss:Type="String">tipo</Data></Cell><Cell><Data ss:Type="String">nao</Data></Cell><Cell><Data ss:Type="String">DRY</Data></Cell><Cell><Data ss:Type="String">Codigo do cadastro (ex.: DRY, REEFER). Nao misturar DC/HC no tipo.</Data></Cell></Row>
+   <Row><Cell><Data ss:Type="String">tamanho</Data></Cell><Cell><Data ss:Type="String">nao</Data></Cell><Cell><Data ss:Type="String">40</Data></Cell><Cell><Data ss:Type="String">20, 40 ou 45.</Data></Cell></Row>
+   <Row><Cell><Data ss:Type="String">capacidade</Data></Cell><Cell><Data ss:Type="String">nao</Data></Cell><Cell><Data ss:Type="String">DC</Data></Cell><Cell><Data ss:Type="String">DC ou HC. Vazio ok — o Gate confirma na foto da placa.</Data></Cell></Row>
+   <Row><Cell><Data ss:Type="String">tara_kg</Data></Cell><Cell><Data ss:Type="String">nao</Data></Cell><Cell><Data ss:Type="String">4800</Data></Cell><Cell><Data ss:Type="String">Peso da placa, em kg.</Data></Cell></Row>
+   <Row><Cell><Data ss:Type="String">mgw_kg</Data></Cell><Cell><Data ss:Type="String">nao</Data></Cell><Cell><Data ss:Type="String">34000</Data></Cell><Cell><Data ss:Type="String">Peso maximo (MGW), em kg.</Data></Cell></Row>
+   <Row><Cell><Data ss:Type="String">payload_kg</Data></Cell><Cell><Data ss:Type="String">nao</Data></Cell><Cell><Data ss:Type="String">29200</Data></Cell><Cell><Data ss:Type="String">Carga util, em kg.</Data></Cell></Row>
+   <Row><Cell><Data ss:Type="String"></Data></Cell><Cell><Data ss:Type="String"></Data></Cell><Cell><Data ss:Type="String"></Data></Cell><Cell><Data ss:Type="String">Apague a linha de exemplo. Nao incluir cliente, booking ou lacre.</Data></Cell></Row>
+  </Table>
+ </Worksheet>
+</Workbook>

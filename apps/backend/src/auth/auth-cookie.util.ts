@@ -1,5 +1,10 @@
 import type { Response } from 'express';
-import { AUTH_ACCESS_COOKIE, AUTH_REFRESH_COOKIE } from './auth-cookie.constants';
+import {
+  AUTH_ACCESS_COOKIE,
+  AUTH_REFRESH_COOKIE,
+  AUTH_SA_TENANT_COOKIE,
+  AUTH_SA_TENANT_LABEL_COOKIE,
+} from './auth-cookie.constants';
 
 const DEFAULT_ACCESS_MS = 60 * 60 * 1000;
 const DEFAULT_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
@@ -57,6 +62,34 @@ export function attachAuthCookies(res: Response, accessToken: string, refreshTok
   });
 }
 
+const SA_TENANT_MS = 8 * 60 * 60 * 1000;
+
+/** Marca o terminal em que o dono está operando a intranet. */
+export function attachSaTenantCookies(res: Response, tenantId: string, nome: string): void {
+  const { secure, sameSite } = resolveCookieSecurityFlags();
+  res.cookie(AUTH_SA_TENANT_COOKIE, tenantId, {
+    httpOnly: true,
+    secure,
+    sameSite,
+    path: '/',
+    maxAge: SA_TENANT_MS,
+  });
+  res.cookie(AUTH_SA_TENANT_LABEL_COOKIE, encodeURIComponent(nome), {
+    httpOnly: false,
+    secure,
+    sameSite,
+    path: '/',
+    maxAge: SA_TENANT_MS,
+  });
+}
+
+export function clearSaTenantCookies(res: Response): void {
+  const { secure, sameSite } = resolveCookieSecurityFlags();
+  const base = { path: '/', secure, sameSite, maxAge: 0 };
+  res.clearCookie(AUTH_SA_TENANT_COOKIE, { ...base, httpOnly: true });
+  res.clearCookie(AUTH_SA_TENANT_LABEL_COOKIE, { ...base, httpOnly: false });
+}
+
 export function clearAuthCookies(res: Response): void {
   const { secure, sameSite } = resolveCookieSecurityFlags();
   const opts = {
@@ -68,4 +101,5 @@ export function clearAuthCookies(res: Response): void {
   };
   res.clearCookie('rl_at', opts);
   res.clearCookie('rl_rt', opts);
+  clearSaTenantCookies(res);
 }

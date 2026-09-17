@@ -2,13 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { DollarSign, FileText, Layers, Loader2, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { DollarSign, Layers, Loader2, RefreshCw, Save } from "lucide-react";
 import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/staff-client";
-import { listCadastrosTiposContainer } from "@/lib/api/cadastros-tipos-container-client";
-import { listCadastrosTiposOperacao } from "@/lib/api/cadastros-tipos-operacao-client";
 import {
   createCadastroTabelaPreco,
   gerarMatrizCombinacoes,
@@ -19,6 +17,7 @@ import {
   type CadastroTabelaPrecoItem,
 } from "@/lib/api/cadastros-tabelas-precos-client";
 import { toast } from "@/lib/toast";
+import { formatContabil, parseMoeda } from "@/lib/financeiro/format";
 import {
   TabelaPrecoMatrixGrid,
   type MatrixItemForm,
@@ -48,26 +47,6 @@ const EMPTY_FORM: FormState = {
   padrao: false,
 };
 
-type OperacaoItemForm = {
-  categoriaItem: "OPERACAO";
-  tipoOperacaoCodigo: string;
-  tipoContainerCodigo: string;
-  containerTamanho: string;
-  valor: string;
-  unidade: string;
-  valorMinimo: string;
-};
-
-const EMPTY_OPERACAO: OperacaoItemForm = {
-  categoriaItem: "OPERACAO",
-  tipoOperacaoCodigo: "",
-  tipoContainerCodigo: "",
-  containerTamanho: "20'",
-  valor: "",
-  unidade: "POR_OPERACAO",
-  valorMinimo: "",
-};
-
 type Props = { tabelaId?: string; duplicarId?: string };
 
 function nomeCopia(nome: string): string {
@@ -83,11 +62,11 @@ function toFaixaForms(
     return faixas.map((f) => ({
       diaInicio: String(f.diaInicio),
       diaFim: f.diaFim != null ? String(f.diaFim) : "",
-      valorDiaria: String(f.valorDiaria),
+      valorDiaria: formatContabil(f.valorDiaria),
     }));
   }
   if (fallbackValor != null && fallbackValor > 0) {
-    return [{ diaInicio: "1", diaFim: "", valorDiaria: String(fallbackValor) }];
+    return [{ diaInicio: "1", diaFim: "", valorDiaria: formatContabil(fallbackValor) }];
   }
   return [];
 }
@@ -100,7 +79,7 @@ function toMatrixItem(i: CadastroTabelaPrecoItem): MatrixItemForm {
     capacidadeCodigo: i.capacidadeCodigo ?? "",
     containerTamanho: i.containerTamanho ?? "20'",
     statusContainer: i.statusContainer ?? "CHEIO",
-    valorHandling: i.valorHandling != null ? String(i.valorHandling) : "150",
+    valorHandling: i.valorHandling != null ? formatContabil(i.valorHandling) : "150,00",
     freeTimeDias: i.freeTimeDias != null ? String(i.freeTimeDias) : "7",
     faixasDiaria: toFaixaForms(i.faixasDiaria),
     faixasEnergiaReefer: toFaixaForms(i.faixasEnergiaReefer, i.tarifaEnergiaReeferDiaria),
@@ -119,23 +98,8 @@ export function TabelaPrecoForm({ tabelaId, duplicarId }: Props) {
   const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(Boolean(origemId));
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
-  const [tiposOperacao, setTiposOperacao] = useState<{ id: string; codigo: string; nome: string }[]>(
-    [],
-  );
-  const [tiposContainer, setTiposContainer] = useState<{ id: string; codigo: string }[]>([]);
   const [formData, setFormData] = useState<FormState>(EMPTY_FORM);
   const [matriz, setMatriz] = useState<MatrixItemForm[]>([]);
-  const [operacoes, setOperacoes] = useState<OperacaoItemForm[]>([]);
-
-  useEffect(() => {
-    void Promise.all([
-      listCadastrosTiposOperacao(),
-      listCadastrosTiposContainer(),
-    ]).then(([op, tc]) => {
-      setTiposOperacao(op.items ?? []);
-      setTiposContainer(tc.items ?? []);
-    });
-  }, []);
 
   useEffect(() => {
     if (!origemId) return;
@@ -163,19 +127,6 @@ export function TabelaPrecoForm({ tabelaId, duplicarId }: Props) {
             .filter((i) => i.categoriaItem === "ARMAZENAGEM" || i.tipoOperacaoCodigo === "ARMAZENAGEM")
             .map(toMatrixItem),
         );
-        setOperacoes(
-          all
-            .filter((i) => i.categoriaItem !== "ARMAZENAGEM" && i.tipoOperacaoCodigo !== "ARMAZENAGEM")
-            .map((i) => ({
-              categoriaItem: "OPERACAO" as const,
-              tipoOperacaoCodigo: i.tipoOperacaoCodigo,
-              tipoContainerCodigo: i.tipoContainerCodigo ?? "",
-              containerTamanho: i.containerTamanho ?? "*",
-              valor: String(i.valor),
-              unidade: i.unidade,
-              valorMinimo: i.valorMinimo != null ? String(i.valorMinimo) : "",
-            })),
-        );
       } catch {
         toast.error("Erro ao carregar tabela.");
       } finally {
@@ -187,7 +138,7 @@ export function TabelaPrecoForm({ tabelaId, duplicarId }: Props) {
     };
   }, [origemId, isCopia]);
 
-  const totalItens = useMemo(() => matriz.length + operacoes.length, [matriz.length, operacoes.length]);
+  const totalItens = useMemo(() => matriz.length, [matriz.length]);
 
   const gerarMatriz = async () => {
     try {
@@ -223,40 +174,30 @@ export function TabelaPrecoForm({ tabelaId, duplicarId }: Props) {
       statusContainer: m.statusContainer as "CHEIO" | "VAZIO",
       valor: 0,
       unidade: "POR_CICLO",
-      valorHandling: m.valorHandling ? Number(m.valorHandling) : undefined,
+      valorHandling: m.valorHandling ? parseMoeda(m.valorHandling) : undefined,
       freeTimeDias: m.freeTimeDias ? Number(m.freeTimeDias) : undefined,
       faixasDiaria: m.faixasDiaria
         .filter((f) => f.diaInicio && f.valorDiaria)
         .map((f) => ({
           diaInicio: Number(f.diaInicio),
           diaFim: f.diaFim ? Number(f.diaFim) : null,
-          valorDiaria: Number(f.valorDiaria),
+          valorDiaria: parseMoeda(f.valorDiaria),
         })),
       faixasEnergiaReefer: m.faixasEnergiaReefer
         .filter((f) => f.diaInicio && f.valorDiaria)
         .map((f) => ({
           diaInicio: Number(f.diaInicio),
           diaFim: f.diaFim ? Number(f.diaFim) : null,
-          valorDiaria: Number(f.valorDiaria),
+          valorDiaria: parseMoeda(f.valorDiaria),
         })),
       tarifaEnergiaReeferDiaria: m.faixasEnergiaReefer.find((f) => f.valorDiaria)
-        ? Number(m.faixasEnergiaReefer.find((f) => f.valorDiaria)!.valorDiaria)
+        ? parseMoeda(m.faixasEnergiaReefer.find((f) => f.valorDiaria)!.valorDiaria)
         : m.tarifaEnergiaReeferDiaria
           ? Number(m.tarifaEnergiaReeferDiaria)
           : undefined,
     }));
 
-    const opPayload = operacoes.map((i) => ({
-      categoriaItem: "OPERACAO" as const,
-      tipoOperacaoCodigo: i.tipoOperacaoCodigo,
-      tipoContainerCodigo: i.tipoContainerCodigo || undefined,
-      containerTamanho: i.containerTamanho,
-      valor: Number(i.valor),
-      unidade: i.unidade,
-      valorMinimo: i.valorMinimo ? Number(i.valorMinimo) : undefined,
-    }));
-
-    return [...matrixPayload, ...opPayload];
+    return matrixPayload;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -266,11 +207,7 @@ export function TabelaPrecoForm({ tabelaId, duplicarId }: Props) {
       return;
     }
     if (totalItens === 0) {
-      toast.error("Adicione itens de armazenagem ou operação.");
-      return;
-    }
-    if (operacoes.some((i) => !i.tipoOperacaoCodigo || !i.valor)) {
-      toast.error("Itens de operação precisam de tipo e valor.");
+      toast.error("Adicione a matriz de armazenagem.");
       return;
     }
 
@@ -305,7 +242,7 @@ export function TabelaPrecoForm({ tabelaId, duplicarId }: Props) {
     <form onSubmit={handleSubmit} className={CADASTRO_FORM_CLASS}>
       {isCopia ? (
         <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-          Cópia da matriz e das operações. Ajuste nome, vigência e os valores diferentes. Nada é gravado até
+          Cópia da matriz de armazenagem. Ajuste nome, vigência e os valores diferentes. Nada é gravado até
           Salvar.
         </p>
       ) : null}
@@ -394,132 +331,11 @@ export function TabelaPrecoForm({ tabelaId, duplicarId }: Props) {
             Gerar combinações MDM
           </Button>
           <span className="text-xs text-muted-foreground">
-            Usa tipos ativos e tamanhos cadastrados em Operacional → Tipos de Contêiner.
+            Usa tipos ativos e tamanhos do Super Admin → Tipos de contêiner. Serviços adicionais
+            (inspeção, reparo, transferência…) ficam em Financeiro → Serviços.
           </span>
         </div>
         <TabelaPrecoMatrixGrid items={matriz} onChange={setMatriz} />
-      </FormSection>
-
-      <FormSection title={`Operações (${operacoes.length})`} icon={FileText}>
-        <div className="space-y-2">
-          <div className="grid grid-cols-12 gap-2 border-b border-border pb-2 text-xs uppercase tracking-wider text-muted-foreground">
-            <div className="col-span-3">Tipo de Operação</div>
-            <div className="col-span-2">Tipo Contêiner</div>
-            <div className="col-span-2">Tamanho</div>
-            <div className="col-span-2">Valor (R$)</div>
-            <div className="col-span-2">Unidade</div>
-            <div className="col-span-1" />
-          </div>
-
-          {operacoes.map((item, index) => (
-            <div key={index} className="grid grid-cols-12 items-center gap-2 border-b border-border/30 py-2">
-              <div className="col-span-3">
-                <select
-                  className={SELECT_CLASS}
-                  value={item.tipoOperacaoCodigo}
-                  onChange={(e) =>
-                    setOperacoes((prev) =>
-                      prev.map((it, i) =>
-                        i === index ? { ...it, tipoOperacaoCodigo: e.target.value } : it,
-                      ),
-                    )
-                  }
-                >
-                  <option value="">Selecione...</option>
-                  {tiposOperacao.map((op) => (
-                    <option key={op.id} value={op.codigo}>
-                      {op.codigo} — {op.nome}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="col-span-2">
-                <select
-                  className={SELECT_CLASS}
-                  value={item.tipoContainerCodigo}
-                  onChange={(e) =>
-                    setOperacoes((prev) =>
-                      prev.map((it, i) =>
-                        i === index ? { ...it, tipoContainerCodigo: e.target.value } : it,
-                      ),
-                    )
-                  }
-                >
-                  <option value="">Todos</option>
-                  {tiposContainer.map((tc) => (
-                    <option key={tc.id} value={tc.codigo}>
-                      {tc.codigo}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="col-span-2">
-                <select
-                  className={SELECT_CLASS}
-                  value={item.containerTamanho}
-                  onChange={(e) =>
-                    setOperacoes((prev) =>
-                      prev.map((it, i) =>
-                        i === index ? { ...it, containerTamanho: e.target.value } : it,
-                      ),
-                    )
-                  }
-                >
-                  <option value="*">Todos</option>
-                  <option value="20'">20&apos;</option>
-                  <option value="40'">40&apos;</option>
-                  <option value="45'">45&apos;</option>
-                </select>
-              </div>
-              <div className="col-span-2">
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={item.valor}
-                  onChange={(e) =>
-                    setOperacoes((prev) =>
-                      prev.map((it, i) => (i === index ? { ...it, valor: e.target.value } : it)),
-                    )
-                  }
-                  className="tabular-nums"
-                />
-              </div>
-              <div className="col-span-2">
-                <select
-                  className={SELECT_CLASS}
-                  value={item.unidade}
-                  onChange={(e) =>
-                    setOperacoes((prev) =>
-                      prev.map((it, i) => (i === index ? { ...it, unidade: e.target.value } : it)),
-                    )
-                  }
-                >
-                  <option value="POR_OPERACAO">Por operação</option>
-                  <option value="POR_HORA">Por hora</option>
-                </select>
-              </div>
-              <div className="col-span-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setOperacoes((prev) => prev.filter((_, i) => i !== index))}
-                >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              </div>
-            </div>
-          ))}
-
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setOperacoes((prev) => [...prev, { ...EMPTY_OPERACAO }])}
-          >
-            <Plus className="mr-1 h-4 w-4" /> Adicionar operação
-          </Button>
-        </div>
       </FormSection>
 
       <div className="flex justify-end gap-3">

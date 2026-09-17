@@ -27,7 +27,8 @@ import Link from "next/link";
 import { useMemo, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { PORTAL_BLOQUEIO_FINANCEIRO_TOAST, PORTAL_SCHEDULING_DISABLED_CLASS } from "@/lib/portal-financeiro-block";
-import { labelCondicaoPagamento } from "@/lib/condicao-pagamento-portal";
+import { textoCondicaoVigente } from "@/lib/condicao-pagamento-portal";
+import { formatBRL } from "@/lib/financeiro/format";
 import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
 import { toast } from "@/lib/toast";
 
@@ -205,7 +206,7 @@ export function PortalDashboardClient() {
                 />
               </div>
               <div>
-                <p className="text-xs text-slate-500">Faturamento (R$ no mês)</p>
+                <p className="text-xs text-slate-500">Faturamento no mês</p>
                 <TrendDelta
                   value={data.tendencias.faturadoMesVsAnteriorPct}
                   label="vs mês anterior"
@@ -255,9 +256,18 @@ export function PortalDashboardClient() {
               <CardDescription>
                 Contadores alinhados ao CX e ao KPI de faturamento em aberto.
               </CardDescription>
-              {data.condicaoPagamento ? (
+              {data.condicaoPagamento || data.prazoPagamento ? (
                 <p className="text-xs text-muted-foreground">
-                  Condição contratual: {labelCondicaoPagamento(data.condicaoPagamento)}
+                  Condição contratual:{" "}
+                  {
+                    textoCondicaoVigente({
+                      statusCadastro: data.statusCadastro,
+                      condicaoPagamento: data.condicaoPagamento,
+                      prazoPagamento: data.prazoPagamento,
+                      condicaoPagamentoLabel: data.condicaoPagamentoLabel,
+                      prazoPagamentoLabel: data.prazoPagamentoLabel,
+                    }).titulo
+                  }
                 </p>
               ) : null}
             </CardHeader>
@@ -288,13 +298,10 @@ export function PortalDashboardClient() {
               </div>
               <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Faturamento no mês (R$)
+                  Faturamento no mês
                 </p>
                 <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
-                  {data.financeCounts.faturadoMes.toLocaleString("pt-BR", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
+                  {formatBRL(data.financeCounts.faturadoMes)}
                 </p>
               </div>
               <div className="col-span-full flex flex-wrap gap-2">

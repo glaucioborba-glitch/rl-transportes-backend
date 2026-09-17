@@ -16,6 +16,21 @@ export type TenantIntegracoesCredenciais = {
     apiBaseUrl?: string;
     apiToken?: string;
   };
+  boleto?: {
+    apiBaseUrl?: string;
+    apiToken?: string;
+  };
+  pix?: {
+    apiBaseUrl?: string;
+    apiToken?: string;
+    chavePix?: string;
+  };
+  googleMaps?: {
+    apiKey?: string;
+  };
+  googleRoutes?: {
+    apiKey?: string;
+  };
   s3?: {
     bucket?: string;
     endpoint?: string;
@@ -42,6 +57,21 @@ export type IntegracoesCredenciaisPatch = {
     apiBaseUrl?: string;
     apiToken?: string;
   };
+  boleto?: {
+    apiBaseUrl?: string;
+    apiToken?: string;
+  };
+  pix?: {
+    apiBaseUrl?: string;
+    apiToken?: string;
+    chavePix?: string;
+  };
+  googleMaps?: {
+    apiKey?: string;
+  };
+  googleRoutes?: {
+    apiKey?: string;
+  };
   s3?: {
     bucket?: string;
     endpoint?: string;
@@ -64,6 +94,13 @@ export type IntegrationEnvSnapshot = {
   bankingProvider?: string;
   bankingApiBaseUrl?: string;
   bankingApiToken?: string;
+  pixApiBaseUrl?: string;
+  pixApiToken?: string;
+  pixChave?: string;
+  googleMapsApiKey?: string;
+  googleRoutesApiKey?: string;
+  googleMapsTerminalLat?: string;
+  googleMapsTerminalLng?: string;
   s3Bucket?: string;
   s3Endpoint?: string;
   s3Region?: string;
@@ -108,6 +145,32 @@ export type ResolvedBanking = {
   apiToken?: string;
 };
 
+export type ResolvedPix = {
+  origem: IntegracaoOrigem;
+  lockedByEnv: boolean;
+  configured: boolean;
+  apiBaseUrl?: string;
+  apiToken?: string;
+  chavePix?: string;
+  chavePixPresent: boolean;
+};
+
+export type ResolvedGoogleMaps = {
+  origem: IntegracaoOrigem;
+  lockedByEnv: boolean;
+  configured: boolean;
+  apiKey?: string;
+  terminalLat?: number;
+  terminalLng?: number;
+};
+
+export type ResolvedGoogleRoutes = {
+  origem: IntegracaoOrigem;
+  lockedByEnv: boolean;
+  configured: boolean;
+  apiKey?: string;
+};
+
 export type ResolvedS3 = {
   origem: IntegracaoOrigem;
   lockedByEnv: boolean;
@@ -124,10 +187,6 @@ function trimOrEmpty(value?: string | null): string {
   return value?.trim() ?? '';
 }
 
-function envDefined(env: NodeJS.ProcessEnv, key: string): boolean {
-  return env[key] != null && String(env[key]).length > 0;
-}
-
 export function snapshotIntegrationEnv(env: NodeJS.ProcessEnv = process.env): IntegrationEnvSnapshot {
   const whatsappEnabledRaw = env.WHATSAPP_ENABLED;
   return {
@@ -142,6 +201,13 @@ export function snapshotIntegrationEnv(env: NodeJS.ProcessEnv = process.env): In
     bankingProvider: (trimOrEmpty(env.BANK_PROVIDER) || 'sandbox').toLowerCase(),
     bankingApiBaseUrl: trimOrEmpty(env.BANK_API_BASE_URL) || undefined,
     bankingApiToken: trimOrEmpty(env.BANK_API_TOKEN) || undefined,
+    pixApiBaseUrl: trimOrEmpty(env.PIX_API_BASE_URL) || undefined,
+    pixApiToken: trimOrEmpty(env.PIX_API_TOKEN) || undefined,
+    pixChave: trimOrEmpty(env.PIX_CHAVE) || trimOrEmpty(env.BANK_PIX_CHAVE) || undefined,
+    googleMapsApiKey: trimOrEmpty(env.GOOGLE_MAPS_API_KEY) || undefined,
+    googleRoutesApiKey: trimOrEmpty(env.GOOGLE_ROUTES_API_KEY) || undefined,
+    googleMapsTerminalLat: trimOrEmpty(env.GOOGLE_MAPS_TERMINAL_LAT) || undefined,
+    googleMapsTerminalLng: trimOrEmpty(env.GOOGLE_MAPS_TERMINAL_LNG) || undefined,
     s3Bucket: trimOrEmpty(env.AWS_S3_BUCKET) || undefined,
     s3Endpoint:
       trimOrEmpty(env.STORAGE_ENDPOINT) ||
@@ -187,16 +253,49 @@ function applyOptionalString(
   return next || undefined;
 }
 
+export function parseCoord(value?: string | null): number | undefined {
+  if (value == null || value === '') return undefined;
+  const n = Number(String(value).trim().replace(',', '.'));
+  return Number.isFinite(n) ? n : undefined;
+}
+
+export function maskPixKey(chave?: string | null): string | undefined {
+  const t = chave?.trim();
+  if (!t) return undefined;
+  if (t.includes('@')) {
+    const [user, domain] = t.split('@');
+    const u = user.slice(0, 1) || '*';
+    return `${u}***@${domain}`;
+  }
+  if (t.length <= 4) return '****';
+  return `${'*'.repeat(t.length - 4)}${t.slice(-4)}`;
+}
+
 export function mergeIntegracoesCredenciais(
   current: TenantIntegracoesCredenciais | undefined,
   patch: IntegracoesCredenciaisPatch | undefined,
 ): TenantIntegracoesCredenciais {
+  const legacyBanking = current?.banking as
+    | { chavePix?: string; apiBaseUrl?: string; apiToken?: string }
+    | undefined;
   const base: TenantIntegracoesCredenciais = {
     googleVision: current?.googleVision ? { ...current.googleVision } : undefined,
     whatsapp: current?.whatsapp ? { ...current.whatsapp } : undefined,
-    banking: current?.banking ? { ...current.banking } : undefined,
+    boleto: current?.boleto
+      ? { ...current.boleto }
+      : legacyBanking
+        ? { apiBaseUrl: legacyBanking.apiBaseUrl, apiToken: legacyBanking.apiToken }
+        : undefined,
+    pix: current?.pix
+      ? { ...current.pix }
+      : legacyBanking?.chavePix
+        ? { chavePix: legacyBanking.chavePix }
+        : undefined,
+    googleMaps: current?.googleMaps ? { apiKey: current.googleMaps.apiKey } : undefined,
+    googleRoutes: current?.googleRoutes ? { ...current.googleRoutes } : undefined,
     s3: current?.s3 ? { ...current.s3 } : undefined,
   };
+  base.banking = base.boleto;
   if (!patch) return base;
 
   if (patch.googleVision) {
@@ -223,12 +322,31 @@ export function mergeIntegracoesCredenciais(
         : undefined;
   }
 
-  if (patch.banking) {
-    const next = { ...(base.banking ?? {}) };
-    next.provider = applyOptionalString(next.provider, patch.banking.provider);
-    next.apiBaseUrl = applyOptionalString(next.apiBaseUrl, patch.banking.apiBaseUrl);
-    next.apiToken = applyOptionalString(next.apiToken, patch.banking.apiToken);
-    base.banking = next.provider || next.apiBaseUrl || next.apiToken ? next : undefined;
+  if (patch.boleto || patch.banking) {
+    const incoming = patch.boleto ?? patch.banking;
+    const next = { ...(base.boleto ?? {}) };
+    next.apiBaseUrl = applyOptionalString(next.apiBaseUrl, incoming?.apiBaseUrl);
+    next.apiToken = applyOptionalString(next.apiToken, incoming?.apiToken);
+    base.boleto = next.apiBaseUrl || next.apiToken ? next : undefined;
+    base.banking = base.boleto;
+  }
+
+  if (patch.pix) {
+    const next = { ...(base.pix ?? {}) };
+    next.apiBaseUrl = applyOptionalString(next.apiBaseUrl, patch.pix.apiBaseUrl);
+    next.apiToken = applyOptionalString(next.apiToken, patch.pix.apiToken);
+    next.chavePix = applyOptionalString(next.chavePix, patch.pix.chavePix);
+    base.pix = next.apiBaseUrl || next.apiToken || next.chavePix ? next : undefined;
+  }
+
+  if (patch.googleMaps) {
+    const apiKey = applyOptionalString(base.googleMaps?.apiKey, patch.googleMaps.apiKey);
+    base.googleMaps = apiKey ? { apiKey } : undefined;
+  }
+
+  if (patch.googleRoutes) {
+    const apiKey = applyOptionalString(base.googleRoutes?.apiKey, patch.googleRoutes.apiKey);
+    base.googleRoutes = apiKey ? { apiKey } : undefined;
   }
 
   if (patch.s3) {
@@ -367,29 +485,84 @@ export function resolveWhatsapp(
 
 export function resolveBanking(
   env: IntegrationEnvSnapshot,
-  tenant?: TenantIntegracoesCredenciais['banking'],
+  tenant?: TenantIntegracoesCredenciais['boleto'] | TenantIntegracoesCredenciais['banking'],
 ): ResolvedBanking {
   const envToken = env.bankingApiToken;
   const lockedByEnv = Boolean(envToken || env.bankingApiBaseUrl);
-  const provider = (
-    envToken || env.bankingApiBaseUrl
-      ? env.bankingProvider
-      : tenant?.provider?.trim() || env.bankingProvider || 'sandbox'
-  )?.toLowerCase() || 'sandbox';
   const apiBaseUrl = env.bankingApiBaseUrl || tenant?.apiBaseUrl?.trim() || undefined;
   const apiToken = envToken || tenant?.apiToken?.trim() || undefined;
+  const configured = Boolean(apiBaseUrl && apiToken);
   const origem: IntegracaoOrigem = envToken || env.bankingApiBaseUrl
     ? 'env'
-    : apiToken || (tenant?.provider && tenant.provider !== 'sandbox')
+    : configured
       ? 'tenant'
       : 'none';
   return {
     origem,
     lockedByEnv,
-    configured: provider !== 'sandbox' && Boolean(apiBaseUrl && apiToken),
-    provider,
+    configured,
+    provider: configured ? 'api' : 'sandbox',
     apiBaseUrl,
     apiToken,
+  };
+}
+
+export function resolvePix(
+  env: IntegrationEnvSnapshot,
+  tenant?: TenantIntegracoesCredenciais['pix'],
+): ResolvedPix {
+  const envToken = env.pixApiToken;
+  const lockedByEnv = Boolean(envToken || env.pixApiBaseUrl);
+  const apiBaseUrl = env.pixApiBaseUrl || tenant?.apiBaseUrl?.trim() || undefined;
+  const apiToken = envToken || tenant?.apiToken?.trim() || undefined;
+  const chavePix = env.pixChave || tenant?.chavePix?.trim() || undefined;
+  const configured = Boolean(apiBaseUrl && apiToken);
+  const origem: IntegracaoOrigem = envToken || env.pixApiBaseUrl
+    ? 'env'
+    : configured || chavePix
+      ? 'tenant'
+      : 'none';
+  return {
+    origem,
+    lockedByEnv,
+    configured,
+    apiBaseUrl,
+    apiToken,
+    chavePix,
+    chavePixPresent: Boolean(chavePix),
+  };
+}
+
+export function resolveGoogleMaps(
+  env: IntegrationEnvSnapshot,
+  tenant?: TenantIntegracoesCredenciais['googleMaps'],
+): ResolvedGoogleMaps {
+  const envKey = env.googleMapsApiKey;
+  const apiKey = envKey || tenant?.apiKey?.trim() || undefined;
+  const lat = parseCoord(env.googleMapsTerminalLat);
+  const lng = parseCoord(env.googleMapsTerminalLng);
+  const origem: IntegracaoOrigem = envKey ? 'env' : apiKey ? 'tenant' : 'none';
+  return {
+    origem,
+    lockedByEnv: Boolean(envKey),
+    configured: Boolean(apiKey),
+    apiKey,
+    terminalLat: lat,
+    terminalLng: lng,
+  };
+}
+
+export function resolveGoogleRoutes(
+  env: IntegrationEnvSnapshot,
+  tenant?: TenantIntegracoesCredenciais['googleRoutes'],
+): ResolvedGoogleRoutes {
+  const envKey = env.googleRoutesApiKey;
+  const apiKey = envKey || tenant?.apiKey?.trim() || undefined;
+  return {
+    origem: envKey ? 'env' : apiKey ? 'tenant' : 'none',
+    lockedByEnv: Boolean(envKey),
+    configured: Boolean(apiKey),
+    apiKey,
   };
 }
 

@@ -19,6 +19,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
+import { formatBRL } from "@/lib/financeiro/format";
 import { cn } from "@/lib/utils";
 
 type Periodo = "hoje" | "semana" | "mes";
@@ -185,13 +186,13 @@ export function CockpitKpisPanel({ defaultPeriodo = "hoje" }: { defaultPeriodo?:
         />
         <KpiCard
           title="Receita / TEU"
-          value={`R$ ${data.revenuePerTeu.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+          value={formatBRL(data.revenuePerTeu)}
           sub="20' = 1 TEU · 40' = 2 TEU"
           delta={data.revenueDelta}
         />
         <KpiCard
           title="Faturamento"
-          value={`R$ ${data.dailyRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`}
+          value={formatBRL(data.dailyRevenue)}
           sub={`Período: ${data.periodo}`}
           delta={data.revenueDelta}
         />
@@ -230,9 +231,7 @@ export function CockpitKpisPanel({ defaultPeriodo = "hoje" }: { defaultPeriodo?:
                 <YAxis stroke="#94a3b8" fontSize={11} />
                 <Tooltip
                   contentStyle={{ background: "#0c1018", border: "1px solid #ffffff20" }}
-                  formatter={(v: number) =>
-                    `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
-                  }
+                  formatter={(v: number) => formatBRL(v)}
                 />
                 <Legend />
                 <Bar dataKey="receita" name="Receita" fill="#22c55e" radius={[4, 4, 0, 0]} />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Container, Edit2, Plus } from "lucide-react";
+import { Container, Copy, Edit2, Plus } from "lucide-react";
 import { FinanceiroBreadcrumb, FinanceiroTabs } from "../components/financeiro-tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,12 @@ export default function AluguelCadastroPage() {
         <div>
           <h1 className="text-2xl font-bold">Tabela de aluguel</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Diária a partir da saída da unidade. Gera o mesmo ID e segue o financeiro padrão.
+            Diária a partir da saída da unidade. Gera o mesmo ID e segue o financeiro padrão. Qual tabela vale para cada
+            cliente é definida em{" "}
+            <a href="/financeiro/condicoes-clientes" className="text-primary underline-offset-2 hover:underline">
+              Financeiro → Forma e prazo
+            </a>
+            .
           </p>
         </div>
         {canCreate ? (
@@ -73,16 +78,33 @@ export default function AluguelCadastroPage() {
                   {t.ativo ? null : <Badge variant="secondary">Inativa</Badge>}
                 </div>
               </div>
-              {canEdit ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-4"
-                  onClick={() => router.push(`/cadastros/financeiro/aluguel/${t.id}`)}
-                >
-                  <Edit2 className="mr-2 h-4 w-4" />
-                  Editar
-                </Button>
+              {canEdit || canCreate ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {canEdit ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => router.push(`/cadastros/financeiro/aluguel/${t.id}`)}
+                    >
+                      <Edit2 className="mr-2 h-4 w-4" />
+                      Editar
+                    </Button>
+                  ) : null}
+                  {canCreate ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        router.push(
+                          `/cadastros/financeiro/aluguel/novo?duplicar=${encodeURIComponent(t.id)}`,
+                        )
+                      }
+                    >
+                      <Copy className="mr-2 h-4 w-4" />
+                      Clonar
+                    </Button>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           ))}

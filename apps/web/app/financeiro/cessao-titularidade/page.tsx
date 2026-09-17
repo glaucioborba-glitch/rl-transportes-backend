@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { formatIsoDisplay } from "@/lib/container-display";
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api/staff-client";
 import {
@@ -75,7 +76,7 @@ export default function CessaoTitularidadeFinanceiroPage() {
               {items.map((row) => (
                 <div key={row.id} className="rounded-lg border border-border p-4 space-y-3">
                   <p className="font-semibold">
-                    {row.idLabel} · {row.unidadeIso}
+                    {row.idLabel} · {formatIsoDisplay(row.unidadeIso)}
                   </p>
                   <p className="text-sm">
                     De {row.de.nome} → {row.para.nome}

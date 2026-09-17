@@ -282,8 +282,6 @@ export async function seedPortal(_cadastrosIds?: SeedCadastrosIds): Promise<Seed
           create: {
             dataRef: dataRefOnly,
             turno: i % 2 === 0 ? TurnoAgendamento.MANHA : TurnoAgendamento.TARDE,
-            atendimentoEspecial: i === 3,
-            atendimentoEspecialTexto: i === 3 ? 'Contêiner com avaria na porta lateral' : null,
           },
         },
         solicitanteContato: {

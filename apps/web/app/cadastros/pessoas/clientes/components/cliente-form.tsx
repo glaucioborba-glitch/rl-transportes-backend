@@ -15,6 +15,7 @@ import {
 import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { ApiError } from "@/lib/api/staff-client";
 import {
   buscarCadastrosCep,
@@ -33,6 +34,16 @@ import {
   normalizeClientePapeis,
 } from "@/lib/cadastros/cliente-papeis";
 import { formatCEP, formatCNPJ, formatPhone, isValidCNPJ } from "@/lib/cadastros/formatters";
+import { listCadastroOpcoesPagamento } from "@/lib/api/cadastros-opcoes-pagamento-client";
+import { listarCondicoesPagamento, listarPrazosPagamento } from "@/lib/api/cadastro-financeiro-client";
+import {
+  OPCOES_CONDICAO_PAGAMENTO,
+  PRAZOS_PAGAMENTO,
+  mergeValorOption,
+  prazosDaForma,
+  splitFormaPrazoSalvos,
+  type CondicaoPagamentoOption,
+} from "@/lib/condicao-pagamento-portal";
 import { toast } from "@/lib/toast";
 
 const SELECT_CLASS =
@@ -53,6 +64,10 @@ export function ClienteForm({ clienteId }: Props) {
   const [clienteLogoSpec, setClienteLogoSpec] = useState<EmpresaOperadora["clienteLogoSpec"] | null>(
     null,
   );
+  const [opcoesForma, setOpcoesForma] = useState<CondicaoPagamentoOption[]>([
+    ...OPCOES_CONDICAO_PAGAMENTO,
+  ]);
+  const [opcoesPrazo, setOpcoesPrazo] = useState<CondicaoPagamentoOption[]>([...PRAZOS_PAGAMENTO]);
 
   useEffect(() => {
     if (!clienteId) return;
@@ -86,6 +101,62 @@ export function ClienteForm({ clienteId }: Props) {
       on = false;
     };
   }, [clienteId]);
+
+  useEffect(() => {
+    let on = true;
+    void (async () => {
+      try {
+        const [formasCat, prazosCat] = await Promise.all([
+          listCadastroOpcoesPagamento("FORMA"),
+          listCadastroOpcoesPagamento("PRAZO"),
+        ]);
+        if (!on) return;
+        const formas = formasCat
+          .filter((o) => o.ativo)
+          .map((o) => ({
+            label: o.label,
+            value: o.value,
+            dias: o.dias,
+            vencimentos: o.vencimentos,
+            formaVinculada: o.formaVinculada,
+          }));
+        const prazos = prazosCat
+          .filter((o) => o.ativo)
+          .map((o) => ({
+            label: o.label,
+            value: o.value,
+            dias: o.dias,
+            vencimentos: o.vencimentos,
+            formaVinculada: o.formaVinculada,
+          }));
+        if (formas.length) setOpcoesForma(formas);
+        if (prazos.length) setOpcoesPrazo(prazos);
+      } catch {
+        try {
+          const [formas, prazos] = await Promise.all([
+            listarCondicoesPagamento(),
+            listarPrazosPagamento(),
+          ]);
+          if (!on) return;
+          if (formas.length) setOpcoesForma(formas);
+          if (prazos.length) setOpcoesPrazo(prazos);
+        } catch {
+          /* fallback estático */
+        }
+      }
+    })();
+    return () => {
+      on = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    setFormData((prev) => {
+      const split = splitFormaPrazoSalvos(prev.condicaoPagamento, prev.prazoPagamento, opcoesPrazo);
+      if (split.forma === prev.condicaoPagamento && split.prazo === prev.prazoPagamento) return prev;
+      return { ...prev, condicaoPagamento: split.forma, prazoPagamento: split.prazo };
+    });
+  }, [opcoesPrazo]);
 
   const togglePapel = (papel: (typeof CLIENTE_PAPEIS_OPCOES)[number], checked: boolean) => {
     setFormData((prev) => {
@@ -162,6 +233,10 @@ export function ClienteForm({ clienteId }: Props) {
 
     if (!formData.razaoSocial || !formData.cnpj) {
       toast.error("Razão Social e CNPJ são obrigatórios.");
+      return;
+    }
+    if (!formData.condicaoPagamento.trim() || !formData.prazoPagamento.trim()) {
+      toast.error("Selecione forma e prazo de pagamento.");
       return;
     }
     const papeis = normalizeClientePapeis(formData.papeis);
@@ -380,27 +455,58 @@ export function ClienteForm({ clienteId }: Props) {
 
       <FormSection title="Dados Financeiros" icon={FileText}>
         <div className="flex flex-wrap gap-4">
-          <FormField label="Condição de Pagamento" className="min-w-[14rem] flex-1">
+          <FormField label="Forma de pagamento" className="min-w-[14rem] flex-1">
             <select
               value={formData.condicaoPagamento}
-              onChange={(e) => setFormData({ ...formData, condicaoPagamento: e.target.value })}
+              onChange={(e) => {
+                const forma = e.target.value;
+                const prazosOk = prazosDaForma(opcoesPrazo, forma);
+                const prazoOk = prazosOk.some((p) => p.value === formData.prazoPagamento);
+                setFormData({
+                  ...formData,
+                  condicaoPagamento: forma,
+                  prazoPagamento: prazoOk ? formData.prazoPagamento : "",
+                });
+              }}
               className={SELECT_CLASS}
             >
               <option value="">Selecione...</option>
-              <option value="A_VISTA">À vista</option>
-              <option value="30_DIAS">30 dias</option>
-              <option value="30_60">30/60 dias</option>
-              <option value="30_60_90">30/60/90 dias</option>
-              <option value="PERSONALIZADO">Personalizado</option>
+              {mergeValorOption(opcoesForma, formData.condicaoPagamento).map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
             </select>
           </FormField>
-          <FormField label="Limite de Crédito (R$)" className="min-w-[12rem] flex-1">
-            <Input
-              type="number"
+          <FormField label="Prazo de pagamento" className="min-w-[14rem] flex-1">
+            <select
+              value={formData.prazoPagamento}
+              onChange={(e) => {
+                const prazo = e.target.value;
+                const vinculo = opcoesPrazo.find((p) => p.value === prazo)?.formaVinculada;
+                setFormData({
+                  ...formData,
+                  prazoPagamento: prazo,
+                  condicaoPagamento: vinculo || formData.condicaoPagamento,
+                });
+              }}
+              className={SELECT_CLASS}
+            >
+              <option value="">Selecione...</option>
+              {mergeValorOption(
+                prazosDaForma(opcoesPrazo, formData.condicaoPagamento),
+                formData.prazoPagamento,
+              ).map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="Limite de crédito" className="min-w-[12rem] flex-1">
+            <MoneyInput
               value={formData.limiteCredito}
-              onChange={(e) => setFormData({ ...formData, limiteCredito: e.target.value })}
-              placeholder="0,00"
-              className="tabular-nums"
+              onChange={(v) => setFormData({ ...formData, limiteCredito: v })}
             />
           </FormField>
         </div>

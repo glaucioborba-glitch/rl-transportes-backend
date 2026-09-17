@@ -8,10 +8,11 @@ import { mockWeeklyHours } from "@/lib/rh/fatigue";
 import { ShiftBar } from "@/components/rh/shift-bar";
 import { WorkloadHeatmap } from "@/components/rh/workload-heatmap";
 import { RhCard } from "@/components/rh/rh-card";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 
 export default function RhJornadaTurnosPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [rows, setRows] = useState<RhColaboradorDirectoryItem[]>([]);
   const [heatmap, setHeatmap] = useState<number[][]>([]);
 

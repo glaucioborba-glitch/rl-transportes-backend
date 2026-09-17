@@ -1,7 +1,23 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
-import { IsBoolean, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import {
+  IsBoolean,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateIf,
+} from 'class-validator';
 import { TIPOS_LOCAL_TRANSPORTE } from '../local-transporte-pair.util';
+
+function emptyToNull(value: unknown) {
+  if (value === '' || value === undefined) return null;
+  return value;
+}
 
 export class CadastrosLocalTransporteFormDto {
   @ApiProperty()
@@ -37,6 +53,26 @@ export class CadastrosLocalTransporteFormDto {
   @IsString()
   @MaxLength(2)
   uf?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => emptyToNull(value))
+  @ValidateIf((_, v) => v != null)
+  @Type(() => Number)
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  lat?: number | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => emptyToNull(value))
+  @ValidateIf((_, v) => v != null)
+  @Type(() => Number)
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  lng?: number | null;
 
   @ApiPropertyOptional({ default: true })
   @IsOptional()

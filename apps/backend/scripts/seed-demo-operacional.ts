@@ -360,8 +360,6 @@ async function createSolicitacaoDemo(
         create: {
           dataRef: dataRefOnly,
           turno,
-          atendimentoEspecial: solIdx % 7 === 0,
-          atendimentoEspecialTexto: solIdx % 7 === 0 ? 'Carga sensível — prioridade gate.' : null,
         },
       },
       solicitanteContato: {

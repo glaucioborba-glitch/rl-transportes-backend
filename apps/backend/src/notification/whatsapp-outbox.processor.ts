@@ -12,9 +12,10 @@ import { EstagioCobranca } from '@prisma/client';
 import { NotificationRecipientService } from './notification-recipient.service';
 import { maskPhoneE164 } from './whatsapp-phone.util';
 import { WhatsappService } from './whatsapp.service';
+import { formatMoeda } from '../common/finance/format-moeda.util';
 
 function formatBrl(value: number): string {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  return formatMoeda(value);
 }
 
 function formatDateTimePt(iso: string | undefined): string {

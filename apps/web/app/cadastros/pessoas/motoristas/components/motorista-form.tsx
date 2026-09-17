@@ -32,10 +32,15 @@ import {
   type CadastrosTransportadoraListItem,
 } from "@/lib/api/cadastros-transportadoras-client";
 import { formatCEP, formatCNPJ, formatCPF, formatPhone, isValidCPF } from "@/lib/cadastros/formatters";
+import { isValidPlacaMercosul } from "@/lib/placa-mercosul";
 import { toast } from "@/lib/toast";
 
 const SELECT_CLASS =
   "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+function normalizePlacaInput(value: string) {
+  return value.replace(/[\s-]/g, "").toUpperCase();
+}
 
 type Props = {
   motoristaId?: string;
@@ -102,6 +107,14 @@ export function MotoristaForm({ motoristaId }: Props) {
     }
   };
 
+  const validarPlacaCampo = (placa: string, label: string) => {
+    const n = normalizePlacaInput(placa);
+    if (!n) return;
+    if (!isValidPlacaMercosul(n)) {
+      toast.error(`${label}: placa inválida. Use Mercosul (ABC1D23) ou o formato antigo (ABC1234).`);
+    }
+  };
+
   const cnhVencida =
     formData.cnhValidade &&
     new Date(`${formData.cnhValidade}T12:00:00`) < new Date(new Date().toDateString());
@@ -125,6 +138,16 @@ export function MotoristaForm({ motoristaId }: Props) {
       toast.error("Transportadora é obrigatória — todo motorista deve ser vinculado a uma.");
       return;
     }
+    const placaCavalo = normalizePlacaInput(formData.placaCavalo);
+    const placaCarreta = normalizePlacaInput(formData.placaCarreta);
+    if (placaCavalo && !isValidPlacaMercosul(placaCavalo)) {
+      toast.error("Cavalo: placa inválida. Use Mercosul (ABC1D23) ou o formato antigo (ABC1234).");
+      return;
+    }
+    if (placaCarreta && !isValidPlacaMercosul(placaCarreta)) {
+      toast.error("Carreta: placa inválida. Use Mercosul (ABC1D23) ou o formato antigo (ABC1234).");
+      return;
+    }
     if (!formData.cnhNumero || !formData.cnhCategoria || !formData.cnhValidade) {
       toast.error("Dados da CNH são obrigatórios (número, categoria e validade).");
       return;
@@ -139,11 +162,19 @@ export function MotoristaForm({ motoristaId }: Props) {
 
     setSaving(true);
     try {
+      const { id: _omitId, ...rest } = formData;
+      const payload: CadastrosMotoristaFormData = {
+        ...rest,
+        placaCavalo,
+        placaCarreta,
+        email: rest.email.trim(),
+        dataNascimento: rest.dataNascimento,
+      };
       if (motoristaId) {
-        await updateCadastrosMotorista(motoristaId, formData);
+        await updateCadastrosMotorista(motoristaId, payload);
         toast.success("Motorista atualizado!");
       } else {
-        await createCadastrosMotorista(formData);
+        await createCadastrosMotorista(payload);
         toast.success("Motorista cadastrado!");
       }
       router.push("/cadastros/pessoas/motoristas");
@@ -232,6 +263,37 @@ export function MotoristaForm({ motoristaId }: Props) {
               </p>
             ) : null}
           </FormField>
+          <div className="min-w-[16rem]">
+            <p className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">
+              Placas Preferenciais
+            </p>
+            <div className="flex flex-wrap gap-4">
+              <FormField label="Cavalo" size="sm">
+                <Input
+                  className="uppercase tabular-nums"
+                  maxLength={8}
+                  placeholder="ABC1D23"
+                  value={formData.placaCavalo}
+                  onChange={(e) =>
+                    setFormData({ ...formData, placaCavalo: normalizePlacaInput(e.target.value) })
+                  }
+                  onBlur={(e) => validarPlacaCampo(e.target.value, "Cavalo")}
+                />
+              </FormField>
+              <FormField label="Carreta" size="sm">
+                <Input
+                  className="uppercase tabular-nums"
+                  maxLength={8}
+                  placeholder="ABC1D23"
+                  value={formData.placaCarreta}
+                  onChange={(e) =>
+                    setFormData({ ...formData, placaCarreta: normalizePlacaInput(e.target.value) })
+                  }
+                  onBlur={(e) => validarPlacaCampo(e.target.value, "Carreta")}
+                />
+              </FormField>
+            </div>
+          </div>
         </div>
       </FormSection>
 

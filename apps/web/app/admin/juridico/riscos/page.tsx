@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { staffJson } from "@/lib/api/staff-client";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { lastNDays } from "@/lib/admin/dates";
 import { readJson, adminContractsKey } from "@/lib/admin/storage";
@@ -12,7 +13,7 @@ import { ComplianceTimeline } from "@/components/admin/compliance-timeline";
 import { ViolationList, type ViolationItem } from "@/components/admin/violation-list";
 
 export default function AdminJuridicoRiscosPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [violations, setViolations] = useState<ViolationItem[]>([]);
   const [auditEvents, setAuditEvents] = useState<{ id: string; at: string; label: string; tone?: "neutral" | "warn" | "crit" }[]>([]);
   const [riskNum, setRiskNum] = useState(45);

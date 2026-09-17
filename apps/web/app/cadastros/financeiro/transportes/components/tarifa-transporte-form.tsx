@@ -15,22 +15,14 @@ import {
   getCadastroTarifaTransporte,
   updateCadastroTarifaTransporte,
 } from "@/lib/api/cadastros-tarifas-transporte-client";
-import { formatBRL } from "@/lib/financeiro/format";
+import { formatBRL, formatContabil, parseMoeda } from "@/lib/financeiro/format";
+import { MoneyInput } from "@/components/ui/money-input";
 import { toast } from "@/lib/toast";
 
 const SELECT_CLASS =
   "flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm";
 
 const FATOR_RETORNO = 0.5;
-
-function parseMoeda(raw: string): number {
-  const n = Number(raw.replace(/\./g, "").replace(",", "."));
-  return Number.isFinite(n) ? n : NaN;
-}
-
-function formatMoedaInput(n: number): string {
-  return String(n).replace(".", ",");
-}
 
 type Props = { tabelaId: string; tarifaId?: string; duplicarId?: string };
 
@@ -74,9 +66,9 @@ export function TarifaTransporteForm({ tabelaId, tarifaId, duplicarId }: Props) 
             data.tipoContainerCodigo ? [data.tipoContainerCodigo] : [],
           );
           setRetorno(data.retorno);
-          setValor(formatMoedaInput(data.valor));
+          setValor(formatContabil(data.valor));
           setValorPagoTerceiro(
-            data.valorPagoTerceiro != null ? formatMoedaInput(data.valorPagoTerceiro) : "",
+            data.valorPagoTerceiro != null ? formatContabil(data.valorPagoTerceiro) : "",
           );
           setObservacao(data.observacao ?? "");
           setAtivo(tarifaId ? data.ativo : true);
@@ -284,27 +276,19 @@ export function TarifaTransporteForm({ tabelaId, tarifaId, duplicarId }: Props) 
               </p>
             </div>
           </FormField>
-          <FormField label="Valor da tarifa (R$)" required>
-            <Input
-              value={valor}
-              onChange={(e) => setValor(e.target.value)}
-              placeholder="0,00"
-              className="tabular-nums"
-              inputMode="decimal"
-            />
+          <FormField label="Valor da tarifa" required>
+            <MoneyInput value={valor} onChange={setValor} />
             {retorno && valorCobrado != null ? (
               <p className="mt-1 text-xs text-muted-foreground">
                 Retorno: cobrado {formatBRL(valorCobrado)} (50% da tarifa)
               </p>
             ) : null}
           </FormField>
-          <FormField label="Valor pago ao terceiro (R$)">
-            <Input
+          <FormField label="Valor pago ao terceiro">
+            <MoneyInput
               value={valorPagoTerceiro}
-              onChange={(e) => setValorPagoTerceiro(e.target.value)}
+              onChange={setValorPagoTerceiro}
               placeholder="Valor de ida (opcional)"
-              className="tabular-nums"
-              inputMode="decimal"
             />
             {retorno && terceiroEfetivo != null ? (
               <p className="mt-1 text-xs text-muted-foreground">

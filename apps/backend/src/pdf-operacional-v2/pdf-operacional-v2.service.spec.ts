@@ -116,8 +116,6 @@ function baseDetalhe(overrides?: {
         solicitacaoId: 'sol-1',
         dataRef: new Date('2026-05-10T00:00:00.000Z'),
         turno: 'MANHA',
-        atendimentoEspecial: true,
-        atendimentoEspecialTexto: 'Carga sensível',
         createdAt: new Date(),
         updatedAt: new Date(),
       },

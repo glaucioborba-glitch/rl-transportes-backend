@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import type { AdminContract, ContractStatus } from "@/lib/admin/types";
 import { readJson, adminContractsKey } from "@/lib/admin/storage";
@@ -10,7 +11,7 @@ import { ContractCard } from "@/components/admin/contract-card";
 import { Button } from "@/components/ui/button";
 
 export default function AdminContratosPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [items, setItems] = useState<AdminContract[]>([]);
   const [clienteId, setClienteId] = useState("");
   const [statusF, setStatusF] = useState<"" | ContractStatus>("");

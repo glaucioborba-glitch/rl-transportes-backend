@@ -18,6 +18,7 @@ import { OutboxService } from '../outbox/outbox.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { formatUnidadeProcessoId } from '../unidade-processo/unidade-direcao.util';
 import {
+  aluguelTemDiaria,
   containerContextFromAluguel,
   matchAluguelItem,
   type AluguelItemLike,
@@ -102,7 +103,11 @@ export class AluguelService {
       });
       if (!unidade) throw new NotFoundException('Unidade de aluguel não encontrada.');
       if (unidade.status !== StatusUnidadeAluguel.DISPONIVEL) {
-        throw new BadRequestException(`A unidade ${unidade.unidadeIso} não está disponível.`);
+        throw new BadRequestException(
+          unidade.status === StatusUnidadeAluguel.USO_PROPRIO
+            ? `A unidade ${unidade.unidadeIso} está em uso próprio e não pode ser alugada.`
+            : `A unidade ${unidade.unidadeIso} não está disponível.`,
+        );
       }
 
       const aberto = await tx.unidadeProcesso.findFirst({
@@ -120,7 +125,7 @@ export class AluguelService {
 
       const cliente = await tx.cliente.findFirst({
         where: { id: dto.clienteId, deletedAt: null },
-        select: { id: true, tenantId: true, razaoSocial: true },
+        select: { id: true, tenantId: true, razaoSocial: true, cadastroTabelaAluguelId: true },
       });
       if (!cliente) throw new NotFoundException('Cliente não encontrado.');
 
@@ -129,7 +134,12 @@ export class AluguelService {
             where: { id: dto.tabelaAluguelId, deletedAt: null, ativo: true },
             include: { itens: { where: { deletedAt: null, ativo: true } } },
           })
-        : await this.tabelas.resolveTabelaVigente(cliente.tenantId);
+        : cliente.cadastroTabelaAluguelId
+          ? await tx.cadastroTabelaAluguel.findFirst({
+              where: { id: cliente.cadastroTabelaAluguelId, deletedAt: null, ativo: true },
+              include: { itens: { where: { deletedAt: null, ativo: true } } },
+            })
+          : await this.tabelas.resolveTabelaVigente(cliente.tenantId);
       if (!tabela) {
         throw new UnprocessableEntityException(
           'Não há tabela de aluguel vigente. Cadastre em Financeiro → Aluguel.',
@@ -141,7 +151,7 @@ export class AluguelService {
         unidade.tipoContainerCodigo,
         unidade.containerTamanho,
       );
-      if (!item || item.valorDiaria <= 0) {
+      if (!item || !aluguelTemDiaria(item)) {
         throw new UnprocessableEntityException(
           `Tabela de aluguel sem diária para ${unidade.tipoContainerCodigo} ${unidade.containerTamanho}.`,
         );
@@ -343,8 +353,8 @@ export class AluguelService {
     containerTamanho: string;
     valorDiaria: Prisma.Decimal | number;
     diasFreeTime: number;
-    valorEntrega: Prisma.Decimal | number;
-    valorColeta: Prisma.Decimal | number;
+    valorHandling: Prisma.Decimal | number;
+    faixasDiaria?: unknown;
     ativo: boolean;
   }): AluguelItemLike {
     return {
@@ -352,8 +362,8 @@ export class AluguelService {
       containerTamanho: row.containerTamanho,
       valorDiaria: Number(row.valorDiaria),
       diasFreeTime: row.diasFreeTime,
-      valorEntrega: Number(row.valorEntrega),
-      valorColeta: Number(row.valorColeta),
+      valorHandling: Number(row.valorHandling),
+      faixasDiaria: row.faixasDiaria,
       ativo: row.ativo,
     };
   }

@@ -28,6 +28,8 @@ describe('isStaffJwtExemptPath', () => {
     expect(isStaffJwtExemptPath('/client/container/ABCD1234567/pre-fatura')).toBe(true);
     expect(isStaffJwtExemptPath('/v2/solicitacoes/abc-uuid/pdf')).toBe(true);
     expect(isStaffJwtExemptPath('/v2/solicitacoes/abc-uuid/verificar')).toBe(true);
+    expect(isStaffJwtExemptPath('/v2/motorista-gps/login')).toBe(true);
+    expect(isStaffJwtExemptPath('/v2/motorista-localizacao')).toBe(false);
     expect(isStaffJwtExemptPath('/v2/solicitacoes')).toBe(false);
     expect(isStaffJwtExemptPath('/v2/solicitacoes/abc-uuid')).toBe(false);
   });

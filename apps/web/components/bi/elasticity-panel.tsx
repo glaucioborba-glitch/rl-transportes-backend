@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { MoneyInput } from "@/components/ui/money-input";
+import { formatContabil, parseMoeda } from "@/lib/financeiro/format";
 
 export function ElasticityPanel({
   elasticidadeMedia,
@@ -12,9 +14,9 @@ export function ElasticityPanel({
   serieResumo: string;
   onSimulate: (precoAtual: number, precoNovo: number, custo: number, volume: number, elast?: number) => void;
 }) {
-  const [pa, setPa] = useState(120);
-  const [pn, setPn] = useState(132);
-  const [custo, setCusto] = useState(45);
+  const [pa, setPa] = useState(formatContabil(120));
+  const [pn, setPn] = useState(formatContabil(132));
+  const [custo, setCusto] = useState(formatContabil(45));
   const [vol, setVol] = useState(400);
   const sens =
     elasticidadeMedia == null
@@ -41,22 +43,22 @@ export function ElasticityPanel({
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <label className="text-[10px] text-zinc-500">
             Preço atual
-            <input type="number" className="mt-1 w-full rounded border border-white/10 bg-zinc-900 px-2 py-1 text-sm" value={pa} onChange={(e) => setPa(Number(e.target.value))} />
+            <MoneyInput className="mt-1 h-8" value={pa} onChange={setPa} />
           </label>
           <label className="text-[10px] text-zinc-500">
             Preço novo
-            <input type="number" className="mt-1 w-full rounded border border-white/10 bg-zinc-900 px-2 py-1 text-sm" value={pn} onChange={(e) => setPn(Number(e.target.value))} />
+            <MoneyInput className="mt-1 h-8" value={pn} onChange={setPn} />
           </label>
           <label className="text-[10px] text-zinc-500">
             Custo/un.
-            <input type="number" className="mt-1 w-full rounded border border-white/10 bg-zinc-900 px-2 py-1 text-sm" value={custo} onChange={(e) => setCusto(Number(e.target.value))} />
+            <MoneyInput className="mt-1 h-8" value={custo} onChange={setCusto} />
           </label>
           <label className="text-[10px] text-zinc-500">
             Volume
             <input type="number" className="mt-1 w-full rounded border border-white/10 bg-zinc-900 px-2 py-1 text-sm" value={vol} onChange={(e) => setVol(Number(e.target.value))} />
           </label>
         </div>
-        <Button type="button" className="mt-3 w-full bg-emerald-600 hover:bg-emerald-500" onClick={() => onSimulate(pa, pn, custo, vol, elasticidadeMedia ?? undefined)}>
+        <Button type="button" className="mt-3 w-full bg-emerald-600 hover:bg-emerald-500" onClick={() => onSimulate(parseMoeda(pa), parseMoeda(pn), parseMoeda(custo), vol, elasticidadeMedia ?? undefined)}>
           Projetar com GET /comercial/simulador
         </Button>
       </div>

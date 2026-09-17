@@ -32,9 +32,11 @@ import {
 } from "@/components/ui/dialog";
 import { ContainerNumber } from "@/components/ui/container-number";
 import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
+import { rotuloTomadaPedido } from "@/lib/cadastros/tomada-display";
+import { TomadaPedidoBadge } from "@/components/gate/tomada-pedido-badge";
+import { listCadastrosTiposContainer } from "@/lib/api/cadastros-tipos-container-client";
 import { useTenantTurnos } from "@/hooks/use-tenant-turnos";
 import type { TenantTurnoConfig } from "@/lib/api/tenant-config-client";
-import { useGateCockpitContext } from "./gate-cockpit-context";
 
 type Props = {
   id: string;
@@ -115,7 +117,6 @@ function NotFoundState() {
 
 export function GateAutorizacaoDetalhePanel({ id }: Props) {
   const router = useRouter();
-  const { refresh } = useGateCockpitContext();
   const user = useStaffAuthStore((s) => s.user);
   const { turnos } = useTenantTurnos();
   const podeAutorizar = podeAprovarOs(user);
@@ -126,6 +127,7 @@ export function GateAutorizacaoDetalhePanel({ id }: Props) {
   const [rejeitarOpen, setRejeitarOpen] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [tipos, setTipos] = useState<Array<{ codigo: string; tomadaReefer: boolean }>>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -146,12 +148,25 @@ export function GateAutorizacaoDetalhePanel({ id }: Props) {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    let on = true;
+    void listCadastrosTiposContainer()
+      .then((r) => {
+        if (on) setTipos(r.items);
+      })
+      .catch(() => {
+        if (on) setTipos([]);
+      });
+    return () => {
+      on = false;
+    };
+  }, []);
+
   async function aprovar() {
     setBusy(true);
     try {
       await staffAprovarSolicitacaoV2(id);
       toast.success("Solicitação aprovada");
-      void refresh(true);
       router.push("/operador/gate/autorizacoes");
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Falha ao aprovar");
@@ -168,7 +183,6 @@ export function GateAutorizacaoDetalhePanel({ id }: Props) {
       toast.success("Solicitação rejeitada");
       setRejeitarOpen(false);
       setMotivo("");
-      void refresh(true);
       router.push("/operador/gate/autorizacoes");
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Falha ao rejeitar");
@@ -234,6 +248,14 @@ export function GateAutorizacaoDetalhePanel({ id }: Props) {
                     <span className="text-sm text-muted-foreground">{tipoTamanho}</span>
                   ) : null}
                   {situacao ? <SituacaoBadge situacao={situacao} /> : null}
+                  <TomadaPedidoBadge
+                    label={rotuloTomadaPedido({
+                      tipo: c.tipo != null ? String(c.tipo) : null,
+                      refrigerado: Boolean(c.refrigerado),
+                      setPoint: c.setPoint as number | string | null | undefined,
+                      tipos,
+                    })}
+                  />
                 </div>
                 {c.booking != null && String(c.booking).trim() ? (
                   <p className="mt-2 text-sm text-slate-300">
@@ -379,11 +401,4 @@ export function GateAutorizacaoDetalhePanel({ id }: Props) {
       </Dialog>
     </div>
   );
-}
-
-/** Extrai o ID da rota `/operador/gate/autorizacoes/[id]`. */
-export function parseAutorizacaoDetalheId(pathname: string): string | null {
-  const match = pathname.match(/\/operador\/gate\/autorizacoes\/([^/]+)$/);
-  if (!match) return null;
-  return match[1];
 }

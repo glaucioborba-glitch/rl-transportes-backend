@@ -1,5 +1,7 @@
 import type { CadastroTabelaPrecoItem, Prisma, PrismaClient } from '@prisma/client';
 
+type CadastroTabelaDb = PrismaClient | Prisma.TransactionClient;
+
 type CadastroTabelaComItens = Prisma.CadastroTabelaPrecoGetPayload<{
   include: { itens: true };
 }>;
@@ -57,7 +59,7 @@ export function ordenarTabelasCandidatas<
 }
 
 export async function listCadastroTabelasVigentes(
-  db: PrismaClient,
+  db: CadastroTabelaDb,
   tenantId: string,
 ): Promise<CadastroTabelaComItens[]> {
   return db.cadastroTabelaPreco.findMany({
@@ -68,7 +70,7 @@ export async function listCadastroTabelasVigentes(
 }
 
 export async function listCadastroTabelasAtivas(
-  db: PrismaClient,
+  db: CadastroTabelaDb,
   tenantId: string,
 ): Promise<CadastroTabelaComItens[]> {
   return db.cadastroTabelaPreco.findMany({
@@ -79,7 +81,7 @@ export async function listCadastroTabelasAtivas(
 }
 
 export async function resolveCadastroTabelasCandidatas(
-  db: PrismaClient,
+  db: CadastroTabelaDb,
   clienteId: string,
 ): Promise<CadastroTabelaComItens[]> {
   const cliente = await db.cliente.findFirst({
@@ -98,7 +100,7 @@ export async function resolveCadastroTabelasCandidatas(
 }
 
 export async function resolveCadastroTabelaVigente(
-  db: PrismaClient,
+  db: CadastroTabelaDb,
   clienteId: string,
 ): Promise<CadastroTabelaComItens | null> {
   const ordered = await resolveCadastroTabelasCandidatas(db, clienteId);
@@ -106,7 +108,7 @@ export async function resolveCadastroTabelaVigente(
 }
 
 export async function resolveBillingTabelaPrecoIdPadrao(
-  db: PrismaClient,
+  db: CadastroTabelaDb,
   tenantId = 'default',
 ): Promise<string | null> {
   const vigentes = await listCadastroTabelasVigentes(db, tenantId);

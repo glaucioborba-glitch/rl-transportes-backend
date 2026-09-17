@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, staffGateCockpit } from "@/lib/api/staff-client";
+import { ApiError, staffListarSolicitacoesV2, staffPatioInventario } from "@/lib/api/staff-client";
 import { fetchControleEntradaSaidaCount } from "@/lib/gate/operacao-api";
 import { GATE_POLLING_INTERVAL_MS } from "@/lib/dev-performance";
 import type { IntranetModuleId } from "@/lib/intranet/intranet-nav-config";
@@ -14,17 +14,15 @@ export function useIntranetSidebarBadges(moduleId: IntranetModuleId) {
   const refreshGate = useCallback(async () => {
     if (moduleId !== "gate") return;
     try {
-      const [data, controle] = await Promise.all([
-        staffGateCockpit(),
+      const [patio, pendente, analise, controle] = await Promise.all([
+        staffPatioInventario().catch(() => ({ lotacaoTotal: 0 })),
+        staffListarSolicitacoesV2({ status: "PENDENTE", limit: 1, page: 1 }).catch(() => ({ total: 0 })),
+        staffListarSolicitacoesV2({ status: "EM_ANALISE", limit: 1, page: 1 }).catch(() => ({ total: 0 })),
         fetchControleEntradaSaidaCount().catch(() => ({ count: 0 })),
       ]);
       setGateBadges({
-        "gate.fila": data.filaChegada.length,
-        "gate.operacao": data.operacaoAtiva.length,
-        "gate.patio": data.patio.unidades.length,
-        "gate.despacho": data.despacho.length,
-        "gate.os": data.ordensServico.length,
-        "gate.autorizacoes": data.dashboard.autorizacoesPendentes.total,
+        "gate.patio": patio.lotacaoTotal,
+        "gate.autorizacoes": (pendente.total ?? 0) + (analise.total ?? 0),
         "gate.controle": controle.count,
       });
     } catch (e) {

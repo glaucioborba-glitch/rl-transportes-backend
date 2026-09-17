@@ -13,6 +13,7 @@ import { ApiError, staffJson, staffTryJson } from "@/lib/api/staff-client";
 import { linearRegression, movingAverage, stddev, extrapolateLinear } from "@/lib/bi/forecast-math";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { Button } from "@/components/ui/button";
 
@@ -112,7 +113,7 @@ function pctSorted(arr: number[], p: number) {
 }
 
 export default function BiOperacionalPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [horizon, setHorizon] = useState<14 | 30 | 60>(14);
   const [perf, setPerf] = useState<Record<string, unknown> | null>(null);
   const [dash, setDash] = useState<Record<string, unknown> | null>(null);

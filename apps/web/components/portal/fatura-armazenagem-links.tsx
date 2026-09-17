@@ -8,6 +8,7 @@ import type { FaturaArmazenagemPortal } from "@/lib/api/portal-client";
 type Props = {
   fatura: Pick<FaturaArmazenagemPortal, "linkNfse" | "linkBoleto" | "linkPix">;
   compact?: boolean;
+  hideBoleto?: boolean;
 };
 
 function copyText(label: string, value: string) {
@@ -15,14 +16,17 @@ function copyText(label: string, value: string) {
   toast.success(`${label} copiado`);
 }
 
-export function FaturaArmazenagemLinks({ fatura, compact }: Props) {
-  const { linkNfse, linkBoleto, linkPix } = fatura;
+export function FaturaArmazenagemLinks({ fatura, compact, hideBoleto }: Props) {
+  const { linkNfse, linkPix } = fatura;
+  const linkBoleto = hideBoleto ? null : fatura.linkBoleto;
   const hasAny = !!(linkNfse || linkBoleto || linkPix);
 
   if (!hasAny) {
     return (
       <p className="text-sm text-slate-500">
-        Documentos ainda não disponíveis. Aguarde o processamento da NFS-e e do boleto.
+        {hideBoleto
+          ? "Documentos ainda não disponíveis. Aguarde o processamento da NFS-e."
+          : "Documentos ainda não disponíveis. Aguarde o processamento da NFS-e e do boleto."}
       </p>
     );
   }

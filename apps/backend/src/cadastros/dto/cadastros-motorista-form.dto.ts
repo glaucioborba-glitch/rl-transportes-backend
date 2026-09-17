@@ -34,6 +34,7 @@ export class CadastrosMotoristaFormDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' && !value.trim() ? undefined : value))
   @IsDateString()
   dataNascimento?: string;
 
@@ -49,6 +50,7 @@ export class CadastrosMotoristaFormDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' && !value.trim() ? undefined : value))
   @IsEmail()
   email?: string;
 
@@ -90,6 +92,28 @@ export class CadastrosMotoristaFormDto {
   @ApiProperty()
   @IsUUID()
   transportadoraId!: string;
+
+  @ApiPropertyOptional({ description: 'Placa preferencial do cavalo (Mercosul ou antiga)' })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value !== 'string') return value;
+    const n = value.replace(/[\s-]/g, '').toUpperCase();
+    return n || undefined;
+  })
+  @IsString()
+  @MaxLength(10)
+  placaCavalo?: string;
+
+  @ApiPropertyOptional({ description: 'Placa preferencial da carreta (Mercosul ou antiga)' })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value !== 'string') return value;
+    const n = value.replace(/[\s-]/g, '').toUpperCase();
+    return n || undefined;
+  })
+  @IsString()
+  @MaxLength(10)
+  placaCarreta?: string;
 
   @ApiProperty()
   @IsString()

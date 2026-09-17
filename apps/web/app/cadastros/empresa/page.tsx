@@ -17,6 +17,7 @@ import {
 } from "@/lib/api/empresa-client";
 import { buscarCadastrosCep, validateCadastrosCnpj } from "@/lib/api/cadastros-clientes-client";
 import { formatCEP, formatCNPJ, formatPhone, isValidCNPJ } from "@/lib/cadastros/formatters";
+import { labelIdioma, labelMoeda } from "@/lib/financeiro/format";
 import { canDo, type CadastrosUserContext } from "@/lib/cadastros/permission-matrix";
 import { toast } from "@/lib/toast";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
@@ -278,6 +279,16 @@ export default function CadastroEmpresaPage() {
                 value={data.uf}
                 onChange={(e) => set("uf", e.target.value.toUpperCase())}
               />
+            </FormField>
+            <FormField label="Moeda corrente" className="min-w-[16rem] flex-1">
+              <Input disabled value={labelMoeda(data.moedaCorrente)} />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Definida no terminal. Só o Super Admin altera (ex.: R$ 1.550,32).
+              </p>
+            </FormField>
+            <FormField label="Idioma padrão" className="min-w-[14rem] flex-1">
+              <Input disabled value={labelIdioma(data.idiomaPadrao)} />
+              <p className="mt-1 text-xs text-muted-foreground">Definido no terminal. Só o Super Admin altera.</p>
             </FormField>
           </div>
           <div className="flex flex-wrap gap-4">

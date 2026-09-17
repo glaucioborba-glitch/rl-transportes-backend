@@ -57,6 +57,17 @@ export type RICData = {
   direcao?: string;
   logoPng?: Buffer;
   empresaNome?: string;
+  /** Indicativo da porta — não entra na conferência obrigatória. */
+  ocrPorta?: {
+    tipoIso?: string;
+    rotulo?: string;
+    mgwKg?: string;
+    taraKg?: string;
+    payloadKg?: string;
+    owner?: string;
+    status?: 'CONFERE' | 'DIVERGENTE' | 'SEM_CAPTURA';
+    cadastroLabel?: string;
+  };
 };
 
 function formatDate(isoDate: string): string {
@@ -115,6 +126,10 @@ function labelFotoTipo(tipo: string): string {
   return FOTO_LABELS[tipo] ?? tipo.replace(/_/g, ' ');
 }
 
+function isSituacaoCheio(situacao?: string): boolean {
+  return (situacao ?? '').trim().toUpperCase() === 'CHEIO';
+}
+
 function isSvgPayload(dataUrl: string, buf: Buffer | null): boolean {
   if (/image\/svg/i.test(dataUrl)) return true;
   if (!buf?.length) return false;
@@ -150,54 +165,125 @@ export function generateRICPDF(data: RICData): PassThrough {
   } else {
     doc.fontSize(7).fillColor('#9E9E9E').text(empresaNome, L, 24, { align: 'center', width: W });
   }
-  doc
-    .fontSize(13)
-    .fillColor('#1A1A1A')
-    .font('Helvetica-Bold')
-    .text('RECIBO DE INTERCÂMBIO DE CONTÊINERES (RIC)', L, 34, { align: 'center', width: W });
-  doc
-    .fontSize(8)
-    .fillColor('#555555')
-    .font('Helvetica')
-    .text(`Protocolo: ${data.protocolo}`, L, 50, { align: 'center', width: W });
-
-  doc.moveTo(L, 60).lineTo(L + W, 60).strokeColor('#E0E0E0').lineWidth(1).stroke();
-
-  let y = 68;
-
-  doc.fontSize(10).fillColor('#1A1A1A').font('Helvetica-Bold').text('1. DADOS DA OPERAÇÃO', L, y);
-  y += 14;
-
+  const dash = (v?: string) => (v?.trim() ? v.trim() : '—');
   const placaCavalo = data.placaCavalo?.trim() || data.placa || '—';
   const placaCarreta = data.placaCarreta?.trim() || '—';
   const placaCarreta02 = data.placaCarreta02?.trim();
-  const dash = (v?: string) => (v?.trim() ? v.trim() : '—');
 
-  const dadosOp: Array<[string, string, string, string]> = [
-    ['Cliente:', dash(data.clienteNome), 'Operação:', dash(data.tipoOperacao)],
-    ['Transportadora:', dash(data.transportadoraNome), 'CNPJ transp.:', formatCNPJForPDF(data.transportadoraCNPJ ?? '')],
-    ['Agendamento:', dash(data.agendamento), 'Caminhão:', dash(data.caminhao)],
-    ['Check-in:', dash(data.checkin), 'ID:', dash(data.unidadeProcesso)],
-    ['Direção:', dash(data.direcao), 'Booking:', dash(data.booking)],
-    ['Processo:', dash(data.processo), 'Navio:', dash(data.navio)],
-    ['Contêiner:', dash(data.containerNumero), 'Tipo/tamanho:', `${data.containerTipo} / ${data.containerTamanho}`],
-    ['Situação:', dash(data.containerSituacao), 'Lacre:', dash(data.lacre)],
-    ['Placa cavalo:', placaCavalo, 'Placa carreta:', placaCarreta],
-    ['Motorista:', data.motoristaNome, 'CPF:', formatCPFForPDF(data.motoristaCPF)],
-  ];
-  if (placaCarreta02) {
-    dadosOp.push(['Placa carreta 02:', placaCarreta02, 'CNPJ:', formatCNPJForPDF(data.clienteCNPJ)]);
-  }
+  doc
+    .fontSize(11)
+    .fillColor('#1A1A1A')
+    .font('Helvetica-Bold')
+    .text('RECIBO DE INTERCÂMBIO DE CONTÊINERES (RIC)', L, 42, { width: 278, ellipsis: true });
+  doc.fontSize(8).fillColor('#9E9E9E').font('Helvetica').text('ID:', L + 286, 44);
+  doc
+    .fontSize(9)
+    .fillColor('#1A1A1A')
+    .font('Helvetica-Bold')
+    .text(dash(data.unidadeProcesso), L + 302, 43, { width: 72, ellipsis: true });
+  doc.fontSize(8).fillColor('#9E9E9E').font('Helvetica').text('Check-in:', L + 378, 44);
+  doc
+    .fontSize(8)
+    .fillColor('#1A1A1A')
+    .font('Helvetica-Bold')
+    .text(dash(data.checkin), L + 422, 44, { width: 137, ellipsis: true });
 
-  doc.font('Helvetica').fontSize(8);
-  for (const [label1, val1, label2, val2] of dadosOp) {
-    doc.fillColor('#9E9E9E').text(label1, L, y);
-    doc.fillColor('#1A1A1A').font('Helvetica-Bold').text(val1, L + 90, y, { width: 158, ellipsis: true });
-    if (label2) {
-      doc.fillColor('#9E9E9E').font('Helvetica').text(label2, L + 260, y);
-      doc.fillColor('#1A1A1A').font('Helvetica-Bold').text(val2 || '—', L + 360, y, { width: 163, ellipsis: true });
+  doc.moveTo(L, 60).lineTo(L + W, 60).strokeColor('#E0E0E0').lineWidth(1).stroke();
+
+  let y = 66;
+
+  const col2 = L + 260;
+  const pair = (l1: string, v1: string, l2?: string, v2?: string) => {
+    doc.font('Helvetica').fontSize(8).fillColor('#9E9E9E').text(l1, L, y);
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#1A1A1A').text(v1, L + 90, y, { width: 158, ellipsis: true });
+    if (l2) {
+      doc.font('Helvetica').fontSize(8).fillColor('#9E9E9E').text(l2, col2, y);
+      doc.font('Helvetica-Bold').fontSize(8).fillColor('#1A1A1A').text(v2 || '—', L + 360, y, { width: 163, ellipsis: true });
     }
     y += 12;
+  };
+  const bloco = (titulo: string) => {
+    y += 2;
+    doc.fontSize(8).fillColor('#616161').font('Helvetica-Bold').text(titulo.toUpperCase(), L, y);
+    y += 11;
+  };
+
+  doc.fontSize(9).fillColor('#1A1A1A').font('Helvetica-Bold').text('1. DADOS DA OPERAÇÃO', L, y);
+  y += 12;
+
+  bloco('Unidade');
+  doc.font('Helvetica').fontSize(8).fillColor('#9E9E9E').text('Contêiner:', L, y + 2);
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(13)
+    .fillColor('#1A1A1A')
+    .text(dash(data.containerNumero), L + 90, y, { width: 420, ellipsis: true });
+  y += 16;
+  pair('Tipo/tamanho:', `${dash(data.containerTipo)} / ${dash(data.containerTamanho)}`, 'Situação:', dash(data.containerSituacao));
+  const ocrPorta = data.ocrPorta;
+  if (ocrPorta?.tipoIso || ocrPorta?.mgwKg || ocrPorta?.taraKg) {
+    const ocrLabel = [ocrPorta.tipoIso, ocrPorta.rotulo].filter(Boolean).join(' · ') || '—';
+    const ocrColor =
+      ocrPorta.status === 'CONFERE' ? '#2E7D32' : ocrPorta.status === 'DIVERGENTE' ? '#B45309' : '#616161';
+    doc.font('Helvetica').fontSize(8).fillColor('#9E9E9E').text('OCR porta:', L, y);
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(8)
+      .fillColor(ocrColor)
+      .text(ocrLabel, L + 90, y, { width: 158, ellipsis: true });
+    if (ocrPorta.cadastroLabel) {
+      doc.font('Helvetica').fontSize(8).fillColor('#9E9E9E').text('vs cadastro:', col2, y);
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(8)
+        .fillColor('#1A1A1A')
+        .text(ocrPorta.cadastroLabel, L + 360, y, { width: 163, ellipsis: true });
+    }
+    y += 12;
+    if (ocrPorta.mgwKg || ocrPorta.taraKg) {
+      pair(
+        'MGW OCR:',
+        ocrPorta.mgwKg ? `${ocrPorta.mgwKg} kg` : '—',
+        ocrPorta.taraKg ? 'Tara OCR:' : undefined,
+        ocrPorta.taraKg ? `${ocrPorta.taraKg} kg` : undefined,
+      );
+    }
+    if (ocrPorta.payloadKg) {
+      pair('Payload OCR:', `${ocrPorta.payloadKg} kg`, ocrPorta.owner ? 'Owner OCR:' : undefined, ocrPorta.owner);
+    } else if (ocrPorta.owner) {
+      pair('Owner OCR:', ocrPorta.owner);
+    }
+    doc
+      .font('Helvetica')
+      .fontSize(6)
+      .fillColor('#9E9E9E')
+      .text('Indicativo da foto da porta — não exige conferência.', L, y);
+    y += 10;
+  }
+  if (isSituacaoCheio(data.containerSituacao)) {
+    pair('Lacre:', dash(data.lacre), 'Direção:', dash(data.direcao));
+    pair('Operação:', dash(data.tipoOperacao), 'Cliente:', dash(data.clienteNome));
+    pair('Agendamento:', dash(data.agendamento), data.clienteCNPJ?.trim() ? 'CNPJ cliente:' : undefined, data.clienteCNPJ?.trim() ? formatCNPJForPDF(data.clienteCNPJ) : undefined);
+  } else {
+    pair('Direção:', dash(data.direcao), 'Operação:', dash(data.tipoOperacao));
+    pair('Cliente:', dash(data.clienteNome), 'Agendamento:', dash(data.agendamento));
+    if (data.clienteCNPJ?.trim()) {
+      pair('CNPJ cliente:', formatCNPJForPDF(data.clienteCNPJ));
+    }
+  }
+
+  bloco('Navio, processo e booking');
+  pair('Navio:', dash(data.navio), 'Processo:', dash(data.processo));
+  pair('Booking:', dash(data.booking));
+
+  bloco('Transporte');
+  pair('Transportadora:', dash(data.transportadoraNome), 'CNPJ transp.:', formatCNPJForPDF(data.transportadoraCNPJ ?? ''));
+  pair('Caminhão:', dash(data.caminhao), 'Placa cavalo:', placaCavalo);
+  pair('Placa carreta:', placaCarreta, placaCarreta02 ? 'Placa carreta 02:' : 'Motorista:', placaCarreta02 || data.motoristaNome);
+  if (placaCarreta02) {
+    pair('Motorista:', data.motoristaNome, 'CPF:', formatCPFForPDF(data.motoristaCPF));
+  } else {
+    pair('CPF:', formatCPFForPDF(data.motoristaCPF));
   }
 
   const observacaoRic = data.observacaoGate?.trim();

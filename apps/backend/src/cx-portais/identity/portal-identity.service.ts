@@ -23,6 +23,8 @@ import {
 import { clienteCreateInputFromDto } from '../../clientes/cliente-fiscal.mapper';
 import { resolveBillingTabelaPrecoIdPadrao } from '../../cadastros/cadastro-tabela-preco-vigente';
 import { resolveCadastroTabelaTransportePadraoId } from '../../cadastros/cadastro-tabela-transporte';
+import { resolveCadastroTabelaServicoPadraoId } from '../../cadastros/cadastro-tabela-servico';
+import { resolveCadastroTabelaAluguelPadraoId } from '../../cadastros/cadastro-tabela-aluguel';
 import { normalizeLoginDocumento } from '../../common/utils/login-documento.util';
 import { canPortalClienteLogin, isTransportadoraTerceiraRole } from '../../common/constants/portal-tenant-roles.util';
 import { TRANSPORTADORA_PERMISSOES_FIXAS } from '../../common/constants/transportadora-permissoes.constants';
@@ -191,6 +193,14 @@ export class PortalIdentityService {
     const tabelaTransporteId = await resolveCadastroTabelaTransportePadraoId(this.prisma, tenantId);
     if (tabelaTransporteId && !data.cadastroTabelaTransporte) {
       data.cadastroTabelaTransporte = { connect: { id: tabelaTransporteId } };
+    }
+    const tabelaServicoId = await resolveCadastroTabelaServicoPadraoId(this.prisma, tenantId);
+    if (tabelaServicoId && !data.cadastroTabelaServico) {
+      data.cadastroTabelaServico = { connect: { id: tabelaServicoId } };
+    }
+    const tabelaAluguelId = await resolveCadastroTabelaAluguelPadraoId(this.prisma, tenantId);
+    if (tabelaAluguelId && !data.cadastroTabelaAluguel) {
+      data.cadastroTabelaAluguel = { connect: { id: tabelaAluguelId } };
     }
 
     const empresaNome =

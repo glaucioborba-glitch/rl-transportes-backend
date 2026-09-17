@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { formatIsoDisplay } from "@/lib/container-display";
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api/staff-client";
 import { sanitizeCorporateDocumento } from "@/lib/api/corporate-auth-client";
@@ -153,7 +154,7 @@ export function CessaoTitularidadeDialog({
             <div className="rounded-md border border-border bg-muted/30 p-3 space-y-1">
               <p>
                 <span className="text-muted-foreground">ID</span> {preview.idLabel} ·{" "}
-                {preview.unidadeIso}
+                {formatIsoDisplay(preview.unidadeIso)}
               </p>
               <p>
                 <span className="text-muted-foreground">Etapa</span> {ETAPA_LABEL[preview.etapa]}

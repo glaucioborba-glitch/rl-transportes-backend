@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { FaixasDiariaEditor, type FaixaDiariaForm } from "./faixas-diaria-editor";
 
 export type MatrixItemForm = {
@@ -56,7 +57,7 @@ export function TabelaPrecoMatrixGrid({ items, onChange }: Props) {
             <th className="px-2 py-2 text-left">Cap.</th>
             <th className="px-2 py-2 text-left">Tam.</th>
             <th className="px-2 py-2 text-left">Status</th>
-            <th className="px-2 py-2 text-left">Handling (R$)</th>
+            <th className="px-2 py-2 text-left">Handling</th>
             <th className="px-2 py-2 text-left">Free (dias)</th>
             <th className="px-2 py-2 text-left">Faixas</th>
           </tr>
@@ -73,12 +74,10 @@ export function TabelaPrecoMatrixGrid({ items, onChange }: Props) {
                   <td className="px-2 py-1">{item.containerTamanho}</td>
                   <td className="px-2 py-1">{item.statusContainer}</td>
                   <td className="px-2 py-1">
-                    <Input
-                      className="h-8 w-24"
-                      type="number"
-                      min={0}
+                    <MoneyInput
+                      className="h-8 w-28"
                       value={item.valorHandling}
-                      onChange={(e) => update(index, { valorHandling: e.target.value })}
+                      onChange={(v) => update(index, { valorHandling: v })}
                     />
                   </td>
                   <td className="px-2 py-1">

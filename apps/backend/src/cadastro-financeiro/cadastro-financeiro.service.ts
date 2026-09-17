@@ -18,6 +18,14 @@ import {
   listCadastroTabelasTransporteAtivas,
   resolveCadastroTabelaTransportePadraoId,
 } from '../cadastros/cadastro-tabela-transporte';
+import {
+  listCadastroTabelasServicoAtivas,
+  resolveCadastroTabelaServicoPadraoId,
+} from '../cadastros/cadastro-tabela-servico';
+import {
+  listCadastroTabelasAluguelAtivas,
+  resolveCadastroTabelaAluguelPadraoId,
+} from '../cadastros/cadastro-tabela-aluguel';
 
 export type CadastroPendenteRow = {
   id: string;
@@ -107,6 +115,12 @@ export class CadastroFinanceiroService {
     const tabelaTransporteId =
       cliente.cadastroTabelaTransporteId ??
       (await resolveCadastroTabelaTransportePadraoId(this.prisma, cliente.tenantId));
+    const tabelaServicoId =
+      cliente.cadastroTabelaServicoId ??
+      (await resolveCadastroTabelaServicoPadraoId(this.prisma, cliente.tenantId));
+    const tabelaAluguelId =
+      cliente.cadastroTabelaAluguelId ??
+      (await resolveCadastroTabelaAluguelPadraoId(this.prisma, cliente.tenantId));
 
     const atualizado = await this.prisma.cliente.update({
       where: { id: clienteId },
@@ -119,6 +133,12 @@ export class CadastroFinanceiroService {
         motivoRejeicaoCadastro: null,
         ...(tabelaTransporteId && !cliente.cadastroTabelaTransporteId
           ? { cadastroTabelaTransporte: { connect: { id: tabelaTransporteId } } }
+          : {}),
+        ...(tabelaServicoId && !cliente.cadastroTabelaServicoId
+          ? { cadastroTabelaServico: { connect: { id: tabelaServicoId } } }
+          : {}),
+        ...(tabelaAluguelId && !cliente.cadastroTabelaAluguelId
+          ? { cadastroTabelaAluguel: { connect: { id: tabelaAluguelId } } }
           : {}),
       },
       select: this.selectPublico(),
@@ -173,6 +193,14 @@ export class CadastroFinanceiroService {
     return listCadastroTabelasTransporteAtivas(this.prisma, 'default');
   }
 
+  async listarTabelasServicoAtribuicao() {
+    return listCadastroTabelasServicoAtivas(this.prisma, 'default');
+  }
+
+  async listarTabelasAluguelAtribuicao() {
+    return listCadastroTabelasAluguelAtivas(this.prisma, 'default');
+  }
+
   async listarCondicoesClientes(busca?: string) {
     const q = busca?.trim();
     const digits = q?.replace(/\D/g, '') ?? '';
@@ -206,6 +234,8 @@ export class CadastroFinanceiroService {
         analisadoEm: true,
         tabelaPrecoId: true,
         cadastroTabelaTransporteId: true,
+        cadastroTabelaServicoId: true,
+        cadastroTabelaAluguelId: true,
       },
     });
     return rows.map((row) => ({
@@ -221,6 +251,8 @@ export class CadastroFinanceiroService {
       prazoPagamento: string;
       cadastroTabelaPrecoId?: string;
       cadastroTabelaTransporteId?: string;
+      cadastroTabelaServicoId?: string;
+      cadastroTabelaAluguelId?: string;
     },
     analistaId: string,
   ) {
@@ -244,6 +276,14 @@ export class CadastroFinanceiroService {
       dto.cadastroTabelaTransporteId,
       cliente.tenantId,
     );
+    const tabelaServicoId = await this.resolveTabelaServicoParaAtribuicao(
+      dto.cadastroTabelaServicoId,
+      cliente.tenantId,
+    );
+    const tabelaAluguelId = await this.resolveTabelaAluguelParaAtribuicao(
+      dto.cadastroTabelaAluguelId,
+      cliente.tenantId,
+    );
 
     const mudouPagamento =
       cliente.condicaoPagamento !== condicaoPagamento || cliente.prazoPagamento !== dto.prazoPagamento;
@@ -260,6 +300,12 @@ export class CadastroFinanceiroService {
         cadastroTabelaTransporte: tabelaTransporteId
           ? { connect: { id: tabelaTransporteId } }
           : { disconnect: true },
+        cadastroTabelaServico: tabelaServicoId
+          ? { connect: { id: tabelaServicoId } }
+          : { disconnect: true },
+        cadastroTabelaAluguel: tabelaAluguelId
+          ? { connect: { id: tabelaAluguelId } }
+          : { disconnect: true },
       },
       select: {
         id: true,
@@ -269,6 +315,8 @@ export class CadastroFinanceiroService {
         analisadoEm: true,
         tabelaPrecoId: true,
         cadastroTabelaTransporteId: true,
+        cadastroTabelaServicoId: true,
+        cadastroTabelaAluguelId: true,
       },
     });
     if (mudouPagamento) {
@@ -317,6 +365,34 @@ export class CadastroFinanceiroService {
       : vigentes.find((t) => t.padrao) ?? vigentes[0];
     if (cadastroTabelaTransporteId && !escolhida) {
       throw new BadRequestException('Tabela de transportes não encontrada ou fora de vigência.');
+    }
+    return escolhida?.id ?? null;
+  }
+
+  private async resolveTabelaServicoParaAtribuicao(
+    cadastroTabelaServicoId: string | undefined,
+    tenantId: string,
+  ): Promise<string | null> {
+    const vigentes = await listCadastroTabelasServicoAtivas(this.prisma, tenantId || 'default');
+    const escolhida = cadastroTabelaServicoId
+      ? vigentes.find((t) => t.id === cadastroTabelaServicoId)
+      : vigentes.find((t) => t.padrao) ?? vigentes[0];
+    if (cadastroTabelaServicoId && !escolhida) {
+      throw new BadRequestException('Tabela de serviços não encontrada ou inativa.');
+    }
+    return escolhida?.id ?? null;
+  }
+
+  private async resolveTabelaAluguelParaAtribuicao(
+    cadastroTabelaAluguelId: string | undefined,
+    tenantId: string,
+  ): Promise<string | null> {
+    const vigentes = await listCadastroTabelasAluguelAtivas(this.prisma, tenantId || 'default');
+    const escolhida = cadastroTabelaAluguelId
+      ? vigentes.find((t) => t.id === cadastroTabelaAluguelId)
+      : vigentes.find((t) => t.padrao) ?? vigentes[0];
+    if (cadastroTabelaAluguelId && !escolhida) {
+      throw new BadRequestException('Tabela de aluguel não encontrada ou inativa.');
     }
     return escolhida?.id ?? null;
   }

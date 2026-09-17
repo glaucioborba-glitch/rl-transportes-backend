@@ -219,7 +219,16 @@ export type TenantParametrosIntegracoes = {
     businessAccountIdPresent: boolean;
   };
   googleVision: TenantIntegracaoStatus & { apiKeyPresent: boolean; clientEmail?: string };
-  banking: TenantIntegracaoStatus & { provider?: string; apiBaseUrl?: string };
+  googleMaps: TenantIntegracaoStatus & { apiKeyPresent: boolean };
+  googleRoutes: TenantIntegracaoStatus & { apiKeyPresent: boolean };
+  banking: TenantIntegracaoStatus & { apiBaseUrl?: string };
+  boleto: TenantIntegracaoStatus & { apiBaseUrl?: string };
+  pix: TenantIntegracaoStatus & {
+    apiBaseUrl?: string;
+    chavePixPresent: boolean;
+    chavePixHint?: string;
+    apiTokenPresent: boolean;
+  };
   s3: TenantIntegracaoStatus & { bucket?: string; endpoint?: string; region?: string };
 };
 
@@ -257,7 +266,7 @@ export type ParametrosGeraisResponse = {
 
   seguranca: TenantParametrosSeguranca;
 
-  integracoes: TenantParametrosIntegracoes;
+  integracoes?: TenantParametrosIntegracoes;
 
   notificacoes: TenantParametrosNotificacoes;
 
@@ -452,7 +461,11 @@ export type ParametrosGeraisPatch = {
       accessToken?: string;
       businessAccountId?: string;
     };
-    banking?: { provider?: string; apiBaseUrl?: string; apiToken?: string };
+    banking?: { apiBaseUrl?: string; apiToken?: string };
+    boleto?: { apiBaseUrl?: string; apiToken?: string };
+    pix?: { apiBaseUrl?: string; apiToken?: string; chavePix?: string };
+    googleMaps?: { apiKey?: string };
+    googleRoutes?: { apiKey?: string };
     s3?: {
       bucket?: string;
       endpoint?: string;
@@ -501,13 +514,20 @@ export async function removeFeriadoMunicipal(data: string): Promise<{ ok: boolea
 
 
 export async function testTenantIntegration(
-
   id: "ipm" | "whatsapp" | "google-vision" | "banking" | "s3",
-
 ): Promise<IntegrationTestResult> {
-
   return staffJson<IntegrationTestResult>(`/tenant-config/test/${id}`);
+}
 
+export type TenantMapsConfig = {
+  configured: boolean;
+  apiKey: string;
+  terminalLat: number | null;
+  terminalLng: number | null;
+};
+
+export async function fetchTenantMapsConfig(): Promise<TenantMapsConfig> {
+  return staffJson<TenantMapsConfig>("/tenant-config/maps-config");
 }
 
 

@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   UnauthorizedException,
+  Logger,
 } from '@nestjs/common';
 import {
   AcaoAuditoria,
@@ -23,9 +24,11 @@ import { buildQrOnApproval } from './operacao-fluxo-qr.util';
 import type { AssinaturaRicDto } from './dto/assinatura-ric.dto';
 import { generateRICPDF, type RICData } from './ric-pdf.service';
 import { EmpresaOperadoraService } from '../tenant/empresa-operadora.service';
+import { CatalogoContainersService } from '../catalogo-containers/catalogo-containers.service';
 import {
   formatTamanhoContainerMatrix,
   formatTipoContainerCodigo,
+  formatTipoTamanhoContainerLabel,
   normalizeTamanhoContainer,
   normalizeTamanhosContainer,
   resolveTipoContainerCodigo,
@@ -55,6 +58,13 @@ import {
   rotuloTipoOperacao,
 } from './conferencia-entrada-saida.util';
 import {
+  buildOcrIndicativoTipo,
+  parseContainerExtras,
+  temContainerOcrExtras,
+  type ContainerOcrExtras,
+  type OcrIndicativoTipo,
+} from '../modules/ocr/utils/ocr-parsers';
+import {
   direcaoUnidade,
   formatUnidadeProcessoId,
   rotuloDirecaoUnidade,
@@ -79,6 +89,12 @@ const SOLICITACAO_INCLUDE = {
   agendamentoSolicitacao: true,
   unidadeProcessosEntrada: { orderBy: { createdAt: 'desc' as const }, take: 1 },
   unidadeProcessosSaida: { orderBy: { createdAt: 'desc' as const }, take: 1 },
+  gateCheckIns: {
+    where: { checkOut: null },
+    orderBy: { dataHora: 'desc' as const },
+    take: 1,
+    select: { id: true },
+  },
 } satisfies Prisma.SolicitacaoInclude;
 
 type SolicitacaoFull = Prisma.SolicitacaoGetPayload<{ include: typeof SOLICITACAO_INCLUDE }>;
@@ -109,12 +125,15 @@ function transportadoraDoDossie(s: SolicitacaoFull): {
 
 @Injectable()
 export class GateOperacaoFlowService {
+  private readonly logger = new Logger(GateOperacaoFlowService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditoria: AuditoriaService,
     private readonly unidadeProcesso: UnidadeProcessoService,
     private readonly auth: AuthService,
     private readonly empresa: EmpresaOperadoraService,
+    private readonly catalogoContainers: CatalogoContainersService,
   ) {}
 
   private parseFluxoJson(raw: Prisma.JsonValue | null): OperacaoFluxoJson {
@@ -167,6 +186,36 @@ export class GateOperacaoFlowService {
     return '';
   }
 
+  private extrasFotoContainer(
+    fotos: Array<{
+      tipo: string;
+      ocrExtras?: ContainerOcrExtras;
+      ocrTextoBruto?: string;
+    }>,
+  ): ContainerOcrExtras {
+    const foto = fotos.find((f) => f.tipo === 'CONTAINER_OCR');
+    if (!foto) return {};
+    if (temContainerOcrExtras(foto.ocrExtras)) return foto.ocrExtras ?? {};
+    return parseContainerExtras(foto.ocrTextoBruto ?? '');
+  }
+
+  private ocrIndicativoTipo(
+    fotos: Array<{
+      tipo: string;
+      ocrExtras?: ContainerOcrExtras;
+      ocrTextoBruto?: string;
+    }>,
+    tipoCadastro?: string,
+    tamanhoCadastro?: string,
+  ): OcrIndicativoTipo | null {
+    return buildOcrIndicativoTipo(
+      this.extrasFotoContainer(fotos),
+      tipoCadastro,
+      tamanhoCadastro,
+      formatTipoTamanhoContainerLabel(tipoCadastro, tamanhoCadastro) ?? '',
+    );
+  }
+
   private mapOperacaoDto(s: SolicitacaoFull, opts?: { compact?: boolean }) {
     const fluxo = this.parseFluxoJson(s.operacaoFluxoJson);
     const state = this.inferState(s);
@@ -215,7 +264,10 @@ export class GateOperacaoFlowService {
       }),
       fluxo.correcoesGate?.confirmados,
     );
-    const coluna = colunaControle(state, s.updatedAt);
+    const coluna =
+      s.status === StatusSolicitacao.AGUARDANDO_GATE_OUT
+        ? 'PRONTO_SAIDA'
+        : colunaControle(state, s.updatedAt);
     const tipoOp = s.tipoOperacao ? String(s.tipoOperacao) : '';
     const direcao = direcaoUnidade(tipoOp);
     const processoRow =
@@ -241,10 +293,13 @@ export class GateOperacaoFlowService {
       stateLabel: STATE_LABELS[state],
       etapa: state,
       coluna,
+      gateInId: s.gateCheckIns[0]?.id ?? null,
       containerNumero: this.containerNumero(s),
       containerTipo: c?.tipo ? resolveTipoContainerCodigo(c.tipo) : '—',
       containerTamanho: c?.tamanho ? formatTamanhoContainerMatrix(c.tamanho) : '—',
       containerSituacao: c?.status ?? '—',
+      containerRefrigerado: Boolean(c?.refrigerado),
+      containerSetPoint: c?.setPoint ?? null,
       placa: t?.placaCavalo?.trim() || s.portaria?.placaVeiculo || '—',
       motoristaNome: t?.nomeMotorista?.trim() || s.portaria?.motoristaNome || '—',
       transportadoraNome: transp.nome || '—',
@@ -272,6 +327,9 @@ export class GateOperacaoFlowService {
       observacaoGate: fluxo.observacaoGate?.trim() || '',
       confirmadosGate: fluxo.correcoesGate?.confirmados ?? [],
       conferencia,
+      ocrIndicativos: opts?.compact
+        ? undefined
+        : { tipo: this.ocrIndicativoTipo(fotos as never, c?.tipo, c?.tamanho) },
       dossie: {
         solicitacao: {
           container: this.containerNumero(s),
@@ -282,6 +340,8 @@ export class GateOperacaoFlowService {
           booking: c?.booking?.trim() || '',
           processo: c?.processo?.trim() || '',
           navio: c?.navio?.trim() || '',
+          refrigerado: Boolean(c?.refrigerado),
+          setPoint: c?.setPoint ?? null,
           unidadeProcessoNumero: unidadeProcesso?.numero ?? null,
           unidadeProcessoLabel: unidadeProcesso?.label ?? '',
           direcaoUnidade: direcao,
@@ -459,6 +519,9 @@ export class GateOperacaoFlowService {
       tipo?: string;
       tamanho?: string;
       situacao?: string;
+      booking?: string;
+      processo?: string;
+      navio?: string;
       lacre?: string;
       placaCavalo?: string;
       placaCarreta?: string;
@@ -598,6 +661,21 @@ export class GateOperacaoFlowService {
       }
       registrarOriginal('situacao', c?.status ?? '');
       containerData.status = next as StatusContainer;
+    }
+    if (body.navio != null) {
+      const next = String(body.navio).trim().slice(0, 120);
+      registrarOriginal('navio', c?.navio ?? '');
+      containerData.navio = next;
+    }
+    if (body.processo != null) {
+      const next = String(body.processo).trim().slice(0, 120);
+      registrarOriginal('processo', c?.processo ?? '');
+      containerData.processo = next;
+    }
+    if (body.booking != null) {
+      const next = String(body.booking).trim().slice(0, 120);
+      registrarOriginal('booking', c?.booking ?? '');
+      containerData.booking = next;
     }
     if (body.lacre != null) {
       if (ocrTravado('lacre')) {
@@ -929,7 +1007,16 @@ export class GateOperacaoFlowService {
   async submitVistoria(
     protocolo: string,
     body: {
-      fotos: Array<{ tipo: string; imagem: string; ocrResult?: string; ocrMatch?: boolean; ocrConfianca?: number; ocrProvider?: string }>;
+      fotos: Array<{
+        tipo: string;
+        imagem: string;
+        ocrResult?: string;
+        ocrMatch?: boolean;
+        ocrConfianca?: number;
+        ocrProvider?: string;
+        ocrTextoBruto?: string;
+        ocrExtras?: ContainerOcrExtras;
+      }>;
       avarias: Array<{ foto: string; descricao: string; localizacao: string }>;
     },
     actorUserId: string,
@@ -1172,6 +1259,18 @@ export class GateOperacaoFlowService {
       data: { ricAssinado: true },
     });
     await this.unidadeProcesso.ensureIdNaEmissaoRic(updated.id, actorUserId);
+    const cRic = updated.containersSolicitacao[0];
+    const fluxoRic = this.parseFluxoJson(updated.operacaoFluxoJson);
+    void this.catalogoContainers
+      .registrarDaOperacao({
+        unidadeIso: this.containerNumero(updated),
+        tipoCodigo: cRic?.tipo,
+        tamanho: cRic?.tamanho,
+        fotos: fluxoRic.vistoria?.fotos as never,
+      })
+      .catch((err) =>
+        this.logger.warn(`Catálogo da caixa não atualizou: ${(err as Error).message}`),
+      );
     return this.mapOperacaoDto(await this.findByProtocolo(updated.protocolo));
   }
 
@@ -1223,6 +1322,11 @@ export class GateOperacaoFlowService {
       (await this.unidadeProcesso.findAbertoPorIso(this.containerNumero(s), this.prisma, {
         clienteId: s.clienteId,
       }));
+    const ocrIndicativo = this.ocrIndicativoTipo(
+      (fluxo.vistoria?.fotos ?? []) as never,
+      c?.tipo,
+      c?.tamanho,
+    );
     const dataRef = s.agendamentoSolicitacao?.dataRef;
     const turno = s.agendamentoSolicitacao?.turno?.trim();
     const agendamento = dataRef
@@ -1283,6 +1387,18 @@ export class GateOperacaoFlowService {
       operadorCPF: operadorAssinatura.cpf,
       logoPng: logoPng ?? undefined,
       empresaNome: branding.nome,
+      ocrPorta: ocrIndicativo
+        ? {
+            tipoIso: ocrIndicativo.tipoIso || undefined,
+            rotulo: ocrIndicativo.rotulo || undefined,
+            mgwKg: ocrIndicativo.mgwKg,
+            taraKg: ocrIndicativo.taraKg,
+            payloadKg: ocrIndicativo.payloadKg,
+            owner: ocrIndicativo.owner,
+            status: ocrIndicativo.status,
+            cadastroLabel: ocrIndicativo.cadastroLabel || undefined,
+          }
+        : undefined,
     };
   }
 
@@ -1401,7 +1517,7 @@ export class GateOperacaoFlowService {
   }
 
   async countControleEntradaSaida() {
-    const [aConferir, ricPendente] = await Promise.all([
+    const [aConferir, ricPendente, prontoSaida] = await Promise.all([
       this.prisma.solicitacao.count({
         where: { deletedAt: null, operacaoFluxoEstado: 'AGUARDANDO_RECONFIRMACAO' },
       }),
@@ -1411,8 +1527,11 @@ export class GateOperacaoFlowService {
           operacaoFluxoEstado: { in: ['RECONFIRMADA', 'RIC_GERADO'] },
         },
       }),
+      this.prisma.solicitacao.count({
+        where: { deletedAt: null, status: StatusSolicitacao.AGUARDANDO_GATE_OUT },
+      }),
     ]);
-    return { count: aConferir + ricPendente, aConferir, ricPendente };
+    return { count: aConferir + ricPendente + prontoSaida, aConferir, ricPendente, prontoSaida };
   }
 
   async listControleEntradaSaida() {
@@ -1437,6 +1556,7 @@ export class GateOperacaoFlowService {
             operacaoFluxoEstado: 'LIBERADA_OPERACAO',
             updatedAt: { gte: inicioHoje },
           },
+          { status: StatusSolicitacao.AGUARDANDO_GATE_OUT },
         ],
       },
       include: SOLICITACAO_INCLUDE,

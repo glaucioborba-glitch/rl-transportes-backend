@@ -21,15 +21,8 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
 
   const tipos = [
     {
-      codigo: 'DRYDC',
-      nome: 'Dry DC',
-      tamanhos: ['20', '40', '45'],
-      tomadaReefer: false,
-      ativo: true,
-    },
-    {
-      codigo: 'DRYHC',
-      nome: 'Dry HC',
+      codigo: 'DRY',
+      nome: 'Dry',
       tamanhos: ['20', '40', '45'],
       tomadaReefer: false,
       ativo: true,
@@ -73,15 +66,15 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
 
   for (const tipo of tipos) {
     const row = await prisma.cadastroTipoContainer.upsert({
-      where: { tenantId_codigo: { tenantId: DEFAULT_TENANT, codigo: tipo.codigo } },
+      where: { codigo: tipo.codigo },
       update: {
         nome: tipo.nome,
         tamanhos: tipo.tamanhos,
         tomadaReefer: tipo.tomadaReefer,
         ativo: tipo.ativo,
+        deletedAt: null,
       },
       create: {
-        tenantId: DEFAULT_TENANT,
         codigo: tipo.codigo,
         nome: tipo.nome,
         tamanhos: tipo.tamanhos,
@@ -104,11 +97,10 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
     });
   }
 
-  // Desativa códigos legados (matriz atual: DRYDC/DRYHC/…)
+  // DRYDC/DRYHC eram tipo+capacidade juntos. DC/HC no tipo também saem — cubagem é capacidade.
   await prisma.cadastroTipoContainer.updateMany({
     where: {
-      tenantId: DEFAULT_TENANT,
-      codigo: { in: ['DRY', 'HC', 'OT', 'FR', 'TANK', 'DC'] },
+      codigo: { in: ['DRYDC', 'DRYHC', 'HC', 'OT', 'FR', 'TANK', 'DC'] },
     },
     data: { ativo: false, deletedAt: new Date() },
   });
@@ -161,6 +153,8 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
       cnhValidade: new Date('2027-06-30'),
       cnhUfEmissao: 'SC',
       celular: '48999000001',
+      placaCavalo: 'ABC1D23',
+      placaCarreta: 'EFG4H56',
       ativo: true,
     },
     {
@@ -501,10 +495,10 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
 
   // ========== LOCAIS DE TRANSPORTE (origens/destinos) ==========
   const locaisTransporte = [
-    { codigo: 'FL', nome: 'FL', tipo: 'TERMINAL', cidade: 'Navegantes', uf: 'SC', ativo: true },
-    { codigo: 'PORTONAVE', nome: 'Portonave', tipo: 'PORTO', cidade: 'Navegantes', uf: 'SC', ativo: true },
-    { codigo: 'ITAPOA', nome: 'Itapoá', tipo: 'PORTO', cidade: 'Itapoá', uf: 'SC', ativo: true },
-    { codigo: 'TECON', nome: 'Tecon Santa Catarina', tipo: 'PORTO', cidade: 'Itajaí', uf: 'SC', ativo: true },
+    { codigo: 'FL', nome: 'FL', tipo: 'TERMINAL', cidade: 'Navegantes', uf: 'SC', lat: -26.8948, lng: -48.6545, ativo: true },
+    { codigo: 'PORTONAVE', nome: 'Portonave', tipo: 'PORTO', cidade: 'Navegantes', uf: 'SC', lat: -26.8915, lng: -48.6578, ativo: true },
+    { codigo: 'ITAPOA', nome: 'Itapoá', tipo: 'PORTO', cidade: 'Itapoá', uf: 'SC', lat: -26.1175, lng: -48.6085, ativo: true },
+    { codigo: 'TECON', nome: 'Tecon Santa Catarina', tipo: 'PORTO', cidade: 'Itajaí', uf: 'SC', lat: -26.9053, lng: -48.6548, ativo: true },
   ];
   for (const local of locaisTransporte) {
     await prisma.cadastroLocalTransporte.upsert({
@@ -687,10 +681,6 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
     { diaInicio: 16, diaFim: null, valorDiaria: 45 },
   ];
   const matrixSeed = [
-    { tipo: 'DRYDC', cap: 'DC', tam: "20'", status: 'CHEIO' as const, handling: 150, free: 7 },
-    { tipo: 'DRYDC', cap: 'DC', tam: "40'", status: 'CHEIO' as const, handling: 180, free: 7 },
-    { tipo: 'DRYHC', cap: 'HC', tam: "40'", status: 'CHEIO' as const, handling: 200, free: 7 },
-    { tipo: 'DRYDC', cap: 'DC', tam: "20'", status: 'VAZIO' as const, handling: 120, free: 10 },
     { tipo: 'REEFER', cap: null, tam: "40'", status: 'CHEIO' as const, handling: 250, free: 5, reefer: 45 },
   ];
   for (const m of matrixSeed) {
@@ -718,26 +708,6 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
     });
   }
 
-  const itensTabela = [
-    { tipoOperacaoCodigo: 'BAIXA', tipoContainerCodigo: 'DRYDC', containerTamanho: "20'", valor: 180.0, unidade: 'POR_OPERACAO' },
-    { tipoOperacaoCodigo: 'BAIXA', tipoContainerCodigo: 'DRYDC', containerTamanho: "40'", valor: 280.0, unidade: 'POR_OPERACAO' },
-    { tipoOperacaoCodigo: 'BAIXA', tipoContainerCodigo: 'DRYHC', containerTamanho: "40'", valor: 320.0, unidade: 'POR_OPERACAO' },
-    { tipoOperacaoCodigo: 'BAIXA', tipoContainerCodigo: 'REEFER', containerTamanho: "20'", valor: 220.0, unidade: 'POR_OPERACAO' },
-    { tipoOperacaoCodigo: 'BAIXA', tipoContainerCodigo: 'REEFER', containerTamanho: "40'", valor: 350.0, unidade: 'POR_OPERACAO' },
-    { tipoOperacaoCodigo: 'COLETA', tipoContainerCodigo: 'DRYDC', containerTamanho: "20'", valor: 160.0, unidade: 'POR_OPERACAO' },
-    { tipoOperacaoCodigo: 'COLETA', tipoContainerCodigo: 'DRYDC', containerTamanho: "40'", valor: 250.0, unidade: 'POR_OPERACAO' },
-    { tipoOperacaoCodigo: 'COLETA', tipoContainerCodigo: 'DRYHC', containerTamanho: "40'", valor: 290.0, unidade: 'POR_OPERACAO' },
-    { tipoOperacaoCodigo: 'COLETA', tipoContainerCodigo: 'REEFER', containerTamanho: "40'", valor: 320.0, unidade: 'POR_OPERACAO' },
-    { tipoOperacaoCodigo: 'TRANSFERENCIA', tipoContainerCodigo: '*', containerTamanho: '*', valor: 80.0, unidade: 'POR_OPERACAO' },
-    { tipoOperacaoCodigo: 'INSPECAO', tipoContainerCodigo: '*', containerTamanho: '*', valor: 50.0, unidade: 'POR_OPERACAO' },
-    { tipoOperacaoCodigo: 'REPARO', tipoContainerCodigo: '*', containerTamanho: '*', valor: 120.0, unidade: 'POR_HORA' },
-  ];
-  for (const item of itensTabela) {
-    await prisma.cadastroTabelaPrecoItem.create({
-      data: { ...item, tabelaId: tabelaGeral.id },
-    });
-  }
-
   await ensureDefaultPricingSynced(prisma, DEFAULT_TENANT);
 
   await prisma.cadastroTabelaServico.upsert({
@@ -746,13 +716,45 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
       id: 'seed-tabela-servico-padrao',
       tenantId: DEFAULT_TENANT,
       nome: 'TABELA PADRÃO — Serviços',
-      descricao: 'Serviços adicionais lançáveis no ID. Inclua os valores comerciais da RL nesta tabela.',
+      descricao: 'Serviços adicionais lançáveis no ID (inspeção, reparo, transferência, lavagem, lacre…).',
       dataInicio: new Date('2026-01-01T12:00:00.000Z'),
       ativo: true,
       padrao: true,
     },
-    update: { ativo: true, padrao: true, deletedAt: null },
+    update: {
+      ativo: true,
+      padrao: true,
+      deletedAt: null,
+      descricao: 'Serviços adicionais lançáveis no ID (inspeção, reparo, transferência, lavagem, lacre…).',
+    },
   });
+
+  const servicosAdicionais = [
+    { codigo: 'INSPECAO', nome: 'Inspeção CSC', valor: 50, unidade: 'POR_OPERACAO' },
+    { codigo: 'REPARO', nome: 'Reparo de Avaria', valor: 120, unidade: 'POR_HORA' },
+    { codigo: 'TRANSFERENCIA', nome: 'Transferência Interna', valor: 80, unidade: 'POR_OPERACAO' },
+  ];
+  for (const s of servicosAdicionais) {
+    await prisma.cadastroServicoItem.upsert({
+      where: { tabelaId_codigo: { tabelaId: 'seed-tabela-servico-padrao', codigo: s.codigo } },
+      create: {
+        tabelaId: 'seed-tabela-servico-padrao',
+        codigo: s.codigo,
+        nome: s.nome,
+        valor: s.valor,
+        unidade: s.unidade,
+        ativo: true,
+        efeito: 'NENHUM',
+      },
+      update: {
+        nome: s.nome,
+        valor: s.valor,
+        unidade: s.unidade,
+        ativo: true,
+        deletedAt: null,
+      },
+    });
+  }
 
   await prisma.cadastroTabelaAluguel.upsert({
     where: { id: 'seed-tabela-aluguel-padrao' },

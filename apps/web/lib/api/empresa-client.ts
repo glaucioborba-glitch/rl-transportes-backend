@@ -45,6 +45,8 @@ export type EmpresaOperadora = {
   bairro: string;
   cidade: string;
   uf: string;
+  moedaCorrente: "BRL" | "USD" | "EUR" | "PYG" | "ARS" | "CLP" | "UYU" | "PEN" | "COP";
+  idiomaPadrao?: "pt-BR" | "es-ES" | "en-US";
   regimeTributario: "SIMPLES_NACIONAL" | "LUCRO_PRESUMIDO" | "LUCRO_REAL";
   simplesAnexo: string;
   aliquotaIss: number;
@@ -95,6 +97,8 @@ export type EmpresaBrandingPublico = {
   tenantId: string;
   nome: string;
   razaoSocial: string;
+  moedaCorrente?: EmpresaOperadora["moedaCorrente"];
+  idiomaPadrao?: EmpresaOperadora["idiomaPadrao"];
   logos: Partial<Record<EmpresaLogoSlot, EmpresaLogoMeta>>;
 };
 

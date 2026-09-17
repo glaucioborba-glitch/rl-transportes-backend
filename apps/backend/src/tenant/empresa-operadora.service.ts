@@ -34,6 +34,7 @@ import {
 } from './empresa-operadora.types';
 import type { UpdateEmpresaOperadoraDto } from './dto/update-empresa-operadora.dto';
 import { DEFAULT_TENANT_ID } from './tenant.constants';
+import { parseIdiomaPadrao, parseMoedaCorrente } from './tenant-locale.util';
 
 type ClienteLogosMap = Record<string, EmpresaLogoMeta>;
 
@@ -53,10 +54,14 @@ export class EmpresaOperadoraService {
     );
     if (!dados.razaoSocial && tenant?.nome) dados.razaoSocial = tenant.nome;
     if (!dados.nomeFantasia && tenant?.nome) dados.nomeFantasia = tenant.nome;
+    const moedaCorrente = parseMoedaCorrente(tenant?.moedaCorrente);
+    const idiomaPadrao = parseIdiomaPadrao(tenant?.idiomaPadrao);
     return {
       tenantId: tenant?.id ?? tenantId,
       tenantNome: tenant?.nome ?? dados.nomeFantasia,
       ...dados,
+      moedaCorrente,
+      idiomaPadrao,
       logos: this.mapLogosWithUrl(dados.logos),
       slots: EMPRESA_LOGO_SLOTS.map((s) => ({
         slot: s.slot,
@@ -87,6 +92,7 @@ export class EmpresaOperadoraService {
       ...atual,
       ...this.normalizePatch(dto),
       logos: atual.logos,
+      moedaCorrente: parseMoedaCorrente(tenant?.moedaCorrente),
     };
     const parametros = this.asRecord(row.parametros);
     parametros.empresa = next;
@@ -168,6 +174,8 @@ export class EmpresaOperadoraService {
       tenantId: out.tenantId,
       nome: out.nomeFantasia || out.razaoSocial,
       razaoSocial: out.razaoSocial,
+      moedaCorrente: out.moedaCorrente,
+      idiomaPadrao: out.idiomaPadrao,
       logos: out.logos,
     };
   }
@@ -459,7 +467,7 @@ export class EmpresaOperadoraService {
   private async loadRow(tenantId: string) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { id: true, nome: true },
+      select: { id: true, nome: true, moedaCorrente: true, idiomaPadrao: true },
     });
     const row = await this.prisma.tenantConfig.findFirst({
       where: { OR: [{ tenantId }, { tenantKey: tenantId }] },

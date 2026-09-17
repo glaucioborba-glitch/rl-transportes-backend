@@ -4,6 +4,7 @@ export const TIPOS_LOCAL_TRANSPORTE = [
   { value: "TERMINAL", label: "Terminal / pátio" },
   { value: "PORTO", label: "Porto" },
   { value: "DEPOSITO", label: "Depósito" },
+  { value: "DEPOT", label: "Depot" },
   { value: "CIDADE", label: "Cidade" },
   { value: "OUTRO", label: "Outro" },
 ] as const;
@@ -15,6 +16,8 @@ export type CadastroLocalTransporte = {
   tipo: string;
   cidade: string | null;
   uf: string | null;
+  lat: number | null;
+  lng: number | null;
   ativo: boolean;
 };
 

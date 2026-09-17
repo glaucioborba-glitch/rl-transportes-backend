@@ -28,6 +28,11 @@ import { toast } from "@/lib/toast";
 import { usePortalAuthStore } from "@/stores/portal-store";
 import { usePessoaPermissoesStore } from "@/stores/pessoaPermissoesStore";
 import { SolicitacaoHistoricoAlteracoes } from "@/components/solicitacao/solicitacao-historico-alteracoes";
+import { PortalTomadaReeferActions } from "@/components/portal/portal-tomada-reefer-actions";
+import { usePortalTiposContainer } from "@/hooks/use-portal-tipos-container";
+import { findPortalTipo } from "@/components/portal/container-form-fields";
+import { rotuloTomadaPedido } from "@/lib/cadastros/tomada-display";
+import { TomadaPedidoBadge } from "@/components/gate/tomada-pedido-badge";
 
 function PhotoStrip({ title, urls }: { title: string; urls: unknown }) {
   const list = Array.isArray(urls) ? urls.filter((u) => typeof u === "string") : [];
@@ -88,6 +93,7 @@ export default function SolicitacaoDetailPage() {
   const [loading, setLoading] = useState(true);
   const [aproving, setAproving] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const { tipos } = usePortalTiposContainer(true);
 
   useEffect(() => {
     if (!id) return;
@@ -251,13 +257,28 @@ export default function SolicitacaoDetailPage() {
                       <p className="mt-1 text-xs text-slate-500">Unidade #{c.ordem}</p>
                       <p className="text-slate-400">
                         {c.booking} · {c.status}
-                        {c.refrigerado ? ` · reefer ${c.setPoint ?? "—"}°C` : ""}
                       </p>
                       <p className="text-xs text-slate-500">
                         {c.processo} ·{" "}
                         {formatTipoTamanhoContainerLabel(c.tipo, c.tamanho) ?? "—"}
                         {c.lacre ? ` · lacre ${c.lacre}` : ""}
                       </p>
+                      <div className="mt-2">
+                        <TomadaPedidoBadge
+                          label={rotuloTomadaPedido({
+                            tipo: c.tipo,
+                            refrigerado: c.refrigerado,
+                            setPoint: c.setPoint,
+                            tipos,
+                          })}
+                        />
+                      </div>
+                      <PortalTomadaReeferActions
+                        unidadeIso={c.unidade}
+                        solicitacaoStatus={row.status}
+                        tipoCodigo={c.tipo}
+                        requerTomada={Boolean(findPortalTipo(tipos, c.tipo)?.tomadaReefer)}
+                      />
                     </div>
                   ))}
                 </CardContent>
@@ -278,14 +299,6 @@ export default function SolicitacaoDetailPage() {
                   <p>
                     Turno: <span className="text-white">{row.agendamentoSolicitacao.turno}</span>
                   </p>
-                  {row.agendamentoSolicitacao.atendimentoEspecial ? (
-                    <p>
-                      Atendimento especial:{" "}
-                      <span className="text-white">
-                        {row.agendamentoSolicitacao.atendimentoEspecialTexto || "sim"}
-                      </span>
-                    </p>
-                  ) : null}
                 </CardContent>
               </Card>
             ) : null}
@@ -347,6 +360,31 @@ export default function SolicitacaoDetailPage() {
                     <Button variant="ghost" size="sm" asChild>
                       <Link href={`/portal/unidades/${u.id}`}>Linha do tempo</Link>
                     </Button>
+                  </div>
+                ))
+              ) : (row.containersSolicitacao ?? []).length ? (
+                (row.containersSolicitacao ?? []).map((c) => (
+                  <div key={c.id} className="rounded-lg border border-white/10 bg-black/20 p-3">
+                    <ContainerNumber value={c.unidade} showLabel={false} size="sm" />
+                    <p className="mt-1 text-xs text-slate-500">
+                      {formatTipoTamanhoContainerLabel(c.tipo, c.tamanho) ?? "—"} · {c.status}
+                    </p>
+                    <div className="mt-2">
+                      <TomadaPedidoBadge
+                        label={rotuloTomadaPedido({
+                          tipo: c.tipo,
+                          refrigerado: c.refrigerado,
+                          setPoint: c.setPoint,
+                          tipos,
+                        })}
+                      />
+                    </div>
+                    <PortalTomadaReeferActions
+                      unidadeIso={c.unidade}
+                      solicitacaoStatus={row.status}
+                      tipoCodigo={c.tipo}
+                      requerTomada={Boolean(findPortalTipo(tipos, c.tipo)?.tomadaReefer)}
+                    />
                   </div>
                 ))
               ) : (

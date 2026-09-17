@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { toast } from "@/lib/toast";
 import { defaultRange90d, formatBRL, parseDecimal } from "@/lib/financeiro/format";
@@ -62,7 +63,7 @@ function SparkLine({ values }: { values: number[] }) {
 export default function ApagarPage() {
   const { di, df } = defaultRange90d();
   const user = useStaffAuthStore((s) => s.user);
-  const ok = user?.role === "ADMIN" || user?.role === "GERENTE";
+  const ok = isIntranetGestorRole(user?.role);
 
   const [dataInicio, setDataInicio] = useState(di);
   const [dataFim, setDataFim] = useState(df);

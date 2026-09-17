@@ -49,6 +49,12 @@ function StaffLoginInner() {
     setSubmitting(true);
     try {
       const result = await authLogin(documento, password, { cookieMode: true });
+      if (result.user.role === "SUPER_ADMIN") {
+        const msg = "Acesso do dono do software: use /super-admin";
+        setErr(msg);
+        toast.error(msg);
+        return;
+      }
       if (!isStaffRole(result.user.role)) {
         setErr("Use o portal em /portal/login para usuários CLIENTE.");
         toast.error("Perfil não autorizado nesta área.");

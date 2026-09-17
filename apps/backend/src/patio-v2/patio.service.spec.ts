@@ -1,3 +1,7 @@
+jest.mock('../unidade-processo/tomada-diaria-id.util', () => ({
+  sincronizarTomadaDiariaDoProcesso: jest.fn().mockResolvedValue(undefined),
+}));
+
 import { Test } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { MovTipo, PatioStatus } from '@prisma/client';
@@ -6,6 +10,7 @@ import { SecurityEventsService } from '../security-center/security-events.servic
 import { PrismaService } from '../prisma/prisma.service';
 import { YardSnapshotService } from '../yard-read/yard-snapshot.service';
 import { PatioV2Service } from './patio.service';
+import { sincronizarTomadaDiariaDoProcesso } from '../unidade-processo/tomada-diaria-id.util';
 
 describe('PatioV2Service', () => {
   let service: PatioV2Service;
@@ -14,6 +19,8 @@ describe('PatioV2Service', () => {
     patioPosicao: Record<string, jest.Mock>;
     patioMovimentacao: Record<string, jest.Mock>;
     containerSolicitacao: Record<string, jest.Mock>;
+    unidadeProcesso: Record<string, jest.Mock>;
+    cadastroTipoContainer: Record<string, jest.Mock>;
     solicitacao: Record<string, jest.Mock>;
     $transaction: jest.Mock;
   };
@@ -27,8 +34,9 @@ describe('PatioV2Service', () => {
         update: jest.fn(),
         count: jest.fn(),
       },
-      containerSolicitacao: { findMany: jest.fn() },
       patioMovimentacao: { create: jest.fn() },
+      patioTomadaEvent: { create: jest.fn() },
+      containerSolicitacao: { findMany: jest.fn(), update: jest.fn() },
       pilhaLogica: {
         findUnique: jest.fn().mockResolvedValue(null),
         create: jest.fn(),
@@ -53,6 +61,12 @@ describe('PatioV2Service', () => {
         findMany: jest.fn().mockResolvedValue([
           { unidade: 'MSKU1234567', refrigerado: false, ordem: 1 },
         ]),
+      },
+      unidadeProcesso: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      cadastroTipoContainer: {
+        findMany: jest.fn().mockResolvedValue([{ codigo: 'REEFER', tomadaReefer: true }]),
       },
       solicitacao: { update: jest.fn() },
       $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
@@ -177,6 +191,81 @@ describe('PatioV2Service', () => {
     const inv = await service.inventario();
     expect(inv.divergencias).toHaveLength(1);
     expect(inv.divergencias[0].unidadeIso).toBe('ISO1');
+    expect(inv.unidades).toEqual([]);
+  });
+
+  it('inventario lista no saldo unidade sem baia', async () => {
+    prisma.patioPosicao.findMany.mockResolvedValue([]);
+    prisma.patioUnidade.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 'u1',
+          unidadeIso: 'TEMU6079348',
+          status: PatioStatus.SEPARADO,
+          statusContainer: 'CHEIO',
+          refrigerado: false,
+          createdAt: new Date('2026-09-01T00:00:00.000Z'),
+          posicaoAtual: null,
+          solicitacao: {
+            clienteId: 'c1',
+            protocolo: 'P-1',
+            cliente: { razaoSocial: 'ACME' },
+            containersSolicitacao: [
+              {
+                unidade: 'TEMU6079348',
+                booking: 'BKG-9',
+                processo: 'PROC-44',
+                navio: 'MSC LORETO',
+                status: 'CHEIO',
+                tamanho: '40HC',
+              },
+            ],
+          },
+          unidadeProcesso: { numero: 12, entradaEm: new Date('2026-09-01T00:00:00.000Z') },
+        },
+      ])
+      .mockResolvedValueOnce([]);
+
+    const inv = await service.inventario();
+    expect(inv.lotacaoTotal).toBe(1);
+    expect(inv.semBaia).toBe(1);
+    expect(inv.unidades).toHaveLength(1);
+    expect(inv.unidades[0]).toEqual(
+      expect.objectContaining({
+        unidadeIso: 'TEMU6079348',
+        baia: null,
+        cliente: 'ACME',
+        processoNumero: 12,
+        processo: 'PROC-44',
+        booking: 'BKG-9',
+        navio: 'MSC LORETO',
+        situacao: 'CHEIO',
+        tamanho: '40',
+        tamanhoLabel: "40'",
+      }),
+    );
+  });
+
+  it('conectarTomada amarra o ID aberto e sincroniza a diária', async () => {
+    prisma.patioUnidade.findUnique.mockResolvedValue({
+      id: 'u1',
+      unidadeIso: 'TEMU6079348',
+      refrigerado: false,
+      unidadeProcessoId: null,
+      solicitacaoId: 's1',
+      solicitacao: {
+        containersSolicitacao: [{ id: 'c1', unidade: 'TEMU6079348', tipo: 'REEFER', setPoint: -18 }],
+      },
+    });
+    prisma.unidadeProcesso.findFirst.mockResolvedValue({ id: 'up1' });
+
+    await service.conectarTomada('u1', 'op1', { setPoint: -18 });
+
+    expect(sincronizarTomadaDiariaDoProcesso).toHaveBeenCalledWith(
+      expect.anything(),
+      'up1',
+      expect.objectContaining({ userId: 'op1' }),
+    );
   });
 
   it('historico unidade inexistente → NotFoundException', async () => {

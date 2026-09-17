@@ -10,6 +10,7 @@ import { SsmaHeatLevels } from "@/components/ssma/ssma-heat-levels";
 import { Button } from "@/components/ui/button";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
 import { toast } from "@/lib/toast";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { buildTerminalRiskCatalog } from "@/lib/ssma/risk-catalog";
 import { ssmaStorage } from "@/lib/ssma/storage";
@@ -23,7 +24,7 @@ const TOC = [
 ];
 
 export default function SsmaIncidentesPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [incidents, setIncidents] = useState(() => ssmaStorage.incidents.list());
   const [dash, setDash] = useState<Record<string, unknown> | null>(null);
   const [perf, setPerf] = useState<Record<string, unknown> | null>(null);

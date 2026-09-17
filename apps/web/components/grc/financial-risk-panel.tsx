@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { formatBRL } from "@/lib/financeiro/format";
 
 function num(v: unknown): number {
   if (v == null) return 0;
@@ -81,8 +82,8 @@ export function FinancialRiskPanel({
           Top-5 receita: <span className={cn("font-bold", tonePct(pct))}>{pct.toFixed(1)}%</span>
         </p>
         <p className="mt-1 text-[11px] text-zinc-500">
-          Maior cliente no período: {topNome ?? "—"} · Faturamentos: {qFat} · Valor agregado (proxy): R${" "}
-          {totalValor >= 1e6 ? `${(totalValor / 1e6).toFixed(2)}M` : totalValor.toLocaleString("pt-BR")}
+          Maior cliente no período: {topNome ?? "—"} · Faturamentos: {qFat} · Valor agregado (proxy):{" "}
+          {formatBRL(totalValor)}
         </p>
         <p className="mt-3 text-[10px] text-zinc-600">
           Concentração elevada amplifica risco de receita e negociação comercial; use em conjunto com curva ABC em{" "}

@@ -52,14 +52,23 @@ function isNetworkFailure(error: unknown): boolean {
   return false;
 }
 
+function staffExpireLoginHref(): string {
+  const role = useStaffAuthStore.getState().user?.role;
+  if (role === "SUPER_ADMIN" || (typeof window !== "undefined" && window.location.pathname.startsWith("/super-admin"))) {
+    return "/super-admin/login";
+  }
+  return "/login/staff";
+}
+
 function staffSessionExpired(path: string): never {
+  const href = staffExpireLoginHref();
   useStaffAuthStore.getState().clear();
   if (typeof window !== "undefined") {
     void import("@/lib/auth-staff-cookie").then(({ clearStaffSessionCookie }) => clearStaffSessionCookie());
     if (!window.location.pathname.includes("/login")) {
       toast.error("Sessão expirada. Redirecionando para login...");
       window.setTimeout(() => {
-        window.location.href = "/login/staff";
+        window.location.href = href;
       }, 1500);
     }
   }
@@ -252,6 +261,14 @@ export function staffFetchSolicitacaoHistoricoAlteracoes(id: string) {
   );
 }
 
+export function staffCriarSolicitacaoV2(body: Record<string, unknown>) {
+  return staffJson<{ id: string; protocolo?: string }>("/v2/solicitacoes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export function staffListarSolicitacoesV2(params: { page?: number; limit?: number; status?: string }) {
   const sp = new URLSearchParams();
   if (params.page) sp.set("page", String(params.page));
@@ -303,21 +320,6 @@ export function staffSolicitacoesV2Metricas() {
   }>("/v2/solicitacoes/metricas/resumo");
 }
 
-export type StaffGateFilaItem = {
-  id: string;
-  protocolo: string;
-  containersIso?: string[];
-  cliente: { id: string; razaoSocial: string };
-  tipoCaminhao: string;
-  statusDb: string;
-  gateLabel: string;
-  gateInAbertoId: string | null;
-};
-
-export function staffGateFila() {
-  return staffJson<StaffGateFilaItem[]>("/v2/gate/fila");
-}
-
 export type EstoqueLegadoReport = {
   geradoEm: string;
   tenantId: string;
@@ -340,13 +342,6 @@ export type EstoqueLegadoReport = {
 
 export function staffEstoqueLegado() {
   return staffJson<EstoqueLegadoReport>("/v2/gate/estoque-legado");
-}
-
-export type { GateCockpitPayload } from "@/lib/gate/gate-cockpit-types";
-
-export function staffGateCockpit(dataRef?: string) {
-  const q = dataRef?.trim() ? `?dataRef=${encodeURIComponent(dataRef.trim())}` : "";
-  return staffJson<import("@/lib/gate/gate-cockpit-types").GateCockpitPayload>(`/v2/gate/cockpit${q}`);
 }
 
 export type StaffPrevisaoNavios = {
@@ -395,54 +390,6 @@ export type StaffPrevisaoNavios = {
 export function staffGatePrevisaoNavios(refresh = false) {
   const q = refresh ? "?refresh=1" : "";
   return staffJson<StaffPrevisaoNavios>(`/v2/gate/previsao-navios${q}`);
-}
-
-export function staffGateDirecionarOperacao(solicitacaoId: string) {
-  return staffJson<{ ok: boolean; status: string }>(
-    `/v2/gate/solicitacoes/${encodeURIComponent(solicitacaoId)}/direcionar-operacao`,
-    { method: "POST" },
-  );
-}
-
-export function staffGateRetornarEntrada(solicitacaoId: string, motivo: string) {
-  return staffJson<{ ok: boolean; status: string }>(
-    `/v2/gate/solicitacoes/${encodeURIComponent(solicitacaoId)}/retornar-entrada`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ motivo }),
-    },
-  );
-}
-
-export function staffGateAprovarOs(gateInId: string) {
-  return staffJson<{ ok: boolean; osStatus: string }>(
-    `/v2/gate/check-ins/${encodeURIComponent(gateInId)}/aprovar-os`,
-    { method: "POST" },
-  );
-}
-
-export function staffGateRejeitarOs(gateInId: string, motivo: string) {
-  return staffJson<{ ok: boolean; osStatus: string }>(
-    `/v2/gate/check-ins/${encodeURIComponent(gateInId)}/rejeitar-os`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ motivo }),
-    },
-  );
-}
-
-export async function staffGateDownloadPdf(solicitacaoId: string) {
-  const blob = await staffDownloadSolicitacaoV2Pdf(solicitacaoId);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `liberacao-${solicitacaoId}.pdf`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 /** Redireciona para login staff quando a sessão expirou (401). */
@@ -551,13 +498,35 @@ export async function staffGateOcrPlacaMock(file: File) {
 
 export type GiroEstimado = "RAPIDO" | "MEDIO" | "LENTO";
 
+export type StaffPatioSaldoUnidade = {
+  id: string;
+  unidadeIso: string;
+  status: string;
+  refrigerado: boolean;
+  cliente: string;
+  clienteId?: string;
+  baia: string | null;
+  entradaEm: string;
+  processoNumero: number | null;
+  processo?: string;
+  booking?: string;
+  navio?: string;
+  situacao?: string;
+  tamanho?: string;
+  tamanhoLabel?: string;
+  tipoContainer?: string | null;
+  tomadaReefer?: boolean;
+};
+
 export type StaffPatioInventario = {
   geradoEm: string;
   lotacaoTotal: number;
   capacidadeTotal: number;
   reefersLigados: number;
+  semBaia?: number;
   mediaHorasArmazenado: number | null;
   divergencias: { unidadeId: string; unidadeIso: string; status: string; motivo: string }[];
+  unidades?: StaffPatioSaldoUnidade[];
   baias: {
     id: string;
     codigoBaia: string;
@@ -572,10 +541,51 @@ export type StaffPatioInventario = {
       refrigerado: boolean;
       protocolo: string;
       cliente: string;
+      entradaEm?: string | null;
       giroEstimado?: GiroEstimado | null;
     }[];
   }[];
 };
+
+export type StaffPatioSaldoFiltro = {
+  q?: string;
+  tipo?: "TODOS" | "REEFER" | "DRY";
+  diasMin?: number;
+  situacao?: string;
+  tamanho?: string;
+  baia?: string;
+  cliente?: string;
+};
+
+function patioSaldoQuery(f: StaffPatioSaldoFiltro): string {
+  const p = new URLSearchParams();
+  if (f.q?.trim()) p.set("q", f.q.trim());
+  if (f.tipo && f.tipo !== "TODOS") p.set("tipo", f.tipo);
+  if (f.diasMin && f.diasMin > 0) p.set("diasMin", String(f.diasMin));
+  if (f.situacao?.trim() && f.situacao !== "TODOS") p.set("situacao", f.situacao);
+  if (f.tamanho?.trim() && f.tamanho !== "TODOS") p.set("tamanho", f.tamanho);
+  if (f.baia && f.baia !== "TODAS") p.set("baia", f.baia);
+  if (f.cliente?.trim()) p.set("cliente", f.cliente.trim());
+  const qs = p.toString();
+  return qs ? `?${qs}` : "";
+}
+
+async function staffDownloadBlob(path: string, accept: string): Promise<Blob> {
+  const res = await staffRequest(path, { method: "GET", headers: { Accept: accept } });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new ApiError(nestErrorMessage(err, res.status), res.status);
+  }
+  return res.blob();
+}
+
+export function staffPatioSaldoPdf(filtro: StaffPatioSaldoFiltro = {}) {
+  return staffDownloadBlob(`/v2/patio/saldo/pdf${patioSaldoQuery(filtro)}`, "application/pdf");
+}
+
+export function staffPatioSaldoXml(filtro: StaffPatioSaldoFiltro = {}) {
+  return staffDownloadBlob(`/v2/patio/saldo/xml${patioSaldoQuery(filtro)}`, "application/xml");
+}
 
 export function staffPatioInventario() {
   return staffJson<StaffPatioInventario>("/v2/patio/inventario");
@@ -599,6 +609,35 @@ export function staffPatioMovimentar(payload: Record<string, unknown>) {
 
 export function staffPatioHistoricoIso(iso: string) {
   return staffJson<Record<string, unknown>>(`/v2/patio/unidade/${encodeURIComponent(iso)}`);
+}
+
+export type StaffPatioTomadaStatus = {
+  unidadeId: string;
+  unidadeIso: string;
+  unidadeProcessoId?: string | null;
+  conectada: boolean;
+  solicitacaoPendente: boolean;
+  eventos: Array<{ tipo: string; setPoint: number | null; createdAt: string; observacao: string | null }>;
+};
+
+export function staffPatioTomadaStatus(iso: string) {
+  return staffJson<StaffPatioTomadaStatus>(`/v2/patio/unidade/${encodeURIComponent(iso)}/tomada`);
+}
+
+export function staffPatioTomadaConectar(iso: string, data?: { setPoint?: number; observacao?: string }) {
+  return staffJson<Record<string, unknown>>(`/v2/patio/unidade/${encodeURIComponent(iso)}/tomada/conectar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data ?? {}),
+  });
+}
+
+export function staffPatioTomadaDesconectar(iso: string, data?: { observacao?: string }) {
+  return staffJson<Record<string, unknown>>(`/v2/patio/unidade/${encodeURIComponent(iso)}/tomada/desconectar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data ?? {}),
+  });
 }
 
 export function staffGatePatioUnidades(gateInId: string) {

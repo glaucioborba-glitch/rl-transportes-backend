@@ -9,6 +9,7 @@ import {
   Param,
   Post,
   Query,
+  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -24,6 +25,8 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { ListSolicitacoesV2QueryDto } from './dto/list-solicitacoes-v2.dto';
+import { CreateSolicitacaoV2StaffDto } from './dto/create-solicitacao-v2-staff.dto';
+import type { Request } from 'express';
 import { StaffRejeitarV2Dto } from './dto/staff-rejeitar-v2.dto';
 import { StaffSolicitacaoV2DetalheEnvelopeDto } from './dto/staff-solicitacao-v2-detalhe.dto';
 import { CreateBloqueioDto } from '../../hold-release/dto/create-bloqueio.dto';
@@ -54,6 +57,18 @@ export class SolicitacoesV2Controller {
   @Permissions('solicitacoes:ler')
   listar(@Query() query: ListSolicitacoesV2QueryDto) {
     return this.service.listarStaff(query);
+  }
+
+  @Post()
+  @ApiOperation({ summary: 'Criar agendamento/solicitação no Gate (mesmo fluxo do portal, preenchimento manual)' })
+  @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_GATE)
+  @Permissions('solicitacoes:gate')
+  criarStaff(
+    @Body() dto: CreateSolicitacaoV2StaffDto,
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    return this.service.criarStaff(dto, user, req);
   }
 
   @Delete('anexos/:anexoId')

@@ -34,6 +34,7 @@ import { CxPortalSegmentGuard } from './guards/cx-portal-segment.guard';
 import { PortalCadastroAprovadoGuard } from './guards/portal-cadastro-aprovado.guard';
 import { PortalCxInterceptor } from './interceptors/portal-cx.interceptor';
 import { PortalClienteSolicitacoesQueryDto } from './dto/portal-cliente-solicitacoes-query.dto';
+import { PixCreditoContaCorrenteDto } from './dto/pix-credito-conta-corrente.dto';
 import { UpdatePortalSolicitacaoDto } from './dto/update-portal-solicitacao.dto';
 import { PortalClienteDataService } from './services/portal-cliente-data.service';
 import { PortalMarketplaceCxStore } from './stores/portal-marketplace-cx.store';
@@ -52,6 +53,8 @@ import { CadastrosTiposContainerService } from '../cadastros/cadastros-tipos-con
 import { PatioV2Service } from '../patio-v2/patio.service';
 import { PortalSolicitarTomadaDto } from '../patio-v2/dto/tomada.dto';
 import { TenantConfigService } from '../tenant/tenant-config.service';
+import { CatalogoContainersService } from '../catalogo-containers/catalogo-containers.service';
+import { CatalogoMotoristasExternosService } from '../catalogo-motoristas-externos/catalogo-motoristas-externos.service';
 
 class ChamadoDto {
   @ApiProperty()
@@ -100,6 +103,8 @@ export class PortalClienteController {
     private readonly tiposContainer: CadastrosTiposContainerService,
     private readonly patio: PatioV2Service,
     private readonly tenantConfig: TenantConfigService,
+    private readonly catalogoContainers: CatalogoContainersService,
+    private readonly catalogoMotoristas: CatalogoMotoristasExternosService,
   ) {}
 
   private cx(req: Request & { cxUser?: CxPortalRequestUser }) {
@@ -150,7 +155,7 @@ export class PortalClienteController {
   @ApiOperation({
     summary: 'Catálogo de tipos de contêiner ativos (MDM) para formulário de solicitação',
     description:
-      'Retorna `{ items: [{ codigo, nome, tamanhos, tomadaReefer }], total }` — mesma base de /cadastros/operacional/tipos-container.',
+      'Retorna `{ items: [{ codigo, nome, tamanhos, tomadaReefer }], total }` — catálogo global do Super Admin.',
   })
   async catalogoTiposContainer(@Req() req: Request & { cxUser?: CxPortalRequestUser }) {
     const u = this.cx(req);
@@ -289,11 +294,37 @@ export class PortalClienteController {
 
   @Get('financeiro/faturas')
   @PessoaPode('visualizarFinanceiro')
-  @ApiOperation({ summary: 'Faturas (read-only)' })
+  @ApiOperation({ summary: 'Faturas FAT (demonstrativo + NFS-e + boleto)' })
   async faturas(@Req() req: Request & { cxUser?: CxPortalRequestUser }, @Query('clienteId') clienteId?: string) {
     const u = this.cx(req);
     await this.audPortal(u, 'GET financeiro/faturas');
     return this.data.faturas(u, clienteId);
+  }
+
+  @Get('financeiro/conta-corrente')
+  @PessoaPode('visualizarFinanceiro')
+  @ApiOperation({ summary: 'Saldo e extrato da conta corrente do cliente' })
+  async contaCorrente(
+    @Req() req: Request & { cxUser?: CxPortalRequestUser },
+    @Query('clienteId') clienteId?: string,
+  ) {
+    const u = this.cx(req);
+    await this.audPortal(u, 'GET financeiro/conta-corrente');
+    return this.data.contaCorrente(u, clienteId);
+  }
+
+  @Post('financeiro/conta-corrente/pix-credito')
+  @HttpCode(HttpStatus.OK)
+  @PessoaPode('visualizarFinanceiro')
+  @ApiOperation({ summary: 'Gera QR Code PIX para crédito na conta corrente (API do banco do terminal)' })
+  async pixCreditoContaCorrente(
+    @Req() req: Request & { cxUser?: CxPortalRequestUser },
+    @Body() dto: PixCreditoContaCorrenteDto,
+    @Query('clienteId') clienteId?: string,
+  ) {
+    const u = this.cx(req);
+    await this.audPortal(u, 'POST financeiro/conta-corrente/pix-credito', undefined, AcaoAuditoria.INSERT);
+    return this.data.pixCreditoContaCorrente(u, dto.valor, clienteId);
   }
 
   @Get('financeiro/faturas-armazenagem')
@@ -352,6 +383,28 @@ export class PortalClienteController {
     const u = this.cx(req);
     await this.audPortal(u, 'GET /cliente/portal/patio/saldo');
     return this.data.saldoPatio(u, clienteIdParam);
+  }
+
+  @Get('catalogo-motoristas-externos/:cpf')
+  @PessoaPode('criarSolicitacao')
+  @ApiOperation({ summary: 'Lookup do motorista externo deste terminal (autofill por CPF)' })
+  async catalogoMotorista(
+    @Req() req: Request & { cxUser?: CxPortalRequestUser },
+    @Param('cpf') cpf: string,
+  ) {
+    this.cx(req);
+    return this.catalogoMotoristas.buscarPorCpf(cpf);
+  }
+
+  @Get('catalogo-containers/:iso')
+  @PessoaPode('criarSolicitacao')
+  @ApiOperation({ summary: 'Lookup do catálogo físico da caixa (autofill da nova solicitação)' })
+  async catalogoContainer(
+    @Req() req: Request & { cxUser?: CxPortalRequestUser },
+    @Param('iso') iso: string,
+  ) {
+    this.cx(req);
+    return this.catalogoContainers.buscar(iso);
   }
 
   @Get('patio/unidades-estoque')

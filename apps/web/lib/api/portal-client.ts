@@ -1158,8 +1158,6 @@ export type SolicitacaoRow = {
   agendamentoSolicitacao?: {
     dataRef: string;
     turno: string;
-    atendimentoEspecial: boolean;
-    atendimentoEspecialTexto?: string | null;
   } | null;
   solicitanteContato?: {
     nome: string;
@@ -1231,7 +1229,19 @@ export type PortalTipoContainerCatalogItem = {
   tomadaReefer: boolean;
 };
 
-/** Catálogo MDM ativo — mesma base de /cadastros/operacional/tipos-container. */
+export function fetchPortalMotoristaExterno(cpf: string) {
+  return portalJson<import("@/lib/catalogo-motorista-externo").CatalogoMotoristaExterno | null>(
+    `/cliente/portal/catalogo-motoristas-externos/${encodeURIComponent(cpf)}`,
+  );
+}
+
+export function fetchPortalCatalogoContainer(iso: string) {
+  return portalJson<import("@/lib/catalogo-container-iso").CatalogoContainerIso | null>(
+    `/cliente/portal/catalogo-containers/${encodeURIComponent(iso)}`,
+  );
+}
+
+/** Catálogo MDM ativo — tipos globais do Super Admin. */
 export function listPortalTiposContainer() {
   return portalJson<{ items: PortalTipoContainerCatalogItem[]; total: number }>(
     "/cliente/portal/catalogo/tipos-container",
@@ -1322,8 +1332,6 @@ export type UpdatePortalSolicitacaoPayload = {
   agendamento: {
     dataRef: string;
     turno: string;
-    atendimentoEspecial: boolean;
-    atendimentoEspecialTexto?: string;
   };
   solicitante: {
     nome: string;
@@ -1418,8 +1426,6 @@ export type CreateSolicitacaoV2Payload = {
   agendamento: {
     dataRef: string;
     turno: string;
-    atendimentoEspecial: boolean;
-    atendimentoEspecialTexto?: string;
   };
   solicitante: {
     nome: string;
@@ -1475,8 +1481,82 @@ function slicePage<T>(rows: T[], page: number, limit: number): PaginatedResponse
   };
 }
 
+export type PortalFatOrigem = "FATURAMENTO" | "GATE_OUT";
+
+export type PortalFatEnvelope = {
+  id: string;
+  origem: PortalFatOrigem;
+  numeroFat: string;
+  periodo: string;
+  referencia: string;
+  valorTotal: number | string;
+  statusNfe: string;
+  statusBoleto: string;
+  statusPagamento: string | null;
+  createdAt: string;
+  itens: { id: string; descricao: string; valor: number | string }[];
+  nfsEmitidas: {
+    id: string;
+    numeroNfe: string;
+    statusIpm: string;
+    createdAt: string;
+    linkNfsePdf?: string | null;
+  }[];
+  boletos: {
+    id: string;
+    numeroBoleto: string;
+    valorBoleto: number | string;
+    dataVencimento: string;
+    statusPagamento: string;
+    linkPdf?: string | null;
+  }[];
+  solicitacoesVinculadas: { solicitacao?: { id?: string; protocolo?: string | null } }[];
+  faturasArmazenagem: {
+    id: string;
+    valorTotal: number | string;
+    statusPagamento: string;
+    dataEmissao: string;
+    linkNfse: string | null;
+    linkBoleto: string | null;
+    linkPix: string | null;
+    containerIso: string | null;
+    diasCobrados: number | null;
+  }[];
+  linkNfse: string | null;
+  linkBoleto: string | null;
+  linkPix: string | null;
+};
+
+export type PortalContaCorrenteSituacao = "CREDOR" | "DEVEDOR" | "ZERADO";
+
+export type PortalContaCorrente = {
+  cliente: {
+    saldo: number;
+    situacao: PortalContaCorrenteSituacao;
+    situacaoLabel: string;
+    lancamentos: number;
+  };
+  lancamentos: {
+    id: string;
+    tipo: "CREDITO" | "DEBITO";
+    valor: number;
+    valorSinal: number;
+    motivo: string;
+    motivoLabel: string;
+    descricao: string;
+    referencia: string | null;
+    createdAt: string;
+  }[];
+};
+
+export function hrefPortalFat(row: { id: string; origem?: string | null }): string {
+  return row.origem === "GATE_OUT"
+    ? `/portal/financeiro/armazenagem/${row.id}`
+    : `/portal/financeiro/faturas/${row.id}`;
+}
+
 export async function fetchFaturamentoPaginated(params: { page?: number; limit?: number; periodo?: string }) {
-  const rows = await portalJson<Record<string, unknown>[]>("/cliente/portal/financeiro/faturas");
+  const rows = await portalJson<PortalFatEnvelope[]>("/cliente/portal/financeiro/faturas");
   void params.periodo;
   const page = params.page ?? 1;
   const limit = params.limit ?? 20;
@@ -1484,10 +1564,30 @@ export async function fetchFaturamentoPaginated(params: { page?: number; limit?:
 }
 
 export async function fetchFaturamento(id: string) {
-  const rows = await portalJson<Record<string, unknown>[]>("/cliente/portal/financeiro/faturas");
+  const rows = await portalJson<PortalFatEnvelope[]>("/cliente/portal/financeiro/faturas");
   const row = rows.find((r) => String(r.id) === String(id));
   if (!row) throw new ApiError("Fatura não encontrada", 404);
   return row;
+}
+
+export async function fetchPortalContaCorrente() {
+  return portalJson<PortalContaCorrente>("/cliente/portal/financeiro/conta-corrente");
+}
+
+export type PortalPixCreditoContaCorrente = {
+  valor: number;
+  pixCopiaCola: string;
+  pixQrCodeUrl: string;
+  provedor: string;
+  sandbox: boolean;
+  referenciaExterna: string;
+};
+
+export function criarPixCreditoContaCorrente(body: { valor: number }) {
+  return portalJson<PortalPixCreditoContaCorrente>("/cliente/portal/financeiro/conta-corrente/pix-credito", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export async function fetchBoletosPaginated(params: { page?: number; limit?: number }) {
@@ -1620,6 +1720,8 @@ export type PortalDashboardConsolidatedResponse = {
   validacaoDominio?: "APROVADO" | "DIVERGENTE" | "INDISPONIVEL" | null;
   condicaoPagamento?: string | null;
   prazoPagamento?: string | null;
+  condicaoPagamentoLabel?: string | null;
+  prazoPagamentoLabel?: string | null;
   cadastroOperacionalLiberado?: boolean;
 };
 

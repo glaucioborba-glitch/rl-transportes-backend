@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { SectionTitle } from "@/components/portal/portal-primitives";
 import { EquipeGestaoTabs } from "@/components/portal/equipe/equipe-gestao-tabs";
 import { ApiError, fetchPortalDashboard } from "@/lib/api/portal-client";
-import { labelCondicaoPagamento } from "@/lib/condicao-pagamento-portal";
+import { textoCondicaoVigente } from "@/lib/condicao-pagamento-portal";
 import { formatCpfBr, formatCpfCnpjBr } from "@/lib/format-cpf-cnpj-br";
 import { formatPhoneBr } from "@/lib/nfse/cliente-fiscal";
 import { logoutPortalCliente } from "@/lib/portal-logout";
@@ -79,9 +79,13 @@ export default function PerfilPage() {
         inscricaoEstadual:
           c.inscricaoEstadual?.trim() || "—",
         endereco: formatEndereco(c.endereco),
-        condicaoPagamento: dash.condicaoPagamento
-          ? labelCondicaoPagamento(dash.condicaoPagamento)
-          : "—",
+        condicaoPagamento: textoCondicaoVigente({
+          statusCadastro: dash.statusCadastro,
+          condicaoPagamento: dash.condicaoPagamento,
+          prazoPagamento: dash.prazoPagamento,
+          condicaoPagamentoLabel: dash.condicaoPagamentoLabel,
+          prazoPagamentoLabel: dash.prazoPagamentoLabel,
+        }).titulo,
       });
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Não foi possível carregar dados da empresa.");

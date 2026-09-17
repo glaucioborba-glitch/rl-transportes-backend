@@ -1,3 +1,5 @@
+import type { ContainerOcrExtras } from './utils/ocr-parsers';
+
 export interface OCRResult {
   textoBruto: string;
   textoExtraido: string;
@@ -5,6 +7,7 @@ export interface OCRResult {
   provider: 'google_vision' | 'tesseract' | 'mock';
   sucesso: boolean;
   erro?: string;
+  extras?: ContainerOcrExtras;
 }
 
 export interface OCRRequest {

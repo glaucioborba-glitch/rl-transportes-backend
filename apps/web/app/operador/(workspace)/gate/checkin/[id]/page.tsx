@@ -28,6 +28,7 @@ import {
 } from "@/lib/api/staff-client";
 import type { VistoriaAngulo } from "@/lib/gate-vistoria";
 import { GateVistoriaWizard } from "@/components/gate/gate-vistoria-wizard";
+import { formatIsoDisplay } from "@/lib/container-display";
 import { toast } from "@/lib/toast";
 import { OperationPageHeader } from "@/components/shared/operation-identity";
 import { GiroEstimadoBadge, type GiroEstimado } from "@/components/staff/giro-estimado-badge";
@@ -154,7 +155,7 @@ export default function StaffGateCheckInPage() {
     setQrIso(iso);
     const hit = patioUnidades.find((u) => u.unidadeIso.toUpperCase().includes(iso) || iso.includes(u.unidadeIso.toUpperCase()));
     if (hit) {
-      toast.success(`Container localizado: ${hit.unidadeIso}`);
+      toast.success(`Container localizado: ${formatIsoDisplay(hit.unidadeIso)}`);
       document.getElementById(`baia-${hit.id}`)?.focus();
     } else if (iso.length >= 4) {
       toast.info("ISO não encontrado neste check-in");
@@ -246,7 +247,7 @@ export default function StaffGateCheckInPage() {
             <>
               <GiroEstimadoBadge giro={giroEstimado} showLabel />
               <Button variant="outline" className="border-zinc-600" asChild>
-                <Link href="/operador/gate/fila">Voltar à fila</Link>
+                <Link href="/operador/gate/controle-entrada-saida">Voltar ao Controle</Link>
               </Button>
             </>
           }
@@ -493,7 +494,7 @@ export default function StaffGateCheckInPage() {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <p className="font-mono text-sm text-emerald-100">
-                          {u.unidadeIso}
+                          {formatIsoDisplay(u.unidadeIso)}
                           <GiroEstimadoBadge giro={u.solicitacao?.giroEstimado} className="ml-1.5 align-middle" />
                         </p>
                         <p className="text-[10px] uppercase tracking-wide text-zinc-500">{u.status}</p>
@@ -521,7 +522,7 @@ export default function StaffGateCheckInPage() {
 
           <DialogFooter className="flex-col gap-2 sm:flex-row">
             <Button type="button" variant="outline" className="border-zinc-600" asChild>
-              <Link href="/operador/patio">Abrir dashboard pátio</Link>
+              <Link href="/operador/gate/patio">Abrir pátio</Link>
             </Button>
             <Button
               type="button"

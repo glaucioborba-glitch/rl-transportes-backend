@@ -17,6 +17,7 @@ import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadast
 import { FamiliaresSection } from "@/components/cadastros/familiares-section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { ApiError } from "@/lib/api/staff-client";
 import {
   buscaCepColaborador,
@@ -534,13 +535,10 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               ))}
             </select>
           </FormField>
-          <FormField label="Salário Base (R$)" size="md">
-            <Input
-              type="number"
-              step="0.01"
+          <FormField label="Salário base" size="md">
+            <MoneyInput
               value={formData.salario}
-              onChange={(e) => setFormData({ ...formData, salario: e.target.value })}
-              className="tabular-nums"
+              onChange={(v) => setFormData({ ...formData, salario: v })}
             />
           </FormField>
           <FormField label="Conta Bancária" className="min-w-[14rem] flex-1">

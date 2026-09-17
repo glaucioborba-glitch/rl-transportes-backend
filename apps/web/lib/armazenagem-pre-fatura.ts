@@ -13,9 +13,7 @@ export type PreFaturaPortalResponse = {
   aviso: string;
 };
 
-export function formatMoneyBrl(value: number): string {
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
-}
+export { formatBRL as formatMoneyBrl } from "@/lib/financeiro/format";
 
 export function formatDateBr(iso: string | null): string {
   if (!iso) return "—";

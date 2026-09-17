@@ -61,6 +61,7 @@ export function clienteCreateInputFromDto(dto: CreateClienteDto): Prisma.Cliente
       responsavelEmail: null,
       papeis: defaultClientePapeis(dto.papeis),
       condicaoPagamento: dto.condicaoPagamento?.trim() || null,
+      prazoPagamento: dto.prazoPagamento?.trim() || null,
       ...tabelaPrecoConnect(dto),
     };
   }
@@ -93,6 +94,7 @@ export function clienteCreateInputFromDto(dto: CreateClienteDto): Prisma.Cliente
     responsavelEmail: dto.responsavelEmail!.trim().toLowerCase(),
     papeis: defaultClientePapeis(dto.papeis),
     condicaoPagamento: dto.condicaoPagamento?.trim() || null,
+    prazoPagamento: dto.prazoPagamento?.trim() || null,
     ...tabelaPrecoConnect(dto),
   };
 }
