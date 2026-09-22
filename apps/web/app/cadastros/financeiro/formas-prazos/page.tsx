@@ -286,11 +286,11 @@ export default function FormasPrazosPage() {
 
   return (
     <div className="space-y-6">
-      <FinanceiroBreadcrumb current="Forma e prazo" />
+      <FinanceiroBreadcrumb current="Forma e Prazo de Pagamento" />
       <FinanceiroTabs />
 
       <div>
-        <h1 className="text-2xl font-bold">Forma e prazo</h1>
+        <h1 className="text-2xl font-bold">Forma e Prazo de Pagamento</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           O nome do prazo é só o rótulo. Parcelas e vencimentos (ex.: 7 / 14 / 21) geram os boletos.
           Somente ADMIN e GERENTE podem alterar.

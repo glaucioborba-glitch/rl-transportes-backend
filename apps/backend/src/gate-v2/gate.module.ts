@@ -10,6 +10,7 @@ import { CadastrosModule } from '../cadastros/cadastros.module';
 import { GateV2Controller } from './gate.controller';
 import { GateQrController } from './gate-qr.controller';
 import { GateOperacaoFlowController } from './gate-operacao-flow.controller';
+import { GateUnidadeNotificacaoController } from './gate-unidade-notificacao.controller';
 import { GateOperacaoFlowService } from './gate-operacao-flow.service';
 import { GateV2Service } from './gate.service';
 import { PrevisaoNaviosService } from './previsao-navios/previsao-navios.service';
@@ -22,6 +23,9 @@ import { AuthModule } from '../auth/auth.module';
 import { CessaoTitularidadeModule } from '../cessao-titularidade/cessao-titularidade.module';
 import { TenantModule } from '../tenant/tenant.module';
 import { CatalogoContainersModule } from '../catalogo-containers/catalogo-containers.module';
+import { CatalogoNaviosModule } from '../catalogo-navios/catalogo-navios.module';
+import { MotoristaBiometriaModule } from '../motorista-biometria/motorista-biometria.module';
+import { GateUnidadeNotificacaoModule } from './gate-unidade-notificacao.module';
 
 @Module({
   imports: [
@@ -41,8 +45,17 @@ import { CatalogoContainersModule } from '../catalogo-containers/catalogo-contai
     CessaoTitularidadeModule,
     TenantModule,
     CatalogoContainersModule,
+    CatalogoNaviosModule,
+    MotoristaBiometriaModule,
+    GateUnidadeNotificacaoModule,
   ],
-  controllers: [GateV2Controller, GateQrController, VistoriaGateController, GateOperacaoFlowController],
+  controllers: [
+    GateV2Controller,
+    GateQrController,
+    VistoriaGateController,
+    GateOperacaoFlowController,
+    GateUnidadeNotificacaoController,
+  ],
   providers: [GateV2Service, GateOperacaoFlowService, PrevisaoNaviosService],
   exports: [GateV2Service, GateOperacaoFlowService, PrevisaoNaviosService],
 })

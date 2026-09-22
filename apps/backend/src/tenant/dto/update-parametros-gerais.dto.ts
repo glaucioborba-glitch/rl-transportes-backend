@@ -193,6 +193,50 @@ export class UpdateOperacionalDto {
   @IsBoolean()
   validarCancelamentoSemPenalidade?: boolean;
 
+  /** Validade do QR Code unificado (horas) após aprovação no Gate. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(168)
+  qrValidadeHoras?: number;
+
+  /** Remetente das mensagens do sistema. Vazio = usa SMTP_FROM do ambiente. */
+  @IsOptional()
+  @ValidateIf((_, v) => typeof v === 'string' && v.trim() !== '')
+  @IsEmail()
+  @MaxLength(255)
+  emailEnvio?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  emailEnvioNome?: string;
+
+  /** Servidor SMTP do terminal. Vazio = usa SMTP_HOST do ambiente. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  emailSmtpHost?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  emailSmtpPorta?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  emailSmtpUsuario?: string;
+
+  /** Somente escrita: string vazia apaga a senha guardada. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  emailSmtpSenha?: string;
+
   /** @deprecated use antecedenciaMinimaMin */
   @IsOptional()
   @Type(() => Number)
@@ -438,6 +482,148 @@ export class UpdateS3IntegracaoDto {
   publicBaseUrl?: string;
 }
 
+/** NFS-e municipal via IPM/Atende.Net. Senha e certificado são somente escrita. */
+export class UpdateIpmIntegracaoDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  baseUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^$|^\D*(\d\D*){14}$/, { message: 'prestadorCnpj deve ter 14 dígitos' })
+  prestadorCnpj?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  prestadorTom?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  senha?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^$|^\d{7}$/, { message: 'municipioIbge deve ter 7 dígitos' })
+  municipioIbge?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  tagIndicadorCancelamento?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200_000)
+  certificadoPfxBase64?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  certificadoSenha?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  codigoLocalPrestacao?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  codigoAtividade?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  codigoItemListaServico?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  aliquotaPercent?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4)
+  situacaoTributaria?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  tomadorTomFallback?: string;
+}
+
+/** NFS-e Emissor Nacional (gov.br). Certificado A1 é a chave de acesso. */
+export class UpdateNfseNacionalDto {
+  @IsOptional()
+  @IsIn(['homologacao', 'producao'])
+  ambiente?: 'homologacao' | 'producao';
+
+  @IsOptional()
+  @IsIn(['DESLIGADO', 'CONTINGENCIA', 'SEMPRE'])
+  ativacao?: 'DESLIGADO' | 'CONTINGENCIA' | 'SEMPRE';
+
+  /** PFX em base64; string vazia apaga o certificado guardado. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200_000)
+  certificadoPfxBase64?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  certificadoSenha?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^$|^\D*(\d\D*){14}$/, { message: 'cnpjPrestador deve ter 14 dígitos' })
+  cnpjPrestador?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(15)
+  inscricaoMunicipal?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^$|^\d{7}$/, { message: 'municipioIbge deve ter 7 dígitos' })
+  municipioIbge?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(5)
+  serieDps?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(6)
+  codigoTributacaoNacional?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  aliquotaIssPercent?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsIn([1, 2, 3])
+  optanteSimplesNacional?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(9)
+  regimeEspecialTributacao?: number;
+}
+
 export class UpdateIntegracoesDto {
   @IsOptional()
   @ValidateNested()
@@ -478,6 +664,16 @@ export class UpdateIntegracoesDto {
   @ValidateNested()
   @Type(() => UpdateS3IntegracaoDto)
   s3?: UpdateS3IntegracaoDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateIpmIntegracaoDto)
+  ipm?: UpdateIpmIntegracaoDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateNfseNacionalDto)
+  nfseNacional?: UpdateNfseNacionalDto;
 }
 
 export class UpdateParametrosGeraisDto {

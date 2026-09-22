@@ -1,5 +1,6 @@
 import {
   isServicoAdicionalCodigo,
+  mesclarPreFaturaComProjecao,
   parseDataSaida,
   pickOperacaoItem,
   scoreOperacaoItem,
@@ -51,5 +52,30 @@ describe('portal-simulacao-valores.util', () => {
     expect(() => parseDataSaida('20/08/2026')).toThrow(/AAAA-MM-DD/);
     expect(() => parseDataSaida('2026-13-40')).toThrow(/inválida/);
     expect(() => parseDataSaida('2035-01-01', new Date('2026-08-17T00:00:00.000Z'))).toThrow(/3 anos/);
+  });
+
+  it('mantém itens já lançados na pré-fatura e projeta diária/energia/saída', () => {
+    const merged = mesclarPreFaturaComProjecao(
+      [
+        { eventoGatilho: 'GATE_IN', descricao: 'Handling', quantidade: 1, valorUnitario: 180, valorTotal: 180 },
+        { eventoGatilho: 'SERVICO_ADICIONAL', descricao: 'Lavagem', quantidade: 1, valorUnitario: 90, valorTotal: 90 },
+        { eventoGatilho: 'SHIFTING_EXTRA', descricao: 'Shifting', quantidade: 1, valorUnitario: 40, valorTotal: 40 },
+        { eventoGatilho: 'DIARIA_ARMAZENAGEM', descricao: 'Diária (hoje)', quantidade: 2, valorUnitario: 85, valorTotal: 170 },
+      ],
+      [
+        { eventoGatilho: 'GATE_IN', descricao: 'Handling (tabela)', quantidade: 1, valorUnitario: 180, valorTotal: 180 },
+        { eventoGatilho: 'DIARIA_ARMAZENAGEM', descricao: 'Diária até a saída', quantidade: 5, valorUnitario: 85, valorTotal: 425 },
+        { eventoGatilho: 'ENERGIA_REEFER', descricao: 'Energia', quantidade: 3, valorUnitario: 40, valorTotal: 120 },
+        { eventoGatilho: 'GATE_OUT', descricao: 'Gate-out', quantidade: 1, valorUnitario: 50, valorTotal: 50 },
+      ],
+    );
+    expect(merged.map((i) => `${i.origem}:${i.eventoGatilho}:${i.valorTotal}`)).toEqual([
+      'PRE_FATURA:GATE_IN:180',
+      'PRE_FATURA:SERVICO_ADICIONAL:90',
+      'PRE_FATURA:SHIFTING_EXTRA:40',
+      'PROJECAO:DIARIA_ARMAZENAGEM:425',
+      'PROJECAO:ENERGIA_REEFER:120',
+      'PROJECAO:GATE_OUT:50',
+    ]);
   });
 });

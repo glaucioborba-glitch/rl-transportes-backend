@@ -45,18 +45,17 @@ export class PortalSimulacaoValoresController {
 
   @Get()
   @PessoaPode('verOS')
-  @ApiOperation({ summary: 'Unidades no pátio e serviços adicionais para simulação de valores' })
+  @ApiOperation({ summary: 'Unidades no pátio com valor já lançado na pré-fatura' })
   catalogo(
     @Req() req: Request & { cxUser?: CxPortalRequestUser },
     @Query('clienteId') clienteId?: string,
-    @Query('unidadeId') unidadeId?: string,
   ) {
-    return this.simulacao.catalogo(this.cx(req), clienteId, unidadeId);
+    return this.simulacao.catalogo(this.cx(req), clienteId);
   }
 
   @Post()
   @PessoaPode('verOS')
-  @ApiOperation({ summary: 'Estima o valor da unidade na data de saída informada' })
+  @ApiOperation({ summary: 'Prevê o valor das unidades na data de saída, a partir da pré-fatura' })
   simular(
     @Req() req: Request & { cxUser?: CxPortalRequestUser },
     @Body() dto: SimularValoresPortalDto,

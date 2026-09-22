@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   calcularLinhaColaborador,
@@ -24,6 +24,7 @@ import type {
   CreateColaboradorRhDto,
   CreatePresencaRhDto,
 } from './dto/folha-rh.dto';
+import { mensagemCpfJaCadastrado } from '../common/utils/documento-unico.util';
 
 function mesAtualIso(): string {
   const d = new Date();
@@ -97,9 +98,15 @@ export class FolhaRhService {
   }
 
   async createColaborador(dto: CreateColaboradorRhDto): Promise<ColaboradorRhRespostaDto> {
+    const cpf = dto.cpf.replace(/\D/g, '');
+    const existentes = await this.store.listColaboradores();
+    const dup = existentes.find((c) => c.cpf.replace(/\D/g, '') === cpf);
+    if (dup) {
+      throw new ConflictException(mensagemCpfJaCadastrado(dup.nome));
+    }
     const e = await this.store.createColaborador({
       nome: dto.nome.trim(),
-      cpf: dto.cpf.replace(/\D/g, ''),
+      cpf,
       cargo: dto.cargo.trim(),
       turno: dto.turno,
       salarioBase: dto.salarioBase,

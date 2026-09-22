@@ -19,6 +19,11 @@ RELATORIO-AUDITORIA-CORRECOES.md
 tmp-cookies.txt
 .tmp-oci/
 
+# SDK Nitgen/Fingertech (proprietário + SERIAL). Não versionar.
+Impressao/
+apps/bio-agent/sdk/
+apps/print-agent/bin/
+
 # Uploads locais (dev) — produção usa S3
 uploads/
 apps/backend/uploads/

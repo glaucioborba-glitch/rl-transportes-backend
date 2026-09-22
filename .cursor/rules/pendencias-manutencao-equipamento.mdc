@@ -1,0 +1,12 @@
+---
+description: Pendência — menu de manutenção de equipamentos
+alwaysApply: true
+---
+
+# Manutenção de equipamentos
+
+As datas de manutenção **não** ficam no cadastro MDM (`/cadastros/operacional/equipamentos`). Última / próxima preventiva saíram da ficha e dos cards.
+
+Ainda **não** implementar essa tela. Quando for a hora: menu próprio (não misturar de novo no cadastro do equipamento).
+
+O status operacional **Em Manutenção** (`EM_MANUTENCAO`) no cadastro pode continuar — é disponibilidade da máquina, não o plano de preventiva.

@@ -115,6 +115,16 @@ export type TenantParametrosOperacional = {
   cancelamentoSemPenalidadeMin: number;
   validarAntecedenciaAgendamento: boolean;
   validarCancelamentoSemPenalidade: boolean;
+  /** Validade do QR unificado (cliente + Gate) após aprovação, em horas. */
+  qrValidadeHoras: number;
+  emailEnvio: string;
+  emailEnvioNome: string;
+  /** Servidor SMTP do terminal. Vazio = usa o SMTP do servidor (.env). */
+  emailSmtpHost: string;
+  emailSmtpPorta: number;
+  emailSmtpUsuario: string;
+  /** Só leitura: indica se já existe senha SMTP salva. */
+  emailSmtpSenhaDefinida: boolean;
   turnos: TenantTurnoOperacionalConfig[];
   feriadosMunicipais: TenantFeriadoMunicipal[];
 };
@@ -437,7 +447,10 @@ export async function fetchParametrosGerais(): Promise<ParametrosGeraisResponse>
 
 export type ParametrosGeraisPatch = {
 
-  operacional?: Partial<TenantParametrosOperacional>;
+  operacional?: Partial<TenantParametrosOperacional> & {
+    /** Só escrita: string vazia apaga a senha SMTP salva. */
+    emailSmtpSenha?: string;
+  };
 
   financeiro?: Partial<TenantParametrosFinanceiro>;
 
@@ -486,6 +499,21 @@ export async function patchParametrosGerais(
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  });
+}
+
+export type EmailTesteResult = {
+  enviado: boolean;
+  origem: "tenant" | "env" | "none";
+  from: string;
+  mensagem: string;
+};
+
+export async function enviarEmailTeste(destinatario: string): Promise<EmailTesteResult> {
+  return staffJson<EmailTesteResult>("/tenant-config/parametros-gerais/email-teste", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ destinatario }),
   });
 }
 

@@ -9,6 +9,7 @@ import { ApiError, staffCriarSolicitacaoV2 } from "@/lib/api/staff-client";
 import { listAlugueisClientes } from "@/lib/api/alugueis-client";
 import { fetchCatalogosConferencia, fetchStaffCatalogoContainer, type CatalogoTipoContainer } from "@/lib/gate/operacao-api";
 import { catalogoContainerHint, patchFromCatalogo } from "@/lib/catalogo-container-iso";
+import { NavioAutocompleteInput } from "@/components/catalogo/navio-autocomplete-input";
 import type { TipoOperacaoSolicitacaoIntent } from "@/lib/api/portal-client";
 import { useTenantTurnos } from "@/hooks/use-tenant-turnos";
 import { resolveAgendamentoTurno } from "@/lib/api/tenant-config-client";
@@ -412,27 +413,6 @@ export function GateCriarAgendamentoForm({
           </CardHeader>
           <CardContent className={`${GRID} ${CARD_C}`}>
             <div>
-              <label className={LABEL}>Tipo de caminhão</label>
-              <select
-                className={SELECT}
-                value={tipoCaminhao}
-                onChange={(e) => setTipoCaminhao(e.target.value as TipoCaminhao)}
-                required
-              >
-                <option value="">Selecione…</option>
-                <option value="LS">LS (1 contêiner)</option>
-                <option value="RODOTREM">Rodotrem (2 contêineres)</option>
-              </select>
-            </div>
-            <div className={SPAN2}>
-              <label className={LABEL}>Nome do motorista</label>
-              <Input
-                value={nomeMotorista}
-                onChange={(e) => setNomeMotorista(e.target.value)}
-                className="bg-black/40"
-              />
-            </div>
-            <div>
               <label className={LABEL}>CPF do motorista</label>
               <Input
                 value={cpfMotorista}
@@ -444,6 +424,27 @@ export function GateCriarAgendamentoForm({
               ) : motoristaHint ? (
                 <p className="mt-1 text-[11px] text-slate-400">{motoristaHint}</p>
               ) : null}
+            </div>
+            <div className={SPAN2}>
+              <label className={LABEL}>Nome do motorista</label>
+              <Input
+                value={nomeMotorista}
+                onChange={(e) => setNomeMotorista(e.target.value)}
+                className="bg-black/40"
+              />
+            </div>
+            <div>
+              <label className={LABEL}>Tipo de caminhão</label>
+              <select
+                className={SELECT}
+                value={tipoCaminhao}
+                onChange={(e) => setTipoCaminhao(e.target.value as TipoCaminhao)}
+                required
+              >
+                <option value="">Selecione…</option>
+                <option value="LS">LS (1 contêiner)</option>
+                <option value="RODOTREM">Rodotrem (2 contêineres)</option>
+              </select>
             </div>
             <div>
               <label className={LABEL}>Placa cavalo</label>
@@ -549,10 +550,10 @@ export function GateCriarAgendamentoForm({
               </div>
               <div>
                 <label className={LABEL}>Navio (opcional)</label>
-                <Input
+                <NavioAutocompleteInput
+                  source="staff"
                   value={c.navio}
-                  onChange={(e) => updateContainer(i, { navio: e.target.value })}
-                  className="bg-black/40"
+                  onChange={(v) => updateContainer(i, { navio: v })}
                 />
               </div>
               {c.status === "CHEIO" ? (

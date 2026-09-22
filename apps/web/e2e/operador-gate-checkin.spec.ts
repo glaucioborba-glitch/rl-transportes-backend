@@ -20,6 +20,7 @@ test.describe("Operador Gate Check-in — Fluxo Portaria", () => {
     const labels = [
       "Número do Contêiner",
       "Placa do Cavalo",
+      "Placa da Carreta",
       "Lado Frontal",
       "Lado Traseiro (Portas)",
       "Lado Direito",

@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { PessoasAutorizadasService } from './pessoas-autorizadas.service';
@@ -96,11 +96,23 @@ describe('PessoasAutorizadasService', () => {
 
   it('cadastro PF → cria pessoa em lote', async () => {
     prisma.pessoaAutorizada.create = jest.fn().mockResolvedValue({});
+    prisma.pessoaAutorizada.findFirst.mockResolvedValue(null);
     await service.criarEmLote('cli-1', [
       { nome: 'Ana', email: 'ana@x.com', cpf: '52998224725', telefone: '48999999999' },
       { nome: 'Bob', email: 'bob@x.com', cpf: '39053344705' },
     ]);
     expect(prisma.pessoaAutorizada.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('cadastro PF → rejeita CPF duplicado no lote', async () => {
+    prisma.pessoaAutorizada.findFirst.mockResolvedValue(null);
+    await expect(
+      service.criarEmLote('cli-1', [
+        { nome: 'Ana', email: 'ana@x.com', cpf: '52998224725' },
+        { nome: 'Ana 2', email: 'ana2@x.com', cpf: '52998224725' },
+      ]),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.pessoaAutorizada.create).not.toHaveBeenCalled();
   });
 
   it('validar por CPF → sessão Redis atualiza', async () => {
@@ -202,6 +214,28 @@ describe('PessoasAutorizadasService', () => {
     prisma.pessoaAutorizada.update.mockResolvedValue({ id: 'p1', ativo: false });
     const row = await service.atualizar(cxCliente, 'p1', { ativo: false });
     expect(row.ativo).toBe(false);
+    expect(auditoria.registrar).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tabela: 'pessoa_autorizada',
+        acao: 'UPDATE',
+        dadosAntes: expect.objectContaining({ ativo: true }),
+        dadosDepois: expect.objectContaining({
+          ativo: false,
+          ator: expect.objectContaining({ tipo: 'cliente' }),
+        }),
+      }),
+    );
+  });
+
+  it('reativar pessoa → PATCH ativo=true', async () => {
+    prisma.pessoaAutorizada.findUnique.mockResolvedValue({
+      id: 'p1',
+      clienteId: 'cli-1',
+      ativo: false,
+    });
+    prisma.pessoaAutorizada.update.mockResolvedValue({ id: 'p1', ativo: true });
+    const row = await service.atualizar(cxCliente, 'p1', { ativo: true });
+    expect(row.ativo).toBe(true);
   });
 
   it('pessoa inexistente → NotFoundException', async () => {

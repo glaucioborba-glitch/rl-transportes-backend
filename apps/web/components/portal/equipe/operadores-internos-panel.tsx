@@ -167,7 +167,7 @@ export function OperadoresInternosPanel({ clienteId, podeGerenciar }: Operadores
       )}
 
       <div className="space-y-3 border-t border-white/10 pt-4">
-        <h3 className="text-sm font-medium text-slate-300">Autorizações ativas</h3>
+        <h3 className="text-sm font-medium text-slate-300">Autorizações</h3>
         {loading ? (
           <div className="flex items-center gap-2 text-slate-400">
             <Loader2 className="h-4 w-4 animate-spin" />

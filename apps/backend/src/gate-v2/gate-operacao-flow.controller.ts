@@ -36,7 +36,7 @@ export class GateOperacaoFlowController {
   @Get('consulta-ric')
   @Roles(Role.ADMIN, Role.GERENTE, Role.OPERADOR_GATE)
   @Permissions('solicitacoes:ler')
-  @ApiOperation({ summary: 'Consulta RIC — IDs com entrada/saída no período' })
+  @ApiOperation({ summary: 'Consulta RIC — IDs com entrada/saída, handling da pré-fatura no período' })
   consultaRic(
     @CurrentUser() user: AuthUser,
     @Query('q') q?: string,
@@ -270,13 +270,16 @@ export class GateOperacaoFlowController {
   @ApiProduces('application/pdf')
   async ricPdf(
     @Param('protocolo') protocolo: string,
+    @Query('modelo') modelo: string | undefined,
     @CurrentUser() user: AuthUser,
     @Res() res: Response,
   ) {
-    const pdfStream = await this.flow.streamRicPdf(protocolo, user.id);
+    const pdfStream = await this.flow.streamRicPdf(protocolo, user.id, modelo);
     const safeName = protocolo.replace(/[^\w.-]+/g, '_');
+    const m = (modelo ?? '').trim().toLowerCase();
+    const prefixo = m === 'dupla' ? 'RIC-2vias' : m === 'cupom' ? 'RIC-cupom' : m === 'completa' ? 'RIC-completa' : 'RIC';
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="RIC-${safeName}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${prefixo}-${safeName}.pdf"`);
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');

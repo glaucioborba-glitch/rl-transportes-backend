@@ -70,6 +70,20 @@ export type TenantParametrosOperacional = {
   cancelamentoSemPenalidadeMin: number;
   validarAntecedenciaAgendamento: boolean;
   validarCancelamentoSemPenalidade: boolean;
+  /** Validade do QR unificado (cliente + Gate) após a aprovação, em horas. */
+  qrValidadeHoras: number;
+  /** Remetente das mensagens do sistema (reset de senha, cobrança, alertas). */
+  emailEnvio: string;
+  /** Nome exibido no From, ex.: RL Transportes. */
+  emailEnvioNome: string;
+  /** Servidor SMTP do terminal. Vazio = usa SMTP_HOST do ambiente. */
+  emailSmtpHost: string;
+  /** Porta SMTP (465 = SSL, 587 = STARTTLS). */
+  emailSmtpPorta: number;
+  /** Usuário/login da conta SMTP. */
+  emailSmtpUsuario: string;
+  /** Somente leitura: há senha SMTP salva. A senha nunca é devolvida pela API. */
+  emailSmtpSenhaDefinida: boolean;
   turnos: TenantTurnoOperacionalConfig[];
   feriadosMunicipais: TenantFeriadoMunicipal[];
 };
@@ -109,6 +123,10 @@ export type TenantParametros = {
   nfse?: {
     certificadoBase64?: string;
     certificadoSenha?: string;
+  };
+  /** Senha do SMTP do terminal — nunca devolver no GET. */
+  emailSmtp?: {
+    senha?: string;
   };
   fiscal?: Partial<TenantParametrosFiscal>;
   seguranca?: Partial<TenantParametrosSeguranca>;
@@ -180,6 +198,38 @@ export type TenantParametrosIntegracoes = {
     apiTokenPresent: boolean;
   };
   s3: TenantIntegracaoStatus & { bucket?: string; endpoint?: string; region?: string };
+  ipm: TenantIntegracaoStatus & {
+    baseUrl: string;
+    prestadorCnpj: string;
+    prestadorTom: string;
+    municipioIbge: string;
+    /** Só indica que existe senha do portal — o valor nunca sai da API. */
+    senhaPresente: boolean;
+    certificadoPresente: boolean;
+    certificadoOrigem: 'tenant' | 'servidor' | 'nenhum';
+    codigoLocalPrestacao: string;
+    codigoAtividade: string;
+    codigoItemListaServico: string;
+    aliquotaPercent: number;
+    situacaoTributaria: string;
+    tomadorTomFallback: string;
+  };
+  nfseNacional: TenantIntegracaoStatus & {
+    ativacao: 'DESLIGADO' | 'CONTINGENCIA' | 'SEMPRE';
+    ambiente: 'homologacao' | 'producao';
+    certificadoPresente: boolean;
+    /** Preenchido quando o certificado abre: titular, validade e CNPJ. */
+    certificadoTitular?: string;
+    certificadoValidoAte?: string;
+    certificadoDiasParaVencer?: number;
+    certificadoErro?: string;
+    cnpjPrestador?: string;
+    inscricaoMunicipal?: string;
+    municipioIbge?: string;
+    serieDps: string;
+    codigoTributacaoNacional?: string;
+    aliquotaIssPercent: number;
+  };
 };
 
 export type WhatsAppTemplateStatus = 'APPROVED' | 'PENDING' | 'REJECTED' | 'DISABLED';
@@ -261,6 +311,13 @@ export const DEFAULT_OPERACIONAL: TenantParametrosOperacional = {
   cancelamentoSemPenalidadeMin: 120,
   validarAntecedenciaAgendamento: true,
   validarCancelamentoSemPenalidade: true,
+  qrValidadeHoras: 24,
+  emailEnvio: '',
+  emailEnvioNome: '',
+  emailSmtpHost: '',
+  emailSmtpPorta: 587,
+  emailSmtpUsuario: '',
+  emailSmtpSenhaDefinida: false,
   turnos: DEFAULT_TURNOS_OPERACIONAL,
   feriadosMunicipais: [],
 };
@@ -399,6 +456,13 @@ export function resolveOperacional(raw: TenantParametros): TenantParametrosOpera
     validarCancelamentoSemPenalidade:
       partial.validarCancelamentoSemPenalidade ??
       DEFAULT_OPERACIONAL.validarCancelamentoSemPenalidade,
+    qrValidadeHoras: clampQrValidadeHorasParam(partial.qrValidadeHoras),
+    emailEnvio: normalizeEmailEnvio(partial.emailEnvio),
+    emailEnvioNome: (partial.emailEnvioNome ?? '').trim().slice(0, 120),
+    emailSmtpHost: (partial.emailSmtpHost ?? '').trim().slice(0, 255),
+    emailSmtpPorta: clampPortaSmtp(partial.emailSmtpPorta),
+    emailSmtpUsuario: (partial.emailSmtpUsuario ?? '').trim().slice(0, 255),
+    emailSmtpSenhaDefinida: Boolean(raw.emailSmtp?.senha?.trim()),
     freeTimePadraoDias:
       partial.freeTimePadraoDias ?? op?.diasFreeTimePadrao ?? DEFAULT_OPERACIONAL.freeTimePadraoDias,
     horarioFuncionamentoInicio:
@@ -422,6 +486,23 @@ function normalizeTurnosOperacionais(
 function inferSlotFromHorario(horaInicio: string): 'MANHA' | 'TARDE' {
   const h = parseInt(horaInicio.split(':')[0] ?? '12', 10);
   return h < 12 ? 'MANHA' : 'TARDE';
+}
+
+function normalizeEmailEnvio(raw: unknown): string {
+  if (typeof raw !== 'string') return DEFAULT_OPERACIONAL.emailEnvio;
+  return raw.trim().toLowerCase().slice(0, 255);
+}
+
+function clampPortaSmtp(raw: unknown): number {
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_OPERACIONAL.emailSmtpPorta;
+  return Math.min(65535, Math.max(1, Math.round(n)));
+}
+
+function clampQrValidadeHorasParam(raw: unknown): number {
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(n)) return DEFAULT_OPERACIONAL.qrValidadeHoras;
+  return Math.min(168, Math.max(1, Math.round(n)));
 }
 
 export function turnosOperacionaisToLegacy(
@@ -477,10 +558,15 @@ export function mergeTenantParametros(raw: unknown): TenantParametros {
     },
     reguaCobranca: mergeReguaCobranca(r.reguaCobranca),
     nfse: r.nfse ? { ...r.nfse } : undefined,
+    emailSmtp: r.emailSmtp ? { ...r.emailSmtp } : undefined,
     integracoesCredenciais: r.integracoesCredenciais
       ? {
           googleVision: r.integracoesCredenciais.googleVision
             ? { ...r.integracoesCredenciais.googleVision }
+            : undefined,
+          ipm: r.integracoesCredenciais.ipm ? { ...r.integracoesCredenciais.ipm } : undefined,
+          nfseNacional: r.integracoesCredenciais.nfseNacional
+            ? { ...r.integracoesCredenciais.nfseNacional }
             : undefined,
           whatsapp: r.integracoesCredenciais.whatsapp
             ? { ...r.integracoesCredenciais.whatsapp }

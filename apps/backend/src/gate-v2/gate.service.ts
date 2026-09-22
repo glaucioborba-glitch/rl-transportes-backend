@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
@@ -28,6 +27,8 @@ import { SolicitacoesV2Service } from '../modules/solicitacoes-v2/solicitacoes-v
 import { PatioV2Service } from '../patio-v2/patio.service';
 import { YardAllocationService } from '../yard-allocation/yard-allocation.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { qrEstaAtivo } from './operacao-fluxo-qr.util';
+import type { OperacaoFluxoJson } from './operacao-states.constants';
 import { VistoriaService, type VistoriaPhotoUpload } from '../vistoria/vistoria.service';
 import { HoldReleaseService } from '../hold-release/hold-release.service';
 import { AnguloFotoVistoria, TipoVistoria } from '@prisma/client';
@@ -694,10 +695,14 @@ export class GateV2Service {
   }
 
   /**
-   * Valida payload do QR Code da credencial do motorista (protocolo + container + versão).
-   * Retorna apenas identificadores operacionais — sem dados financeiros.
+   * Valida o QR unificado (protocolo + token). Os dados operacionais vêm da solicitação atual.
    */
-  async validarQrCredencial(protocoloRaw: string, containerRaw?: string, versaoRaw?: number) {
+  async validarQrCredencial(
+    protocoloRaw: string,
+    containerRaw?: string,
+    _versaoRaw?: number,
+    tokenRaw?: string,
+  ) {
     const protocolo = protocoloRaw.trim();
     if (!protocolo) {
       return { valido: false, motivo: 'Protocolo obrigatório' };
@@ -724,11 +729,20 @@ export class GateV2Service {
 
     await this.holdRelease.assertSemBloqueioAtivo(sol.id);
 
-    const versaoAtual = sol.versaoCredencial ?? 1;
-    if (versaoRaw === undefined || versaoRaw !== versaoAtual) {
-      throw new ForbiddenException(
-        'QR Code desatualizado ou inválido. Uma alteração foi feita nesta solicitação. Exija a nova credencial gerada no portal.',
-      );
+    const fluxo: OperacaoFluxoJson =
+      sol.operacaoFluxoJson && typeof sol.operacaoFluxoJson === 'object' && !Array.isArray(sol.operacaoFluxoJson)
+        ? (sol.operacaoFluxoJson as OperacaoFluxoJson)
+        : {};
+
+    if (tokenRaw?.trim() && fluxo.qrToken && tokenRaw.trim() !== fluxo.qrToken) {
+      return { valido: false, motivo: 'QR Code inválido' };
+    }
+
+    if (!qrEstaAtivo(fluxo)) {
+      if (fluxo.qrAtivo === false || !fluxo.qrValidade) {
+        return { valido: false, motivo: 'QR Code aguardando aprovação no Gate' };
+      }
+      return { valido: false, motivo: 'QR Code expirado' };
     }
 
     const intent = sol.tipoOperacao;
@@ -743,9 +757,11 @@ export class GateV2Service {
     if (
       sol.status === StatusSolicitacao.CANCELADO ||
       sol.status === StatusSolicitacao.CANCELADO_CLIENTE ||
-      sol.status === StatusSolicitacao.REJEITADO
+      sol.status === StatusSolicitacao.REJEITADO ||
+      sol.status === StatusSolicitacao.PENDENTE ||
+      sol.status === StatusSolicitacao.EM_ANALISE
     ) {
-      return { valido: false, motivo: 'Solicitação não está ativa' };
+      return { valido: false, motivo: 'Solicitação não está autorizada' };
     }
 
     const containersDb = [
@@ -800,6 +816,8 @@ export class GateV2Service {
         data: ag?.dataRef?.toISOString().slice(0, 10) ?? null,
         turno: ag?.turno ?? null,
         versaoCredencial: sol.versaoCredencial,
+        qrAtivo: true,
+        qrValidade: fluxo.qrValidade ?? null,
         modalidadeTransporte:
           agTerminal?.modalidadeTransporte ?? ModalidadeTransporte.FROTA_CLIENTE,
         tipoOperacaoGate: agTerminal?.tipoOperacao ?? null,

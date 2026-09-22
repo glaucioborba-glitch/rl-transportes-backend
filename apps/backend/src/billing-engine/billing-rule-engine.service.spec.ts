@@ -52,3 +52,55 @@ describe('BillingRuleEngineService.resolvePricingForCliente', () => {
     });
   });
 });
+
+describe('BillingRuleEngineService.resolveTarifaDiaria', () => {
+  function service(prisma: Record<string, unknown>) {
+    return new BillingRuleEngineService(prisma as never, { getParametros: jest.fn() } as never);
+  }
+
+  it('usa faixa da matriz quando a RIC traz DRY 40 CHEIO e não há diária flat', async () => {
+    const { StatusContainerTarifa } = await import('@prisma/client');
+    const prisma = {
+      cliente: {
+        findFirst: jest.fn().mockResolvedValue({ tabelaPrecoId: null, tenantId: 'default' }),
+      },
+      cadastroTabelaPreco: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'cad-padrao',
+            padrao: true,
+            billingTabelaPrecoId: 'tp-padrao',
+            clienteId: null,
+            itens: [
+              {
+                categoriaItem: 'ARMAZENAGEM',
+                tipoOperacaoCodigo: 'ARMAZENAGEM',
+                tipoContainerCodigo: 'DRY',
+                capacidadeCodigo: null,
+                containerTamanho: "40'",
+                statusContainer: StatusContainerTarifa.CHEIO,
+                freeTimeDias: 7,
+                faixasDiaria: [
+                  { diaInicio: 8, diaFim: 15, valorDiaria: 30 },
+                  { diaInicio: 16, diaFim: null, valorDiaria: 45 },
+                ],
+                tarifaDiariaArmazenagem: null,
+                tarifaEnergiaReeferDiaria: null,
+                valorHandling: 300,
+              },
+            ],
+          },
+        ]),
+      },
+    };
+
+    await expect(
+      service(prisma).resolveTarifaDiaria(
+        'default',
+        'c1',
+        { tipo: 'DRY', tamanho: "40'", statusContainer: StatusContainerTarifa.CHEIO },
+        [],
+      ),
+    ).resolves.toBe(30);
+  });
+});

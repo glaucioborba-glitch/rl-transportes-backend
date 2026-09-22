@@ -6,6 +6,7 @@ import { IpmNfseAdapter } from '../nfse/nfse.adapter';
 import type { TomadorNfseDto } from '../nfse/dto/emitir-nfse.dto';
 import type { EmissaoNfseIpmPayload } from '../nfse/xml/ipm-nfse-xml.builder';
 import { RetriableOutboxError } from '../outbox/outbox.errors';
+import type { ResolvedIpm } from '../tenant/integration-credentials.util';
 import type { FiscalEmissaoResult } from './fiscal-integracao.types';
 
 const IBGE_TOM: Record<string, string> = {
@@ -49,12 +50,17 @@ export class FiscalIpmService {
     return this.ipm.isConfigured();
   }
 
-  private resolveTom(ibge: string | null | undefined): string {
+  private resolveTom(ibge: string | null | undefined, fallback?: string): string {
     const key = (ibge ?? '').replace(/\D/g, '');
-    return IBGE_TOM[key] ?? this.config.get<string>('nfse.ipm.tomadorTomFallback', { infer: true }) ?? '8221';
+    return (
+      IBGE_TOM[key] ??
+      fallback ??
+      this.config.get<string>('nfse.ipm.tomadorTomFallback', { infer: true }) ??
+      '8221'
+    );
   }
 
-  buildTomador(cliente: Cliente): TomadorNfseDto {
+  buildTomador(cliente: Cliente, cfg?: ResolvedIpm): TomadorNfseDto {
     const tel = splitPhone(cliente.telefone ?? cliente.responsavelTelefone ?? '4733334444');
     const tipo = cliente.tipo === 'PF' ? 'F' : 'J';
     return {
@@ -70,7 +76,7 @@ export class FiscalIpmService {
       siglaPais: 'BR',
       codigoIbgePais: '1058',
       estado: cliente.enderecoUf,
-      cidadeTom: this.resolveTom(cliente.codigoMunicipioIbge),
+      cidadeTom: this.resolveTom(cliente.codigoMunicipioIbge, cfg?.tomadorTomFallback),
       logradouro: cliente.enderecoLogradouro,
       bairro: cliente.enderecoBairro,
       cep: cliente.enderecoCep.replace(/\D/g, ''),
@@ -84,11 +90,17 @@ export class FiscalIpmService {
     fatura: Fatura,
     cliente: Cliente,
     ctx: { containerIso: string; diasCobrados: number; gateOutAt: Date; outboxId: string },
+    cfg?: ResolvedIpm,
   ): EmissaoNfseIpmPayload {
-    const arm = this.config.get<{ codigoLocalPrestacao: string; codigoAtividade: string; codigoItemListaServico: string; aliquotaPercent: number; situacaoTributaria: string }>(
-      'nfse.ipm.armazenagem',
-      { infer: true },
-    )!;
+    const arm =
+      cfg?.armazenagem ??
+      this.config.get<{
+        codigoLocalPrestacao: string;
+        codigoAtividade: string;
+        codigoItemListaServico: string;
+        aliquotaPercent: number;
+        situacaoTributaria: string;
+      }>('nfse.ipm.armazenagem', { infer: true })!;
     const valor = Number(fatura.valorTotal);
     const emissao = ctx.gateOutAt;
     const rpsNumero = String(Date.now()).slice(-9);
@@ -106,10 +118,10 @@ export class FiscalIpmService {
       valorTotal: valor,
       observacao: descritivo.slice(0, 500),
       prestador: {
-        cnpj: this.ipm.getPrestadorCnpj().replace(/\D/g, ''),
-        cidadeTom: this.ipm.getPrestadorTom(),
+        cnpj: (cfg?.prestadorCnpj ?? this.ipm.getPrestadorCnpj()).replace(/\D/g, ''),
+        cidadeTom: cfg?.prestadorTom ?? this.ipm.getPrestadorTom(),
       },
-      tomador: this.buildTomador(cliente),
+      tomador: this.buildTomador(cliente, cfg),
       servico: {
         codigoLocalPrestacao: arm.codigoLocalPrestacao,
         codigoAtividade: arm.codigoAtividade,
@@ -130,11 +142,12 @@ export class FiscalIpmService {
     cliente: Cliente,
     ctx: { containerIso: string; diasCobrados: number; gateOutAt: Date; outboxId: string },
   ): Promise<FiscalEmissaoResult> {
-    const payload = this.buildPayload(fatura, cliente, ctx);
+    const cfg = await this.ipm.config(fatura.tenantId);
+    const payload = this.buildPayload(fatura, cliente, ctx, cfg);
     const rpsNumero = payload.rps.nroReciboProvisorio;
     const rpsSerie = payload.rps.serieReciboProvisorio;
 
-    if (!this.ipm.isConfigured()) {
+    if (!cfg.configured) {
       this.logger.warn('IPM não configurado — sandbox fiscal local');
       const link = `${this.config.get('banking.sandboxPublicBaseUrl') ?? '/portal/financeiro'}?nfse=sandbox-${fatura.id}`;
       return {
@@ -149,7 +162,7 @@ export class FiscalIpmService {
     }
 
     try {
-      const r = await this.ipm.emitir(payload);
+      const r = await this.ipm.emitir(payload, cfg);
       if (r.retorno.sucesso && r.retorno.emissao) {
         return {
           mode: 'emitida',
@@ -187,7 +200,8 @@ export class FiscalIpmService {
   }
 
   async consultarPendente(codVerificador: string) {
-    if (!this.ipm.isConfigured()) return null;
+    const cfg = await this.ipm.config();
+    if (!cfg.configured) return null;
     try {
       const r = await this.ipm.consultarPorCodigoAutenticidade(codVerificador);
       if (r.retorno.sucesso && r.retorno.emissao?.numeroNfse) {
@@ -208,12 +222,12 @@ export class FiscalIpmService {
   }
 
   /** Probe de conectividade IPM para health check Terminus (M1). */
-  async probeConnectivity(): Promise<{
+  async probeConnectivity(tenantId?: string): Promise<{
     ok: boolean;
     latencyMs: number;
     mode: 'live' | 'sandbox' | 'offline';
     reason?: string;
   }> {
-    return this.ipm.probeHealth();
+    return this.ipm.probeHealth(tenantId);
   }
 }

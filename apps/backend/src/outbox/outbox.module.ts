@@ -9,6 +9,7 @@ import { OutboxService } from './outbox.service';
 import { OutboxWorker } from './outbox.worker';
 import { NfseBoletoOutboxProcessor } from './nfse-boleto-outbox.processor';
 import { NotificationModule } from '../notification/notification.module';
+import { IntegrationCredentialsModule } from '../tenant/integration-credentials.module';
 import { TenantModule } from '../tenant/tenant.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { PortalNotificacoesModule } from '../portal-notificacoes/portal-notificacao.module';
@@ -23,6 +24,7 @@ import { UnidadeProcessoOutboxProcessor } from '../unidade-processo/unidade-proc
     RealtimeModule,
     FiscalIntegracaoModule,
     NotificationModule,
+    IntegrationCredentialsModule,
     TenantModule,
     AuditLogModule,
     PortalNotificacoesModule,

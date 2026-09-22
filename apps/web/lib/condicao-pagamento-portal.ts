@@ -144,7 +144,7 @@ export function isLayoutFaturamentoPortal(opts: {
   const status = opts.statusCadastro ?? null;
   if (status === "PENDENTE_ANALISE_FINANCEIRA" || status === "REJEITADO") return false;
   const v = (opts.condicaoPagamento ?? "").trim().toUpperCase();
-  if (v === "AVISTA_PIX" || v === "PIX" || v === "FATURAMENTO_PIX") return false;
+  if (v === "AVISTA_PIX" || v === "PIX" || v === "FATURAMENTO_PIX" || v === "A_VISTA") return false;
   return true;
 }
 

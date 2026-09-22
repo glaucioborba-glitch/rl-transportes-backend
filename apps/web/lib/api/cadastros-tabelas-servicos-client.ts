@@ -1,4 +1,4 @@
-import { staffJson } from "@/lib/api/staff-client";
+import { ApiError, nestErrorMessage, staffJson, staffRequest } from "@/lib/api/staff-client";
 
 export type CadastroTabelaServico = {
   id: string;
@@ -127,7 +127,18 @@ export type UnidadeProcessoServicoLancado = {
   valorUnitario: number;
   valorTotal: number;
   createdAt: string;
-  payload?: { automatico?: boolean; origem?: string } | null;
+  payload?: {
+    automatico?: boolean;
+    origem?: string;
+    cobranca?: string;
+    excluido?: boolean;
+    exclusao?: {
+      motivo?: string;
+      anexoNome?: string;
+      em?: string;
+      gerenteEmail?: string;
+    };
+  } | null;
 };
 
 export function listUnidadeProcessoServicos(id: string) {
@@ -157,4 +168,35 @@ export function removerUnidadeProcessoServico(id: string, lancamentoId: string) 
   return staffJson(`/v2/unidade-processos/${encodeURIComponent(id)}/servicos/${encodeURIComponent(lancamentoId)}`, {
     method: "DELETE",
   });
+}
+
+export function excluirHandlingAutomatico(
+  id: string,
+  lancamentoId: string,
+  data: { motivo: string; documento: string; password: string; anexo?: File | null },
+) {
+  const form = new FormData();
+  form.append("motivo", data.motivo);
+  form.append("documento", data.documento);
+  form.append("password", data.password);
+  if (data.anexo) form.append("anexo", data.anexo);
+  return staffJson<{ ok: boolean; excluido: boolean }>(
+    `/v2/unidade-processos/${encodeURIComponent(id)}/servicos/${encodeURIComponent(lancamentoId)}/excluir-automatico`,
+    { method: "POST", body: form },
+  );
+}
+
+export async function abrirAnexoExclusaoHandling(id: string, lancamentoId: string) {
+  const res = await staffRequest(
+    `/v2/unidade-processos/${encodeURIComponent(id)}/servicos/${encodeURIComponent(lancamentoId)}/anexo`,
+    { headers: { Accept: "*/*" } },
+  );
+  if (!res.ok) {
+    const err = await res.text();
+    throw new ApiError(nestErrorMessage(err, res.status), res.status);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank", "noopener,noreferrer");
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

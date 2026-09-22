@@ -21,8 +21,10 @@ import type { Request } from 'express';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { contextoAuditoriaPortal } from './portal-auditoria-contexto.util';
 import { SolicitacoesV2Service } from '../modules/solicitacoes-v2/solicitacoes-v2.service';
 import { CreateSolicitacaoV2Dto } from '../modules/solicitacoes-v2/dto/create-solicitacao-v2.dto';
+import { CotacaoPixSaidaDto } from '../modules/solicitacoes-v2/dto/cotacao-pix-saida.dto';
 import { CxPortalSegment } from './decorators/cx-portal.decorators';
 import {
   CxPortalAuthGuard,
@@ -70,7 +72,7 @@ export class PortalSolicitacoesV2Controller {
         registroId: u.sub,
         acao,
         usuario: u.sub,
-        dadosDepois: { portal: true, tipo: 'PORTAL', rota, portalPapel: u.portalPapel, ...extra },
+        dadosDepois: contextoAuditoriaPortal(u, { rota, ...extra }),
       });
     } catch {
       /* não bloquear CX */
@@ -115,6 +117,24 @@ export class PortalSolicitacoesV2Controller {
     }
     await this.audPortal(u, 'POST /portal/v2/solicitacoes/com-anexos', undefined, AcaoAuditoria.INSERT);
     return this.solicitacoesV2.criarPortal(dto, u, req, { anexos: files });
+  }
+
+  @Post('cotacao-pix')
+  @PessoaPode('criarSolicitacao')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Cotar quitação PIX da conta comercial (coleta/exportação/depot)',
+    description:
+      'Informa saldo, valor do ID e saldo após débito. Sem débito — a quitação ocorre ao criar a solicitação.',
+  })
+  @ApiBody({ type: CotacaoPixSaidaDto })
+  async cotarPix(
+    @Req() req: Request & { cxUser?: CxPortalRequestUser },
+    @Body() body: CotacaoPixSaidaDto,
+  ) {
+    const u = this.cx(req);
+    await this.audPortal(u, 'POST /portal/v2/solicitacoes/cotacao-pix');
+    return this.solicitacoesV2.cotarPixSaidaPortal(u, body.tipoOperacao, body.unidades);
   }
 
   @Post()

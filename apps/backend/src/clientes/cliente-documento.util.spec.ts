@@ -14,13 +14,13 @@ describe('cliente-documento.util', () => {
   it('rejeita documento já cadastrado em Cliente (inclui soft-delete)', async () => {
     const prisma = {
       cliente: {
-        findUnique: jest.fn().mockResolvedValue({
+        findFirst: jest.fn().mockResolvedValue({
           id: 'c1',
           tipo: TipoCliente.PJ,
           deletedAt: new Date(),
         }),
       },
-      user: { findUnique: jest.fn().mockResolvedValue(null) },
+      user: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     await expect(
       assertClienteDocumentoDisponivel(prisma as never, '19131243000197'),

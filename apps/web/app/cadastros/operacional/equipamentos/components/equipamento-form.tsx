@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Calendar, Forklift, Loader2, Save, Wrench, X } from "lucide-react";
+import { Forklift, Loader2, Save, Wrench, X } from "lucide-react";
 import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -180,32 +180,6 @@ export function EquipamentoForm({ equipamentoId }: Props) {
             />
           </FormField>
         </div>
-      </FormSection>
-
-      <FormSection title="Manutenção" icon={Calendar}>
-        <div className="flex flex-wrap gap-4">
-          <FormField label="Última Manutenção" size="md">
-            <Input
-              type="date"
-              value={formData.ultimaManutencao}
-              onChange={(e) => setFormData({ ...formData, ultimaManutencao: e.target.value })}
-            />
-          </FormField>
-          <FormField label="Próxima Manutenção Preventiva" size="md">
-            <Input
-              type="date"
-              value={formData.proximaManutencao}
-              onChange={(e) => setFormData({ ...formData, proximaManutencao: e.target.value })}
-            />
-          </FormField>
-        </div>
-        {formData.proximaManutencao &&
-        new Date(`${formData.proximaManutencao}T12:00:00`) < new Date() ? (
-          <div className="mt-3 flex items-center gap-2 rounded bg-red-500/10 px-3 py-2 text-xs text-red-400">
-            <AlertTriangle className="h-4 w-4" />
-            Manutenção preventiva VENCIDA. Equipamento não deve ser selecionado pelos operadores.
-          </div>
-        ) : null}
       </FormSection>
 
       <FormSection title="Observações" icon={Wrench}>

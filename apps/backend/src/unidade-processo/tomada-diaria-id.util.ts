@@ -6,6 +6,7 @@ import {
   CODIGO_TOMADA_ABERTURA,
   buildLinhaTomadaDiaria,
   diasTomadaFaturaveis,
+  isLancamentoAutomaticoExcluido,
   isLancamentoAutomaticoTabela,
 } from './servicos-abertura-tabela.util';
 
@@ -31,6 +32,7 @@ export async function upsertTomadaDiariaNoProcesso(
     where: { unidadeProcessoId: input.unidadeProcessoId, codigo: CODIGO_TOMADA_ABERTURA },
   });
   if (existente && !isLancamentoAutomaticoTabela(existente.payload)) return;
+  if (existente && isLancamentoAutomaticoExcluido(existente.payload)) return;
 
   if (dias < 1) {
     if (existente) {

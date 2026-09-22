@@ -10,37 +10,28 @@ import {
   portalAuthBootstrap,
   type SolicitacaoRow,
 } from "@/lib/api/portal-client";
-import type { KpisResponse, SlasResponse } from "@/lib/api/types";
 import { DEFAULT_PORTAL_HOME } from "@/lib/portal-redirect";
 import { hasPortalClientSession } from "@/lib/portal-auth-mode";
 import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
 import { usePortalAuthStore } from "@/stores/portal-store";
 import { usePessoaAutorizadaStore } from "@/stores/pessoaAutorizadaStore";
 
-export type DashboardFinanceCounts = {
+export type DashboardFinanceSummary = {
   faturasEmAberto: number;
-  boletosAbertosOuVencidos: number;
-  nfseEmitidasAmostra: number;
+  valorEmAberto: number;
+  boletosPendentes: number;
+  boletosVencidos: number;
+  nfseEmitidas: number;
   faturadoMes: number;
+  saldoContaCorrente: number;
 };
 
 export type DashboardData = {
-  kpis: KpisResponse;
-  slas: SlasResponse;
-  slaDesempenho: number;
-  slaCumpridos: number;
-  slaViolados: number;
-  unidades: {
-    total: number;
-    import: number;
-    export: number;
-    gateIn: number;
-    gateOut: number;
-  };
-  tendencias: {
-    solicitacoesMesVsAnteriorPct: number;
-    faturadoMesVsAnteriorPct: number;
-  };
+  solicitacoesAbertas: number;
+  solicitacoesEmAndamento: number;
+  unidadesNoPatio: number;
+  agendamentosHoje: number;
+  finance: DashboardFinanceSummary;
   tracking: SolicitacaoRow[];
   recent: {
     items: SolicitacaoRow[];
@@ -49,8 +40,6 @@ export type DashboardData = {
     limit: number;
   };
   solicitacoesHoje: SolicitacaoRow[];
-  pendenciasFinanceiras: number;
-  financeCounts: DashboardFinanceCounts;
   condicaoPagamento: string | null;
   prazoPagamento: string | null;
   condicaoPagamentoLabel: string | null;
@@ -157,36 +146,28 @@ export function usePortalDashboard(opts: { recentPage: number; recentLimit?: num
         /* */
       }
 
-      const trackingItems = (dash.trackingSample ?? []) as SolicitacaoRow[];
       const recentItems = (dash.recent?.items ?? []) as SolicitacaoRow[];
       const recentTotal = dash.recent?.total ?? recentItems.length;
       const hojeItems = (dash.solicitacoesHoje ?? []) as SolicitacaoRow[];
-
-      const kpis = dash.kpisCx;
-      const slas = dash.slasCx;
-
-      const pendenciasFinanceiras = dash.financeiro.boletosPendentes;
+      const fin = dash.financeiro;
 
       setBloqueioFinanceiro(Boolean(dash.isBloqueadoFinanceiramente));
 
       setData({
-        kpis,
-        slas,
-        slaDesempenho: dash.slas?.desempenho ?? 0,
-        slaCumpridos: dash.slas?.cumpridos ?? 0,
-        slaViolados: dash.slas?.violados ?? 0,
-        unidades: dash.unidades ?? {
-          total: 0,
-          import: 0,
-          export: 0,
-          gateIn: 0,
-          gateOut: 0,
+        solicitacoesAbertas: (dash.solicitacoes?.abertas ?? 0) + (dash.solicitacoes?.emAndamento ?? 0),
+        solicitacoesEmAndamento: dash.solicitacoes?.emAndamento ?? 0,
+        unidadesNoPatio: dash.unidadesNoPatio ?? dash.kpisCx?.valores.containers_ativos ?? 0,
+        agendamentosHoje: dash.agendamentosHojeCount ?? hojeItems.length,
+        finance: {
+          faturasEmAberto: fin.faturasEmAberto ?? dash.kpisCx?.valores.faturamento_aberto ?? 0,
+          valorEmAberto: fin.valorEmAberto ?? 0,
+          boletosPendentes: fin.boletosPendentes ?? 0,
+          boletosVencidos: fin.boletosVencidos ?? 0,
+          nfseEmitidas: fin.nfseEmitidas ?? 0,
+          faturadoMes: fin.faturadoMes ?? 0,
+          saldoContaCorrente: fin.saldoContaCorrente ?? 0,
         },
-        tendencias: dash.tendencias ?? {
-          solicitacoesMesVsAnteriorPct: 0,
-          faturadoMesVsAnteriorPct: 0,
-        },
-        tracking: trackingItems,
+        tracking: recentItems,
         recent: {
           items: recentItems,
           total: recentTotal,
@@ -194,13 +175,6 @@ export function usePortalDashboard(opts: { recentPage: number; recentLimit?: num
           limit: dash.recent?.limit ?? recentLimit,
         },
         solicitacoesHoje: hojeItems,
-        pendenciasFinanceiras,
-        financeCounts: {
-          faturasEmAberto: kpis.valores.faturamento_aberto,
-          boletosAbertosOuVencidos: pendenciasFinanceiras,
-          nfseEmitidasAmostra: dash.financeiro.nfseEmitidas,
-          faturadoMes: dash.financeiro.faturadoMes ?? 0,
-        },
         condicaoPagamento: dash.condicaoPagamento ?? null,
         prazoPagamento: dash.prazoPagamento ?? null,
         condicaoPagamentoLabel: dash.condicaoPagamentoLabel ?? null,

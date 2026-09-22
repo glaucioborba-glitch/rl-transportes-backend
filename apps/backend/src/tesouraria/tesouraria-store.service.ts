@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { resolveStoreTenantId } from '../common/stores/store-tenant.util';
+import { throwDocumentoUnicoSeConflito } from '../common/utils/documento-unico.util';
 import type {
   ContratoEntity,
   DespesaEntity,
@@ -22,18 +23,22 @@ export class TesourariaStoreService {
 
   async createFornecedor(input: Omit<FornecedorEntity, 'id' | 'createdAt'>): Promise<FornecedorEntity> {
     const id = randomUUID();
-    const row = await this.prisma.tesourariaFornecedor.create({
-      data: {
-        id,
-        tenantId: this.tenantId(),
-        nome: input.nome,
-        cnpj: input.cnpj,
-        categoriaFornecedor: input.categoriaFornecedor,
-        contato: input.contato,
-        prazoPagamentoPadrao: input.prazoPagamentoPadrao,
-      },
-    });
-    return this.mapFornecedor(row);
+    try {
+      const row = await this.prisma.tesourariaFornecedor.create({
+        data: {
+          id,
+          tenantId: this.tenantId(),
+          nome: input.nome,
+          cnpj: input.cnpj,
+          categoriaFornecedor: input.categoriaFornecedor,
+          contato: input.contato,
+          prazoPagamentoPadrao: input.prazoPagamentoPadrao,
+        },
+      });
+      return this.mapFornecedor(row);
+    } catch (err) {
+      throwDocumentoUnicoSeConflito(err, 'CNPJ', input.nome);
+    }
   }
 
   async listFornecedores(): Promise<FornecedorEntity[]> {

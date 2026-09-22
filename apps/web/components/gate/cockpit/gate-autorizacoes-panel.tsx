@@ -31,6 +31,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
 import { rotuloTomadaPedido } from "@/lib/cadastros/tomada-display";
 import { TomadaPedidoBadge } from "@/components/gate/tomada-pedido-badge";
+import { SolicitacaoDirecaoBadge } from "@/components/solicitacao/solicitacao-direcao-badge";
 import { listCadastrosTiposContainer } from "@/lib/api/cadastros-tipos-container-client";
 
 type ContainerRow = {
@@ -51,6 +52,7 @@ type AutorizacaoItem = {
   situacao: GateContainerSituacao | null;
   tomadaLabel: string | null;
   status: string;
+  tipoOperacao: string | null;
   criadoEm: string;
 };
 
@@ -97,6 +99,7 @@ function mapItem(
       tipos,
     }),
     status: String(row.status ?? ""),
+    tipoOperacao: typeof row.tipoOperacao === "string" ? row.tipoOperacao : null,
     criadoEm: String(row.createdAt ?? ""),
   };
 }
@@ -110,8 +113,8 @@ export function GateAutorizacoesPanel() {
   const [motivo, setMotivo] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     try {
       const [pendente, analise, catalogo] = await Promise.all([
         staffListarSolicitacoesV2({ status: "PENDENTE", limit: 100, page: 1 }),
@@ -129,12 +132,14 @@ export function GateAutorizacoesPanel() {
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Erro ao carregar autorizações");
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void load();
+    const t = window.setInterval(() => void load({ silent: true }), 15000);
+    return () => window.clearInterval(t);
   }, [load]);
 
   async function aprovar(id: string) {
@@ -229,9 +234,12 @@ export function GateAutorizacoesPanel() {
               ) : null}
 
               <p className="text-base text-white">{item.empresa}</p>
-              <p className="text-sm text-muted-foreground">
-                {item.protocolo} · {item.status.replace("_", " ")}
-              </p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <SolicitacaoDirecaoBadge intent={item.tipoOperacao} />
+                <p className="text-sm text-muted-foreground">
+                  {item.protocolo} · {item.status.replace("_", " ")}
+                </p>
+              </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-2 lg:mt-auto lg:pt-3">
                 {podeAutorizar ? (

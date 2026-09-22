@@ -73,6 +73,8 @@ export const STATE_LABELS: Record<OperacaoState, string> = {
 export type OperacaoFluxoJson = {
   qrToken?: string;
   qrValidade?: string;
+  /** false = QR impresso pelo cliente ainda não vale na portaria (aguardando aprovação). */
+  qrAtivo?: boolean;
   vistoria?: {
     fotos: Array<{
       tipo: string;
@@ -107,8 +109,9 @@ export type OperacaoFluxoJson = {
     operadorId?: string;
   };
   assinatura?: string;
-  /** DIGITAL = canvas na tela; MANUAL = motorista e operador assinam o papel. */
+  /** DIGITAL = impressão digital 1:1 no leitor; MANUAL = assinam o papel. */
   assinaturaModo?: 'DIGITAL' | 'MANUAL';
+  assinaturaBiometria?: { cpf: string; verificadoEm: string; matched: true };
   assinaturaOperadorId?: string;
   ricGeradoEm?: string;
   tatInicio?: string;
@@ -134,4 +137,6 @@ export type OperacaoFluxoJson = {
   };
   /** Anotação livre do Gate na conferência (não é dado da solicitação do cliente). */
   observacaoGate?: string;
+  /** Linhas lançadas por serviço de pátio (troca de lacre, transbordo). Nunca sobrescrevem observacaoGate. */
+  observacoesEfeito?: string[];
 };

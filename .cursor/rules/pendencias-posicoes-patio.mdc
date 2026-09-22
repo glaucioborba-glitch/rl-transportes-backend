@@ -1,0 +1,12 @@
+---
+description: Pendência — layout de posições de pátio no app do operador
+alwaysApply: true
+---
+
+# Posições de pátio
+
+O cadastro em `/cadastros/operacional/posicoes-patio` é só MDM (lista com editar/excluir). O layout **não** ficou bom para o pátio real.
+
+Ainda **não** redesenhar mapa, zona/baia/slot nem o fluxo de inclusão nesta tela.
+
+Quando for a hora: no **app do operador**. É lá que a posição precisa ser visual e operacional.

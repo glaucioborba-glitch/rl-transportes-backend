@@ -16,6 +16,46 @@ export const OPERACOES_CORE_EXCLUIDAS = new Set([
 ]);
 
 export const MAX_DATA_SAIDA_ANOS = 3;
+export const MAX_UNIDADES_SIMULACAO = 40;
+
+export const AVISO_PREVISAO_SIMULACAO =
+  'Os valores são previsões com base na pré-fatura e na data de saída informada. Podem sofrer alterações até o gate-out (energia de tomada, shifting, serviços executados no pátio ou tabela vigente).';
+
+/** Itens cujo valor depende da data de saída — recalculados; o restante vem da pré-fatura. */
+export const EVENTOS_VARIAM_COM_DATA = new Set(['DIARIA_ARMAZENAGEM', 'ENERGIA_REEFER']);
+
+export type ItemSimulacaoLike = {
+  eventoGatilho: string;
+  descricao: string;
+  detalheCobranca?: string;
+  quantidade: number;
+  valorUnitario: number;
+  valorTotal: number;
+};
+
+export type ItemSimulacaoMesclado = ItemSimulacaoLike & {
+  origem: 'PRE_FATURA' | 'PROJECAO';
+};
+
+export function mesclarPreFaturaComProjecao(
+  itensPreFatura: ItemSimulacaoLike[],
+  itensProjecao: ItemSimulacaoLike[],
+): ItemSimulacaoMesclado[] {
+  const lancados = itensPreFatura.filter((i) => !EVENTOS_VARIAM_COM_DATA.has(i.eventoGatilho));
+  const eventosLancados = new Set(lancados.map((i) => i.eventoGatilho));
+  const projetados = itensProjecao.filter((i) => {
+    if (EVENTOS_VARIAM_COM_DATA.has(i.eventoGatilho)) return true;
+    return !eventosLancados.has(i.eventoGatilho);
+  });
+  return [
+    ...lancados.map((i) => ({ ...i, origem: 'PRE_FATURA' as const })),
+    ...projetados.map((i) => ({ ...i, origem: 'PROJECAO' as const })),
+  ];
+}
+
+export function roundMoneySimulacao(n: number): number {
+  return Math.round(n * 100) / 100;
+}
 
 export type OperacaoItemLike = {
   tipoOperacaoCodigo: string;

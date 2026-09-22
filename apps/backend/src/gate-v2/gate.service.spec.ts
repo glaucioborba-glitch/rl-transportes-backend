@@ -224,13 +224,14 @@ describe('GateV2Service', () => {
     expect(r.providerUsado).toBeDefined();
   });
 
-  it('validarQrCredencial rejeita versão desatualizada', async () => {
+  it('validarQrCredencial rejeita QR inativo', async () => {
     prisma.solicitacao.findFirst.mockResolvedValue({
       id: 's1',
       protocolo: 'RL-2026-TEST',
-      status: StatusSolicitacao.APROVADO,
+      status: StatusSolicitacao.PENDENTE,
       versaoCredencial: 2,
       tipoOperacao: 'SOLICITAR_BAIXA',
+      operacaoFluxoJson: { qrToken: 'tok-1', qrAtivo: false },
       containersSolicitacao: [{ ordem: 1, unidade: 'MSKU1234567' }],
       agendamentoSolicitacao: { dataRef: new Date('2026-06-10'), turno: 'MANHA' },
       transporteSolicitacao: {
@@ -246,18 +247,23 @@ describe('GateV2Service', () => {
       findMany: jest.fn().mockResolvedValue([]),
     };
 
-    await expect(
-      service.validarQrCredencial('RL-2026-TEST', 'MSKU1234567', 1),
-    ).rejects.toThrow('QR Code desatualizado ou inválido');
+    const r = await service.validarQrCredencial('RL-2026-TEST', 'MSKU1234567', undefined, 'tok-1');
+    expect(r.valido).toBe(false);
+    expect(r.motivo).toMatch(/aprovação/i);
   });
 
-  it('validarQrCredencial aceita versão corrente', async () => {
+  it('validarQrCredencial aceita QR ativo e devolve dados atuais da solicitação', async () => {
     prisma.solicitacao.findFirst.mockResolvedValue({
       id: 's1',
       protocolo: 'RL-2026-TEST',
-      status: StatusSolicitacao.APROVADO,
+      status: StatusSolicitacao.AGUARDANDO_GATE_IN,
       versaoCredencial: 1,
       tipoOperacao: 'SOLICITAR_BAIXA',
+      operacaoFluxoJson: {
+        qrToken: 'tok-1',
+        qrAtivo: true,
+        qrValidade: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      },
       containersSolicitacao: [{ ordem: 1, unidade: 'MSKU1234567' }],
       agendamentoSolicitacao: { dataRef: new Date('2026-06-10'), turno: 'MANHA' },
       transporteSolicitacao: {
@@ -273,9 +279,10 @@ describe('GateV2Service', () => {
       findMany: jest.fn().mockResolvedValue([]),
     };
 
-    const r = await service.validarQrCredencial('RL-2026-TEST', 'MSKU1234567', 1);
+    const r = await service.validarQrCredencial('RL-2026-TEST', 'MSKU1234567', undefined, 'tok-1');
     expect(r.valido).toBe(true);
-    expect(r.solicitacao?.versaoCredencial).toBe(1);
+    expect(r.solicitacao?.motorista).toBe('João');
+    expect(r.solicitacao?.containers).toContain('MSKU1234567');
     expect(holdRelease.assertSemBloqueioAtivo).toHaveBeenCalledWith('s1');
   });
 

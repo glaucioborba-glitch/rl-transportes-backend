@@ -24,6 +24,7 @@ import { formatIsoDisplay } from "@/lib/container-display";
 import { rotuloTomadaPedido } from "@/lib/cadastros/tomada-display";
 import { TomadaPedidoBadge } from "@/components/gate/tomada-pedido-badge";
 import { toast } from "@/lib/toast";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +32,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ControleEntradaSaidaFotoZoom } from "@/components/gate/controle-entrada-saida-foto-zoom";
+import { NavioAutocompleteInput } from "@/components/catalogo/navio-autocomplete-input";
 
 const FORM = "grid grid-cols-12 gap-x-2 gap-y-1.5";
 const LABEL = "mb-0.5 block text-[11px] font-medium leading-tight text-slate-300";
@@ -42,6 +44,47 @@ const FOTO_TIPOS: Record<string, string[]> = {
   placaCarreta02: ["PLACA_CARRETA_02_OCR", "PLACA_CARRETA02_OCR"],
   lacre: ["LACRE_OCR", "LACRE"],
 };
+
+const CAMPO_POR_FOTO: Record<string, ConferenciaCampo["campo"]> = {
+  CONTAINER_OCR: "container",
+  PLACA_OCR: "placaCavalo",
+  PLACA_CAVALO_OCR: "placaCavalo",
+  PLACA_CARRETA_OCR: "placaCarreta",
+  PLACA_CARRETA01_OCR: "placaCarreta",
+  PLACA_CARRETA_01_OCR: "placaCarreta",
+  PLACA_CARRETA_02_OCR: "placaCarreta02",
+  PLACA_CARRETA02_OCR: "placaCarreta02",
+  LACRE_OCR: "lacre",
+  LACRE: "lacre",
+};
+
+type CampoOcrRic = "container" | "placaCavalo" | "placaCarreta" | "placaCarreta02" | "lacre";
+
+type FotoAberta = {
+  titulo: string;
+  imagem: string;
+  conferencia?: {
+    campo: CampoOcrRic;
+    label: string;
+    solicitado: string;
+    capturado: string;
+  };
+};
+
+function campoOcrRic(campo: ConferenciaCampo["campo"] | undefined): CampoOcrRic | null {
+  if (campo === "placa" || campo === "placaCavalo") return "placaCavalo";
+  if (campo === "container" || campo === "placaCarreta" || campo === "placaCarreta02" || campo === "lacre") {
+    return campo;
+  }
+  return null;
+}
+
+function formatarValorConferencia(campo: CampoOcrRic, valor: string): string {
+  const v = String(valor ?? "").trim();
+  if (!v || v === "—") return "—";
+  if (campo === "container") return formatIsoDisplay(v);
+  return v;
+}
 
 const TIPOS_LADO = ["LADO_FRONTAL", "LADO_TRASEIRO", "LADO_DIREITO", "LADO_ESQUERDO"] as const;
 const TIPOS_CABO_TOMADA = ["CABO_TOMADA", "CABO_REEFER", "TOMADA_REEFER"] as const;
@@ -140,7 +183,7 @@ export function ControleEntradaSaidaDossie({
 }) {
   const sol = operacao.dossie?.solicitacao;
   const por = operacao.dossie?.portaria;
-  const [fotoAberta, setFotoAberta] = useState<{ titulo: string; imagem: string } | null>(null);
+  const [fotoAberta, setFotoAberta] = useState<FotoAberta | null>(null);
   const [salvando, setSalvando] = useState(false);
   const salvandoRef = useRef(false);
   const [tiposContainer, setTiposContainer] = useState<CatalogoTipoContainer[]>([]);
@@ -238,28 +281,24 @@ export function ControleEntradaSaidaDossie({
     return alterado ? "alterado" : "livre";
   }
 
-  function ocrEditavel(ocr?: ConferenciaCampo) {
-    if (!podeEditar) return false;
-    if (liberarOcr) return true;
-    if (ocr?.status !== "CONFERE") return true;
-    return Boolean(ocr && operacao.confirmadosGate?.includes(ocr.campo));
-  }
-
   function aplicarRascunho(patch: CorrecaoRascunho) {
     setRascunho((prev) => {
       const next = { ...prev, ...patch };
+      if (patch.confirmar?.length) {
+        next.confirmar = [...new Set([...(prev.confirmar ?? []), ...patch.confirmar])];
+      }
       onRascunhoChangeRef.current?.(next);
       return next;
     });
   }
 
-  async function corrigir(patch: Parameters<typeof postCorrecoesGate>[1]) {
-    if ("container" in patch && patch.container != null && liberarOcr) return;
+  async function corrigir(patch: Parameters<typeof postCorrecoesGate>[1]): Promise<boolean> {
+    if ("container" in patch && patch.container != null && liberarOcr) return false;
     if (liberarOcr) {
       aplicarRascunho(patch);
-      return;
+      return true;
     }
-    if (salvandoRef.current) return;
+    if (salvandoRef.current) return false;
     salvandoRef.current = true;
     setSalvando(true);
     try {
@@ -269,8 +308,10 @@ export function ControleEntradaSaidaDossie({
       });
       onAtualizada?.(next);
       toast.success("Dado atualizado pelo Gate.");
+      return true;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Não foi possível salvar a correção.");
+      return false;
     } finally {
       salvandoRef.current = false;
       setSalvando(false);
@@ -278,10 +319,40 @@ export function ControleEntradaSaidaDossie({
   }
 
   function abrir(foto: FotoItem, titulo?: string) {
+    const label = titulo ?? FOTO_LABEL[foto.tipo] ?? foto.tipo.replace(/_/g, " ");
+    const campoFoto = CAMPO_POR_FOTO[foto.tipo];
+    const ocr = campoFoto
+      ? (byCampo[campoFoto] ?? (campoFoto === "placaCavalo" ? byCampo.placa : undefined))
+      : undefined;
+    const campo = campoOcrRic(ocr?.campo ?? campoFoto);
+    const conferir = Boolean(podeEditar && ocr?.status === "DIVERGENTE" && campo);
     setFotoAberta({
-      titulo: titulo ?? FOTO_LABEL[foto.tipo] ?? foto.tipo.replace(/_/g, " "),
+      titulo: label,
       imagem: foto.imagem,
+      conferencia:
+        conferir && campo && ocr
+          ? {
+              campo,
+              label,
+              solicitado: ocr.solicitado,
+              capturado: ocr.capturado,
+            }
+          : undefined,
     });
+  }
+
+  async function confirmarConferencia(origem: "agendamento" | "ocr") {
+    const conf = fotoAberta?.conferencia;
+    if (!conf) return;
+    let ok = false;
+    if (origem === "ocr") {
+      const valor = String(conf.capturado ?? "").trim();
+      if (!valor || valor === "—") return;
+      ok = await corrigir({ [conf.campo]: valor });
+    } else {
+      ok = await corrigir({ confirmar: [conf.campo] });
+    }
+    if (ok) setFotoAberta(null);
   }
 
   return (
@@ -294,6 +365,10 @@ export function ControleEntradaSaidaDossie({
             <span className="font-semibold text-foreground">{idLabel}</span>
           </p>
           <p>
+            <span className="mr-1.5 text-[11px] font-medium text-muted-foreground">Protocolo</span>
+            <span className="font-mono text-xs text-muted-foreground">{operacao.protocolo}</span>
+          </p>
+          <p>
             <span className="mr-1.5 text-[11px] font-medium text-muted-foreground">Check-in</span>
             <span className="font-semibold text-foreground">{checkinLabel}</span>
           </p>
@@ -301,8 +376,8 @@ export function ControleEntradaSaidaDossie({
       </div>
       <p className="mb-2 text-[11px] text-muted-foreground">
         {liberarOcr
-          ? "Vermelho = travado · Verde = pode alterar · Laranja = alterado nesta edição"
-          : "Verde = conferido · Laranja / sem OCR = Gate corrige · Enter confirma"}
+          ? "Vermelho = travado · Verde = pode alterar · Laranja = alterado nesta edição. Campos com OCR só conferem pela foto."
+          : "Verde = conferido · Laranja = clique na foto para conferir (agendamento ou OCR)"}
       </p>
 
       <div className={FORM}>
@@ -314,12 +389,11 @@ export function ControleEntradaSaidaDossie({
           ocr={byCampo.container}
           foto={fotoPorTipos(fotos, FOTO_TIPOS.container)}
           onOpen={abrir}
-          editavel={liberarOcr ? false : ocrEditavel(byCampo.container)}
+          editavel={false}
           disabled={salvando}
           enfatizar
-          sinalEdicao={sinal(false)}
-          onCommit={(v) => void corrigir({ container: v })}
-          onConfirmar={() => void corrigir({ confirmar: ["container"] })}
+          podeConferir={podeEditar}
+          sinalEdicao={sinal(false, Boolean(rascunho.confirmar?.includes("container")))}
         />
         <TipoTamanhoCampo
           span="col-span-6 sm:col-span-3"
@@ -350,20 +424,31 @@ export function ControleEntradaSaidaDossie({
           <Dado
             span="col-span-6 sm:col-span-3"
             label="Lacre"
-            value={rascunho.lacre ?? sol?.lacre || ""}
-            displayValue={(rascunho.lacre ?? sol?.lacre) || "—"}
+            value={
+              rascunho.lacre ??
+              (operacao.direcaoUnidade === "SAIDA"
+                ? operacao.lacreTroca?.atual ?? sol?.lacre
+                : sol?.lacre) ??
+              ""
+            }
+            displayValue={
+              (rascunho.lacre ??
+                (operacao.direcaoUnidade === "SAIDA"
+                  ? operacao.lacreTroca?.atual ?? sol?.lacre
+                  : sol?.lacre)) || "—"
+            }
             ocr={byCampo.lacre}
             foto={fotoPorTipos(fotos, FOTO_TIPOS.lacre)}
             fotoObrigatoriaAusente={Boolean(
               operacao.lacreFotoObrigatoria && !operacao.lacreFotoPresente,
             )}
             alertaFoto="Foto obrigatória — contêiner cheio (exceto IsoTank)"
+            nota={operacao.lacreTroca?.texto}
             onOpen={abrir}
-            editavel={ocrEditavel(byCampo.lacre)}
+            editavel={false}
             disabled={salvando}
-            sinalEdicao={sinal(ocrEditavel(byCampo.lacre), rascunho.lacre != null)}
-            onCommit={(v) => void corrigir({ lacre: v })}
-            onConfirmar={() => void corrigir({ confirmar: ["lacre"] })}
+            podeConferir={podeEditar}
+            sinalEdicao={sinal(false, rascunho.lacre != null || Boolean(rascunho.confirmar?.includes("lacre")))}
           />
         ) : null}
         {tomadaLabel ? (
@@ -410,6 +495,7 @@ export function ControleEntradaSaidaDossie({
           editavel={podeEditar}
           disabled={salvando}
           sinalEdicao={sinal(podeEditar, rascunho.navio != null)}
+          navioAutocomplete="staff"
           onCommit={(v) => void corrigir({ navio: v })}
         />
         <Dado
@@ -492,14 +578,13 @@ export function ControleEntradaSaidaDossie({
           ocr={byCampo.placaCavalo ?? byCampo.placa}
           foto={fotoPorTipos(fotos, FOTO_TIPOS.placaCavalo)}
           onOpen={abrir}
-          editavel={ocrEditavel(byCampo.placaCavalo ?? byCampo.placa)}
+          editavel={false}
           disabled={salvando}
+          podeConferir={podeEditar}
           sinalEdicao={sinal(
-            ocrEditavel(byCampo.placaCavalo ?? byCampo.placa),
-            rascunho.placaCavalo != null,
+            false,
+            rascunho.placaCavalo != null || Boolean(rascunho.confirmar?.includes("placaCavalo")),
           )}
-          onCommit={(v) => void corrigir({ placaCavalo: v })}
-          onConfirmar={() => void corrigir({ confirmar: ["placaCavalo"] })}
         />
         <Dado
           span={rodotrem ? "col-span-6 sm:col-span-2" : "col-span-6 sm:col-span-3"}
@@ -509,11 +594,13 @@ export function ControleEntradaSaidaDossie({
           ocr={byCampo.placaCarreta}
           foto={fotoPorTipos(fotos, FOTO_TIPOS.placaCarreta)}
           onOpen={abrir}
-          editavel={ocrEditavel(byCampo.placaCarreta)}
+          editavel={false}
           disabled={salvando}
-          sinalEdicao={sinal(ocrEditavel(byCampo.placaCarreta), rascunho.placaCarreta != null)}
-          onCommit={(v) => void corrigir({ placaCarreta: v })}
-          onConfirmar={() => void corrigir({ confirmar: ["placaCarreta"] })}
+          podeConferir={podeEditar}
+          sinalEdicao={sinal(
+            false,
+            rascunho.placaCarreta != null || Boolean(rascunho.confirmar?.includes("placaCarreta")),
+          )}
         />
         {rodotrem ? (
           <Dado
@@ -524,11 +611,13 @@ export function ControleEntradaSaidaDossie({
             ocr={byCampo.placaCarreta02}
             foto={fotoPorTipos(fotos, FOTO_TIPOS.placaCarreta02)}
             onOpen={abrir}
-            editavel={ocrEditavel(byCampo.placaCarreta02)}
+            editavel={false}
             disabled={salvando}
-            sinalEdicao={sinal(ocrEditavel(byCampo.placaCarreta02), rascunho.placaCarreta02 != null)}
-            onCommit={(v) => void corrigir({ placaCarreta02: v })}
-            onConfirmar={() => void corrigir({ confirmar: ["placaCarreta02"] })}
+            podeConferir={podeEditar}
+            sinalEdicao={sinal(
+              false,
+              rascunho.placaCarreta02 != null || Boolean(rascunho.confirmar?.includes("placaCarreta02")),
+            )}
           />
         ) : null}
         <Dado
@@ -563,6 +652,7 @@ export function ControleEntradaSaidaDossie({
         <div className="min-w-0 space-y-2">
           <ObservacaoCampo
             value={rascunho.observacao ?? operacao.observacaoGate ?? ""}
+            efeitos={operacao.observacoesEfeito}
             editavel={podeEditar}
             disabled={salvando}
             sinalEdicao={sinal(podeEditar, rascunho.observacao != null)}
@@ -615,12 +705,83 @@ export function ControleEntradaSaidaDossie({
       </div>
 
       <Dialog open={Boolean(fotoAberta)} onOpenChange={(open) => !open && setFotoAberta(null)}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent
+          className={
+            fotoAberta?.conferencia
+              ? "max-h-[95vh] w-[calc(100vw-1.5rem)] max-w-6xl overflow-y-auto"
+              : "max-w-3xl"
+          }
+        >
           <DialogHeader>
             <DialogTitle>{fotoAberta?.titulo ?? "Foto"}</DialogTitle>
           </DialogHeader>
           {fotoAberta ? (
-            <ControleEntradaSaidaFotoZoom src={fotoAberta.imagem} alt={fotoAberta.titulo} />
+            <div className="space-y-4">
+              <ControleEntradaSaidaFotoZoom
+                src={fotoAberta.imagem}
+                alt={fotoAberta.titulo}
+                compact={Boolean(fotoAberta.conferencia)}
+              />
+              {fotoAberta.conferencia ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="rounded-lg border border-white/15 bg-black/30 px-4 py-4 sm:px-5 sm:py-5">
+                      <p className="text-sm font-medium text-slate-400">Dados do agendamento</p>
+                      <p className="mt-2 break-all font-mono text-2xl font-bold tracking-wide text-white sm:text-3xl">
+                        {formatarValorConferencia(
+                          fotoAberta.conferencia.campo,
+                          fotoAberta.conferencia.solicitado,
+                        )}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-orange-500/40 bg-orange-500/10 px-4 py-4 sm:px-5 sm:py-5">
+                      <p className="text-sm font-medium text-orange-300">Dados do OCR</p>
+                      <p className="mt-2 break-all font-mono text-2xl font-bold tracking-wide text-white sm:text-3xl">
+                        {formatarValorConferencia(
+                          fotoAberta.conferencia.campo,
+                          fotoAberta.conferencia.capturado,
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      type="button"
+                      className="min-h-11 flex-1"
+                      disabled={salvando}
+                      data-testid="confirmar-agendamento-ocr"
+                      onClick={() => void confirmarConferencia("agendamento")}
+                    >
+                      Confirmar dados agendamento
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="min-h-11 flex-1 border-orange-500/50 text-orange-200 hover:bg-orange-500/10"
+                      disabled={
+                        salvando ||
+                        !fotoAberta.conferencia.capturado ||
+                        fotoAberta.conferencia.capturado === "—"
+                      }
+                      data-testid="confirmar-ocr"
+                      onClick={() => void confirmarConferencia("ocr")}
+                    >
+                      Confirmar dados OCR
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="min-h-11 flex-1 border-red-500 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                      disabled={salvando}
+                      data-testid="cancelar-conferencia-ocr"
+                      onClick={() => setFotoAberta(null)}
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           ) : null}
         </DialogContent>
       </Dialog>
@@ -657,12 +818,14 @@ const OBSERVACAO_MAX = 2000;
 
 function ObservacaoCampo({
   value,
+  efeitos,
   editavel,
   disabled,
   onCommit,
   sinalEdicao,
 }: {
   value: string;
+  efeitos?: string[];
   editavel?: boolean;
   disabled?: boolean;
   onCommit: (valor: string) => void;
@@ -671,12 +834,17 @@ function ObservacaoCampo({
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   const borda = bordaSinalEdicao(sinalEdicao) ?? "border-white/15";
+  const lancamentos = (efeitos ?? []).map((x) => x.trim()).filter(Boolean);
+  const lancamentosVisiveis = lancamentos.filter((l) => !value.trim().includes(l));
 
   function commitSeMudou() {
     const next = draft.trim();
     if (next === value.trim()) return;
     onCommit(next);
   }
+
+  const textoLivre = value.trim();
+  const vazio = !textoLivre && lancamentosVisiveis.length === 0;
 
   return (
     <div className="min-w-0">
@@ -702,9 +870,20 @@ function ObservacaoCampo({
             "min-h-[4.5rem] whitespace-pre-wrap font-normal leading-snug text-zinc-200",
           )}
         >
-          {value.trim() || "—"}
+          {vazio
+            ? "—"
+            : [textoLivre, ...lancamentosVisiveis].filter(Boolean).join("\n")}
         </div>
       )}
+      {editavel && lancamentosVisiveis.length > 0 ? (
+        <div className="mt-1.5 space-y-1">
+          {lancamentosVisiveis.map((linha) => (
+            <p key={linha} className="text-[11px] leading-snug text-amber-200/90">
+              {linha}
+            </p>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -887,15 +1066,17 @@ function Dado({
   foto,
   fotoObrigatoriaAusente,
   alertaFoto,
+  nota,
   onOpen,
   editavel,
   disabled,
   opcoes,
   onCommit,
-  onConfirmar,
   destaque,
   enfatizar,
   sinalEdicao,
+  podeConferir,
+  navioAutocomplete,
 }: {
   label: string;
   value: string;
@@ -905,15 +1086,17 @@ function Dado({
   foto?: FotoItem | null;
   fotoObrigatoriaAusente?: boolean;
   alertaFoto?: string;
+  nota?: string;
   onOpen?: (foto: FotoItem, titulo: string) => void;
   editavel?: boolean;
   disabled?: boolean;
   opcoes?: Array<{ value: string; label: string }>;
   onCommit?: (valor: string) => void;
-  onConfirmar?: () => void;
   destaque?: boolean;
   enfatizar?: boolean;
   sinalEdicao?: SinalEdicao;
+  podeConferir?: boolean;
+  navioAutocomplete?: "staff" | "portal";
 }) {
   const mostrado = displayValue ?? value;
   const [draft, setDraft] = useState(value === "—" ? "" : value);
@@ -922,6 +1105,7 @@ function Dado({
     opcoes && value && value !== "—" && !opcoes.some((o) => o.value === value)
       ? [...opcoes, { value, label: mostrado || value }]
       : opcoes;
+  const abrirConferencia = Boolean(podeConferir && ocr?.status === "DIVERGENTE" && foto && onOpen);
 
   const borda =
     bordaSinalEdicao(sinalEdicao) ??
@@ -957,6 +1141,20 @@ function Dado({
               </option>
             ))}
           </select>
+        ) : editavel && navioAutocomplete ? (
+          <NavioAutocompleteInput
+            source={navioAutocomplete}
+            value={draft}
+            disabled={disabled}
+            className={cn(inputClass(borda), enfatizar && "text-base font-bold")}
+            onChange={setDraft}
+            onBlur={commitSeMudou}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              commitSeMudou();
+            }}
+          />
         ) : editavel ? (
           <input
             value={draft}
@@ -966,43 +1164,44 @@ function Dado({
             onKeyDown={(e) => {
               if (e.key !== "Enter") return;
               e.preventDefault();
-              const next = draft.trim();
-              const atual = (value === "—" ? "" : value).trim();
-              if (next === atual) {
-                if (ocr?.status === "DIVERGENTE") onConfirmar?.();
-                return;
-              }
-              if (next) onCommit?.(next);
+              commitSeMudou();
             }}
             className={cn(inputClass(borda), enfatizar && "text-base font-bold")}
           />
+        ) : abrirConferencia ? (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onOpen(foto, label)}
+            className={cn(
+              inputClass(borda),
+              "flex items-center text-left hover:bg-white/5",
+              enfatizar && "min-h-[2.35rem]",
+            )}
+            title="Abrir foto para conferir"
+          >
+            <span className={cn("truncate font-medium", enfatizar && "text-base font-bold tracking-wide")}>
+              {mostrado || "—"}
+            </span>
+          </button>
         ) : (
           <div className={cn(inputClass(borda), "flex items-center", enfatizar && "min-h-[2.35rem]")}>
             <span className={cn("truncate font-medium", enfatizar && "text-base font-bold tracking-wide")}>
               {mostrado || "—"}
             </span>
-            {ocr?.status === "DIVERGENTE" && ocr.capturado && ocr.capturado !== "—" ? (
-              <span className="ml-2 truncate text-[10px] text-orange-300">OCR {ocr.capturado}</span>
-            ) : null}
           </div>
         )}
-        {editavel && ocr?.status === "DIVERGENTE" && ocr.capturado && ocr.capturado !== "—" ? (
-          <button
-            type="button"
-            disabled={disabled}
-            title="Usar leitura OCR"
-            onClick={() => onCommit?.(ocr.capturado)}
-            className="shrink-0 rounded-md border border-orange-500/50 px-1.5 text-[10px] text-orange-300 hover:bg-orange-500/10"
-          >
-            OCR
-          </button>
-        ) : null}
         {foto && onOpen ? (
           <button
             type="button"
             onClick={() => onOpen(foto, label)}
-            className="h-8 w-8 shrink-0 overflow-hidden rounded-md border border-white/15 hover:border-primary/50"
-            title={`Ver foto: ${label}`}
+            className={cn(
+              "h-8 w-8 shrink-0 overflow-hidden rounded-md border hover:border-primary/50",
+              ocr?.status === "DIVERGENTE" ? "border-orange-500" : "border-white/15",
+            )}
+            title={
+              ocr?.status === "DIVERGENTE" ? `Conferir foto: ${label}` : `Ver foto: ${label}`
+            }
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={foto.imagem} alt="" className="h-full w-full object-cover" />
@@ -1016,14 +1215,15 @@ function Dado({
           </div>
         ) : null}
       </div>
+      {nota ? (
+        <p className="mt-1 text-[10px] leading-snug text-amber-300">{nota}</p>
+      ) : null}
       {fotoObrigatoriaAusente ? (
         <p className="mt-1 text-[10px] text-orange-300">
           {alertaFoto ?? `Foto obrigatória — ${label.toLowerCase()}`}
         </p>
-      ) : editavel && ocr?.status === "DIVERGENTE" ? (
-        <p className="mt-1 text-[10px] text-orange-300">
-          OCR {ocr.capturado} · corrija ou Enter para confirmar o valor
-        </p>
+      ) : abrirConferencia ? (
+        <p className="mt-1 text-[10px] text-orange-300">Clique na foto para conferir</p>
       ) : null}
     </div>
   );

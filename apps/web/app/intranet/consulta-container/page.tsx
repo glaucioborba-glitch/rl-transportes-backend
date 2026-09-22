@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ContainerTimeline } from "@/components/container-timeline/container-timeline-ui";
+import { useDocumentoSaida } from "@/components/documento-saida/documento-saida-dialog";
 import { ApiError, staffContainerRic, staffContainerTimeline } from "@/lib/api/staff-client";
 import type { ContainerTimelineResponse } from "@/lib/container-timeline";
-import { openRicPrintWindow } from "@/lib/ric-print";
+import { downloadRicPdf } from "@/lib/gate/operacao-api";
+import { ricPrintHtmlBlob } from "@/lib/ric-print";
 import { toast } from "@/lib/toast";
 import { ContainerNumber } from "@/components/ui/container-number";
 import { formatContainerISO, stripContainerISO } from "@/utils/containerFormatter";
@@ -21,8 +23,8 @@ export default function ConsultaContainerPage() {
   const [isoInput, setIsoInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ContainerTimelineResponse | null>(null);
-  const [ricBusy, setRicBusy] = useState<"ENTRADA" | "SAIDA" | null>(null);
   const [servicosTick, setServicosTick] = useState(0);
+  const documentoSaida = useDocumentoSaida();
   const [tipos, setTipos] = useState<CadastrosTipoContainer[]>([]);
 
   useEffect(() => {
@@ -48,17 +50,22 @@ export default function ConsultaContainerPage() {
     }
   }, [isoInput]);
 
-  async function reimprimirRic(tipo: "ENTRADA" | "SAIDA") {
+  function reimprimirRic(tipo: "ENTRADA" | "SAIDA") {
     if (!data) return;
-    setRicBusy(tipo);
-    try {
-      const payload = await staffContainerRic(data.isoFormatado, tipo);
-      openRicPrintWindow(payload);
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Falha ao gerar RIC");
-    } finally {
-      setRicBusy(null);
-    }
+    const iso = data.isoFormatado;
+    documentoSaida.pedir({
+      titulo: `RIC ${tipo === "ENTRADA" ? "de entrada" : "de saída"}`,
+      descricao: "Baixe o arquivo ou envie direto para a impressora.",
+      filename: `RIC-${tipo}-${iso.replace(/\s+/g, "")}.pdf`,
+      obter: async () => {
+        const payload = await staffContainerRic(iso, tipo);
+        try {
+          return await downloadRicPdf(payload.protocolo);
+        } catch {
+          return ricPrintHtmlBlob(payload);
+        }
+      },
+    });
   }
 
   return (
@@ -139,12 +146,12 @@ export default function ConsultaContainerPage() {
             <ContainerTimeline
               eventos={data.eventos}
               showAdminMeta
-              onReprintRic={(t) => void reimprimirRic(t)}
-              ricBusy={ricBusy}
+              onReprintRic={(t) => reimprimirRic(t)}
             />
           </CardContent>
         </Card>
       ) : null}
+      {documentoSaida.dialog}
     </div>
   );
 }

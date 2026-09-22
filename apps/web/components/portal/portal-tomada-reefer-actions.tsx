@@ -25,6 +25,7 @@ export function PortalTomadaReeferActions({
   requerTomada,
   liberarPedido,
   onChanged,
+  compact = false,
 }: {
   unidadeIso: string;
   solicitacaoStatus: string;
@@ -33,6 +34,8 @@ export function PortalTomadaReeferActions({
   /** Unidade já no pátio (saldo) — não depende do status da OS. */
   liberarPedido?: boolean;
   onChanged?: () => void;
+  /** Uma linha, sem o quadro — para tabelas densas. */
+  compact?: boolean;
 }) {
   const podeTomada =
     (requerTomada === true ||
@@ -81,6 +84,34 @@ export function PortalTomadaReeferActions({
     } finally {
       setBusy(false);
     }
+  }
+
+  const statusLine = loading ? (
+    <span className="text-xs text-slate-500">…</span>
+  ) : status?.conectada ? (
+    <span className="text-xs text-emerald-300">Conectada</span>
+  ) : status?.solicitacaoPendente ? (
+    <span className="text-xs text-amber-300">Pedido enviado</span>
+  ) : (
+    <span className="inline-flex items-center gap-1.5">
+      <Input
+        aria-label="Set point (°C)"
+        className="h-7 w-14 bg-black/40 px-1.5 text-xs"
+        type="number"
+        step="0.1"
+        min={-30}
+        max={30}
+        value={setPoint}
+        onChange={(e) => setSetPoint(e.target.value)}
+      />
+      <Button type="button" size="sm" className="h-7 px-2 text-xs" disabled={busy} onClick={() => void onSolicitar()}>
+        Ligar
+      </Button>
+    </span>
+  );
+
+  if (compact) {
+    return <div className="inline-flex items-center gap-1.5 whitespace-nowrap">{statusLine}</div>;
   }
 
   return (

@@ -1,11 +1,6 @@
 import type { ContainerRicPayload } from "@/lib/container-timeline";
 
-export function openRicPrintWindow(payload: ContainerRicPayload) {
-  const w = window.open("", "_blank", "noopener,noreferrer,width=820,height=900");
-  if (!w) {
-    throw new Error("Permita pop-ups para imprimir o RIC.");
-  }
-
+export function buildRicPrintHtml(payload: ContainerRicPayload): string {
   const divergencias =
     payload.divergencias.length > 0
       ? `<ul>${payload.divergencias
@@ -23,7 +18,7 @@ export function openRicPrintWindow(payload: ContainerRicPayload) {
           .join("")
       : "";
 
-  w.document.write(`<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
@@ -60,11 +55,12 @@ export function openRicPrintWindow(payload: ContainerRicPayload) {
   </table>
   ${fotos ? `<div style="margin-top:16px"><strong>Evidências fotográficas</strong><div>${fotos}</div></div>` : ""}
   <p style="margin-top:24px;font-size:11px;color:#666">Documento gerado pelo módulo Consulta Container — RL Transportes.</p>
-  <button onclick="window.print()" style="margin-top:16px;padding:8px 16px">Imprimir / Salvar PDF</button>
 </body>
-</html>`);
-  w.document.close();
-  w.focus();
+</html>`;
+}
+
+export function ricPrintHtmlBlob(payload: ContainerRicPayload): Blob {
+  return new Blob([buildRicPrintHtml(payload)], { type: "text/html;charset=utf-8" });
 }
 
 function escapeHtml(s: string) {

@@ -25,7 +25,7 @@ async function parseJson<T>(res: Response): Promise<T> {
   }
 }
 
-function nestErrorMessage(raw: string, fallbackStatus: number): string {
+export function nestErrorMessage(raw: string, fallbackStatus: number): string {
   const fallback = raw || `Erro HTTP ${fallbackStatus}`;
   try {
     const j = JSON.parse(raw) as { message?: string | string[] };

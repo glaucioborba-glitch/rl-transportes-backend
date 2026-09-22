@@ -99,6 +99,11 @@ export async function setupPortalApiMocks(page: Page, opts?: { solicitacao?: Ret
       return;
     }
 
+    if (path === "/cliente/portal/financeiro/conta-corrente/pix-credito/comprovante" && method === "POST") {
+      await fulfillJson(route, { ok: true, comprovanteId: "e2e-pix-comp-1", arquivo: "comprovante.pdf" }, 201);
+      return;
+    }
+
     if (path === "/cliente/portal/financeiro/conta-corrente/pix-credito" && method === "POST") {
       await fulfillJson(route, {
         valor: 50,
@@ -163,30 +168,45 @@ export async function setupPortalApiMocks(page: Page, opts?: { solicitacao?: Ret
     }
 
     if (path.startsWith("/cliente/portal/simulacao-valores") && method === "GET") {
-      await fulfillJson(route, { unidades: [], servicos: [], atualizadoEm: new Date().toISOString() });
+      await fulfillJson(route, {
+        unidades: [],
+        servicos: [],
+        atualizadoEm: new Date().toISOString(),
+        aviso: "Os valores são previsões e podem sofrer alterações.",
+      });
       return;
     }
 
     if (path === "/cliente/portal/simulacao-valores" && method === "POST") {
       await fulfillJson(route, {
-        unidade: {
-          id: "u1",
-          unidadeIso: "ABCD1234567",
-          tipo: "DRYDC",
-          tamanho: "40",
-          statusContainer: "CHEIO",
-          refrigerado: false,
-          entradaEm: new Date().toISOString(),
-          protocolo: "SOL-1",
-        },
         dataSaida: "2026-08-20",
-        diasNoPatio: 5,
-        diasFreeTime: 7,
-        diasFaturaveis: 0,
-        itens: [],
-        total: 0,
-        avisos: [],
         estimativa: true,
+        avisoGeral: "Os valores são previsões e podem sofrer alterações.",
+        unidades: [
+          {
+            unidade: {
+              id: "u1",
+              unidadeIso: "ABCD1234567",
+              tipo: "DRYDC",
+              tamanho: "40",
+              statusContainer: "CHEIO",
+              refrigerado: false,
+              entradaEm: new Date().toISOString(),
+              protocolo: "SOL-1",
+            },
+            dataSaida: "2026-08-20",
+            diasNoPatio: 5,
+            diasFreeTime: 7,
+            diasFaturaveis: 0,
+            valorLancado: 0,
+            itens: [],
+            total: 0,
+            avisos: [],
+            estimativa: true,
+          },
+        ],
+        totalGeral: 0,
+        valorLancadoGeral: 0,
       });
       return;
     }
@@ -197,6 +217,18 @@ export async function setupPortalApiMocks(page: Page, opts?: { solicitacao?: Ret
         database: "ok",
         redis: "ok",
         securityEngine: "ok",
+      });
+      return;
+    }
+
+    if (path === "/portal/v2/solicitacoes/cotacao-pix" && method === "POST") {
+      await fulfillJson(route, {
+        exigido: false,
+        suficiente: true,
+        saldo: 0,
+        valor: 0,
+        saldoApos: 0,
+        ids: [],
       });
       return;
     }
@@ -223,6 +255,11 @@ export async function setupPortalApiMocks(page: Page, opts?: { solicitacao?: Ret
         limit: 10,
         meta: { total: 1, page: 1, limit: 10, totalPages: 1 },
       });
+      return;
+    }
+
+    if (path === "/cliente/portal/catalogo-navios" && method === "GET") {
+      await fulfillJson(route, { items: [], total: 0 });
       return;
     }
 
@@ -418,6 +455,24 @@ function buildOperacaoMock(state: OperacaoState) {
     transportadoraNome: "Transportes Demo",
     clienteNome: "Cliente Demo LTDA",
     tipoOperacao: "GATE_IN",
+    dossie: {
+      solicitacao: {
+        container: "MSCU1234567",
+        tipo: "DRY",
+        tamanho: "20'",
+        situacao: "CHEIO",
+        placa: "ABC-1234",
+        placaCavalo: "ABC-1234",
+        placaCarreta: "XYZ9E87",
+        tipoCaminhao: "LS",
+        motorista: "João Silva",
+        cpf: "52998224725",
+        tipoOperacao: "GATE_IN",
+        cliente: "Cliente Demo LTDA",
+        dataRef: null,
+        turno: null,
+      },
+    },
     tatInicio: state === "EM_OPERACAO" ? new Date().toISOString() : null,
     tatFim: null,
   };
@@ -430,6 +485,15 @@ export async function setupGateOperacaoMocks(page: Page) {
   await page.route((url) => url.href.includes("/v2/gate") || url.href.includes("/v2/ocr"), async (route) => {
     const path = apiPath(route.request().url());
     const method = route.request().method();
+
+    if (path === "/v2/gate/notificacoes/nao-lidas" && method === "GET") {
+      await fulfillJson(route, { count: 0 });
+      return;
+    }
+    if (path === "/v2/gate/notificacoes" && method === "GET") {
+      await fulfillJson(route, []);
+      return;
+    }
 
     if (path === "/v2/gate/portaria/stats" && method === "GET") {
       await fulfillJson(route, {
@@ -509,7 +573,7 @@ export async function setupGateOperacaoMocks(page: Page) {
       return;
     }
 
-    if (path.match(/\/v2\/gate\/operacoes\/[^/]+\/ric-pdf$/) && method === "POST") {
+    if (path.match(/\/v2\/gate\/operacoes\/[^/]+\/ric-pdf/) && method === "POST") {
       await route.fulfill({
         status: 200,
         contentType: "application/pdf",

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { ChevronDown, ChevronUp, Settings, SquareArrowOutUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,8 +20,30 @@ type Props = {
   moduleId: IntranetModuleId;
 };
 
+function sidebarItemActive(pathname: string, search: string, href: string): boolean {
+  const url = new URL(href, "http://intranet.local");
+  if (url.pathname === "/admin/auditoria") {
+    const want = url.searchParams.get("classificacao");
+    const have = new URLSearchParams(search).get("classificacao");
+    return pathname === "/admin/auditoria" && want === have;
+  }
+  return (
+    pathname === href ||
+    (href !== "/admin" &&
+      href !== "/bi" &&
+      href !== "/grc" &&
+      href !== "/ssma" &&
+      href !== "/cockpit" &&
+      href !== "/rh" &&
+      href !== "/cadastros" &&
+      pathname.startsWith(`${href}/`))
+  );
+}
+
 export function IntranetSidebar({ moduleId }: Props) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const search = searchParams.toString();
   const role = useStaffAuthStore((s) => s.user?.role ?? "");
   const meta = MODULE_META[moduleId];
   const items = (SIDEBAR_CONFIG[moduleId] ?? []).filter((item) =>
@@ -42,16 +64,7 @@ export function IntranetSidebar({ moduleId }: Props) {
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-2">
         {items.map((item) => {
-          const active =
-            pathname === item.href ||
-            (item.href !== "/admin" &&
-              item.href !== "/bi" &&
-              item.href !== "/grc" &&
-              item.href !== "/ssma" &&
-              item.href !== "/cockpit" &&
-              item.href !== "/rh" &&
-              item.href !== "/cadastros" &&
-              pathname.startsWith(`${item.href}/`));
+          const active = sidebarItemActive(pathname, search, item.href);
           const badge = resolveBadge(item.badgeKey);
           const Icon = item.icon;
           return (

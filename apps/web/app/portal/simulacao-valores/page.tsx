@@ -14,9 +14,8 @@ import {
   ApiError,
   fetchSimulacaoValoresCatalogo,
   simularValoresPortal,
-  type PortalPatioSaldoItem,
-  type PortalSimulacaoResultado,
-  type PortalSimulacaoServico,
+  type PortalSimulacaoLote,
+  type PortalSimulacaoUnidade,
 } from "@/lib/api/portal-client";
 import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
 import { formatIsoDisplay } from "@/lib/container-display";
@@ -25,8 +24,8 @@ import { formatDate } from "@/lib/portal-tracking";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
-const selectCls =
-  "flex h-10 w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-50";
+const AVISO_PADRAO =
+  "Os valores são previsões com base na pré-fatura e na data de saída informada. Podem sofrer alterações até o gate-out (energia de tomada, shifting, serviços executados no pátio ou tabela vigente).";
 
 function todayLocalIso(): string {
   const d = new Date();
@@ -36,36 +35,31 @@ function todayLocalIso(): string {
   return `${y}-${m}-${day}`;
 }
 
-function unidadeLabel(item: PortalPatioSaldoItem): string {
+function unidadeMeta(item: PortalSimulacaoUnidade): string {
   const tipo = formatTipoTamanhoContainerLabel(item.tipo, item.tamanho) ?? item.tipo;
-  return `${formatIsoDisplay(item.unidadeIso)} · ${tipo}`;
+  return `${tipo}${item.refrigerado ? " · Reefer" : ""}`;
 }
 
 export default function PortalSimulacaoValoresPage() {
   const [loading, setLoading] = useState(true);
-  const [unidades, setUnidades] = useState<PortalPatioSaldoItem[]>([]);
-  const [servicos, setServicos] = useState<PortalSimulacaoServico[]>([]);
-  const [unidadeId, setUnidadeId] = useState("");
+  const [unidades, setUnidades] = useState<PortalSimulacaoUnidade[]>([]);
+  const [avisoCatalogo, setAvisoCatalogo] = useState(AVISO_PADRAO);
+  const [busca, setBusca] = useState("");
+  const [selecionadas, setSelecionadas] = useState<string[]>([]);
   const [dataSaida, setDataSaida] = useState(todayLocalIso);
-  const [escolhidos, setEscolhidos] = useState<string[]>([]);
   const [simulando, setSimulando] = useState(false);
-  const [resultado, setResultado] = useState<PortalSimulacaoResultado | null>(null);
+  const [lote, setLote] = useState<PortalSimulacaoLote | null>(null);
 
-  const load = useCallback(async (id?: string) => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchSimulacaoValoresCatalogo(id);
+      const data = await fetchSimulacaoValoresCatalogo();
       setUnidades(data.unidades);
-      setServicos(data.servicos);
-      setUnidadeId((prev) => {
-        if (id && data.unidades.some((u) => u.id === id)) return id;
-        if (prev && data.unidades.some((u) => u.id === prev)) return prev;
-        return data.unidades[0]?.id ?? "";
-      });
+      if (data.aviso) setAvisoCatalogo(data.aviso);
+      setSelecionadas((prev) => prev.filter((id) => data.unidades.some((u) => u.id === id)));
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Não foi possível carregar a simulação.");
       setUnidades([]);
-      setServicos([]);
     } finally {
       setLoading(false);
     }
@@ -75,26 +69,45 @@ export default function PortalSimulacaoValoresPage() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    if (!unidadeId) return;
-    void fetchSimulacaoValoresCatalogo(unidadeId)
-      .then((data) => setServicos(data.servicos))
-      .catch(() => undefined);
-  }, [unidadeId]);
+  const visiveis = useMemo(() => {
+    const needle = busca.trim().toLowerCase().replace(/[\s-]/g, "");
+    if (!needle) return unidades;
+    return unidades.filter((u) => {
+      const hay = [u.unidadeIso, u.protocolo, u.tipo, u.tamanho, u.unidadeProcessoLabel]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .replace(/[\s-]/g, "");
+      return hay.includes(needle);
+    });
+  }, [unidades, busca]);
 
-  const unidade = useMemo(
-    () => unidades.find((u) => u.id === unidadeId) ?? null,
-    [unidades, unidadeId],
-  );
+  const minEntrada = useMemo(() => {
+    const datas = selecionadas
+      .map((id) => unidades.find((u) => u.id === id)?.entradaEm.slice(0, 10))
+      .filter((d): d is string => Boolean(d));
+    if (!datas.length) return undefined;
+    return datas.reduce((a, b) => (a < b ? a : b));
+  }, [selecionadas, unidades]);
 
-  function toggleServico(codigo: string) {
-    setEscolhidos((prev) => (prev.includes(codigo) ? prev.filter((c) => c !== codigo) : [...prev, codigo]));
-    setResultado(null);
+  function toggle(id: string) {
+    setSelecionadas((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setLote(null);
+  }
+
+  function toggleTodasVisiveis() {
+    const ids = visiveis.map((u) => u.id);
+    const todas = ids.length > 0 && ids.every((id) => selecionadas.includes(id));
+    setSelecionadas((prev) => {
+      if (todas) return prev.filter((id) => !ids.includes(id));
+      return [...new Set([...prev, ...ids])];
+    });
+    setLote(null);
   }
 
   async function onSimular() {
-    if (!unidadeId) {
-      toast.error("Selecione uma unidade no pátio.");
+    if (!selecionadas.length) {
+      toast.error("Selecione ao menos uma unidade no pátio.");
       return;
     }
     if (!dataSaida) {
@@ -104,14 +117,13 @@ export default function PortalSimulacaoValoresPage() {
     setSimulando(true);
     try {
       const r = await simularValoresPortal({
-        unidadeId,
+        unidadeIds: selecionadas,
         dataSaida,
-        servicos: escolhidos,
       });
-      setResultado(r);
+      setLote(r);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Não foi possível simular o valor.");
-      setResultado(null);
+      setLote(null);
     } finally {
       setSimulando(false);
     }
@@ -125,12 +137,19 @@ export default function PortalSimulacaoValoresPage() {
     );
   }
 
+  const todasVisiveisMarcadas =
+    visiveis.length > 0 && visiveis.every((u) => selecionadas.includes(u.id));
+
   return (
     <main className="mx-auto w-[90%] space-y-6 px-4 py-8">
       <SectionTitle
         title="Simulação de valores"
-        description="Escolha uma unidade da sua empresa, a data prevista de saída e os serviços extras. O valor é uma estimativa com a tabela vigente — o valor final é confirmado no gate-out."
+        description="Use o valor já lançado na pré-fatura e projete até a data de saída. Nada é faturado nesta tela."
       />
+
+      <p className="rounded-lg border border-amber-500/30 bg-amber-950/30 px-4 py-3 text-sm text-amber-100/90">
+        {avisoCatalogo}
+      </p>
 
       {unidades.length === 0 ? (
         <Card>
@@ -138,7 +157,7 @@ export default function PortalSimulacaoValoresPage() {
             <p className="text-sm text-slate-400">
               Nenhuma unidade depositada no pátio no momento. A simulação usa as unidades em{" "}
               <Link href="/portal/patio" className="text-[var(--accent)] hover:underline">
-                Saldo no pátio
+                consulta de estoque
               </Link>
               .
             </p>
@@ -148,145 +167,176 @@ export default function PortalSimulacaoValoresPage() {
         <div className="grid gap-6 lg:grid-cols-5">
           <Card className="lg:col-span-3">
             <CardContent className="space-y-5 py-6">
-              <div className="space-y-2">
-                <Label htmlFor="unidade">Unidade</Label>
-                <select
-                  id="unidade"
-                  className={selectCls}
-                  value={unidadeId}
-                  onChange={(e) => {
-                    setUnidadeId(e.target.value);
-                    setResultado(null);
-                  }}
-                >
-                  {unidades.map((u) => (
-                    <option key={u.id} value={u.id} className="bg-zinc-950">
-                      {unidadeLabel(u)}
-                    </option>
-                  ))}
-                </select>
-                {unidade ? (
-                  <p className="text-xs text-slate-500">
-                    Entrada em {formatDate(unidade.entradaEm)} · {unidade.diasNoPatio}{" "}
-                    {unidade.diasNoPatio === 1 ? "dia" : "dias"} no pátio
-                    {unidade.refrigerado ? " · Reefer" : ""}
-                  </p>
-                ) : null}
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div className="min-w-[12rem] flex-1 space-y-2">
+                  <Label htmlFor="buscaUnidade">Unidades no pátio</Label>
+                  <Input
+                    id="buscaUnidade"
+                    placeholder="Buscar ISO, protocolo ou ID…"
+                    value={busca}
+                    onChange={(e) => setBusca(e.target.value)}
+                  />
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={toggleTodasVisiveis}>
+                  {todasVisiveisMarcadas ? "Limpar seleção" : "Selecionar visíveis"}
+                </Button>
               </div>
 
+              <ul className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
+                {visiveis.map((u) => {
+                  const checked = selecionadas.includes(u.id);
+                  return (
+                    <li key={u.id}>
+                      <label
+                        className={cn(
+                          "flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 text-sm transition-colors",
+                          checked
+                            ? "border-[var(--accent)]/40 bg-[var(--accent)]/10"
+                            : "border-white/10 hover:border-white/20",
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--accent)]"
+                          checked={checked}
+                          onChange={() => toggle(u.id)}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <ContainerNumber value={formatIsoDisplay(u.unidadeIso)} showLabel={false} size="sm" />
+                            <span className="text-xs text-slate-500">{unidadeMeta(u)}</span>
+                          </span>
+                          <span className="mt-1 block text-xs text-slate-500">
+                            Entrada {formatDate(u.entradaEm)} · {u.diasNoPatio}{" "}
+                            {u.diasNoPatio === 1 ? "dia" : "dias"} no pátio
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-right">
+                          <span className="block text-[10px] uppercase tracking-widest text-slate-500">
+                            Já lançado
+                          </span>
+                          <span className="tabular-nums text-slate-100">
+                            {formatBRL(u.valorLancado ?? 0)}
+                          </span>
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+
               <div className="space-y-2">
-                <Label htmlFor="dataSaida">Data de saída</Label>
+                <Label htmlFor="dataSaida">Data de saída (todas as selecionadas)</Label>
                 <Input
                   id="dataSaida"
                   type="date"
                   value={dataSaida}
-                  min={unidade?.entradaEm.slice(0, 10)}
+                  min={minEntrada}
                   onChange={(e) => {
                     setDataSaida(e.target.value);
-                    setResultado(null);
+                    setLote(null);
                   }}
                 />
               </div>
 
-              <div className="space-y-3">
-                <Label>Serviços adicionais</Label>
-                {servicos.length === 0 ? (
-                  <p className="text-sm text-slate-500">
-                    Nenhum serviço extra cadastrado na tabela vigente. A simulação considera armazenagem, handling e
-                    energia (se reefer).
-                  </p>
-                ) : (
-                  <ul className="space-y-2">
-                    {servicos.map((s) => {
-                      const checked = escolhidos.includes(s.codigo);
-                      return (
-                        <li key={s.codigo}>
-                          <label
-                            className={cn(
-                              "flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-3 text-sm transition-colors",
-                              checked
-                                ? "border-[var(--accent)]/40 bg-[var(--accent)]/10"
-                                : "border-white/10 hover:border-white/20",
-                            )}
-                          >
-                            <input
-                              type="checkbox"
-                              className="mt-1"
-                              checked={checked}
-                              onChange={() => toggleServico(s.codigo)}
-                            />
-                            <span className="min-w-0 flex-1">
-                              <span className="block font-medium text-slate-100">{s.nome}</span>
-                              <span className="block text-xs text-slate-500">
-                                {s.descricao || s.unidadeCobrancaLabel}
-                                {s.valorEstimado != null ? ` · ${formatBRL(s.valorEstimado)}` : ""}
-                              </span>
-                            </span>
-                          </label>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-
-              <Button onClick={() => void onSimular()} disabled={simulando || !unidadeId}>
+              <Button onClick={() => void onSimular()} disabled={simulando || selecionadas.length === 0}>
                 <Calculator className="mr-2 h-4 w-4" />
-                {simulando ? "Calculando…" : "Simular valor"}
+                {simulando
+                  ? "Calculando…"
+                  : selecionadas.length > 1
+                    ? `Simular ${selecionadas.length} unidades`
+                    : "Simular valor"}
               </Button>
             </CardContent>
           </Card>
 
           <Card className="lg:col-span-2">
             <CardContent className="space-y-4 py-6">
-              {!resultado ? (
+              {!lote ? (
                 <p className="text-sm text-slate-500">
-                  O detalhamento aparece aqui depois de simular. Nada é faturado nesta tela.
+                  Selecione as unidades e a data de saída. O detalhamento individual e o total aparecem aqui.
+                  Nada é faturado nesta tela.
                 </p>
               ) : (
                 <>
                   <div>
-                    <p className="text-xs uppercase tracking-widest text-slate-500">Estimativa</p>
-                    <p className="mt-1 text-3xl font-semibold tabular-nums text-white">{formatBRL(resultado.total)}</p>
-                    <div className="mt-2">
-                      <ContainerNumber value={resultado.unidade.unidadeIso} showLabel={false} size="sm" />
-                    </div>
-                    <p className="mt-2 text-xs text-slate-500">
-                      {resultado.diasNoPatio} dias no pátio · {resultado.diasFreeTime} de free time ·{" "}
-                      {resultado.diasFaturaveis} faturáveis
+                    <p className="text-xs uppercase tracking-widest text-slate-500">Previsão no total</p>
+                    <p className="mt-1 text-3xl font-semibold tabular-nums text-white">
+                      {formatBRL(lote.totalGeral)}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Já lançado hoje: {formatBRL(lote.valorLancadoGeral)} · {lote.unidades.length}{" "}
+                      {lote.unidades.length === 1 ? "unidade" : "unidades"} · saída {formatDate(lote.dataSaida)}
                     </p>
                   </div>
 
-                  <ul className="divide-y divide-white/10 border-y border-white/10">
-                    {resultado.itens.map((item, i) => (
-                      <li key={`${item.descricao}-${i}`} className="flex items-start justify-between gap-3 py-2 text-sm">
-                        <span className="text-slate-300">
-                          {item.descricao}
-                          {item.detalheCobranca ? (
-                            <span className="block text-xs text-slate-500">{item.detalheCobranca}</span>
-                          ) : item.quantidade > 1 ? (
-                            <span className="block text-xs text-slate-500">
-                              {item.quantidade} × {formatBRL(item.valorUnitario)}
-                            </span>
-                          ) : null}
-                        </span>
-                        <span className="shrink-0 tabular-nums text-slate-100">{formatBRL(item.valorTotal)}</span>
+                  <ul className="space-y-4">
+                    {lote.unidades.map((r) => (
+                      <li
+                        key={r.unidade.id}
+                        className="rounded-lg border border-white/10 bg-black/20 px-3 py-3"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <ContainerNumber
+                              value={formatIsoDisplay(r.unidade.unidadeIso)}
+                              showLabel={false}
+                              size="sm"
+                            />
+                            <p className="mt-1 text-xs text-slate-500">
+                              {r.diasNoPatio} dias no pátio · {r.diasFreeTime} de free time ·{" "}
+                              {r.diasFaturaveis} faturáveis
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[10px] uppercase tracking-widest text-slate-500">Previsão</p>
+                            <p className="text-lg font-semibold tabular-nums text-white">
+                              {formatBRL(r.total)}
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              Lançado {formatBRL(r.valorLancado)}
+                            </p>
+                          </div>
+                        </div>
+                        <ul className="mt-2 divide-y divide-white/10 border-t border-white/10">
+                          {r.itens.map((item, i) => (
+                            <li
+                              key={`${item.descricao}-${i}`}
+                              className="flex items-start justify-between gap-3 py-2 text-sm"
+                            >
+                              <span className="text-slate-300">
+                                {item.descricao}
+                                <span className="block text-[11px] text-slate-500">
+                                  {item.origem === "PRE_FATURA" ? "Já lançado na pré-fatura" : "Previsão até a saída"}
+                                  {item.detalheCobranca ? ` · ${item.detalheCobranca}` : ""}
+                                  {!item.detalheCobranca && item.quantidade > 1
+                                    ? ` · ${item.quantidade} × ${formatBRL(item.valorUnitario)}`
+                                    : ""}
+                                </span>
+                              </span>
+                              <span className="shrink-0 tabular-nums text-slate-100">
+                                {formatBRL(item.valorTotal)}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                        {r.avisos.length > 0 ? (
+                          <ul className="mt-2 space-y-1 text-xs text-amber-200/90">
+                            {r.avisos.map((a) => (
+                              <li key={a}>{a}</li>
+                            ))}
+                          </ul>
+                        ) : null}
                       </li>
                     ))}
                   </ul>
 
-                  {resultado.avisos.length > 0 ? (
-                    <ul className="space-y-1 text-xs text-amber-200/90">
-                      {resultado.avisos.map((a) => (
-                        <li key={a}>{a}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-
-                  <p className="text-xs text-slate-500">
-                    Estimativa com a tabela vigente. O valor cobrado pode variar se houver shifting, energia de tomada
-                    ou serviços executados no pátio.
-                  </p>
+                  <div className="flex items-center justify-between border-t border-white/10 pt-3 text-sm">
+                    <span className="text-slate-400">Total previsto</span>
+                    <span className="text-lg font-semibold tabular-nums text-white">
+                      {formatBRL(lote.totalGeral)}
+                    </span>
+                  </div>
                 </>
               )}
             </CardContent>

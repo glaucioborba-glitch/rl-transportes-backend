@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -23,6 +24,9 @@ import { AuditoriaService } from '../auditoria/auditoria.service';
 import { isTransportadoraTerceiraRole } from '../common/constants/portal-tenant-roles.util';
 import { TRANSPORTADORA_PERMISSOES_FIXAS } from '../common/constants/transportadora-permissoes.constants';
 import { isPortalPrincipalTenant } from '../common/constants/portal-tenant-roles.util';
+import { mensagemCpfJaCadastrado } from '../common/utils/documento-unico.util';
+import { rotuloEmpresaCliente } from '../audit-trail/audit-ator.util';
+import { contextoAuditoriaPortal } from '../cx-portais/portal-auditoria-contexto.util';
 
 @Injectable()
 export class PessoasAutorizadasService {
@@ -50,6 +54,16 @@ export class PessoasAutorizadasService {
     }
   }
 
+  private async assertCpfUnicoNoCliente(clienteId: string, cpf: string) {
+    const dup = await this.prisma.pessoaAutorizada.findFirst({
+      where: { clienteId, cpf },
+      select: { nome: true },
+    });
+    if (dup) {
+      throw new ConflictException(mensagemCpfJaCadastrado(dup.nome));
+    }
+  }
+
   async criar(cx: CxPortalRequestUser, dto: CreatePessoaAutorizadaDto) {
     if (!isPortalPrincipalTenant(cx)) {
       throw new ForbiddenException('Transportadoras não podem gerenciar pessoas autorizadas.');
@@ -63,6 +77,7 @@ export class PessoasAutorizadasService {
     if (!cliente) throw new NotFoundException('Cliente não encontrado');
 
     const cpf = dto.cpf.replace(/\D/g, '');
+    await this.assertCpfUnicoNoCliente(cx.clienteId, cpf);
     const row = await this.prisma.pessoaAutorizada.create({
       data: {
         clienteId: cx.clienteId,
@@ -75,6 +90,19 @@ export class PessoasAutorizadasService {
         },
       },
       include: { permissoes: true },
+    });
+    await this.auditarEquipePortal(cx, {
+      acao: AcaoAuditoria.INSERT,
+      registroId: row.id,
+      dadosDepois: {
+        nome: row.nome,
+        email: row.email,
+        cpf: row.cpf,
+        telefone: row.telefone,
+        ativo: row.ativo,
+        clienteId: cx.clienteId,
+        empresaNome: rotuloEmpresaCliente(cliente),
+      },
     });
     return row;
   }
@@ -95,6 +123,18 @@ export class PessoasAutorizadasService {
     if (!row) throw new NotFoundException('Pessoa autorizada não encontrada');
     await this.assertClienteAccess(cx, row.clienteId);
     await this.prisma.pessoaAutorizada.delete({ where: { id } });
+    await this.auditarEquipePortal(cx, {
+      acao: AcaoAuditoria.DELETE,
+      registroId: id,
+      dadosAntes: {
+        nome: row.nome,
+        email: row.email,
+        cpf: row.cpf,
+        telefone: row.telefone,
+        ativo: row.ativo,
+        clienteId: row.clienteId,
+      },
+    });
     return { ok: true as const };
   }
 
@@ -114,15 +154,44 @@ export class PessoasAutorizadasService {
       throw new BadRequestException('Informe ao menos um campo para atualizar.');
     }
 
-    return this.prisma.pessoaAutorizada.update({
+    const updated = await this.prisma.pessoaAutorizada.update({
       where: { id },
       data,
     });
+    await this.auditarEquipePortal(cx, {
+      acao: AcaoAuditoria.UPDATE,
+      registroId: id,
+      dadosAntes: {
+        nome: row.nome,
+        email: row.email,
+        telefone: row.telefone,
+        ativo: row.ativo,
+        clienteId: row.clienteId,
+      },
+      dadosDepois: {
+        nome: updated.nome,
+        email: updated.email,
+        telefone: updated.telefone,
+        ativo: updated.ativo,
+        clienteId: updated.clienteId,
+      },
+    });
+    return updated;
   }
 
   async criarEmLote(clienteId: string, pessoas: CreatePessoaAutorizadaDto[]): Promise<void> {
     if (!pessoas.length) return;
+    const vistos = new Set<string>();
     for (const p of pessoas) {
+      const cpf = p.cpf.replace(/\D/g, '');
+      if (vistos.has(cpf)) {
+        throw new ConflictException(mensagemCpfJaCadastrado(p.nome));
+      }
+      vistos.add(cpf);
+    }
+    for (const p of pessoas) {
+      const cpf = p.cpf.replace(/\D/g, '');
+      await this.assertCpfUnicoNoCliente(clienteId, cpf);
       await this.prisma.pessoaAutorizada.create({
         data: {
           clienteId,
@@ -250,6 +319,32 @@ export class PessoasAutorizadasService {
       pessoa: pessoa ?? null,
       precisaSelecionarPessoa,
     };
+  }
+
+  private async auditarEquipePortal(
+    cx: CxPortalRequestUser,
+    params: {
+      acao: AcaoAuditoria;
+      registroId: string;
+      dadosAntes?: Record<string, unknown>;
+      dadosDepois?: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    try {
+      await this.auditoria.registrar({
+        tabela: 'pessoa_autorizada',
+        registroId: params.registroId,
+        acao: params.acao,
+        usuario: cx.sub,
+        dadosAntes: params.dadosAntes,
+        dadosDepois: contextoAuditoriaPortal(cx, {
+          clienteId: cx.clienteId,
+          ...(params.dadosDepois ?? {}),
+        }),
+      });
+    } catch {
+      /* auditoria não bloqueia gestão de equipe */
+    }
   }
 
   private async registrarLoginPessoaAutorizada(

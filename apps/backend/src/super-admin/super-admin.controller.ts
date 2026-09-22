@@ -202,7 +202,9 @@ export class SuperAdminController {
       | 'banking'
       | 'boleto'
       | 'pix'
-      | 's3',
+      | 's3'
+      | 'ipm'
+      | 'nfse-nacional',
   ) {
     const r = await this.tenantConfig.testIntegracao(id, probe);
     return { connected: r.connected, message: r.message, latency: r.latencyMs };

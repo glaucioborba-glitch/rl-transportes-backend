@@ -1,5 +1,7 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ArmazenagemFaturamentoModule } from '../armazenagem-faturamento/armazenagem-faturamento.module';
+import { AuditoriaModule } from '../auditoria/auditoria.module';
+import { AuthModule } from '../auth/auth.module';
 import { CadastrosTabelasServicosService } from '../cadastros/cadastros-tabelas-servicos.service';
 import { OutboxModule } from '../outbox/outbox.module';
 import { PatioV2Module } from '../patio-v2/patio.module';
@@ -10,7 +12,14 @@ import { UnidadeProcessoServicosService } from './unidade-processo-servicos.serv
 import { UnidadeProcessoService } from './unidade-processo.service';
 
 @Module({
-  imports: [PrismaModule, PatioV2Module, ArmazenagemFaturamentoModule, OutboxModule],
+  imports: [
+    PrismaModule,
+    PatioV2Module,
+    ArmazenagemFaturamentoModule,
+    OutboxModule,
+    AuditoriaModule,
+    forwardRef(() => AuthModule),
+  ],
   controllers: [UnidadeProcessoController],
   providers: [
     UnidadeProcessoService,

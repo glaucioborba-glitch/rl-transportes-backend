@@ -2,17 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, Bell, Edit2, MessageSquare, Plus } from "lucide-react";
-import { OperacionalBreadcrumb, OperacionalTabs } from "../components/operacional-tabs";
+import { Ban, Bell, Edit2, MessageSquare, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useWidgetData, WidgetError } from "@/components/ui/widget-error";
 import {
+  deleteCadastroMotivoRejeicao,
   listCadastrosMotivosRejeicao,
   type CadastroMotivoRejeicao,
 } from "@/lib/api/cadastros-motivos-rejeicao-client";
 import { canDo } from "@/lib/cadastros/permission-matrix";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
+import { ApiError } from "@/lib/api/staff-client";
+import { toast } from "@/lib/toast";
 
 const TIPO_FILTERS = [
   { value: "todos", label: "Todos" },
@@ -59,20 +61,30 @@ export default function MotivosRejeicaoListPage() {
 
   const canCreate = canDo(user, "operacional", "CREATE");
   const canEdit = canDo(user, "operacional", "EDIT");
+  const canDelete = canEdit || canDo(user, "operacional", "DELETE");
   const motivos = data?.items ?? [];
 
   const grouped = useMemo(() => groupByTipo(motivos), [motivos]);
 
+  async function onExcluir(motivo: CadastroMotivoRejeicao) {
+    if (!window.confirm(`Excluir o motivo "${motivo.descricao}"?`)) return;
+    try {
+      await deleteCadastroMotivoRejeicao(motivo.id);
+      toast.success("Motivo excluído.");
+      refetch();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível excluir.");
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <OperacionalBreadcrumb current="Motivos de Rejeição" />
-      <OperacionalTabs />
-
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Motivos de Rejeição</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Catálogo de motivos para gate, retorno ao pátio e cancelamentos
+            Catálogo de motivos para gate, retorno ao pátio e cancelamentos. A lista inicial é
+            exemplo — edite ou exclua para personalizar.
           </p>
         </div>
         {canCreate ? (
@@ -171,20 +183,34 @@ export default function MotivosRejeicaoListPage() {
                           {motivo.ativo ? "Ativo" : "Inativo"}
                         </Badge>
                       </td>
-                      <td className="p-4 text-center">
-                        {canEdit ? (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() =>
-                              router.push(
-                                `/cadastros/operacional/motivos-rejeicao/${motivo.id}`,
-                              )
-                            }
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </Button>
-                        ) : null}
+                      <td className="p-4">
+                        <div className="flex justify-center gap-1">
+                          {canEdit ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                router.push(
+                                  `/cadastros/operacional/motivos-rejeicao/${motivo.id}`,
+                                )
+                              }
+                            >
+                              <Edit2 className="h-3.5 w-3.5" />
+                              <span className="sr-only">Editar</span>
+                            </Button>
+                          ) : null}
+                          {canDelete ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-400 hover:text-red-300"
+                              onClick={() => void onExcluir(motivo)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              <span className="sr-only">Excluir</span>
+                            </Button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))}

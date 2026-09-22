@@ -19,6 +19,9 @@ import { YardAllocationService } from '../../yard-allocation/yard-allocation.ser
 import { HoldReleaseService } from '../../hold-release/hold-release.service';
 import { UnidadeProcessoService } from '../../unidade-processo/unidade-processo.service';
 import { CatalogoMotoristasExternosService } from '../../catalogo-motoristas-externos/catalogo-motoristas-externos.service';
+import { CatalogoNaviosService } from '../../catalogo-navios/catalogo-navios.service';
+import { TenantConfigService } from '../../tenant/tenant-config.service';
+import { PixQuitacaoSaidaService } from './pix-quitacao-saida.service';
 import type { CreateSolicitacaoV2Dto } from './dto/create-solicitacao-v2.dto';
 import type { CxPortalRequestUser } from '../../cx-portais/types/cx-portal.types';
 import { TipoOperacaoSolicitacaoIntent } from '@prisma/client';
@@ -83,6 +86,7 @@ describe('SolicitacoesV2Service', () => {
     auditoria: { findMany: jest.fn() },
     securityAlert: { findMany: jest.fn(), create: jest.fn() },
     $transaction: jest.fn(),
+    $queryRaw: jest.fn().mockResolvedValue([{ n: 1 }]),
   };
 
   const redis = {
@@ -139,7 +143,7 @@ describe('SolicitacoesV2Service', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: RedisService, useValue: redis },
         { provide: AuditoriaService, useValue: auditoria },
-        { provide: AuditLogService, useValue: { log: jest.fn() } },
+        { provide: AuditLogService, useValue: { log: jest.fn(), append: jest.fn().mockResolvedValue({}) } },
         { provide: AgendamentosService, useValue: agendamentos },
         { provide: SecurityEventsService, useValue: securityEvents },
         { provide: SolicitacaoAnexoStorageService, useValue: storage },
@@ -157,6 +161,34 @@ describe('SolicitacoesV2Service', () => {
           useValue: {
             assertNaoSuspenso: jest.fn().mockResolvedValue(undefined),
             registrarDaSolicitacao: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: CatalogoNaviosService,
+          useValue: {
+            registrarMuitos: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: TenantConfigService,
+          useValue: {
+            getParametros: jest.fn().mockResolvedValue({
+              parametros: { operacional: { qrValidadeHoras: 24 } },
+            }),
+          },
+        },
+        {
+          provide: PixQuitacaoSaidaService,
+          useValue: {
+            cotar: jest.fn().mockResolvedValue({
+              exigido: false,
+              suficiente: true,
+              saldo: 0,
+              valor: 0,
+              saldoApos: 0,
+              ids: [],
+            }),
+            debitarNaTransacao: jest.fn().mockResolvedValue({ exigido: false }),
           },
         },
       ],
@@ -296,9 +328,13 @@ describe('SolicitacoesV2Service', () => {
   it('aprovarStaff grava delta de status na auditoria', async () => {
     prisma.solicitacao.findFirst.mockResolvedValue({
       id: 's1',
+      protocolo: 'RL-0001',
+      clienteId: 'c1',
       status: StatusSolicitacao.PENDENTE,
       anexosSolicitacao: [],
       transporteSolicitacao: {},
+      containersSolicitacao: [],
+      operacaoFluxoJson: { qrToken: 'token-fixo', qrAtivo: false },
     });
     prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
     prisma.solicitacao.update.mockResolvedValue({

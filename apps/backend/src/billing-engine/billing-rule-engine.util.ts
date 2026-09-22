@@ -8,6 +8,7 @@ import {
   agruparDiasPorFaixa,
   calcularArmazenagemEscalonada,
   calcularEnergiaEscalonada,
+  diasSemFaixa,
   formatarFaixasCobranca,
   SUBSTANTIVO_DIA_ENERGIA,
   SUBSTANTIVO_DIARIA,
@@ -311,16 +312,18 @@ export function evaluateBillingRules(input: BillingRuleEngineInput): BillingRule
         : 0;
   const useHandling = handlingValor > 0;
 
-  if (input.incluirGateOut && useHandling) {
+  if (useHandling && !input.omitirHandling && (input.incluirGateIn || input.incluirGateOut)) {
     items.push({
       regraTarifariaId: regraHandling?.id ?? null,
       eventoGatilho: EventoGatilhoTarifa.HANDLING,
-      descricao: regraHandling?.nome?.trim() || 'Handling (entrada + saída)',
+      descricao:
+        regraHandling?.nome?.trim() ||
+        (input.incluirGateOut ? 'Handling (entrada + saída)' : 'Handling'),
       quantidade: 1,
       valorUnitario: roundMoney(handlingValor),
       valorTotal: roundMoney(handlingValor),
     });
-  } else {
+  } else if (!useHandling) {
     if (input.incluirGateIn) {
       const regra = pickRegra(input.regras, tipoContainer, EventoGatilhoTarifa.GATE_IN, statusContainer, mdm);
       if (regra && Number(regra.valor) > 0) {
@@ -359,6 +362,13 @@ export function evaluateBillingRules(input: BillingRuleEngineInput): BillingRule
   if (podeCobrarDiaria && diasFaturaveis > 0) {
     const rotuloDiaria = regraDiaria?.nome?.trim() || 'Diária de aluguel';
     if (faixas.length) {
+      const descobertos = diasSemFaixa(diasFreeTime + 1, diasNoPatio, faixas);
+      if (descobertos.length) {
+        throw new Error(
+          `Faixas de diária não cobrem o(s) dia(s) ${descobertos.join(', ')} de permanência. ` +
+            'Corrija as faixas da tabela de preço antes de faturar.',
+        );
+      }
       diariaTotal = calcularArmazenagemEscalonada(diasNoPatio, diasFreeTime, faixas);
       const { valorMedio } = valorMedioDiariaEscalonada(diasNoPatio, diasFreeTime, faixas);
       const grupos = agruparDiasPorFaixa(diasFreeTime + 1, diasNoPatio, faixas);
@@ -396,7 +406,7 @@ export function evaluateBillingRules(input: BillingRuleEngineInput): BillingRule
     diasEnergiaReefer: input.diasEnergiaReefer,
     refrigerado: input.container.refrigerado,
   });
-  if (diasEnergia > 0) {
+  if (diasEnergia > 0 && !input.omitirEnergia) {
     const tipoEnergia =
       tipoContainer === TipoContainerTarifa.REEFER
         ? tipoContainer
@@ -418,7 +428,15 @@ export function evaluateBillingRules(input: BillingRuleEngineInput): BillingRule
         : regraEnergia
           ? Number(regraEnergia.valor)
           : null;
-    const tarifaBase = tarifaTabela ?? DEFAULT_TARIFA_ENERGIA_REEFER_DIA;
+    // Sem tarifa nem faixa cadastrada, a energia era cobrada por um valor fixo
+    // escondido no código. Melhor travar o fechamento e cobrar o cadastro.
+    if (tarifaTabela == null && !faixasEnergia.length) {
+      throw new Error(
+        'Tarifa de energia reefer não cadastrada na tabela de preço. ' +
+          'Cadastre a regra de energia (ou informe o valor no processo) antes de faturar.',
+      );
+    }
+    const tarifaBase = tarifaTabela ?? 0;
     const setPoint = input.container.setPoint ?? 0;
     const usaFator =
       input.pricingOverrides?.energiaUsaFatorSetPoint ?? tarifaTabela == null;

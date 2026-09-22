@@ -72,10 +72,22 @@ export default function ParametrosNotificacoesPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await update({ notificacoes: form });
+      // Templates WhatsApp vêm da integração, não são editáveis aqui.
+      await update({
+        notificacoes: {
+          emailsAlerta: form.emailsAlerta,
+          webhookSlackEnabled: form.webhookSlackEnabled,
+          debounceAlertasMin: form.debounceAlertasMin,
+          ...(form.webhookSlackUrl?.trim()
+            ? { webhookSlackUrl: form.webhookSlackUrl.trim() }
+            : {}),
+        },
+      });
       toast.success("Parâmetros de notificações salvos.");
-    } catch {
-      toast.error("Erro ao salvar notificações.");
+    } catch (err) {
+      toast.error(
+        err instanceof Error && err.message ? err.message : "Erro ao salvar notificações.",
+      );
     } finally {
       setSaving(false);
     }
@@ -124,6 +136,12 @@ export default function ParametrosNotificacoesPage() {
       <ParametrosTabs />
 
       <FormSection title="Emails de Alerta" icon={Mail}>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Quem recebe os avisos internos do terminal: novo cadastro do portal aguardando análise,
+          banco fora do ar, NFS-e travada na fila, Gate lento e pré-fatura não consolidada. Vazio,
+          o aviso vai para o endereço configurado no servidor. O remetente fica em Parâmetros →
+          Operacional.
+        </p>
         <div className="space-y-3">
           <div className="flex flex-wrap gap-2">
             {form.emailsAlerta.map((email) => (
@@ -166,6 +184,10 @@ export default function ParametrosNotificacoesPage() {
       </FormSection>
 
       <FormSection title="Webhook Slack / Discord / Teams" icon={Webhook}>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Recebe os mesmos alertas internos, em paralelo ao e-mail. Habilitado e com URL, vale o
+          webhook do terminal; caso contrário, o do servidor.
+        </p>
         <div className="grid grid-cols-1 gap-4">
           <FormField label="URL do webhook">
             <Input
@@ -181,6 +203,24 @@ export default function ParametrosNotificacoesPage() {
               checked={form.webhookSlackEnabled}
               onCheckedChange={(v) => setForm({ ...form, webhookSlackEnabled: v })}
             />
+          </FormField>
+          <FormField label="Intervalo mínimo entre alertas iguais (min)" className="max-w-[16rem]">
+            <Input
+              type="number"
+              min={1}
+              max={120}
+              disabled={!canEdit}
+              value={form.debounceAlertasMin}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  debounceAlertasMin: Math.min(120, Math.max(1, Number(e.target.value) || 15)),
+                })
+              }
+            />
+            <p className="mt-1 text-[10px] text-zinc-500">
+              Evita repetir o mesmo alerta enquanto a falha continua. Vale para e-mail e webhook.
+            </p>
           </FormField>
           <Button
             variant="outline"

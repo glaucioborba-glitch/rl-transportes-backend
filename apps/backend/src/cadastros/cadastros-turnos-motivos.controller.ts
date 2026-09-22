@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -85,5 +86,11 @@ export class CadastrosMotivosRejeicaoController {
   @Put(':id')
   update(@Param('id') id: string, @Body() dto: CadastrosMotivoRejeicaoFormDto) {
     return this.service.update(id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(@Param('id') id: string) {
+    return this.service.remove(id);
   }
 }

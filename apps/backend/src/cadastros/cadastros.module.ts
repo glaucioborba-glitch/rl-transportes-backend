@@ -27,14 +27,8 @@ import { CadastrosPosicoesPatioController } from './cadastros-posicoes-patio.con
 import { CadastrosPosicoesPatioService } from './cadastros-posicoes-patio.service';
 import { CadastrosTiposOperacaoController } from './cadastros-tipos-operacao.controller';
 import { CadastrosTiposOperacaoService } from './cadastros-tipos-operacao.service';
-import {
-  CadastrosMotivosRejeicaoController,
-  CadastrosTurnosController,
-} from './cadastros-turnos-motivos.controller';
-import {
-  CadastrosMotivosRejeicaoService,
-  CadastrosTurnosService,
-} from './cadastros-turnos-motivos.service';
+import { CadastrosMotivosRejeicaoController } from './cadastros-turnos-motivos.controller';
+import { CadastrosMotivosRejeicaoService } from './cadastros-turnos-motivos.service';
 import { CadastrosTransportadorasController } from './cadastros-transportadoras.controller';
 import { CadastrosTransportadorasService } from './cadastros-transportadoras.service';
 import { CadastrosBancosController } from './cadastros-bancos.controller';
@@ -77,7 +71,6 @@ import { CadastrosTerceirosService } from './cadastros-terceiros.service';
     CadastrosEquipamentosController,
     CadastrosPosicoesPatioController,
     CadastrosTiposOperacaoController,
-    CadastrosTurnosController,
     CadastrosMotivosRejeicaoController,
     CadastrosBancosController,
     CadastrosCentrosCustoController,
@@ -104,7 +97,6 @@ import { CadastrosTerceirosService } from './cadastros-terceiros.service';
     CadastrosEquipamentosService,
     CadastrosPosicoesPatioService,
     CadastrosTiposOperacaoService,
-    CadastrosTurnosService,
     CadastrosMotivosRejeicaoService,
     CadastrosBancosService,
     CadastrosCentrosCustoService,

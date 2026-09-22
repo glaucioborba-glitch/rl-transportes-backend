@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Edit2, MapPin, Plus, Search } from "lucide-react";
-import { OperacionalBreadcrumb, OperacionalTabs } from "../components/operacional-tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,9 +40,6 @@ export default function OrigensDestinosListPage() {
 
   return (
     <div className="space-y-6">
-      <OperacionalBreadcrumb current="Origens e destinos" />
-      <OperacionalTabs />
-
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Origens e destinos</h1>

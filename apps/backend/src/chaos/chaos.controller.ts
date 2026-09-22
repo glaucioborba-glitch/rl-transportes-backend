@@ -18,7 +18,8 @@ import { ChaosTurbulenciaDto } from './dto/chaos-turbulencia.dto';
 @ApiBearerAuth('access-token')
 @Controller('admin/chaos')
 @UseGuards(AuthGuard('jwt'), RolesGuard, ObservabilityRateLimitGuard)
-@Roles(Role.ADMIN, Role.SUPER_ADMIN)
+// Injeta falha de banco/Redis e bloqueia rota: em produção, só o dono da plataforma.
+@Roles(...(process.env.NODE_ENV === 'production' ? [Role.SUPER_ADMIN] : [Role.ADMIN, Role.SUPER_ADMIN]))
 export class ChaosController {
   constructor(
     private readonly chaos: ChaosService,

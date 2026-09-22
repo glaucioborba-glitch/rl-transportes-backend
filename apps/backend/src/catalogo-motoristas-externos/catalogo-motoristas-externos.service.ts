@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { resolveStoreTenantId } from '../common/stores/store-tenant.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantContextService } from '../tenant/tenant-context.service';
 import {
   isCpfFrotaPlaceholder,
   motoristaEstaSuspenso,
@@ -23,7 +25,10 @@ export type CatalogoMotoristaExternoDto = {
 export class CatalogoMotoristasExternosService {
   private readonly logger = new Logger(CatalogoMotoristasExternosService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenantCtx: TenantContextService,
+  ) {}
 
   async buscarPorCpf(cpfRaw: string): Promise<CatalogoMotoristaExternoDto | null> {
     const cpf = normalizeMotoristaCpf(cpfRaw);
@@ -79,17 +84,12 @@ export class CatalogoMotoristasExternosService {
     const cpf = normalizeMotoristaCpf(input.cpf);
     const nome = input.nome.trim();
     if (cpf.length !== 11 || isCpfFrotaPlaceholder(cpf) || !nome) return;
+    const tenantId = resolveStoreTenantId(this.tenantCtx);
     try {
-      const existing = await this.prisma.catalogoMotoristaExterno.findFirst({ where: { cpf } });
-      if (existing) {
-        await this.prisma.catalogoMotoristaExterno.update({
-          where: { id: existing.id },
-          data: { nome, origem: input.origem || existing.origem },
-        });
-        return;
-      }
-      await this.prisma.catalogoMotoristaExterno.create({
-        data: { cpf, nome, origem: input.origem || 'PORTAL' },
+      await this.prisma.catalogoMotoristaExterno.upsert({
+        where: { tenantId_cpf: { tenantId, cpf } },
+        create: { tenantId, cpf, nome, origem: input.origem || 'PORTAL' },
+        update: { nome, origem: input.origem || undefined },
       });
     } catch (err) {
       this.logger.warn(`Catálogo de motorista ${cpf} não gravou: ${(err as Error).message}`);

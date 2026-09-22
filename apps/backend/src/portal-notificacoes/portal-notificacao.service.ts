@@ -6,6 +6,8 @@ import {
   mensagemCadastroEmAnalise,
   mensagemCadastroRejeitado,
   mensagemCondicaoAlterada,
+  mensagemPixCreditoAprovado,
+  mensagemPixCreditoNegado,
   mensagemUnidadeProcessoAberto,
   mensagemUnidadeProcessoEncerrado,
   type MensagemPortalNotificacao,
@@ -71,6 +73,20 @@ export class PortalNotificacaoService {
       ? mensagemUnidadeProcessoAberto(input.numero, input.unidadeIso)
       : mensagemUnidadeProcessoEncerrado(input.numero, input.unidadeIso);
     return this.criar(input, msg, db);
+  }
+
+  async criarPixCreditoAprovado(
+    input: { clienteId: string; tenantId: string; valor: number },
+    db: Db = this.prisma,
+  ) {
+    return this.criar(input, mensagemPixCreditoAprovado(input.valor), db);
+  }
+
+  async criarPixCreditoNegado(
+    input: { clienteId: string; tenantId: string; valor: number; motivo: string },
+    db: Db = this.prisma,
+  ) {
+    return this.criar(input, mensagemPixCreditoNegado(input.valor, input.motivo), db);
   }
 
   async listar(clienteId: string): Promise<PortalNotificacaoPublica[]> {

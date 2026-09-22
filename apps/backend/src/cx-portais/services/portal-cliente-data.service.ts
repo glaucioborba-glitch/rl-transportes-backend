@@ -1,22 +1,43 @@
 import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
-import { PatioStatus, StatusAgendamentoTerminal, StatusSolicitacao, type Prisma } from '@prisma/client';
+import {
+  PatioStatus,
+  Prisma,
+  StatusAgendamentoTerminal,
+  StatusPixCreditoComprovante,
+  StatusSolicitacao,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SOLICITACAO_CONTROLE_INCLUDE, protocoloBuscaWhere } from '../../solicitacoes/protocolo-solicitacao.util';
 import { PlataformaTenantStore } from '../../plataforma-integracao/stores/plataforma-tenant.store';
 import type { CxPortalRequestUser } from '../types/cx-portal.types';
 import { PortalClienteSolicitacoesQueryDto } from '../dto/portal-cliente-solicitacoes-query.dto';
 import { UpdatePortalSolicitacaoDto } from '../dto/update-portal-solicitacao.dto';
+import { UpdatePortalEmbarqueDto } from '../dto/update-portal-embarque.dto';
+import {
+  LABEL_CAMPO_EMBARQUE,
+  chaveAgrupamentoEmbarque,
+  dataCampoEmbarque,
+  isAlcanceEmbarque,
+  isCampoEmbarque,
+  normalizeValorEmbarque,
+  valoresBatemAlcance,
+} from '../embarque-campo.util';
 import { DashboardPortalService } from '../dashboard/dashboard-portal.service';
 import { AgendamentosService } from '../../agendamentos/agendamentos.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { stripContainerIsoCanonical } from '../../common/utils/data-sanitize';
 import { assertClienteDoTenant } from '../portal-cliente-tenant.util';
 import { estoqueClienteMatchesQuery } from '../estoque-cliente-query.util';
+import { lacreEstoquePatio } from '../saldo-patio-item.util';
 import {
+  AUDIT_ACAO_UNIDADE_ALTERADA,
   diffSolicitacaoAuditSnapshots,
+  formatAuditActorLabel,
   resolveAuditActor,
   snapshotFromPersisted,
   snapshotFromUpdateDto,
 } from '../../audit-log/audit-log-solicitacao.util';
+import { GateUnidadeNotificacaoService } from '../../gate-v2/gate-unidade-notificacao.service';
 import {
   containerIsosChanged,
   deltasInvalidateQrCredential,
@@ -27,11 +48,17 @@ import {
   normalizeTamanhosContainer,
 } from '../../cadastros/tipo-container-tamanhos.util';
 import { CatalogoMotoristasExternosService } from '../../catalogo-motoristas-externos/catalogo-motoristas-externos.service';
+import { CatalogoNaviosService } from '../../catalogo-navios/catalogo-navios.service';
 import { isCpfFrotaPlaceholder } from '../../catalogo-motoristas-externos/catalogo-motoristas-externos.util';
 import { MOTIVO_CONTA_CORRENTE_LABEL, classificarSaldo, toMoneyNumber } from '../../conta-corrente/conta-corrente.util';
+import { randomUUID } from 'crypto';
 import { BankingBoletoService } from '../../fiscal-integracao/banking-boleto.service';
 import { RetriableOutboxError } from '../../outbox/outbox.errors';
+import { rotuloEmpresaCliente } from '../../audit-trail/audit-ator.util';
+import { ObjectStorageService } from '../../common/storage/object-storage.service';
 import { unificarFats } from '../portal-fat.util';
+import { deactivateQr, qrEstaAtivo } from '../../gate-v2/operacao-fluxo-qr.util';
+import type { OperacaoFluxoJson } from '../../gate-v2/operacao-states.constants';
 
 const STATUS_TERMINAL = new Set<StatusSolicitacao>([
   StatusSolicitacao.CONCLUIDO,
@@ -39,6 +66,93 @@ const STATUS_TERMINAL = new Set<StatusSolicitacao>([
   StatusSolicitacao.CANCELADO,
   StatusSolicitacao.CANCELADO_CLIENTE,
 ]);
+
+const STATUS_APOS_CHECKIN = new Set<StatusSolicitacao>([
+  StatusSolicitacao.EM_PATIO,
+  StatusSolicitacao.EM_EXECUCAO,
+  StatusSolicitacao.AGUARDANDO_GATE_OUT,
+]);
+
+const STATUS_REAPROVACAO = new Set<StatusSolicitacao>([
+  StatusSolicitacao.APROVADO,
+  StatusSolicitacao.AGUARDANDO_GATE_IN,
+]);
+
+const FLUXO_APOS_CHEGADA = new Set([
+  'CHECKIN_PORTARIA',
+  'VISTORIA_FOTOGRAFICA',
+  'AGUARDANDO_RECONFIRMACAO',
+  'RECONFIRMADA',
+  'RIC_GERADO',
+  'LIBERADA_OPERACAO',
+  'EM_OPERACAO',
+  'CONCLUIDA',
+]);
+
+function parseFluxoJson(raw: Prisma.JsonValue | null | undefined): OperacaoFluxoJson {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  return raw as OperacaoFluxoJson;
+}
+
+function digitsOnly(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
+function solicitanteDivergente(
+  atual: { nome: string; telefone: string; email: string } | null | undefined,
+  dto: { nome: string; telefone: string; email: string },
+): boolean {
+  if (!atual) return false;
+  return (
+    atual.nome.trim() !== dto.nome.trim() ||
+    digitsOnly(atual.telefone) !== digitsOnly(dto.telefone) ||
+    atual.email.trim().toLowerCase() !== dto.email.trim().toLowerCase()
+  );
+}
+
+function containersNaoIsoMudaram(
+  atuais: Array<{
+    ordem: number;
+    booking: string;
+    processo: string;
+    navio: string | null;
+    tamanho: string;
+    tipo: string;
+    status: string;
+    lacre: string | null;
+    refrigerado: boolean;
+    setPoint: number | null;
+  }>,
+  dto: Array<{
+    ordem: number;
+    booking?: string;
+    processo?: string;
+    navio?: string;
+    tamanho: string;
+    tipo: string;
+    status: string;
+    lacre?: string;
+    refrigerado: boolean;
+    setPoint?: number | null;
+  }>,
+): boolean {
+  for (const c of dto) {
+    const existing = atuais.find((x) => x.ordem === c.ordem);
+    if (!existing) return true;
+    if ((existing.booking ?? '').trim() !== (c.booking ?? '').trim()) return true;
+    if ((existing.processo ?? '').trim() !== (c.processo ?? '').trim()) return true;
+    if ((existing.navio ?? '').trim() !== (c.navio ?? '').trim()) return true;
+    if (existing.tamanho.trim() !== c.tamanho.trim()) return true;
+    if (existing.tipo.trim().toUpperCase() !== c.tipo.trim().toUpperCase()) return true;
+    if (existing.status !== c.status) return true;
+    if ((existing.lacre ?? '').trim() !== (c.lacre ?? '').trim()) return true;
+    if (Boolean(existing.refrigerado) !== Boolean(c.refrigerado)) return true;
+    const setAntes = existing.setPoint == null ? null : Number(existing.setPoint);
+    const setDepois = c.setPoint == null ? null : Number(c.setPoint);
+    if (setAntes !== setDepois) return true;
+  }
+  return false;
+}
 
 @Injectable()
 export class PortalClienteDataService {
@@ -49,8 +163,20 @@ export class PortalClienteDataService {
     private readonly agendamentos: AgendamentosService,
     private readonly auditLog: AuditLogService,
     private readonly catalogoMotoristas: CatalogoMotoristasExternosService,
+    private readonly catalogoNavios: CatalogoNaviosService,
     private readonly banking: BankingBoletoService,
+    private readonly gateNotificacoes: GateUnidadeNotificacaoService,
+    private readonly storage: ObjectStorageService,
   ) {}
+
+  private async nomeEmpresaCx(cx: CxPortalRequestUser): Promise<string | null> {
+    if (!cx.clienteId) return null;
+    const c = await this.prisma.cliente.findFirst({
+      where: { id: cx.clienteId, deletedAt: null },
+      select: { razaoSocial: true, nomeFantasia: true },
+    });
+    return rotuloEmpresaCliente(c);
+  }
 
   private async clientScope(cx: CxPortalRequestUser, clienteIdParam?: string): Promise<string> {
     if (cx.portalPapel === 'STAFF') {
@@ -96,9 +222,12 @@ export class PortalClienteDataService {
         (where.createdAt as Prisma.DateTimeFilter).lte = new Date(q.createdTo);
       }
     }
-    const proto = q.protocolo?.trim();
-    if (proto) {
-      where.protocolo = { contains: proto, mode: 'insensitive' };
+    const protoWhere = q.protocolo?.trim() ? protocoloBuscaWhere(q.protocolo) : null;
+    if (protoWhere) {
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
+        protoWhere,
+      ];
     }
     const containerRaw = q.container?.trim();
     if (containerRaw) {
@@ -183,6 +312,7 @@ export class PortalClienteDataService {
           agendamentoSolicitacao: true,
           solicitanteContato: true,
           anexosSolicitacao: { orderBy: { createdAt: 'desc' } },
+          ...SOLICITACAO_CONTROLE_INCLUDE,
         },
       }),
       this.prisma.solicitacao.count({ where }),
@@ -211,6 +341,7 @@ export class PortalClienteDataService {
         agendamentoSolicitacao: true,
         solicitanteContato: true,
         anexosSolicitacao: { orderBy: { createdAt: 'desc' } },
+        ...SOLICITACAO_CONTROLE_INCLUDE,
       },
     });
     if (!s) return null;
@@ -381,6 +512,56 @@ export class PortalClienteDataService {
     }
   }
 
+  async enviarComprovantePixCredito(
+    cx: CxPortalRequestUser,
+    params: {
+      valorRaw: string | number;
+      referenciaExterna?: string;
+      file: Express.Multer.File;
+    },
+    clienteIdParam?: string,
+  ) {
+    const clienteId = await this.clientScope(cx, clienteIdParam);
+    const valor = toMoneyNumber(params.valorRaw);
+    if (!Number.isFinite(valor) || valor < 0.01) {
+      throw new BadRequestException('Informe o valor do crédito PIX.');
+    }
+    const file = params.file;
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Anexe o comprovante do PIX (JPG, PNG ou PDF).');
+    }
+    const mime = (file.mimetype || '').toLowerCase();
+    const allowed = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+    if (!allowed.has(mime)) {
+      throw new BadRequestException('Envie o comprovante em JPG, PNG ou PDF.');
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      throw new BadRequestException('O comprovante não pode passar de 5 MB.');
+    }
+    const originalName = (file.originalname || 'comprovante').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 180);
+    const stored = await this.storage.upload({
+      key: `financeiro/pix-credito/${clienteId}/${randomUUID()}_${originalName}`,
+      body: file.buffer,
+      contentType: mime,
+    });
+    const referencia = (params.referenciaExterna ?? '').trim() || null;
+    const row = await this.prisma.clientePixCreditoComprovante.create({
+      data: {
+        tenantId: cx.tenantId,
+        clienteId,
+        valor: new Prisma.Decimal(valor.toFixed(2)),
+        referenciaExterna: referencia,
+        arquivoNome: originalName,
+        mimeType: mime,
+        storageKey: stored.storageKey,
+        tamanhoBytes: file.size,
+        status: StatusPixCreditoComprovante.PENDENTE,
+        createdBySub: cx.sub,
+      },
+    });
+    return { ok: true as const, comprovanteId: row.id, arquivo: originalName };
+  }
+
   /** Faturas de armazenagem (Gate-Out) com links NFS-e / boleto / PIX. */
   async faturasArmazenagem(cx: CxPortalRequestUser, clienteIdParam?: string) {
     const clienteId = await this.clientScope(cx, clienteIdParam);
@@ -457,12 +638,12 @@ export class PortalClienteDataService {
             rows.reduce((a, r) => a + (r.updatedAt.getTime() - r.createdAt.getTime()) / 3600000, 0) / rows.length;
           return Math.round(avg * 10) / 10;
         }),
-      this.prisma.solicitacao.count({
+      this.prisma.unidadeProcesso.count({
         where: {
           clienteId,
-          deletedAt: null,
-          status: { in: ['PENDENTE', 'APROVADO'] },
-          saida: { is: null },
+          tenantId: cx.tenantId,
+          status: 'ABERTO',
+          modalidade: 'PATIO',
         },
       }),
     ]);
@@ -515,6 +696,26 @@ export class PortalClienteDataService {
         where: { solicitacaoId: id },
         data: { status: StatusAgendamentoTerminal.CANCELADO_CLIENTE },
       });
+      const empresaNome = await this.nomeEmpresaCx(cx);
+      const actor = resolveAuditActor(cx, empresaNome);
+      await this.auditLog.append(
+        {
+          entidadeId: id,
+          entidadeTipo: 'SOLICITACAO',
+          acao: 'SOLICITACAO_ALTERADA',
+          usuarioId: actor.usuarioId,
+          usuarioNome: actor.usuarioNome,
+          usuarioRole: actor.usuarioRole,
+          descricaoNarrativa: `O operador ${actor.operadorNome}${empresaNome ? ` da empresa ${empresaNome}` : ''} cancelou a solicitação.`,
+          dadosAnteriores: { status: sol.status },
+          dadosNovos: {
+            status: StatusSolicitacao.CANCELADO_CLIENTE,
+            ator: { tipo: 'cliente', empresaNome, operadorNome: actor.operadorNome },
+          },
+          deltas: [{ campo: 'status', label: 'Status', antes: sol.status, depois: StatusSolicitacao.CANCELADO_CLIENTE }],
+        },
+        tx,
+      );
     });
 
     const updated = await this.obterSolicitacao(cx, id);
@@ -538,6 +739,12 @@ export class PortalClienteDataService {
     }
     if (STATUS_TERMINAL.has(sol.status)) {
       throw new BadRequestException('Solicitação não editável neste status.');
+    }
+    if (STATUS_APOS_CHECKIN.has(sol.status) || FLUXO_APOS_CHEGADA.has(String(sol.operacaoFluxoEstado ?? ''))) {
+      throw new BadRequestException('Solicitação já em operação no Gate — não é mais editável.');
+    }
+    if (solicitanteDivergente(sol.solicitanteContato, dto.solicitante)) {
+      throw new BadRequestException('Alteração do solicitante não é permitida.');
     }
     if (!sol.agendamentoSolicitacao) {
       throw new BadRequestException('Solicitação sem agendamento vinculado.');
@@ -616,7 +823,8 @@ export class PortalClienteDataService {
       ...(transporteDto ? { transporte: transporteDto } : {}),
     });
     const auditDeltas = diffSolicitacaoAuditSnapshots(beforeSnap, afterSnap);
-    const auditActor = resolveAuditActor(cx);
+    const empresaNome = await this.nomeEmpresaCx(cx);
+    const auditActor = resolveAuditActor(cx, empresaNome);
     const isosBefore = sol.containersSolicitacao.map((c) => c.unidade);
     const isosAfter = sol.containersSolicitacao.map((c) => {
       const incoming = dto.containers.find((x) => x.ordem === c.ordem);
@@ -624,6 +832,13 @@ export class PortalClienteDataService {
     });
     const invalidateQr =
       deltasInvalidateQrCredential(auditDeltas) || containerIsosChanged(isosBefore, isosAfter);
+    const houveAlteracao =
+      auditDeltas.length > 0 ||
+      containersNaoIsoMudaram(sol.containersSolicitacao, dto.containers) ||
+      invalidateQr;
+    const reenviarParaAutorizacao =
+      houveAlteracao &&
+      (STATUS_REAPROVACAO.has(sol.status) || qrEstaAtivo(parseFluxoJson(sol.operacaoFluxoJson)));
 
     if (dto.transporte) {
       const cpf = dto.transporte.cpfMotorista.replace(/\D/g, '');
@@ -673,15 +888,6 @@ export class PortalClienteDataService {
         });
       }
 
-      await tx.solicitanteContato.update({
-        where: { solicitacaoId: id },
-        data: {
-          nome: dto.solicitante.nome.trim(),
-          telefone: dto.solicitante.telefone.replace(/\D/g, ''),
-          email: dto.solicitante.email.trim().toLowerCase(),
-        },
-      });
-
       await tx.agendamentoTerminal.updateMany({
         where: { solicitacaoId: id },
         data: {
@@ -699,12 +905,22 @@ export class PortalClienteDataService {
         afterSnap,
         auditDeltas,
         tx,
+        { protocolo: sol.protocolo },
       );
 
-      if (invalidateQr) {
+      if (invalidateQr || reenviarParaAutorizacao) {
         await tx.solicitacao.update({
           where: { id },
-          data: { versaoCredencial: { increment: 1 } },
+          data: {
+            versaoCredencial: { increment: 1 },
+            ...(reenviarParaAutorizacao
+              ? {
+                  status: StatusSolicitacao.PENDENTE,
+                  operacaoFluxoEstado: 'SOLICITADA',
+                  operacaoFluxoJson: deactivateQr(parseFluxoJson(sol.operacaoFluxoJson)) as Prisma.InputJsonValue,
+                }
+              : {}),
+          },
         });
       }
     });
@@ -718,6 +934,13 @@ export class PortalClienteDataService {
         })
         .catch(() => undefined);
     }
+
+    void this.catalogoNavios
+      .registrarMuitos(
+        dto.containers.map((c) => c.navio),
+        'SOLICITACAO',
+      )
+      .catch(() => undefined);
 
     const updated = await this.obterSolicitacao(cx, id);
     if (!updated) throw new NotFoundException('Solicitação não encontrada');
@@ -754,6 +977,8 @@ export class PortalClienteDataService {
                 tipo: true,
                 status: true,
                 refrigerado: true,
+                lacre: true,
+                setPoint: true,
               },
             },
           },
@@ -776,11 +1001,161 @@ export class PortalClienteDataService {
         refrigerado: patio?.refrigerado ?? false,
         statusPatioCodigo: patio?.status ?? PatioStatus.ESTOCADO,
         protocolo: p.entradaSolicitacao?.protocolo ?? `ID-${p.numero}`,
-        solicitacaoId: p.entradaSolicitacao?.id ?? p.id,
+        solicitacaoId: p.entradaSolicitacao?.id ?? '',
         containers: p.entradaSolicitacao?.containersSolicitacao ?? [],
         unidadeProcessoNumero: p.numero,
+        lacreSaida: p.lacreSaida,
       });
     });
+  }
+
+  /**
+   * Altera booking, processo ou navio da unidade depositada (ID aberto).
+   * Alcance: só esta unidade, ou todas do mesmo processo / booking / navio.
+   * Não reabre a solicitação nem invalida QR — só o dado de embarque.
+   */
+  async atualizarEmbarquePatio(cx: CxPortalRequestUser, dto: UpdatePortalEmbarqueDto) {
+    if (!isCampoEmbarque(dto.campo)) {
+      throw new BadRequestException('Campo inválido. Use booking, processo ou navio.');
+    }
+    const alcance = isAlcanceEmbarque(dto.alcance) ? dto.alcance : 'unidade';
+    const campo = dto.campo;
+    const valor = normalizeValorEmbarque(campo, dto.valor);
+    const clienteId = await this.clientScope(cx);
+    const iso = stripContainerIsoCanonical(dto.unidadeIso);
+    if (!iso) throw new BadRequestException('Unidade inválida.');
+
+    const depositados = await this.prisma.unidadeProcesso.findMany({
+      where: {
+        clienteId,
+        tenantId: cx.tenantId,
+        status: 'ABERTO',
+        modalidade: 'PATIO',
+      },
+      include: {
+        entradaSolicitacao: {
+          select: {
+            id: true,
+            protocolo: true,
+            containersSolicitacao: true,
+          },
+        },
+      },
+    });
+
+    const origem = depositados.find(
+      (p) =>
+        p.entradaSolicitacaoId === dto.solicitacaoId &&
+        stripContainerIsoCanonical(p.unidadeIso) === iso,
+    );
+    if (!origem?.entradaSolicitacao) {
+      throw new NotFoundException('Unidade depositada não encontrada.');
+    }
+    const containerOrigem = matchContainerByIso(
+      origem.unidadeIso,
+      origem.entradaSolicitacao.containersSolicitacao,
+    );
+    if (!containerOrigem) {
+      throw new NotFoundException('Dados de embarque da unidade não encontrados.');
+    }
+
+    let chaveGrupo = '';
+    if (alcance !== 'unidade') {
+      chaveGrupo = chaveAgrupamentoEmbarque(alcance, containerOrigem[alcance]);
+      if (!chaveGrupo) {
+        throw new BadRequestException(
+          `Não há ${LABEL_CAMPO_EMBARQUE[alcance].toLowerCase()} nesta unidade para aplicar em lote.`,
+        );
+      }
+    }
+
+    const alvos = depositados.flatMap((p) => {
+      if (!p.entradaSolicitacao) return [];
+      const container = matchContainerByIso(
+        p.unidadeIso,
+        p.entradaSolicitacao.containersSolicitacao,
+      );
+      if (!container) return [];
+      if (alcance === 'unidade') {
+        return stripContainerIsoCanonical(p.unidadeIso) === iso ? [{ processo: p, container }] : [];
+      }
+      return valoresBatemAlcance(alcance, chaveGrupo, container)
+        ? [{ processo: p, container }]
+        : [];
+    });
+
+    if (alvos.length === 0) {
+      throw new NotFoundException('Nenhuma unidade depositada encontrada para este alcance.');
+    }
+
+    const label = LABEL_CAMPO_EMBARQUE[campo];
+    const empresaNome = await this.nomeEmpresaCx(cx);
+    const actor = resolveAuditActor(cx, empresaNome);
+    const atorLabel = formatAuditActorLabel(actor.usuarioRole, actor.operadorNome, actor.empresaNome);
+    const dataCampo = dataCampoEmbarque(campo, valor);
+
+    let atualizadas = 0;
+    await this.prisma.$transaction(async (tx) => {
+      for (const alvo of alvos) {
+        const antes = String(alvo.container[campo] ?? '').trim();
+        const antesNorm = campo === 'navio' ? antes.toUpperCase() : antes;
+        if (antesNorm === valor) continue;
+        await tx.containerSolicitacao.update({
+          where: { id: alvo.container.id },
+          data: dataCampo,
+        });
+        await this.auditLog.append(
+          {
+            entidadeId: alvo.processo.entradaSolicitacao!.id,
+            acao: AUDIT_ACAO_UNIDADE_ALTERADA,
+            usuarioId: actor.usuarioId,
+            usuarioNome: actor.usuarioNome,
+            usuarioRole: actor.usuarioRole,
+            containerIso: alvo.processo.unidadeIso,
+            descricaoNarrativa: `${atorLabel} alterou ${label} da unidade ${alvo.processo.unidadeIso}.`,
+            dadosAnteriores: { [campo]: antes },
+            dadosNovos: {
+              [campo]: valor,
+              alcance,
+              ator: {
+                tipo: 'cliente',
+                empresaNome: actor.empresaNome,
+                operadorNome: actor.operadorNome,
+              },
+            },
+            deltas: [{ campo, label, antes, depois: valor }],
+            tenantId: cx.tenantId,
+          },
+          tx,
+        );
+        await this.gateNotificacoes.registrar(
+          {
+            tenantId: cx.tenantId,
+            unidadeProcessoId: alvo.processo.id,
+            unidadeIso: alvo.processo.unidadeIso,
+            processoNumero: alvo.processo.numero,
+            origem: 'PORTAL',
+            atorNome: atorLabel,
+            atorRole: actor.usuarioRole,
+            campos: [{ campo, label, antes, depois: valor }],
+          },
+          tx,
+        );
+        atualizadas += 1;
+      }
+    });
+
+    if (campo === 'navio' && valor) {
+      void this.catalogoNavios.registrar(valor, 'SOLICITACAO').catch(() => undefined);
+    }
+
+    return {
+      atualizadas,
+      alcance,
+      booking: campo === 'booking' ? valor : containerOrigem.booking,
+      processo: campo === 'processo' ? valor : containerOrigem.processo,
+      navio: campo === 'navio' ? valor : containerOrigem.navio,
+    };
   }
 
   /** Unidades depositadas no pátio (ID aberto). */
@@ -834,9 +1209,11 @@ type SaldoPatioContainerRef = {
   tipo: string;
   status: string;
   refrigerado: boolean;
+  lacre?: string | null;
+  setPoint?: number | null;
 };
 
-function matchContainerByIso(iso: string, containers: SaldoPatioContainerRef[]) {
+function matchContainerByIso<T extends { unidade: string }>(iso: string, containers: T[]): T | undefined {
   const key = stripContainerIsoCanonical(iso);
   return containers.find((c) => stripContainerIsoCanonical(c.unidade) === key);
 }
@@ -858,9 +1235,11 @@ function mapSaldoPatioItem(input: {
   solicitacaoId: string;
   containers: SaldoPatioContainerRef[];
   unidadeProcessoNumero?: number;
+  lacreSaida?: string | null;
 }) {
   const c = matchContainerByIso(input.unidadeIso, input.containers);
   const statusContainer = c?.status === 'VAZIO' ? 'VAZIO' : c?.status === 'CHEIO' ? 'CHEIO' : null;
+  const lacre = lacreEstoquePatio(statusContainer, c?.lacre, input.lacreSaida);
   return {
     id: input.id,
     unidadeIso: input.unidadeIso,
@@ -871,6 +1250,8 @@ function mapSaldoPatioItem(input: {
     booking: c?.booking?.trim() || null,
     processo: c?.processo?.trim() || null,
     navio: c?.navio?.trim() || null,
+    lacre,
+    setPoint: c?.setPoint ?? null,
     unidadeProcessoNumero: input.unidadeProcessoNumero ?? null,
     unidadeProcessoLabel: input.unidadeProcessoNumero
       ? `ID ${input.unidadeProcessoNumero}`

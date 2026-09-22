@@ -5,6 +5,7 @@ import { isTransportadoraTerceiraRole } from '../common/constants/portal-tenant-
 
 export const AUDIT_ENTIDADE_SOLICITACAO = 'SOLICITACAO';
 export const AUDIT_ACAO_UPDATE = 'UPDATE';
+export const AUDIT_ACAO_UNIDADE_ALTERADA = 'UNIDADE_ALTERADA';
 
 export type AuditFieldDelta = {
   campo: string;
@@ -144,29 +145,50 @@ export function diffSolicitacaoAuditSnapshots(
   return deltas;
 }
 
-export function resolveAuditActor(cx: CxPortalRequestUser): {
+export function resolveAuditActor(
+  cx: CxPortalRequestUser,
+  empresaNome?: string | null,
+): {
   usuarioId: string;
   usuarioNome: string;
   usuarioRole: string;
+  empresaNome: string | null;
+  operadorNome: string;
 } {
-  const nome =
+  const operadorNome =
     cx.pessoaAutorizada?.nome?.trim() ||
     cx.email?.trim() ||
     'Usuário portal';
+  const empresa = empresaNome?.trim() || null;
   const role = cx.portalTenantRole ?? cx.portalPapel;
   return {
     usuarioId: cx.sub,
-    usuarioNome: nome,
+    usuarioNome: empresa ? `${empresa} · ${operadorNome}` : operadorNome,
     usuarioRole: String(role),
+    empresaNome: empresa,
+    operadorNome,
   };
 }
 
-export function formatAuditActorLabel(usuarioRole: string, usuarioNome: string): string {
+export function formatAuditActorLabel(
+  usuarioRole: string,
+  usuarioNome: string,
+  empresaNome?: string | null,
+): string {
   if (isTransportadoraTerceiraRole(usuarioRole as Role)) {
-    return `A transportadora ${usuarioNome}`;
+    return empresaNome
+      ? `A transportadora ${usuarioNome} (${empresaNome})`
+      : `A transportadora ${usuarioNome}`;
   }
-  if (usuarioRole === Role.ADMIN_CLIENTE || usuarioRole === Role.CLIENTE) {
-    return `O operador ${usuarioNome}`;
+  if (
+    usuarioRole === Role.ADMIN_CLIENTE ||
+    usuarioRole === Role.CLIENTE ||
+    usuarioRole === Role.OPERADOR_INTERNO ||
+    usuarioRole === 'CLIENTE'
+  ) {
+    return empresaNome
+      ? `O operador ${usuarioNome} da empresa ${empresaNome}`
+      : `O operador ${usuarioNome}`;
   }
   if (usuarioRole === Role.ADMIN || usuarioRole === Role.GERENTE) {
     return `RL Transportes (${usuarioNome})`;

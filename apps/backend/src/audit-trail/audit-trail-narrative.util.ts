@@ -1,6 +1,7 @@
 import { CategoriaAuditLog, StatusBloqueioContainer, StatusPagamentoFatura, StatusSolicitacao, TipoBloqueioContainer } from '@prisma/client';
 import type { AuditedPrismaModel } from './audit-trail.models';
 import { formatMoeda } from '../common/finance/format-moeda.util';
+import { rotuloAuditoriaControle } from '../solicitacoes/protocolo-solicitacao.util';
 
 export type AuditCaptureInput = {
   entidadeTipo: string;
@@ -33,6 +34,19 @@ function containerSuffix(iso?: string | null): string {
   return iso ? ` no contêiner ${iso}` : '';
 }
 
+function controleSolicitacao(rec: Record<string, unknown>, fallbackId: string): string {
+  const unidadeProcessoNumero =
+    typeof rec.unidadeProcessoNumero === 'number'
+      ? rec.unidadeProcessoNumero
+      : typeof rec.numero === 'number' && rec.controlePrincipal != null
+        ? rec.numero
+        : null;
+  const protocolo = rec.protocolo != null ? String(rec.protocolo) : undefined;
+  const label = rotuloAuditoriaControle({ unidadeProcessoNumero, protocolo });
+  if (label !== '—') return label;
+  return fallbackId.slice(0, 8);
+}
+
 export function buildAuditNarrative(input: AuditCaptureInput): string {
   const actor = actorLabel(input.usuarioRole, input.usuarioNome);
   const iso = input.containerIso;
@@ -60,21 +74,22 @@ export function buildAuditNarrative(input: AuditCaptureInput): string {
     case 'BLOQUEIO_EXCLUIDO':
       return `${actor} removeu bloqueio${containerSuffix(iso)}.`;
     case 'GATE_IN_REALIZADO':
-      return `${actor} registrou o Gate-In do contêiner ${iso ?? '—'}.`;
+      return `${actor} registrou o Gate-In${containerSuffix(iso)} em ${controleSolicitacao(after, input.entidadeId)}.`;
     case 'GATE_OUT_REALIZADO':
-      return `${actor} registrou o Gate-Out do contêiner ${iso ?? '—'}.`;
+      return `${actor} registrou o Gate-Out${containerSuffix(iso)} em ${controleSolicitacao(after, input.entidadeId)}.`;
     case 'SOLICITACAO_ALTERADA': {
+      const controle = controleSolicitacao(after, input.entidadeId);
       if (before.status !== after.status) {
         const status = String(after.status);
         if (status === StatusSolicitacao.AGUARDANDO_GATE_IN || status === StatusSolicitacao.EM_PATIO) {
-          return `${actor} registrou movimentação operacional (${status})${containerSuffix(iso)} na solicitação ${after.protocolo ?? input.entidadeId.slice(0, 8)}.`;
+          return `${actor} registrou movimentação operacional (${status})${containerSuffix(iso)} em ${controle}.`;
         }
-        return `${actor} alterou o status da solicitação ${after.protocolo ?? ''} de ${String(before.status)} para ${status}${containerSuffix(iso)}.`;
+        return `${actor} alterou o status de ${controle} de ${String(before.status)} para ${status}${containerSuffix(iso)}.`;
       }
-      return `${actor} alterou a solicitação ${after.protocolo ?? input.entidadeId.slice(0, 8)}${containerSuffix(iso)}.`;
+      return `${actor} alterou ${controle}${containerSuffix(iso)}.`;
     }
     case 'SOLICITACAO_EXCLUIDA':
-      return `${actor} removeu solicitação ${before.protocolo ?? input.entidadeId.slice(0, 8)}${containerSuffix(iso)}.`;
+      return `${actor} removeu ${controleSolicitacao(before, input.entidadeId)}${containerSuffix(iso)}.`;
     case 'PARAMETROS_ATUALIZADOS':
       return `${actor} atualizou os parâmetros gerais do terminal (operacional/financeiro).`;
     case 'CANCELAMENTO_TARDIO': {

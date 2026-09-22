@@ -1,6 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, StatusUnidadeProcesso } from '@prisma/client';
+import { BadRequestException, Inject, Injectable, NotFoundException, forwardRef } from '@nestjs/common';
+import { AcaoAuditoria, EventoGatilhoTarifa, Prisma, StatusPreFatura, StatusUnidadeProcesso } from '@prisma/client';
 import { ArmazenagemBillingService } from '../armazenagem-faturamento/armazenagem-billing.service';
+import { AuditoriaService } from '../auditoria/auditoria.service';
+import { AuthService } from '../auth/auth.service';
 import { resolveCadastroTabelaVigente } from '../cadastros/cadastro-tabela-preco-vigente';
 import { CadastrosTabelasServicosService } from '../cadastros/cadastros-tabelas-servicos.service';
 import {
@@ -10,13 +12,20 @@ import {
   type LancarServicoEfeitoInput,
   type ServicoEfeitoPayload,
 } from '../cadastros/servico-efeito';
+import { ObjectStorageService } from '../common/storage/object-storage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ServicoEfeitoAplicarService } from './servico-efeito-aplicar.service';
 import { sincronizarTomadaDiariaDoProcesso } from './tomada-diaria-id.util';
 import {
   buildLinhasAberturaTabela,
+  isLancamentoAutomaticoExcluido,
   isLancamentoAutomaticoTabela,
+  payloadExclusaoAutomatico,
+  tipoAutomaticoExcluivel,
 } from './servicos-abertura-tabela.util';
+
+const ANEXO_MAX = 8 * 1024 * 1024;
+const ANEXO_MIME = new Set(['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
 
 @Injectable()
 export class UnidadeProcessoServicosService {
@@ -25,12 +34,16 @@ export class UnidadeProcessoServicosService {
     private readonly billing: ArmazenagemBillingService,
     private readonly tabelasServicos: CadastrosTabelasServicosService,
     private readonly efeitos: ServicoEfeitoAplicarService,
+    @Inject(forwardRef(() => AuthService)) private readonly auth: AuthService,
+    private readonly auditoria: AuditoriaService,
+    private readonly storage: ObjectStorageService,
   ) {}
 
   async listar(unidadeProcessoId: string) {
     const processo = await this.getAbertoOuEncerrado(unidadeProcessoId);
     if (processo.status === StatusUnidadeProcesso.ABERTO) {
       await sincronizarTomadaDiariaDoProcesso(this.prisma, unidadeProcessoId);
+      await this.billing.refreshExtrasForProcesso(unidadeProcessoId);
     }
     const rows = await this.prisma.unidadeProcessoServico.findMany({
       where: { unidadeProcessoId },
@@ -182,7 +195,7 @@ export class UnidadeProcessoServicosService {
     if (!row) throw new NotFoundException('Lançamento não encontrado.');
     if (isLancamentoAutomaticoTabela(row.payload)) {
       throw new BadRequestException(
-        'Handling e Tomada da tabela de preços são automáticos e não podem ser excluídos.',
+        'Handling e Tomada da tabela de preços são automáticos. Use Excluir com senha gerencial.',
       );
     }
     const payload = (row.payload ?? {}) as ServicoEfeitoPayload;
@@ -205,6 +218,156 @@ export class UnidadeProcessoServicosService {
     });
     await this.billing.refreshExtrasForProcesso(unidadeProcessoId);
     return { ok: true };
+  }
+
+  async excluirHandlingAutomatico(
+    unidadeProcessoId: string,
+    lancamentoId: string,
+    input: { motivo: string; documento: string; password: string },
+    actorUserId: string,
+    file?: Express.Multer.File,
+  ) {
+    const processo = await this.getAberto(unidadeProcessoId);
+    const row = await this.prisma.unidadeProcessoServico.findFirst({
+      where: { id: lancamentoId, unidadeProcessoId },
+    });
+    if (!row) throw new NotFoundException('Lançamento não encontrado.');
+    const tipo = tipoAutomaticoExcluivel(row.codigo);
+    if (!isLancamentoAutomaticoTabela(row.payload) || !tipo) {
+      throw new BadRequestException(
+        'Só handling e tomada automáticos da tabela podem ser excluídos por esta tela. Extras use Excluir.',
+      );
+    }
+    if (isLancamentoAutomaticoExcluido(row.payload)) {
+      throw new BadRequestException(
+        tipo === 'TOMADA'
+          ? 'Esta tomada já foi excluída da pré-fatura.'
+          : 'Este handling já foi excluído da pré-fatura.',
+      );
+    }
+    const motivo = (input.motivo ?? '').trim();
+    if (motivo.length < 8) {
+      throw new BadRequestException('Informe o motivo da exclusão (mínimo 8 caracteres).');
+    }
+    const gerente = await this.auth.verifyGerenteCredentials(
+      processo.tenantId,
+      input.documento,
+      input.password,
+    );
+    const anexo = await this.persistirAnexoOpcional(processo.id, row.id, file);
+
+    const atual =
+      row.payload && typeof row.payload === 'object' && !Array.isArray(row.payload)
+        ? (row.payload as Record<string, unknown>)
+        : {};
+    const payload = {
+      ...atual,
+      automatico: true,
+      origem: atual.origem ?? 'TABELA_PRECO',
+      cobranca: atual.cobranca ?? (tipo === 'TOMADA' ? 'ENERGIA_REEFER' : 'HANDLING'),
+      excluido: true,
+      exclusao: {
+        motivo,
+        gerenteId: gerente.id,
+        gerenteEmail: gerente.email,
+        actorUserId,
+        em: new Date().toISOString(),
+        ...(anexo
+          ? {
+              anexoNome: anexo.nome,
+              anexoMime: anexo.mime,
+              anexoStorageKey: anexo.storageKey,
+              anexoTamanho: anexo.tamanho,
+            }
+          : {}),
+      },
+    };
+
+    await this.prisma.unidadeProcessoServico.update({
+      where: { id: row.id },
+      data: { payload: payload as Prisma.InputJsonValue },
+    });
+    await this.prisma.itemFaturaArmazenagem.deleteMany({
+      where: {
+        eventoGatilho:
+          tipo === 'TOMADA' ? EventoGatilhoTarifa.ENERGIA_REEFER : EventoGatilhoTarifa.HANDLING,
+        preFatura: { unidadeProcessoId: processo.id, status: StatusPreFatura.ABERTA },
+      },
+    });
+    await this.billing.refreshExtrasForProcesso(processo.id);
+    await this.auditoria.registrar({
+      tabela: 'unidade_processo_servicos',
+      registroId: row.id,
+      acao: AcaoAuditoria.DELETE,
+      usuario: actorUserId,
+      solicitacaoId: processo.entradaSolicitacaoId ?? undefined,
+      dadosAntes: {
+        codigo: row.codigo,
+        valorTotal: Number(row.valorTotal),
+        payload: row.payload,
+      },
+      dadosDepois: {
+        excluido: true,
+        tipo,
+        motivo,
+        gerenteId: gerente.id,
+        gerenteEmail: gerente.email,
+        anexoNome: anexo?.nome ?? null,
+      },
+    });
+    return { ok: true, excluido: true, tipo };
+  }
+
+  async baixarAnexoExclusao(unidadeProcessoId: string, lancamentoId: string) {
+    await this.getAbertoOuEncerrado(unidadeProcessoId);
+    const row = await this.prisma.unidadeProcessoServico.findFirst({
+      where: { id: lancamentoId, unidadeProcessoId },
+      select: { payload: true },
+    });
+    if (!row) throw new NotFoundException('Lançamento não encontrado.');
+    const exclusao = payloadExclusaoAutomatico(row.payload);
+    if (!exclusao?.anexoStorageKey) {
+      throw new NotFoundException('Não há documento anexado nesta exclusão.');
+    }
+    const stored = await this.storage.getBuffer(exclusao.anexoStorageKey);
+    return {
+      buffer: stored.buffer,
+      mimeType: exclusao.anexoMime || stored.mimeType || 'application/octet-stream',
+      filename: exclusao.anexoNome || 'anexo-exclusao',
+    };
+  }
+
+  private async persistirAnexoOpcional(
+    unidadeProcessoId: string,
+    lancamentoId: string,
+    file?: Express.Multer.File,
+  ): Promise<{ nome: string; mime: string; storageKey: string; tamanho: number } | null> {
+    if (!file?.buffer?.length) return null;
+    if (file.size > ANEXO_MAX) {
+      throw new BadRequestException('O documento não pode passar de 8 MB.');
+    }
+    const mime = (file.mimetype || '').toLowerCase();
+    if (!ANEXO_MIME.has(mime)) {
+      throw new BadRequestException('Use PDF, JPG, PNG ou WEBP.');
+    }
+    const nome = (file.originalname || 'anexo')
+      .replace(/[^\w.\- ()áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]/g, '_')
+      .slice(0, 180);
+    const ext =
+      mime === 'application/pdf'
+        ? '.pdf'
+        : mime === 'image/png'
+          ? '.png'
+          : mime === 'image/webp'
+            ? '.webp'
+            : '.jpg';
+    const safe = nome.toLowerCase().endsWith(ext) ? nome : `${nome}${ext}`;
+    const stored = await this.storage.upload({
+      key: `exclusao-automatico/${unidadeProcessoId}/${lancamentoId}/${safe}`,
+      body: file.buffer,
+      contentType: mime,
+    });
+    return { nome: safe, mime, storageKey: stored.storageKey, tamanho: file.size };
   }
 
   private async getAberto(id: string) {

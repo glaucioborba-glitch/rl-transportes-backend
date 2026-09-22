@@ -13,7 +13,7 @@ export const FINANCEIRO_TABS = [
   { label: "Tabela de transportes", href: "/cadastros/financeiro/transportes" },
   { label: "Serviços", href: "/cadastros/financeiro/servicos" },
   { label: "Aluguel", href: "/cadastros/financeiro/aluguel" },
-  { label: "Forma e prazo", href: "/cadastros/financeiro/formas-prazos" },
+  { label: "Forma e Prazo de Pagamento", href: "/cadastros/financeiro/formas-prazos" },
 ] as const;
 
 export function FinanceiroTabs() {

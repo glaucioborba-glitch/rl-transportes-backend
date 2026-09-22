@@ -1,6 +1,7 @@
 import { TipoLancamentoContaCorrente } from '@prisma/client';
 import {
   classificarSaldo,
+  ordenarContasCorrente,
   rotuloSaldo,
   valorSinalLancamento,
 } from './conta-corrente.util';
@@ -21,5 +22,14 @@ describe('conta-corrente.util', () => {
     expect(classificarSaldo(-20)).toBe('DEVEDOR');
     expect(classificarSaldo(0)).toBe('ZERADO');
     expect(rotuloSaldo(-50)).toBe('Em aberto — pagar depois');
+  });
+
+  it('coloca quem tem comprovante pendente na frente', () => {
+    const ordered = ordenarContasCorrente([
+      { razaoSocial: 'Zeta', saldo: 800, comprovantesPendentes: 0 },
+      { razaoSocial: 'Alfa', saldo: 0, comprovantesPendentes: 1 },
+      { razaoSocial: 'Beta', saldo: -50, comprovantesPendentes: 0 },
+    ]);
+    expect(ordered.map((i) => i.razaoSocial)).toEqual(['Alfa', 'Zeta', 'Beta']);
   });
 });

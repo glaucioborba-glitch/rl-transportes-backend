@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { RlLogo } from "@/components/portal/rl-logo";
 import { clearStaffSessionCookie } from "@/lib/auth-staff-cookie";
@@ -81,7 +81,9 @@ export function IntranetShell({ children, flush = false }: Props) {
       <ApiStatusBanner />
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <IntranetSidebar moduleId={moduleId} />
+        <Suspense fallback={<aside className="h-full w-60 shrink-0 border-r border-white/10 bg-[#06080c]" />}>
+          <IntranetSidebar moduleId={moduleId} />
+        </Suspense>
         <main
           className={
             fillLocalizacao

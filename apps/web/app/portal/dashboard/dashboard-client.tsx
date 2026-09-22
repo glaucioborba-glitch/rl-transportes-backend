@@ -1,11 +1,5 @@
 "use client";
 
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,64 +7,44 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { KpiCard, SectionTitle } from "@/components/portal/portal-primitives";
 import { PortalTable } from "@/components/portal/portal-table";
 import { StatusBadge } from "@/components/portal/status-badge";
-import { Progress } from "@/components/ui/progress";
+import { SolicitacaoDirecaoBadge } from "@/components/solicitacao/solicitacao-direcao-badge";
 import { usePortalDashboard } from "@/hooks/use-portal-dashboard";
 import { usePortalHealth } from "@/hooks/use-portal-health";
-import { deriveTrackingLabel, formatDateTime, operationTypeLabel } from "@/lib/portal-tracking";
+import { formatDateTime, solicitacaoControleDisplay, solicitacaoIdOperacional } from "@/lib/portal-tracking";
 import { collectSolicitacaoContainerISOs } from "@/lib/container-display";
 import { ContainerNumber } from "@/components/ui/container-number";
-import { ProtocolRefLabel } from "@/components/shared/operation-identity";
 import { PortalContainerTimelineSlideOver } from "@/components/portal/container-timeline-slideover";
 import type { SolicitacaoRow } from "@/lib/api/portal-client";
-import { CalendarClock, Container, Gauge, LayoutGrid, TrendingDown, TrendingUp, WalletCards } from "lucide-react";
+import { CalendarClock, ClipboardList, Container, WalletCards } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { PORTAL_BLOQUEIO_FINANCEIRO_TOAST, PORTAL_SCHEDULING_DISABLED_CLASS } from "@/lib/portal-financeiro-block";
-import { textoCondicaoVigente } from "@/lib/condicao-pagamento-portal";
+import {
+  isLayoutFaturamentoPortal,
+  isLayoutPixPortal,
+  textoCondicaoVigente,
+} from "@/lib/condicao-pagamento-portal";
 import { formatBRL } from "@/lib/financeiro/format";
 import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
+import { DEFAULT_PERMISSOES, usePessoaPermissoesStore } from "@/stores/pessoaPermissoesStore";
 import { toast } from "@/lib/toast";
 
-const TURNOS = [
-  { id: "m", label: "Manhã · 07:00–13:00 (UTC)", startH: 7, endH: 13, cap: 40 },
-  { id: "t", label: "Tarde · 13:00–20:00 (UTC)", startH: 13, endH: 20, cap: 40 },
-];
-
-function hourUtc(iso: string) {
-  return new Date(iso).getUTCHours();
+function saldoClass(saldo: number) {
+  if (Math.abs(saldo) < 0.005) return "text-white";
+  return saldo > 0 ? "text-emerald-400" : "text-red-400";
 }
 
-function TrendDelta({ value, label }: { value: number; label: string }) {
-  const up = value >= 0;
-  return (
-    <span
-      className={`inline-flex items-center gap-1 text-xs font-medium tabular-nums ${
-        up ? "text-emerald-400" : "text-rose-400"
-      }`}
-    >
-      {up ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
-      {value > 0 ? "+" : ""}
-      {value.toFixed(1)}% <span className="text-slate-500">{label}</span>
-    </span>
-  );
-}
-
-function pctPart(n: number, total: number) {
-  if (total <= 0) return 0;
-  return Math.min(100, Math.round((n / total) * 100));
-}
-
-function countInTurn(rows: SolicitacaoRow[], startH: number, endH: number) {
-  return rows.filter((s) => {
-    const h = hourUtc(s.createdAt);
-    return h >= startH && h < endH;
-  }).length;
+function saldoHint(saldo: number) {
+  if (Math.abs(saldo) < 0.005) return "Saldo zerado";
+  return saldo > 0 ? "Crédito a seu favor" : "Saldo em aberto";
 }
 
 export function PortalDashboardClient() {
   const searchParams = useSearchParams();
   const bloqueadoFin = usePortalClienteAuthStore((s) => s.isBloqueadoFinanceiramente);
+  const permissoes = usePessoaPermissoesStore((s) => s.permissoes);
+  const podeFinanceiro = !!(permissoes ?? DEFAULT_PERMISSOES).podeVisualizarFinanceiro;
   const [recentPage, setRecentPage] = useState(1);
   const recentLimit = 8;
   const health = usePortalHealth();
@@ -93,18 +67,19 @@ export function PortalDashboardClient() {
     }
   }, [searchParams]);
 
-  const agendamentosHoje = data?.solicitacoesHoje.length ?? 0;
-
-  const filteredTracking = useMemo(() => {
-    const rows = data?.tracking ?? [];
+  const filteredRecent = useMemo(() => {
+    const rows = data?.recent.items ?? [];
     const qq = q.trim().toLowerCase();
     if (!qq) return rows;
-    return rows.filter(
-      (s) =>
+    return rows.filter((s) => {
+      const id = solicitacaoIdOperacional(s);
+      return (
         s.protocolo.toLowerCase().includes(qq) ||
-        (s.unidades ?? []).some((u) => u.numeroIso.toLowerCase().includes(qq)),
-    );
-  }, [data?.tracking, q]);
+        (id && (String(id.numero).includes(qq) || id.label.toLowerCase().includes(qq))) ||
+        (s.unidades ?? []).some((u) => u.numeroIso.toLowerCase().includes(qq))
+      );
+    });
+  }, [data?.recent.items, q]);
 
   if (awaitingPessoa || (loading && !data)) {
     return (
@@ -137,16 +112,29 @@ export function PortalDashboardClient() {
     );
   }
 
-  const slaMedioPct = data.slaDesempenho;
-  const kpis = data.kpis.valores;
+  const condicao = textoCondicaoVigente({
+    statusCadastro: data.statusCadastro,
+    condicaoPagamento: data.condicaoPagamento,
+    prazoPagamento: data.prazoPagamento,
+    condicaoPagamentoLabel: data.condicaoPagamentoLabel,
+    prazoPagamentoLabel: data.prazoPagamentoLabel,
+  });
+  const layoutFaturamento = isLayoutFaturamentoPortal({
+    statusCadastro: data.statusCadastro,
+    condicaoPagamento: data.condicaoPagamento,
+  });
+  const layoutPix = isLayoutPixPortal({
+    statusCadastro: data.statusCadastro,
+    condicaoPagamento: data.condicaoPagamento,
+  });
   const recentTotalPages = Math.max(1, Math.ceil(data.recent.total / recentLimit));
+  const showFinance = podeFinanceiro && !secOffline;
 
   return (
     <main className="mx-auto w-[90%] px-4 py-8">
       {secOffline ? (
         <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-950/35 px-4 py-3 text-sm text-amber-100">
-          Serviço de segurança indisponível — exibindo informações essenciais (cliente, agendamentos e
-          solicitações).
+          Serviço de segurança indisponível — exibindo informações essenciais.
         </div>
       ) : null}
       {secDegraded ? (
@@ -154,339 +142,216 @@ export function PortalDashboardClient() {
           Serviço de segurança lento — reduzindo chamadas automáticas de monitoramento.
         </div>
       ) : null}
+
       <div className="grid grid-cols-12 gap-6">
         <div className="col-span-12">
-          <SectionTitle
-            title="Visão geral"
-            description="KPIs / SLAs e listagens de solicitações em /cliente/portal; aprovação via PATCH /cliente/portal/solicitacoes/:id/aprovar; financeiro em /cliente/portal/financeiro/*."
-          />
+          <SectionTitle title="Visão geral" description={condicao.descricao} className="mb-2" />
+          <p className="mb-4 text-sm font-medium text-slate-300">{condicao.titulo}</p>
         </div>
 
         <div className="col-span-12 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <KpiCard
-            title="Unidades ativas"
-            value={kpis.containers_ativos}
-            hint="Solicitações pendentes/aprovadas aguardando saída (ciclo aberto)"
+            title="Solicitações em aberto"
+            value={data.solicitacoesAbertas}
+            hint="Pendentes, em análise e em operação"
+            icon={ClipboardList}
+          />
+          <KpiCard
+            title="Unidades no pátio"
+            value={data.unidadesNoPatio}
+            hint="IDs abertos no pátio"
             icon={Container}
           />
           <KpiCard
-            title="Agendamentos do dia"
-            value={agendamentosHoje}
-            hint="Proxy: solicitações criadas hoje (UTC)"
+            title="Agenda de hoje"
+            value={data.agendamentosHoje}
+            hint="Janelas marcadas para hoje"
             icon={CalendarClock}
           />
-          <KpiCard
-            title="SLA médio"
-            value={slaMedioPct != null ? `${slaMedioPct}%` : "—"}
-            hint="Cumprimento real (municipal / terminal) — amostra concluída"
-            icon={Gauge}
-          />
-          {!secOffline ? (
+          {showFinance ? (
             <KpiCard
-              title="Pendências financeiras"
-              value={data.pendenciasFinanceiras}
-              hint="Boletos com status ≠ pago (GET /cliente/portal/financeiro/boletos)"
+              title={layoutPix ? "A pagar (PIX)" : "A pagar"}
+              value={formatBRL(data.finance.valorEmAberto)}
+              hint={
+                layoutPix
+                  ? "Faturas FAT aguardando PIX"
+                  : "Faturas FAT em aberto"
+              }
               icon={WalletCards}
             />
           ) : null}
         </div>
 
-        <div className="col-span-12 grid gap-4 sm:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Tendências (mês vs anterior)</CardTitle>
-              <CardDescription>Variação de solicitações criadas e faturamento (mês civil UTC).</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-xs text-slate-500">Solicitações (criadas no mês)</p>
-                <TrendDelta
-                  value={data.tendencias.solicitacoesMesVsAnteriorPct}
-                  label="vs mês anterior"
-                />
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">Faturamento no mês</p>
-                <TrendDelta
-                  value={data.tendencias.faturadoMesVsAnteriorPct}
-                  label="vs mês anterior"
-                />
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Unidades por tipo</CardTitle>
-              <CardDescription>
-                Total {data.unidades.total} contêineres vinculados às suas solicitações.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {(
-                [
-                  ["import", "Import"],
-                  ["export", "Export"],
-                  ["gateIn", "Gate-In"],
-                  ["gateOut", "Gate-Out"],
-                ] as const
-              ).map(([k, label]) => {
-                const n = data.unidades[k];
-                const p = pctPart(n, data.unidades.total);
-                return (
-                  <div key={k} className="space-y-1">
-                    <div className="flex justify-between text-xs text-slate-400">
-                      <span>{label}</span>
-                      <span className="tabular-nums text-slate-300">
-                        {n} <span className="text-slate-500">({p}%)</span>
-                      </span>
-                    </div>
-                    <Progress value={p} />
+        {showFinance ? (
+          <div className="col-span-12">
+            <Card>
+              <CardHeader>
+                <CardTitle>Financeiro</CardTitle>
+                <CardDescription>
+                  {layoutFaturamento
+                    ? "Faturas FAT com demonstrativo, NFS-e e boleto."
+                    : "Faturas FAT com demonstrativo e NFS-e. Pagamento à vista via PIX."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    {layoutPix ? "Faturas a pagar" : "Faturas em aberto"}
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
+                    {data.finance.faturasEmAberto}
+                  </p>
+                </div>
+                {layoutFaturamento ? (
+                  <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                      Boletos em aberto
+                    </p>
+                    <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
+                      {data.finance.boletosPendentes}
+                    </p>
+                    {data.finance.boletosVencidos > 0 ? (
+                      <p className="mt-1 text-xs text-rose-400">
+                        {data.finance.boletosVencidos} vencido
+                        {data.finance.boletosVencidos === 1 ? "" : "s"}
+                      </p>
+                    ) : null}
                   </div>
-                );
-              })}
-            </CardContent>
-          </Card>
-        </div>
-
-        {!secOffline ? (
-        <div className="col-span-12">
-          <Card>
-            <CardHeader>
-              <CardTitle>Financeiro resumo</CardTitle>
-              <CardDescription>
-                Contadores alinhados ao CX e ao KPI de faturamento em aberto.
-              </CardDescription>
-              {data.condicaoPagamento || data.prazoPagamento ? (
-                <p className="text-xs text-muted-foreground">
-                  Condição contratual:{" "}
-                  {
-                    textoCondicaoVigente({
-                      statusCadastro: data.statusCadastro,
-                      condicaoPagamento: data.condicaoPagamento,
-                      prazoPagamento: data.prazoPagamento,
-                      condicaoPagamentoLabel: data.condicaoPagamentoLabel,
-                      prazoPagamentoLabel: data.prazoPagamentoLabel,
-                    }).titulo
-                  }
-                </p>
-              ) : null}
-            </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Faturas em aberto
-                </p>
-                <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
-                  {data.financeCounts.faturasEmAberto}
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Boletos abertos / vencidos
-                </p>
-                <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
-                  {data.financeCounts.boletosAbertosOuVencidos}
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                  NFS-e (emitidas)
-                </p>
-                <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
-                  {data.financeCounts.nfseEmitidasAmostra}
-                </p>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                  Faturamento no mês
-                </p>
-                <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
-                  {formatBRL(data.financeCounts.faturadoMes)}
-                </p>
-              </div>
-              <div className="col-span-full flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" asChild>
-                  <Link href="/portal/financeiro">Abrir financeiro</Link>
-                </Button>
-                <Button variant="outline" size="sm" asChild>
-                  <Link href="/portal/documentos">Documentos</Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                ) : (
+                  <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                      Conta corrente
+                    </p>
+                    <p
+                      className={`mt-1 text-2xl font-semibold tabular-nums ${saldoClass(data.finance.saldoContaCorrente)}`}
+                    >
+                      {formatBRL(data.finance.saldoContaCorrente)}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">{saldoHint(data.finance.saldoContaCorrente)}</p>
+                  </div>
+                )}
+                <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">NFS-e emitidas</p>
+                  <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
+                    {data.finance.nfseEmitidas}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    {layoutPix ? "Faturas do mês" : "Faturado no mês"}
+                  </p>
+                  <p className="mt-1 text-2xl font-semibold tabular-nums text-white">
+                    {formatBRL(data.finance.faturadoMes)}
+                  </p>
+                </div>
+                <div className="col-span-full flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href="/portal/financeiro">Abrir financeiro</Link>
+                  </Button>
+                  {layoutFaturamento ? (
+                    <Button variant="outline" size="sm" asChild>
+                      <Link href="/portal/financeiro/conta-corrente">Conta corrente</Link>
+                    </Button>
+                  ) : null}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         ) : null}
 
-        <div className="col-span-12 lg:col-span-5">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <LayoutGrid className="h-5 w-5 text-[var(--accent)]" strokeWidth={1.5} />
-                Atalhos
-              </CardTitle>
-              <CardDescription>Navegação rápida do portal corporativo.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/portal/solicitacoes">Solicitações</Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <Link href="/portal/financeiro">Financeiro</Link>
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="col-span-12 lg:col-span-7">
-          <Card>
-            <CardHeader>
-              <CardTitle>SLA e operação</CardTitle>
-              <CardDescription>Contratados (proxy por tenant) e histórico.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Accordion type="single" collapsible defaultValue="slas">
-                <AccordionItem value="slas">
-                  <AccordionTrigger>Detalhes de SLA</AccordionTrigger>
-                  <AccordionContent>
-                    <pre className="max-h-48 overflow-auto rounded-lg bg-black/40 p-3 text-xs text-slate-300">
-                      {JSON.stringify(
-                        {
-                          contratados: data.slas.contratadosProxy,
-                          historico: data.slas.historicoProxy,
-                        },
-                        null,
-                        2,
-                      )}
-                    </pre>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="col-span-12 xl:col-span-8">
-          <Card>
-            <CardHeader>
-              <CardTitle>Tracking rápido</CardTitle>
-              <CardDescription>Últimas solicitações — filtre por ISO ou protocolo.</CardDescription>
-              <div className="relative pt-2">
-                <Input
-                  className="pl-3"
-                  placeholder="Filtrar por ISO ou protocolo…"
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <ul className="divide-y divide-white/5 rounded-xl border border-white/10">
-                {filteredTracking.map((s) => {
-                  const label = deriveTrackingLabel(s);
-                  return (
-                    <li
-                      key={s.id}
-                      className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <button
-                          type="button"
-                          className="text-left"
-                          onClick={() => {
-                            const iso = collectSolicitacaoContainerISOs(s)[0];
-                            if (iso) openContainerTimeline(iso);
-                          }}
-                        >
-                          <ContainerNumber
-                            value={collectSolicitacaoContainerISOs(s)[0] ?? "—"}
-                            showLabel={false}
-                            size="md"
-                          />
-                        </button>
-                        <ProtocolRefLabel protocolo={s.protocolo} className="mt-1" />
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <StatusBadge status={s.status} />
-                          <span className="text-xs text-slate-500">{label}</span>
-                        </div>
-                        <p className="text-xs text-slate-500">
-                          {formatDateTime(s.createdAt)} · {operationTypeLabel(s)}
+        {data.agendamentosHoje > 0 ? (
+          <div className="col-span-12">
+            <Card>
+              <CardHeader>
+                <CardTitle>Agenda de hoje</CardTitle>
+                <CardDescription>Solicitações com janela marcada para hoje.</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <ul className="divide-y divide-white/5">
+                  {data.solicitacoesHoje.map((s) => (
+                    <li key={s.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0">
+                        <ContainerNumber
+                          value={collectSolicitacaoContainerISOs(s)[0] ?? "—"}
+                          showLabel={false}
+                          size="sm"
+                        />
+                        <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+                          {(() => {
+                            const c = solicitacaoControleDisplay(s);
+                            return c.secundario ? `${c.primario} · ${c.secundario}` : c.primario;
+                          })()}
+                          <SolicitacaoDirecaoBadge intent={s.tipoOperacao} />
                         </p>
                       </div>
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/portal/solicitacoes/${s.id}`}>Ver detalhes</Link>
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={s.status} />
+                        <Button variant="ghost" size="sm" asChild>
+                          <Link href={`/portal/solicitacoes/${s.id}`}>Ver</Link>
+                        </Button>
+                      </div>
                     </li>
-                  );
-                })}
-              </ul>
-            </CardContent>
-          </Card>
-        </div>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          </div>
+        ) : null}
 
-        <div className="col-span-12 xl:col-span-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Agendamentos · modelo A1</CardTitle>
-              <CardDescription>
-                Capacidade 40 por turno — ocupação por horário UTC da criação da solicitação.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {TURNOS.map((t) => {
-                const occupied = countInTurn(data.solicitacoesHoje, t.startH, t.endH);
-                const pct = Math.min(100, Math.round((occupied / t.cap) * 100));
-                return (
-                  <div key={t.id} className="space-y-1">
-                    <div className="flex justify-between text-sm text-slate-300">
-                      <span>{t.label}</span>
-                      <span className="tabular-nums text-slate-500">
-                        {occupied}/{t.cap}
-                      </span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-white/10">
-                      <div
-                        className="h-full bg-[var(--accent)] transition-all"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-              <Button
-                className={`w-full ${PORTAL_SCHEDULING_DISABLED_CLASS}`}
-                variant="outline"
-                disabled={bloqueadoFin}
-                asChild={!bloqueadoFin}
-                data-tour="nova-solicitacao"
-              >
-                {bloqueadoFin ? (
-                  <span>Nova solicitação</span>
-                ) : (
-                  <Link href="/portal/solicitacoes">Nova solicitação</Link>
-                )}
-              </Button>
-            </CardContent>
-          </Card>
+        <div className="col-span-12 flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/portal/solicitacoes">Solicitações</Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/portal/patio">Consulta de estoque</Link>
+          </Button>
+          {podeFinanceiro ? (
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/portal/financeiro">Financeiro</Link>
+            </Button>
+          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            className={PORTAL_SCHEDULING_DISABLED_CLASS}
+            disabled={bloqueadoFin}
+            asChild={!bloqueadoFin}
+            data-tour="nova-solicitacao"
+          >
+            {bloqueadoFin ? (
+              <span>Nova solicitação</span>
+            ) : (
+              <Link href="/portal/solicitacoes">Nova solicitação</Link>
+            )}
+          </Button>
         </div>
 
         <div className="col-span-12">
           <Card>
             <CardHeader>
               <CardTitle>Solicitações recentes</CardTitle>
-              <CardDescription>GET /cliente/portal/solicitacoes — paginação server-side.</CardDescription>
+              <CardDescription>Últimas solicitações da sua empresa.</CardDescription>
+              <div className="relative pt-2">
+                <Input
+                  className="pl-3"
+                  placeholder="Filtrar por ISO, ID ou protocolo…"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                />
+              </div>
             </CardHeader>
             <CardContent className="p-0 pt-2">
               <PortalTable
                 columns={[
                   { key: "container", header: "Contêiner" },
                   { key: "status", header: "Status" },
-                  { key: "tipo", header: "Tipo" },
+                  { key: "tipo", header: "ID" },
                   { key: "createdAt", header: "Criação" },
                   { key: "act", header: "" },
                 ]}
-                rows={data.recent.items}
+                rows={filteredRecent}
                 getRowKey={(r) => r.id}
-                renderCell={(r, key) => {
+                renderCell={(r: SolicitacaoRow, key) => {
                   if (key === "container") {
                     const iso = collectSolicitacaoContainerISOs(r)[0] ?? "—";
                     return (
@@ -503,7 +368,15 @@ export function PortalDashboardClient() {
                     );
                   }
                   if (key === "status") return <StatusBadge status={r.status} />;
-                  if (key === "tipo") return operationTypeLabel(r);
+                  if (key === "tipo") {
+                    const c = solicitacaoControleDisplay(r);
+                    return (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-sm text-white">{c.primario}</span>
+                        <SolicitacaoDirecaoBadge intent={r.tipoOperacao} />
+                      </div>
+                    );
+                  }
                   if (key === "createdAt") return formatDateTime(r.createdAt);
                   if (key === "act")
                     return (

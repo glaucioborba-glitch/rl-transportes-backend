@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { Container, Edit2, Plus } from "lucide-react";
-import { OperacionalBreadcrumb, OperacionalTabs } from "../components/operacional-tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useWidgetData, WidgetError } from "@/components/ui/widget-error";
@@ -34,9 +33,6 @@ export default function UnidadesAluguelPage() {
 
   return (
     <div className="space-y-6">
-      <OperacionalBreadcrumb current="Unidades de aluguel" />
-      <OperacionalTabs />
-
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Unidades de aluguel</h1>

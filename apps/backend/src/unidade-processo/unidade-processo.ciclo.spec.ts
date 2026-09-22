@@ -86,7 +86,12 @@ describe('UnidadeProcessoService ciclo', () => {
 
     await svc.onLiberarOperacao('sol-in', 'actor', tx as never);
     expect(box.current?.numero).toBe(1284);
-    expect(billing.openPreFaturasForProcesso).toHaveBeenCalled();
+    expect(billing.openPreFaturasForProcesso).toHaveBeenCalledWith(
+      expect.objectContaining({
+        containerHint: expect.objectContaining({ refrigerado: false }),
+      }),
+      tx,
+    );
     expect(servicos.aplicarNaAbertura).toHaveBeenCalledWith(
       tx,
       expect.objectContaining({ processoId: 'up1', clienteId: 'c1', refrigerado: false }),
@@ -179,5 +184,62 @@ describe('UnidadeProcessoService ciclo', () => {
 
     await svc.onLiberarOperacao('sol-in', 'actor', tx as never);
     expect(tx.unidadeProcesso.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('abre o ID da RIC mesmo se a tabela de preços estiver incompleta', async () => {
+    const { UnprocessableEntityException } = await import('@nestjs/common');
+    const box: { current: Aberto | null } = { current: null };
+    billing.openPreFaturasForProcesso.mockRejectedValueOnce(
+      new UnprocessableEntityException(
+        'Tabela de preços sem diária de armazenagem para este tipo de contêiner. Ajuste a tabela padrão ou a tabela do cliente.',
+      ),
+    );
+    patio.provisionFromProcesso.mockResolvedValue('pu1');
+    servicos.aplicarNaAbertura.mockResolvedValue(undefined);
+    outbox.enqueue.mockResolvedValue(undefined);
+
+    const prisma = {
+      $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<void>) => fn(tx)),
+    };
+    const tx = {
+      solicitacao: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'sol-in',
+          tipoOperacao: TipoOperacaoSolicitacaoIntent.SOLICITAR_BAIXA,
+          cliente: { id: 'c1', tenantId: 'default' },
+          containersSolicitacao: [{ unidade: 'GCXU5119401', refrigerado: false, setPoint: null }],
+          gateCheckIns: [],
+        }),
+      },
+      unidadeProcesso: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn(async ({ data }: { data: { clienteId: string; tenantId: string; unidadeIso: string } }) => {
+          box.current = {
+            id: 'up-ric',
+            numero: 7,
+            clienteId: data.clienteId,
+            tenantId: data.tenantId,
+            unidadeIso: data.unidadeIso,
+            status: StatusUnidadeProcesso.ABERTO,
+            saidaSolicitacaoId: null,
+            entradaSolicitacaoId: 'sol-in',
+          };
+          return box.current;
+        }),
+        update: jest.fn(),
+      },
+      $queryRaw: jest.fn().mockResolvedValue([{ n: 7 }]),
+    };
+    const svc = new UnidadeProcessoService(
+      prisma as never,
+      patio as never,
+      billing as never,
+      outbox as never,
+      servicos as never,
+    );
+
+    await expect(svc.ensureIdNaEmissaoRic('sol-in', 'actor')).resolves.toBeUndefined();
+    expect(tx.unidadeProcesso.create).toHaveBeenCalledTimes(1);
+    expect(box.current?.numero).toBe(7);
   });
 });

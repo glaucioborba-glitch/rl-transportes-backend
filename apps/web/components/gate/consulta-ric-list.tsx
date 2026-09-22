@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { FileText, Loader2, Repeat, Search, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ import { ServicosIdCard } from "@/components/gate/servicos-id-card";
 import { TomadaGateCard } from "@/components/gate/tomada-gate-card";
 import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
 import { formatIsoDisplay } from "@/lib/container-display";
+import { formatBRL } from "@/lib/financeiro/format";
 
 function hojeIso() {
   const d = new Date();
@@ -121,10 +123,12 @@ function RicAcoes({ row, onCeder }: { row: ConsultaRicItem; onCeder: () => void 
 }
 
 export function ConsultaRicList() {
-  const [q, setQ] = useState("");
+  const searchParams = useSearchParams();
+  const qInicial = searchParams.get("q")?.trim() ?? "";
+  const [q, setQ] = useState(qInicial);
   const [direcao, setDirecao] = useState<"TODAS" | "ENTRADA" | "SAIDA">("TODAS");
   const [status, setStatus] = useState<"TODOS" | "ABERTO" | "ENCERRADO">("TODOS");
-  const [de, setDe] = useState(isoHaDias(9));
+  const [de, setDe] = useState(qInicial ? isoHaDias(730) : isoHaDias(9));
   const [ate, setAte] = useState(hojeIso());
   const [items, setItems] = useState<ConsultaRicItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -280,6 +284,25 @@ export function ConsultaRicList() {
                       {unidadeDetalhe ? (
                         <p className="text-xs font-normal text-muted-foreground">{unidadeDetalhe}</p>
                       ) : null}
+                      {row.lacreTroca ? (
+                        <p className="mt-1 text-xs font-medium text-amber-400">
+                          {row.lacreTroca.texto}
+                        </p>
+                      ) : row.lacre ? (
+                        <p className="mt-1 text-xs text-muted-foreground">Lacre {row.lacre}</p>
+                      ) : null}
+                      {row.handlingValor && row.handlingValor > 0 ? (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Handling {formatBRL(row.handlingValor)}
+                          {row.valorLancado && row.valorLancado > row.handlingValor
+                            ? ` · pré-fatura ${formatBRL(row.valorLancado)}`
+                            : ""}
+                        </p>
+                      ) : row.valorLancado && row.valorLancado > 0 ? (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Pré-fatura {formatBRL(row.valorLancado)}
+                        </p>
+                      ) : null}
                     </Campo>
                   </div>
                   <div className="min-w-[10rem] flex-1">
@@ -332,6 +355,10 @@ export function ConsultaRicList() {
                       unidadeProcessoId={row.id}
                       numero={row.numero}
                       podeLancar={row.status === "ABERTO"}
+                      onChanged={() => {
+                        setServicosTick((n) => n + 1);
+                        void carregar({ silencioso: true });
+                      }}
                     />
                   </div>
                 ) : null}

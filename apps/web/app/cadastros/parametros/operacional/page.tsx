@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Clock, Loader2, RefreshCw, Save, Settings, Timer, Calendar } from "lucide-react";
+import { Clock, Loader2, Mail, RefreshCw, Save, Send, Settings, Timer, Calendar } from "lucide-react";
 import { FormField, FormSection } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,9 +10,10 @@ import { useParametrosGerais } from "@/hooks/use-parametros-gerais";
 import { canDo, type CadastrosUserContext } from "@/lib/cadastros/permission-matrix";
 import { toast } from "@/lib/toast";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
-import type {
-  TenantParametrosOperacional,
-  TenantTurnoOperacionalConfig,
+import {
+  enviarEmailTeste,
+  type TenantParametrosOperacional,
+  type TenantTurnoOperacionalConfig,
 } from "@/lib/api/tenant-config-client";
 import {
   ParametrosBreadcrumb,
@@ -48,6 +49,10 @@ export default function ParametrosOperacionalPage() {
   const [form, setForm] = useState<TenantParametrosOperacional | null>(null);
   const [saving, setSaving] = useState(false);
   const [recalculando, setRecalculando] = useState(false);
+  /** Mantida fora do form: a API nunca devolve a senha salva. */
+  const [smtpSenha, setSmtpSenha] = useState("");
+  const [testeDestino, setTesteDestino] = useState("");
+  const [testando, setTestando] = useState(false);
 
   useEffect(() => {
     if (data?.operacional) setForm(data.operacional);
@@ -73,6 +78,12 @@ export default function ParametrosOperacionalPage() {
   }
 
   const handleSave = async () => {
+    const emailEnvio = form.emailEnvio?.trim().toLowerCase() ?? "";
+    if (emailEnvio && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailEnvio)) {
+      toast.error("Informe um e-mail de envio válido.");
+      return;
+    }
+    const smtpHost = form.emailSmtpHost?.trim() ?? "";
     setSaving(true);
     try {
       const operacional = {
@@ -94,6 +105,14 @@ export default function ParametrosOperacionalPage() {
         cancelamentoSemPenalidadeMin: form.cancelamentoSemPenalidadeMin,
         validarAntecedenciaAgendamento: form.validarAntecedenciaAgendamento,
         validarCancelamentoSemPenalidade: form.validarCancelamentoSemPenalidade,
+        qrValidadeHoras: Math.min(168, Math.max(1, Math.round(Number(form.qrValidadeHoras) || 24))),
+        emailEnvio,
+        emailEnvioNome: form.emailEnvioNome?.trim() ?? "",
+        emailSmtpHost: smtpHost,
+        emailSmtpPorta: Math.min(65535, Math.max(1, Math.round(Number(form.emailSmtpPorta) || 587))),
+        emailSmtpUsuario: form.emailSmtpUsuario?.trim() ?? "",
+        // Senha em branco mantém a que está salva. Sem servidor, apaga a senha guardada.
+        ...(smtpSenha ? { emailSmtpSenha: smtpSenha } : smtpHost ? {} : { emailSmtpSenha: "" }),
         turnos: form.turnos.map((t) => ({
           id: t.id,
           slot: t.slot ?? "MANHA",
@@ -108,6 +127,7 @@ export default function ParametrosOperacionalPage() {
         feriadosMunicipais: form.feriadosMunicipais ?? [],
       };
       await update({ operacional });
+      setSmtpSenha("");
       toast.success("Parâmetros operacionais salvos.");
     } catch (err) {
       const msg =
@@ -117,6 +137,31 @@ export default function ParametrosOperacionalPage() {
       toast.error(msg);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleEnviarTeste = async () => {
+    const destino = testeDestino.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destino)) {
+      toast.error("Informe um destinatário válido para o teste.");
+      return;
+    }
+    setTestando(true);
+    try {
+      const r = await enviarEmailTeste(destino);
+      if (r.enviado) {
+        toast.success(
+          `${r.mensagem} Remetente: ${r.from}${r.origem === "env" ? " (SMTP do servidor)" : ""}`,
+        );
+      } else {
+        toast.error(r.mensagem);
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error && err.message ? err.message : "Erro ao enviar e-mail de teste.",
+      );
+    } finally {
+      setTestando(false);
     }
   };
 
@@ -159,10 +204,122 @@ export default function ParametrosOperacionalPage() {
       <div>
         <h1 className="text-2xl font-bold">Parâmetros Gerais</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Configuração centralizada do terminal — capacidade, turnos, feriados, TAT e agendamentos.
+          Configuração centralizada do terminal — capacidade, turnos, feriados, TAT, agendamentos e e-mail de envio.
         </p>
       </div>
       <ParametrosTabs />
+
+      <FormSection title="E-mail de envio do sistema" icon={Mail}>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Remetente e servidor de saída de todas as mensagens automáticas: recuperação de senha,
+          cobrança, alerta de cadastro e demais e-mails do terminal. Cada terminal tem a sua conta.
+          Sem servidor preenchido aqui, vale o SMTP do ambiente.
+        </p>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Nome de exibição" className="min-w-[14rem] flex-1">
+            <Input
+              disabled={!canEdit}
+              value={form.emailEnvioNome ?? ""}
+              onChange={(e) => setForm({ ...form, emailEnvioNome: e.target.value })}
+              placeholder="RL Transportes"
+              maxLength={120}
+            />
+          </FormField>
+          <FormField label="E-mail remetente" className="min-w-[16rem] flex-1">
+            <Input
+              type="email"
+              disabled={!canEdit}
+              value={form.emailEnvio ?? ""}
+              onChange={(e) => setForm({ ...form, emailEnvio: e.target.value })}
+              placeholder="nao-responder@rl.com.br"
+              maxLength={255}
+            />
+          </FormField>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-4">
+          <FormField label="Servidor SMTP" className="min-w-[16rem] flex-1">
+            <Input
+              disabled={!canEdit}
+              value={form.emailSmtpHost ?? ""}
+              onChange={(e) => setForm({ ...form, emailSmtpHost: e.target.value })}
+              placeholder="smtp.seuprovedor.com.br"
+              maxLength={255}
+            />
+          </FormField>
+          <FormField label="Porta" className="w-28">
+            <Input
+              type="number"
+              min={1}
+              max={65535}
+              disabled={!canEdit}
+              value={form.emailSmtpPorta ?? 587}
+              onChange={(e) =>
+                setForm({ ...form, emailSmtpPorta: Number(e.target.value) || 587 })
+              }
+            />
+            <p className="mt-1 text-[10px] text-zinc-500">465 = SSL · 587 = TLS</p>
+          </FormField>
+          <FormField label="Usuário" className="min-w-[14rem] flex-1">
+            <Input
+              disabled={!canEdit}
+              value={form.emailSmtpUsuario ?? ""}
+              onChange={(e) => setForm({ ...form, emailSmtpUsuario: e.target.value })}
+              placeholder="nao-responder@rl.com.br"
+              maxLength={255}
+              autoComplete="off"
+            />
+          </FormField>
+          <FormField label="Senha" className="min-w-[14rem] flex-1">
+            <Input
+              type="password"
+              disabled={!canEdit}
+              value={smtpSenha}
+              onChange={(e) => setSmtpSenha(e.target.value)}
+              placeholder={form.emailSmtpSenhaDefinida ? "•••••••• (salva)" : "senha da conta"}
+              maxLength={255}
+              autoComplete="new-password"
+            />
+            <p className="mt-1 text-[10px] text-zinc-500">
+              {form.emailSmtpSenhaDefinida
+                ? "Em branco mantém a senha salva. Limpar o servidor apaga a senha."
+                : "A senha fica só no servidor e nunca é exibida de volta."}
+            </p>
+          </FormField>
+        </div>
+        <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-border pt-4">
+          <FormField label="Enviar e-mail de teste para" className="min-w-[16rem] flex-1">
+            <Input
+              type="email"
+              disabled={!canEdit}
+              value={testeDestino}
+              onChange={(e) => setTesteDestino(e.target.value)}
+              placeholder="voce@empresa.com.br"
+              maxLength={255}
+            />
+          </FormField>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!canEdit || testando}
+            onClick={() => void handleEnviarTeste()}
+          >
+            {testando ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Enviando…
+              </>
+            ) : (
+              <>
+                <Send className="mr-2 h-4 w-4" />
+                Enviar teste
+              </>
+            )}
+          </Button>
+          <p className="w-full text-[11px] text-zinc-500">
+            O teste usa o que está salvo. Salve os parâmetros antes de testar.
+          </p>
+        </div>
+      </FormSection>
 
       <FormSection title="Capacidade e Horário" icon={Settings}>
         <div className="flex flex-wrap gap-4">
@@ -426,6 +583,28 @@ export default function ParametrosOperacionalPage() {
               disabled={!canEdit}
               onCheckedChange={(v) => setForm({ ...form, validarCancelamentoSemPenalidade: v })}
             />
+          </FormField>
+        </div>
+      </FormSection>
+
+      <FormSection title="QR Code de acesso" icon={Timer}>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Validade após aprovação (horas)" required>
+            <Input
+              type="number"
+              min={1}
+              max={168}
+              disabled={!canEdit}
+              value={form.qrValidadeHoras ?? 24}
+              onChange={(e) =>
+                setForm({ ...form, qrValidadeHoras: Math.max(1, Number(e.target.value) || 24) })
+              }
+            />
+            <p className="mt-1 text-[10px] text-zinc-500">
+              Um único QR (portal do cliente e portaria). Só vale depois da aprovação no Gate.
+              Se o cliente alterar motorista, placas ou agenda, volta para Autorizações; o QR
+              impresso continua o mesmo e é reativado na nova aprovação. De 1 a 168 horas (7 dias).
+            </p>
           </FormField>
         </div>
       </FormSection>

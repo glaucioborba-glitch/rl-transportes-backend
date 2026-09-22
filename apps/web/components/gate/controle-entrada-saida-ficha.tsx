@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -8,10 +8,12 @@ import {
   ArrowLeft,
   Ban,
   CheckCircle,
+  Copy,
   FileText,
+  Images,
+  Fingerprint,
   Loader2,
   Pencil,
-  PenTool,
   Repeat,
   Trash2,
   Undo2,
@@ -44,11 +46,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ControleEntradaSaidaDossie, type CorrecaoRascunho } from "@/components/gate/controle-entrada-saida-dossie";
+import { MotoristaDigitalPanel } from "@/components/biometria/motorista-digital-panel";
 import { formatIsoDisplay } from "@/lib/container-display";
 import { formatSetPointTomada } from "@/lib/cadastros/tomada-display";
 import { TomadaPedidoBadge } from "@/components/gate/tomada-pedido-badge";
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api/staff-client";
+import { useDocumentoSaida } from "@/components/documento-saida/documento-saida-dialog";
 
 const MOTIVOS = [
   { value: "CONTAINER_DIVERGENTE", label: "Contêiner não confere" },
@@ -102,12 +106,10 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
   const [devolverAberto, setDevolverAberto] = useState(false);
   const [fotosRefazer, setFotosRefazer] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [assinando, setAssinando] = useState(false);
-  const [assinatura, setAssinatura] = useState<string | null>(null);
-  const [modoAssinatura, setModoAssinatura] = useState<"DIGITAL" | "MANUAL">("MANUAL");
+  const [modoAssinatura, setModoAssinatura] = useState<"DIGITAL" | "MANUAL">("DIGITAL");
+  const [digitalRicOk, setDigitalRicOk] = useState(false);
   const [liberarErro, setLiberarErro] = useState<string | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const isDrawing = useRef(false);
+  const documentoSaida = useDocumentoSaida();
 
   useEffect(() => {
     void fetchOperacao(protocolo)
@@ -147,6 +149,12 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
     : "/operador/gate/controle-entrada-saida";
   const voltarLabel = fromConsulta ? "Consulta RIC" : "Controle de Gate";
   const prontoSaida = operacao?.coluna === "PRONTO_SAIDA";
+  const motoristaCpfRic = (
+    operacao?.motoristaCpf ||
+    operacao?.dossie?.solicitacao?.cpf ||
+    operacao?.dossie?.portaria?.cpf ||
+    ""
+  ).replace(/\D/g, "");
 
   function cancelarEdicao() {
     setEditando(false);
@@ -238,24 +246,29 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
     }
   }
 
-  async function reimprimirRic() {
-    setBusy(true);
-    try {
-      const pdfBlob = await downloadRicPdf(protocolo);
-      const url = window.URL.createObjectURL(pdfBlob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `RIC-${protocolo}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-      toast.success("RIC reimpressa.");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Falha ao reimprimir a RIC.");
-    } finally {
-      setBusy(false);
-    }
+  function reimprimirRic(modelo: "cupom" | "completa" | "dupla") {
+    const meta =
+      modelo === "cupom"
+        ? {
+            titulo: "Cupom RIC",
+            descricao: "Cupom 80 mm para a impressora térmica, ou o arquivo no computador.",
+            filename: `RIC-cupom-${protocolo}.pdf`,
+          }
+        : modelo === "completa"
+          ? {
+              titulo: "RIC Completa",
+              descricao: "PDF A4 com as fotos da vistoria.",
+              filename: `RIC-completa-${protocolo}.pdf`,
+            }
+          : {
+              titulo: "RIC 2 vias A4",
+              descricao: "Duas vias na mesma folha para assinatura no papel (terminal e motorista).",
+              filename: `RIC-2vias-${protocolo}.pdf`,
+            };
+    documentoSaida.pedir({
+      ...meta,
+      obter: () => downloadRicPdf(protocolo, modelo),
+    });
   }
 
   async function validar() {
@@ -330,8 +343,8 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
   }
 
   async function emitirRic() {
-    if (modoAssinatura === "DIGITAL" && !assinatura) {
-      toast.error("Assinatura do motorista é obrigatória no modo digital.");
+    if (modoAssinatura === "DIGITAL" && !digitalRicOk) {
+      toast.error("Colete a digital do motorista no leitor. Se não bater, use o papel.");
       return;
     }
     setBusy(true);
@@ -340,20 +353,21 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
         protocolo,
         modoAssinatura === "MANUAL"
           ? { modo: "MANUAL" }
-          : { modo: "DIGITAL", assinatura: assinatura ?? undefined },
+          : { modo: "DIGITAL", assinatura: "BIOMETRIA_OK", biometriaVerificada: true },
       );
       const pdfBlob = await downloadRicPdf(protocolo);
-      const url = window.URL.createObjectURL(pdfBlob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `RIC-${protocolo}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
       const next = await postLiberarOperacao(protocolo);
       setOperacao(next);
       setLiberarErro(null);
+      documentoSaida.pedir({
+        titulo: "RIC",
+        descricao:
+          modoAssinatura === "DIGITAL"
+            ? "Cupom 80 mm para a impressora térmica, ou o arquivo no computador."
+            : "PDF A4 da RIC com campos para assinar no papel.",
+        filename: `RIC-${protocolo}.pdf`,
+        obter: async () => pdfBlob,
+      });
       toast.success("RIC emitida. Unidade liberada para baixa/coleta.");
     } catch (e) {
       const msg = e instanceof ApiError || e instanceof Error ? e.message : "Erro ao emitir a RIC.";
@@ -361,59 +375,6 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
       toast.error(msg);
     } finally {
       setBusy(false);
-    }
-  }
-
-  const canvasReady = assinando;
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !canvasReady) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.strokeStyle = "#111";
-    ctx.lineWidth = 2;
-    ctx.lineCap = "round";
-  }, [canvasReady]);
-
-  function pos(e: React.MouseEvent | React.TouchEvent, canvas: HTMLCanvasElement) {
-    const rect = canvas.getBoundingClientRect();
-    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
-    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
-    return { x: clientX - rect.left, y: clientY - rect.top };
-  }
-
-  function startDraw(e: React.MouseEvent | React.TouchEvent) {
-    isDrawing.current = true;
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx) return;
-    const { x, y } = pos(e, canvas);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-  }
-
-  function draw(e: React.MouseEvent | React.TouchEvent) {
-    if (!isDrawing.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx) return;
-    const { x, y } = pos(e, canvas);
-    ctx.lineTo(x, y);
-    ctx.stroke();
-  }
-
-  function stopDraw() {
-    isDrawing.current = false;
-    const canvas = canvasRef.current;
-    if (canvas) setAssinatura(canvas.toDataURL());
-  }
-
-  function limparAssinatura() {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (canvas && ctx) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      setAssinatura(null);
     }
   }
 
@@ -440,7 +401,7 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
             {operacao.unidadeProcesso?.label ? `${operacao.unidadeProcesso.label} · ` : ""}
             {operacao.direcaoUnidadeLabel ?? ""}
             {operacao.direcaoUnidadeLabel ? " · " : ""}
-            {operacao.protocolo} · {operacao.tipoOperacaoLabel ?? operacao.tipoOperacao} ·{" "}
+            Protocolo {operacao.protocolo} · {operacao.tipoOperacaoLabel ?? operacao.tipoOperacao} ·{" "}
             {operacao.clienteNome}
           </p>
         </div>
@@ -499,13 +460,29 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
           posRic ? (
             <>
               {liberada || operacao.state === "RIC_GERADO" ? (
-                <AcaoQuad
-                  label="Reimprimir RIC"
-                  disabled={busy}
-                  onClick={() => void reimprimirRic()}
-                >
-                  <FileText className="h-5 w-5" />
-                </AcaoQuad>
+                <>
+                  <AcaoQuad
+                    label="Reimprimir cupom"
+                    disabled={busy || operacao.assinaturaModo !== "DIGITAL"}
+                    onClick={() => void reimprimirRic("cupom")}
+                  >
+                    <FileText className="h-5 w-5" />
+                  </AcaoQuad>
+                  <AcaoQuad
+                    label="RIC Completa"
+                    disabled={busy}
+                    onClick={() => void reimprimirRic("completa")}
+                  >
+                    <Images className="h-5 w-5" />
+                  </AcaoQuad>
+                  <AcaoQuad
+                    label="RIC 2 vias A4"
+                    disabled={busy}
+                    onClick={() => void reimprimirRic("dupla")}
+                  >
+                    <Copy className="h-5 w-5" />
+                  </AcaoQuad>
+                </>
               ) : null}
               {editando ? (
                 <>
@@ -658,7 +635,7 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
           </div>
           <fieldset>
             <legend className="mb-3 flex items-center gap-2 text-base font-semibold">
-              <PenTool className="h-5 w-5 text-primary" />
+              <Fingerprint className="h-5 w-5 text-primary" />
               Modo de assinatura
             </legend>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -674,12 +651,9 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
                   name="modo-assinatura-ric"
                   className="sr-only"
                   checked={modoAssinatura === "MANUAL"}
-                  onChange={() => {
-                    setModoAssinatura("MANUAL");
-                    setAssinando(false);
-                  }}
+                  onChange={() => setModoAssinatura("MANUAL")}
                 />
-                <p className="font-semibold">Assinatura manual</p>
+                <p className="font-semibold">Assinatura no papel</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   A RIC é impressa e assinada no papel pelo motorista e pelo operador do Gate.
                 </p>
@@ -698,53 +672,30 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
                   checked={modoAssinatura === "DIGITAL"}
                   onChange={() => setModoAssinatura("DIGITAL")}
                 />
-                <p className="font-semibold">Assinatura digital</p>
+                <p className="font-semibold">Impressão digital</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Capture a assinatura do motorista na tela.
+                  Motorista encosta o dedo no leitor. O sistema confere 1:1 com o CPF do dossiê.
                 </p>
               </label>
             </div>
           </fieldset>
           {modoAssinatura === "MANUAL" ? (
             <div className="rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">
-              O PDF sai com dois campos em branco — motorista e operador. Imprima a RIC e colete as
-              assinaturas no papel.
+              O PDF completo sai com fotos e dois campos em branco. Depois da emissão, use também{" "}
+              <strong>RIC 2 vias A4</strong> — mesma folha, via do terminal e via do motorista,
+              com booking, processo e navio.
             </div>
-          ) : !assinando ? (
-            <button
-              type="button"
-              onClick={() => setAssinando(true)}
-              className="w-full rounded-lg border-2 border-dashed border-border p-8 text-center hover:border-primary/30"
-            >
-              <PenTool className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
-              <p className="text-sm font-medium">Toque para capturar a assinatura</p>
-            </button>
           ) : (
-            <div className="space-y-3">
-              <div className="overflow-hidden rounded-lg border-2 border-border bg-white">
-                <canvas
-                  ref={canvasRef}
-                  width={600}
-                  height={200}
-                  className="w-full cursor-crosshair touch-none"
-                  onMouseDown={startDraw}
-                  onMouseMove={draw}
-                  onMouseUp={stopDraw}
-                  onMouseLeave={stopDraw}
-                  onTouchStart={startDraw}
-                  onTouchMove={draw}
-                  onTouchEnd={stopDraw}
-                />
-              </div>
-              <Button type="button" variant="outline" size="sm" onClick={limparAssinatura}>
-                Limpar
-              </Button>
-            </div>
+            <MotoristaDigitalPanel
+              cpf={motoristaCpfRic}
+              variant="ric"
+              onRicVerified={setDigitalRicOk}
+            />
           )}
           <Button
             type="button"
             className="w-full"
-            disabled={(modoAssinatura === "DIGITAL" && !assinatura) || busy}
+            disabled={(modoAssinatura === "DIGITAL" && !digitalRicOk) || busy}
             onClick={() => void emitirRic()}
           >
             {busy ? (
@@ -953,6 +904,7 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
           onOpenChange={setCessaoAberto}
         />
       ) : null}
+      {documentoSaida.dialog}
     </div>
   );
 }

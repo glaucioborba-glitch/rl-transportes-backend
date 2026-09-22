@@ -36,18 +36,18 @@ export class HealthController {
   ) {}
 
   /**
-   * Terminus — PostgreSQL, Redis e IPM (Prefeitura).
-   * Retorna 503 se alguma dependência crítica estiver down (load balancer / K8s).
+   * Terminus — só dependências que o sistema precisa para responder: PostgreSQL e Redis.
+   * A prefeitura (IPM) fica no /health/diagnostic: se ela cair, o terminal continua operando
+   * em contingência e o load balancer não deve tirar a aplicação do ar.
    */
   @Get()
   @Public()
   @HealthCheck()
-  @ApiOperation({ summary: 'Health check Terminus (DB, Redis, IPM)' })
+  @ApiOperation({ summary: 'Health check Terminus (DB e Redis)' })
   async check(): Promise<HealthCheckResult> {
     return this.health.check([
       () => this.db.ping('database'),
       () => this.redisIndicator.ping('redis'),
-      () => this.ipm.ping('fiscal_ipm'),
     ]);
   }
 
@@ -83,7 +83,7 @@ export class HealthController {
 
     try {
       const pong = await this.redis.ping();
-      redisStatus = pong === 'PONG' ? 'ok' : 'offline';
+      redisStatus = pong === 'PONG' && !this.redis.isMemoryFallback() ? 'ok' : 'offline';
     } catch {
       redisStatus = 'offline';
     }
@@ -109,11 +109,24 @@ export class HealthController {
       }
     }
 
+    // A prefeitura saiu do /health público: quem acompanha o IPM é este diagnóstico.
+    let fiscalIpm: { status: 'ok' | 'offline'; detalhe?: string };
+    try {
+      await this.ipm.ping('fiscal_ipm');
+      fiscalIpm = { status: 'ok' };
+    } catch (e) {
+      fiscalIpm = {
+        status: 'offline',
+        detalhe: e instanceof Error ? e.message : String(e),
+      };
+    }
+
     return {
       api: 'ok',
       database,
       redis: redisStatus,
       securityEngine,
+      fiscalIpm,
       timestamp,
       terminus,
       crons: await this.cronAlert.getStatuses(),

@@ -1,4 +1,5 @@
 import { TipoNotificacaoPortal } from '@prisma/client';
+import { formatMoeda } from '../common/finance/format-moeda.util';
 
 const FORMA_LABEL: Record<string, string> = {
   AVISTA_PIX: 'PIX à vista',
@@ -146,6 +147,43 @@ export function mensagemUnidadeProcessoEncerrado(numero: number, unidadeIso: str
       'Prezado cliente,',
       '',
       `A unidade ${unidadeIso} saiu do pátio. O ${`ID ${numero}`} foi encerrado e a cobrança deste ciclo será consolidada.`,
+      '',
+      FECHO,
+    ].join('\n'),
+    link: '/portal/financeiro',
+  };
+}
+
+export function mensagemPixCreditoAprovado(valor: number): MensagemPortalNotificacao {
+  return {
+    tipo: TipoNotificacaoPortal.PIX_CREDITO_APROVADO,
+    titulo: 'Comprovante PIX aprovado',
+    corpo: [
+      'Prezado cliente,',
+      '',
+      `O comprovante PIX no valor de ${formatMoeda(valor)} foi conferido e aprovado.`,
+      '',
+      'Consulte o saldo na conta corrente do portal.',
+      '',
+      FECHO,
+    ].join('\n'),
+    link: '/portal/financeiro/conta-corrente',
+  };
+}
+
+export function mensagemPixCreditoNegado(valor: number, motivo: string): MensagemPortalNotificacao {
+  const motivoLimpo = motivo.trim() || 'inconsistência no comprovante';
+  return {
+    tipo: TipoNotificacaoPortal.PIX_CREDITO_NEGADO,
+    titulo: 'Comprovante PIX não aprovado',
+    corpo: [
+      'Prezado cliente,',
+      '',
+      `Não foi possível aprovar o comprovante PIX no valor de ${formatMoeda(valor)}.`,
+      '',
+      `Motivo informado: ${motivoLimpo}`,
+      '',
+      'Se o pagamento foi realizado, envie um novo comprovante ou fale com o financeiro.',
       '',
       FECHO,
     ].join('\n'),

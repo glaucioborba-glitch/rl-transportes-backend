@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { Container, RefreshCw, Search, Snowflake } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,11 +13,9 @@ import { ContainerNumber } from "@/components/ui/container-number";
 import {
   ApiError,
   fetchPatioSaldo,
-  type PortalPatioSaldoItem,
   type PortalPatioSaldoResponse,
 } from "@/lib/api/portal-client";
-import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
-import { formatDate, solicitacaoProtocoloDisplay } from "@/lib/portal-tracking";
+import { formatDate } from "@/lib/portal-tracking";
 import { toast } from "@/lib/toast";
 import { PatioSolicitarSaidaButton } from "@/components/portal/patio-solicitar-saida-button";
 import { PortalTomadaReeferActions } from "@/components/portal/portal-tomada-reefer-actions";
@@ -26,6 +23,13 @@ import { usePortalTiposContainer } from "@/hooks/use-portal-tipos-container";
 import { rotuloTomadaPedido } from "@/lib/cadastros/tomada-display";
 import { TomadaPedidoBadge } from "@/components/gate/tomada-pedido-badge";
 import { tipoRequerTomadaReefer } from "@/lib/cadastros/tipo-requer-tomada";
+import { PatioIdLink } from "@/components/portal/patio-id-link";
+import { ConsultaEstoqueSubnav } from "@/components/portal/consulta-estoque-subnav";
+import {
+  patioCargaLabel,
+  patioEquipamentoLabel,
+  patioSaldoMatchesQuery,
+} from "@/lib/portal-patio-display";
 
 function diasLabel(n: number): string {
   if (n <= 0) return "Hoje";
@@ -33,34 +37,7 @@ function diasLabel(n: number): string {
   return `${n} dias`;
 }
 
-function cargaLabel(status: PortalPatioSaldoItem["statusContainer"]): string {
-  if (status === "CHEIO") return "Cheio";
-  if (status === "VAZIO") return "Vazio";
-  return "—";
-}
-
-function equipamentoLabel(item: PortalPatioSaldoItem): string {
-  return formatTipoTamanhoContainerLabel(item.tipo, item.tamanho) ?? item.tipo ?? "—";
-}
-
-function matchesQuery(item: PortalPatioSaldoItem, q: string): boolean {
-  const needle = q.trim().toLowerCase().replace(/[\s-]/g, "");
-  if (!needle) return true;
-  const hay = [
-    item.unidadeIso,
-    item.booking,
-    item.processo,
-    item.protocolo,
-    item.unidadeProcessoLabel,
-    item.tipo,
-    item.tamanho,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase()
-    .replace(/[\s-]/g, "");
-  return hay.includes(needle);
-}
+const CELL = "whitespace-nowrap px-2.5 py-2 text-sm";
 
 export default function PortalPatioSaldoPage() {
   const [loading, setLoading] = useState(true);
@@ -86,7 +63,7 @@ export default function PortalPatioSaldoPage() {
 
   const filtered = useMemo(() => {
     const items = data?.items ?? [];
-    return items.filter((item) => matchesQuery(item, query));
+    return items.filter((item) => patioSaldoMatchesQuery(item, query));
   }, [data, query]);
 
   if (loading && !data) {
@@ -101,9 +78,12 @@ export default function PortalPatioSaldoPage() {
     return (
       <main className="mx-auto w-[90%] space-y-6 px-4 py-8">
         <SectionTitle
-          title="Saldo no pátio"
+          title="Consulta de estoque"
           description="Unidades da sua empresa atualmente depositadas na RL Transportes."
         />
+        <div className="mb-2">
+          <ConsultaEstoqueSubnav />
+        </div>
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <p className="text-sm text-slate-400">Não foi possível carregar o saldo do pátio.</p>
@@ -123,7 +103,7 @@ export default function PortalPatioSaldoPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <SectionTitle
           className="mb-0"
-          title="Saldo no pátio"
+          title="Consulta de estoque"
           description="Unidades da sua empresa atualmente depositadas na RL Transportes."
         />
         <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
@@ -131,6 +111,8 @@ export default function PortalPatioSaldoPage() {
           Atualizar
         </Button>
       </div>
+
+      <ConsultaEstoqueSubnav />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard title="Unidades no pátio" value={total} icon={Container} />
@@ -144,7 +126,7 @@ export default function PortalPatioSaldoPage() {
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Buscar unidade, booking ou protocolo"
+          placeholder="Buscar ID, unidade, booking, processo ou navio"
           className="pl-9"
           aria-label="Buscar unidades no pátio"
         />
@@ -163,45 +145,37 @@ export default function PortalPatioSaldoPage() {
               <CardContent className="p-0">
                 <PortalTable
                   columns={[
-                    { key: "unidade", header: "Unidade" },
-                    { key: "id", header: "ID" },
-                    { key: "tipo", header: "Tipo" },
-                    { key: "tomada", header: "Tomada" },
-                    { key: "carga", header: "Carga" },
-                    { key: "booking", header: "Booking" },
-                    { key: "dias", header: "Dias" },
-                    { key: "status", header: "Situação" },
-                    { key: "protocolo", header: "Solicitação" },
-                    { key: "saida", header: "" },
+                    { key: "id", header: "ID", className: CELL },
+                    { key: "unidade", header: "Unidade", className: CELL },
+                    { key: "tipo", header: "Tipo", className: CELL },
+                    { key: "tomada", header: "Tomada", className: CELL },
+                    { key: "carga", header: "Carga", className: CELL },
+                    { key: "status", header: "Situação", className: CELL },
+                    { key: "entrada", header: "Entrada", className: CELL },
+                    { key: "dias", header: "Dias", className: CELL },
+                    { key: "booking", header: "Booking", className: CELL },
+                    { key: "processo", header: "Processo", className: CELL },
+                    { key: "navio", header: "Navio", className: CELL },
+                    { key: "saida", header: "", className: `${CELL} text-right` },
                   ]}
                   rows={filtered}
                   getRowKey={(r) => r.id}
                   emptyText="Nenhuma unidade encontrada com a busca atual."
                   renderCell={(r, key) => {
+                    if (key === "id") return <PatioIdLink item={r} />;
                     if (key === "unidade") {
                       return (
                         <ContainerNumber value={r.unidadeIso} showLabel={false} size="sm" />
                       );
                     }
-                    if (key === "id") {
-                      return (
-                        <span className="font-mono text-sm text-[var(--accent)]">
-                          {r.unidadeProcessoLabel || "—"}
-                        </span>
-                      );
-                    }
                     if (key === "tipo") {
-                      return (
-                        <span className="text-slate-200">
-                          {equipamentoLabel(r)}
-                        </span>
-                      );
+                      return <span className="text-slate-200">{patioEquipamentoLabel(r)}</span>;
                     }
                     if (key === "tomada") {
                       const requer = tipoRequerTomadaReefer(tipos, r.tipo);
                       if (!requer) return "—";
                       return (
-                        <div className="min-w-[12rem] space-y-2 py-1">
+                        <div className="flex items-center gap-1.5">
                           <TomadaPedidoBadge
                             label={rotuloTomadaPedido({
                               tipo: r.tipo,
@@ -210,6 +184,7 @@ export default function PortalPatioSaldoPage() {
                             })}
                           />
                           <PortalTomadaReeferActions
+                            compact
                             unidadeIso={r.unidadeIso}
                             solicitacaoStatus="EM_PATIO"
                             tipoCodigo={r.tipo}
@@ -220,31 +195,25 @@ export default function PortalPatioSaldoPage() {
                         </div>
                       );
                     }
-                    if (key === "carga") return cargaLabel(r.statusContainer);
-                    if (key === "booking") return r.booking || r.processo || "—";
-                    if (key === "dias") {
-                      return (
-                        <span className="tabular-nums" title={formatDate(r.entradaEm)}>
-                          {diasLabel(r.diasNoPatio)}
-                        </span>
-                      );
-                    }
+                    if (key === "carga") return patioCargaLabel(r.statusContainer);
                     if (key === "status") {
                       return <RawStatusBadge label={r.statusPatio} variant="secondary" />;
                     }
+                    if (key === "entrada") {
+                      return <span className="tabular-nums text-slate-200">{formatDate(r.entradaEm)}</span>;
+                    }
+                    if (key === "dias") {
+                      return <span className="tabular-nums">{diasLabel(r.diasNoPatio)}</span>;
+                    }
+                    if (key === "booking") return r.booking?.trim() || "—";
+                    if (key === "processo") return r.processo?.trim() || "—";
+                    if (key === "navio") return r.navio?.trim() || "—";
                     if (key === "saida") {
                       return r.unidadeProcessoNumero ? (
                         <PatioSolicitarSaidaButton item={r} />
                       ) : null;
                     }
-                    return (
-                      <Link
-                        href={`/portal/solicitacoes/${r.solicitacaoId}`}
-                        className="font-mono text-sm text-[var(--accent)] hover:underline"
-                      >
-                        {solicitacaoProtocoloDisplay(r.protocolo)}
-                      </Link>
-                    );
+                    return null;
                   }}
                 />
               </CardContent>
@@ -263,19 +232,20 @@ export default function PortalPatioSaldoPage() {
                 <Card key={r.id} className="transition-colors hover:border-white/20">
                     <CardContent className="space-y-3 py-4">
                       <div className="flex items-start justify-between gap-2">
-                        <Link href={`/portal/solicitacoes/${r.solicitacaoId}`}>
+                        <div className="min-w-0 space-y-1">
+                          <PatioIdLink item={r} />
                           <ContainerNumber value={r.unidadeIso} showLabel={false} size="md" />
-                        </Link>
+                        </div>
                         <RawStatusBadge label={r.statusPatio} variant="secondary" />
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div>
-                          <p className="text-xs text-slate-500">ID</p>
-                          <p className="font-mono text-slate-200">{r.unidadeProcessoLabel || "—"}</p>
+                          <p className="text-xs text-slate-500">Tipo</p>
+                          <p className="text-slate-200">{patioEquipamentoLabel(r)}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-slate-500">Tipo</p>
-                          <p className="text-slate-200">{equipamentoLabel(r)}</p>
+                          <p className="text-xs text-slate-500">Carga</p>
+                          <p className="text-slate-200">{patioCargaLabel(r.statusContainer)}</p>
                         </div>
                         {tipoRequerTomadaReefer(tipos, r.tipo) ? (
                           <div className="col-span-2">
@@ -298,29 +268,31 @@ export default function PortalPatioSaldoPage() {
                           </div>
                         ) : null}
                         <div>
-                          <p className="text-xs text-slate-500">Carga</p>
-                          <p className="text-slate-200">{cargaLabel(r.statusContainer)}</p>
+                          <p className="text-xs text-slate-500">Entrada</p>
+                          <p className="tabular-nums text-slate-200">{formatDate(r.entradaEm)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500">Dias</p>
+                          <p className="text-slate-200">{diasLabel(r.diasNoPatio)}</p>
                         </div>
                         <div>
                           <p className="text-xs text-slate-500">Booking</p>
-                          <p className="truncate text-slate-200">{r.booking || r.processo || "—"}</p>
+                          <p className="truncate text-slate-200">{r.booking?.trim() || "—"}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-slate-500">No pátio</p>
-                          <p className="text-slate-200">{diasLabel(r.diasNoPatio)}</p>
+                          <p className="text-xs text-slate-500">Processo</p>
+                          <p className="truncate text-slate-200">{r.processo?.trim() || "—"}</p>
+                        </div>
+                        <div className="col-span-2">
+                          <p className="text-xs text-slate-500">Navio</p>
+                          <p className="truncate text-slate-200">{r.navio?.trim() || "—"}</p>
                         </div>
                       </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <Link
-                          href={`/portal/solicitacoes/${r.solicitacaoId}`}
-                          className="font-mono text-xs text-[var(--accent)] hover:underline"
-                        >
-                          Solicitação {solicitacaoProtocoloDisplay(r.protocolo)}
-                        </Link>
-                        {r.unidadeProcessoNumero ? (
+                      {r.unidadeProcessoNumero ? (
+                        <div className="flex justify-end">
                           <PatioSolicitarSaidaButton item={r} />
-                        ) : null}
-                      </div>
+                        </div>
+                      ) : null}
                     </CardContent>
                   </Card>
               ))

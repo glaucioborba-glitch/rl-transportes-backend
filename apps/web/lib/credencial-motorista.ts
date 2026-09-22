@@ -5,6 +5,7 @@ import { isSolicitacaoTerminal } from "@/utils/janelaExecucao";
 
 export type CredencialMotoristaData = {
   protocolo: string;
+  token?: string;
   versao: number;
   cliente: string;
   motorista: string;
@@ -18,13 +19,14 @@ export type CredencialMotoristaData = {
 
 export type QrCredencialPayload = {
   protocolo: string;
-  versao: number;
-  cliente: string;
-  motorista: string;
-  placas: string[];
-  containers: string[];
-  data: string;
-  turno: string;
+  token?: string;
+  versao?: number;
+  cliente?: string;
+  motorista?: string;
+  placas?: string[];
+  containers?: string[];
+  data?: string;
+  turno?: string;
 };
 
 const TURNOS: Record<string, string> = {
@@ -69,6 +71,13 @@ function clienteLabel(row: SolicitacaoRow): string {
   );
 }
 
+export function qrTokenFromRow(row: SolicitacaoRow): string | null {
+  const json = row.operacaoFluxoJson;
+  if (!json || typeof json !== "object" || Array.isArray(json)) return null;
+  const t = (json as { qrToken?: unknown }).qrToken;
+  return typeof t === "string" && t.trim() ? t.trim() : null;
+}
+
 export function buildCredencialMotoristaData(row: SolicitacaoRow): CredencialMotoristaData | null {
   if (!exibeCredencialMotorista(row)) return null;
 
@@ -81,6 +90,7 @@ export function buildCredencialMotoristaData(row: SolicitacaoRow): CredencialMot
 
   return {
     protocolo: row.protocolo,
+    token: qrTokenFromRow(row) ?? undefined,
     versao: row.versaoCredencial ?? 1,
     cliente: clienteLabel(row),
     motorista: row.transporteSolicitacao?.nomeMotorista?.trim() || "—",
@@ -94,16 +104,9 @@ export function buildCredencialMotoristaData(row: SolicitacaoRow): CredencialMot
 }
 
 export function buildQrCredencialPayload(data: CredencialMotoristaData): string {
-  const payload: QrCredencialPayload = {
-    protocolo: data.protocolo,
-    versao: data.versao,
-    cliente: data.cliente,
-    motorista: data.motorista,
-    placas: data.placas,
-    containers: data.containers,
-    data: data.data,
-    turno: data.turno,
-  };
+  const payload: QrCredencialPayload = data.token
+    ? { protocolo: data.protocolo, token: data.token }
+    : { protocolo: data.protocolo };
   return JSON.stringify(payload);
 }
 

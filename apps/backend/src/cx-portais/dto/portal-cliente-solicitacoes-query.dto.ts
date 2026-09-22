@@ -40,7 +40,7 @@ export class PortalClienteSolicitacoesQueryDto {
   @IsDateString()
   createdTo?: string;
 
-  @ApiPropertyOptional({ description: 'Contém no protocolo (sem distinção de maiúsculas)' })
+  @ApiPropertyOptional({ description: 'Protocolo sequencial, ID operacional ou trecho do protocolo legado' })
   @IsOptional()
   @IsString()
   protocolo?: string;

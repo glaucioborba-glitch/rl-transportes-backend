@@ -56,10 +56,15 @@ export class OutboxService {
     const staleBefore = new Date(Date.now() - STALE_PROCESSING_MS);
 
     return this.prisma.$transaction(async (tx) => {
+      // Reclaim pelo instante do claim: com createdAt, uma emissão fiscal lenta
+      // era devolvida para a fila e processada em paralelo (nota/boleto em dobro).
       await tx.outboxEvent.updateMany({
         where: {
           status: OutboxEventStatus.PROCESSING,
-          createdAt: { lt: staleBefore },
+          OR: [
+            { claimedAt: { lt: staleBefore } },
+            { claimedAt: null, createdAt: { lt: staleBefore } },
+          ],
         },
         data: { status: OutboxEventStatus.PENDING, errorText: 'Reclaim após PROCESSING stale' },
       });
@@ -97,7 +102,7 @@ export class OutboxService {
       const ids = candidates.map((c) => c.id);
       await tx.outboxEvent.updateMany({
         where: { id: { in: ids }, status: OutboxEventStatus.PENDING },
-        data: { status: OutboxEventStatus.PROCESSING },
+        data: { status: OutboxEventStatus.PROCESSING, claimedAt: new Date() },
       });
 
       return tx.outboxEvent.findMany({

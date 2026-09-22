@@ -13,6 +13,9 @@ import {
   mensagemDevolucaoPortaria,
   mergeFotosVistoria,
   removerFotosRefazer,
+  fotosVistoriaObrigatoriasAusentes,
+  tiposFotoVistoriaObrigatorias,
+  origemValorConferenciaOcr,
   normalizeContainer,
   normalizeNome,
   normalizePlaca,
@@ -150,5 +153,40 @@ describe('conferencia-entrada-saida.util', () => {
     const after = aplicarConfirmacaoGate(base, ['placaCavalo']);
     expect(after.itens.find((i) => i.campo === 'placaCavalo')?.status).toBe('CONFERE');
     expect(after.resumo.divergentes).toBe(0);
+  });
+
+  it('na conferência OCR só aceita o valor do agendamento ou o do OCR', () => {
+    expect(origemValorConferenciaOcr('ABC1D23', 'XYZ9K88', 'XYZ9K88', normalizePlaca)).toBe('ocr');
+    expect(origemValorConferenciaOcr('ABC1D23', 'XYZ9K88', 'abc-1d23', normalizePlaca)).toBe(
+      'agendamento',
+    );
+    expect(origemValorConferenciaOcr('ABC1D23', 'XYZ9K88', 'QQQ9Q99', normalizePlaca)).toBeNull();
+  });
+
+  it('exige foto da placa da carreta na vistoria e a 02 só no rodotrem', () => {
+    const base = [
+      { tipo: 'CONTAINER_OCR', imagem: 'x' },
+      { tipo: 'PLACA_OCR', imagem: 'x' },
+      { tipo: 'LADO_FRONTAL', imagem: 'x' },
+      { tipo: 'LADO_TRASEIRO', imagem: 'x' },
+      { tipo: 'LADO_DIREITO', imagem: 'x' },
+      { tipo: 'LADO_ESQUERDO', imagem: 'x' },
+    ];
+    expect(tiposFotoVistoriaObrigatorias('LS')).toContain('PLACA_CARRETA_OCR');
+    expect(tiposFotoVistoriaObrigatorias('LS')).not.toContain('PLACA_CARRETA_02_OCR');
+    expect(tiposFotoVistoriaObrigatorias('RODOTREM')).toContain('PLACA_CARRETA_02_OCR');
+    expect(fotosVistoriaObrigatoriasAusentes(base, 'LS')).toEqual(['PLACA_CARRETA_OCR']);
+    expect(
+      fotosVistoriaObrigatoriasAusentes(
+        [...base, { tipo: 'PLACA_CARRETA01_OCR', imagem: 'x' }],
+        'LS',
+      ),
+    ).toEqual([]);
+    expect(
+      fotosVistoriaObrigatoriasAusentes(
+        [...base, { tipo: 'PLACA_CARRETA_OCR', imagem: 'x' }],
+        'RODOTREM',
+      ),
+    ).toEqual(['PLACA_CARRETA_02_OCR']);
   });
 });

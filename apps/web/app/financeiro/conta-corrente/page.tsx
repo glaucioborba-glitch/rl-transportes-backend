@@ -16,6 +16,7 @@ import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NotificationBadge } from "@/components/ui/notification-badge";
 
 function saldoClass(situacao: ContaCorrenteCliente["situacao"]) {
   if (situacao === "CREDOR") return "text-emerald-400";
@@ -115,9 +116,19 @@ export default function ContaCorrenteListPage() {
                 </thead>
                 <tbody>
                   {items.map((row) => (
-                    <tr key={row.id} className="border-t border-border">
+                    <tr
+                      key={row.id}
+                      className={
+                        row.comprovantesPendentes > 0
+                          ? "border-t border-red-500/30 bg-red-500/5"
+                          : "border-t border-border"
+                      }
+                    >
                       <td className="py-2.5 pr-3">
-                        <p className="font-medium">{row.razaoSocial}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">{row.razaoSocial}</p>
+                          <NotificationBadge count={row.comprovantesPendentes ?? 0} />
+                        </div>
                         {row.nomeFantasia ? (
                           <p className="text-xs text-muted-foreground">{row.nomeFantasia}</p>
                         ) : null}

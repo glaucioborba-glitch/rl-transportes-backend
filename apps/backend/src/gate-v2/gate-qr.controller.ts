@@ -31,10 +31,10 @@ export class GateQrController {
 
   @Get('validar-qr')
   @ApiOperation({
-    summary: 'Validar credencial QR do motorista (protocolo + container + versão)',
+    summary: 'Validar QR unificado (protocolo + token)',
     description:
-      'Busca solicitação pelo protocolo do QR. Payload JSON: `{ protocolo, versao, containers, … }`. ' +
-      'Alternativa: query `protocolo`, `container`, `versao` ou `payload` (JSON bruto). Sem dados financeiros.',
+      'O QR busca os dados atuais da solicitação. Payload: `{ protocolo, token }`. ' +
+      'Só vale após aprovação no Gate e dentro da validade configurada. Sem dados financeiros.',
   })
   @Roles(...GATE_ROLES)
   @Permissions('solicitacoes:ler')
@@ -42,15 +42,18 @@ export class GateQrController {
     if (query.payload?.trim()) {
       const parsed = parseQrCredencialPayload(query.payload);
       if (!parsed) {
-        throw new ForbiddenException(
-          'QR Code desatualizado ou inválido. Uma alteração foi feita nesta solicitação. Exija a nova credencial gerada no portal.',
-        );
+        throw new ForbiddenException('QR Code inválido.');
       }
-      return this.gate.validarQrCredencial(parsed.protocolo, parsed.container, parsed.versao);
+      return this.gate.validarQrCredencial(
+        parsed.protocolo,
+        parsed.container,
+        parsed.versao,
+        parsed.token,
+      );
     }
     if (!query.protocolo?.trim()) {
       throw new BadRequestException('Informe protocolo ou payload do QR.');
     }
-    return this.gate.validarQrCredencial(query.protocolo, query.container, query.versao);
+    return this.gate.validarQrCredencial(query.protocolo, query.container, query.versao, query.token);
   }
 }

@@ -1,31 +1,28 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { EmailService } from '../common/email/email.service';
+import {
+  resolveDebounceAlertaMs,
+  resolveWebhookAlerta,
+} from '../common/email/resolve-canal-alerta.util';
+import { TenantAvisosService } from '../common/email/tenant-avisos.service';
 import type { AlertPayload } from './alert.types';
-
-const DEFAULT_DEBOUNCE_MS = 15 * 60 * 1000;
 
 @Injectable()
 export class AlertService {
   private readonly logger = new Logger(AlertService.name);
   private readonly lastSent = new Map<string, number>();
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly avisos: TenantAvisosService,
+    private readonly email: EmailService,
+  ) {}
 
-  private webhookUrl(): string | null {
-    const url = this.config.get<string>('ALERT_WEBHOOK_URL')?.trim();
-    return url || null;
-  }
-
-  private debounceMs(): number {
-    const raw = this.config.get<string>('ALERT_DEBOUNCE_MS');
-    const n = raw ? parseInt(raw, 10) : DEFAULT_DEBOUNCE_MS;
-    return Number.isFinite(n) && n > 0 ? n : DEFAULT_DEBOUNCE_MS;
-  }
-
-  private shouldSend(key: string): boolean {
+  private shouldSend(key: string, debounceMs: number): boolean {
     const last = this.lastSent.get(key) ?? 0;
     const now = Date.now();
-    if (now - last < this.debounceMs()) return false;
+    if (now - last < debounceMs) return false;
     this.lastSent.set(key, now);
     return true;
   }
@@ -49,23 +46,7 @@ export class AlertService {
     return { text };
   }
 
-  /** Dispara webhook (Slack/Discord/Teams) com debounce por chave. */
-  async notify(payload: AlertPayload): Promise<boolean> {
-    this.logger.warn(
-      `[${payload.severity.toUpperCase()}] ${payload.title} — ${payload.message}` +
-        (payload.traceId ? ` (traceId=${payload.traceId})` : ''),
-    );
-
-    const url = this.webhookUrl();
-    if (!url) {
-      this.logger.debug('ALERT_WEBHOOK_URL não configurado — alerta apenas em log');
-      return false;
-    }
-    if (!this.shouldSend(payload.key)) {
-      this.logger.debug(`Alerta ${payload.key} suprimido (debounce)`);
-      return false;
-    }
-
+  private async postWebhook(url: string, payload: AlertPayload): Promise<boolean> {
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -82,6 +63,65 @@ export class AlertService {
       this.logger.error(`Falha ao enviar webhook de alerta: ${(e as Error).message}`);
       return false;
     }
+  }
+
+  private corpoEmail(payload: AlertPayload): string {
+    return [
+      payload.message,
+      '',
+      `Severidade: ${payload.severity === 'critical' ? 'Crítico' : 'Atenção'}`,
+      ...(payload.traceId ? [`Trace: ${payload.traceId}`] : []),
+    ].join('\n');
+  }
+
+  /**
+   * Avisa a equipe do terminal por webhook e por e-mail, com debounce por chave.
+   * Canais e destinos vêm de Parâmetros → Notificações; o .env é a reserva.
+   */
+  async notify(payload: AlertPayload): Promise<boolean> {
+    this.logger.warn(
+      `[${payload.severity.toUpperCase()}] ${payload.title} — ${payload.message}` +
+        (payload.traceId ? ` (traceId=${payload.traceId})` : ''),
+    );
+
+    const tenant = await this.avisos.carregar();
+    const webhook = resolveWebhookAlerta(
+      { url: tenant.webhookUrl, habilitado: tenant.webhookHabilitado },
+      this.config.get<string>('ALERT_WEBHOOK_URL'),
+    );
+    const temEmail = tenant.emailsAlerta.length > 0 || Boolean(this.destinoEmailNoEnv());
+
+    if (!webhook.url && !temEmail) {
+      this.logger.debug('Sem webhook nem e-mail de alerta configurado — alerta apenas em log');
+      return false;
+    }
+
+    const debounceMs = resolveDebounceAlertaMs(
+      tenant.debounceAlertasMin,
+      this.config.get<string>('ALERT_DEBOUNCE_MS'),
+    );
+    if (!this.shouldSend(payload.key, debounceMs)) {
+      this.logger.debug(`Alerta ${payload.key} suprimido (debounce)`);
+      return false;
+    }
+
+    const webhookOk = webhook.url ? await this.postWebhook(webhook.url, payload) : false;
+    const emailResultado = temEmail
+      ? await this.email.sendAlertaInterno({
+          assunto: payload.title,
+          corpoTexto: this.corpoEmail(payload),
+        })
+      : null;
+
+    return webhookOk || emailResultado?.enviado === true;
+  }
+
+  private destinoEmailNoEnv(): string {
+    return (
+      this.config.get<string>('FINANCEIRO_NOTIFY_EMAIL')?.trim() ||
+      this.config.get<string>('SMTP_FINANCEIRO_TO')?.trim() ||
+      ''
+    );
   }
 
   async fiscalIpmDown(details?: { latencyMs?: number; reason?: string }): Promise<void> {

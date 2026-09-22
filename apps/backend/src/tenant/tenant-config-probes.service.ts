@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FiscalIpmService } from '../fiscal-integracao/fiscal-ipm.service';
 import { BankingBoletoService } from '../fiscal-integracao/banking-boleto.service';
+import { NfseNacionalService } from '../nfse-nacional/nfse-nacional.service';
 import { ObjectStorageService } from '../common/storage/object-storage.service';
 import { OCRService } from '../modules/ocr/ocr.service';
 import { WhatsappService } from '../notification/whatsapp.service';
@@ -20,6 +21,7 @@ export class TenantConfigProbesService {
   constructor(
     private readonly config: ConfigService,
     private readonly fiscalIpm: FiscalIpmService,
+    private readonly nfseNacional: NfseNacionalService,
     private readonly banking: BankingBoletoService,
     private readonly storage: ObjectStorageService,
     private readonly ocr: OCRService,
@@ -36,6 +38,9 @@ export class TenantConfigProbesService {
     const boleto = this.integrationCreds.peekBanking(tid);
     const pix = this.integrationCreds.peekPix(tid);
     const s3 = this.integrationCreds.peekS3(tid);
+    const ipm = this.integrationCreds.peekIpm(tid);
+    const nacional = this.integrationCreds.peekNfseNacional(tid);
+    const certificado = this.nfseNacional.inspecionarCertificado(nacional);
 
     const boletoStatus = {
       enabled: boleto.configured,
@@ -90,6 +95,48 @@ export class TenantConfigProbesService {
         chavePixHint: maskPixKey(pix.chavePix),
         apiTokenPresent: Boolean(pix.apiToken),
       },
+      ipm: {
+        enabled: ipm.configured,
+        configured: ipm.configured,
+        origem: ipm.origem,
+        lockedByEnv: ipm.lockedByEnv,
+        baseUrl: ipm.baseUrl,
+        prestadorCnpj: ipm.prestadorCnpj,
+        prestadorTom: ipm.prestadorTom,
+        municipioIbge: ipm.municipioIbge,
+        senhaPresente: ipm.senhaPresente,
+        certificadoPresente: ipm.certificadoPresente,
+        certificadoOrigem: ipm.certificadoPfxBase64
+          ? 'tenant'
+          : ipm.certificadoCaminho
+            ? 'servidor'
+            : 'nenhum',
+        codigoLocalPrestacao: ipm.armazenagem.codigoLocalPrestacao,
+        codigoAtividade: ipm.armazenagem.codigoAtividade,
+        codigoItemListaServico: ipm.armazenagem.codigoItemListaServico,
+        aliquotaPercent: ipm.armazenagem.aliquotaPercent,
+        situacaoTributaria: ipm.armazenagem.situacaoTributaria,
+        tomadorTomFallback: ipm.tomadorTomFallback,
+      },
+      nfseNacional: {
+        enabled: nacional.configured && nacional.ativacao !== 'DESLIGADO',
+        configured: nacional.configured,
+        origem: nacional.origem,
+        lockedByEnv: nacional.lockedByEnv,
+        ativacao: nacional.ativacao,
+        ambiente: nacional.ambiente,
+        certificadoPresente: nacional.certificadoPresente,
+        certificadoTitular: certificado.titular,
+        certificadoValidoAte: certificado.validoAte?.toISOString(),
+        certificadoDiasParaVencer: certificado.diasParaVencer,
+        certificadoErro: certificado.erro,
+        cnpjPrestador: nacional.cnpjPrestador,
+        inscricaoMunicipal: nacional.inscricaoMunicipal,
+        municipioIbge: nacional.municipioIbge,
+        serieDps: nacional.serieDps,
+        codigoTributacaoNacional: nacional.codigoTributacaoNacional,
+        aliquotaIssPercent: nacional.aliquotaIssPercent,
+      },
       s3: {
         enabled: s3.configured || this.storage.usesS3(),
         configured: s3.configured || this.storage.usesS3(),
@@ -102,14 +149,29 @@ export class TenantConfigProbesService {
     };
   }
 
-  async testIpmConnection(): Promise<IntegrationTestResult> {
+  /** Testa certificado + handshake mTLS com o Sefin Nacional. */
+  async testNfseNacionalConnection(tenantId?: string): Promise<IntegrationTestResult> {
+    try {
+      return await this.nfseNacional.testarConexao(tenantId);
+    } catch (e) {
+      return { connected: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  async testIpmConnection(tenantId?: string): Promise<IntegrationTestResult> {
     const start = Date.now();
     try {
-      const result = await this.fiscalIpm.probeConnectivity();
+      const result = await this.fiscalIpm.probeConnectivity(tenantId);
+      const cfg = this.integrationCreds.peekIpm(tenantId);
+      const certificado = cfg.certificadoPresente
+        ? cfg.certificadoPfxBase64
+          ? ' Certificado do terminal em uso.'
+          : ' Certificado do servidor em uso.'
+        : ' Sem certificado A1.';
       return {
         connected: result.ok,
         message: result.ok
-          ? `IPM conectado — modo ${result.mode}`
+          ? `IPM conectado — modo ${result.mode}.${certificado}`
           : result.reason ?? 'IPM indisponível',
         latencyMs: result.latencyMs ?? Date.now() - start,
       };

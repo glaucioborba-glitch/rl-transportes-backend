@@ -8,7 +8,6 @@ import {
 } from '@nestjs/common';
 import { AcaoAuditoria, Prisma, Role, StatusSolicitacao } from '@prisma/client';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
-import { randomBytes } from 'crypto';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import {
   registrarLeituraSensivel,
@@ -26,6 +25,7 @@ import { CreatePortariaDto } from './dto/create-portaria.dto';
 import { CreateSaidaDto } from './dto/create-saida.dto';
 import { CreateSolicitacaoDto } from './dto/create-solicitacao.dto';
 import { UpdateSolicitacaoDto } from './dto/update-solicitacao.dto';
+import { nextProtocoloSolicitacao } from './protocolo-solicitacao.util';
 
 /** Transições válidas — FL armazenagem alinhado a: solicitado → análise → aprovado → execução → concluído. */
 export const VALID_STATUS_TRANSITIONS: Record<StatusSolicitacao, StatusSolicitacao[]> = {
@@ -70,12 +70,6 @@ export const VALID_STATUS_TRANSITIONS: Record<StatusSolicitacao, StatusSolicitac
   [StatusSolicitacao.CANCELADO_CLIENTE]: [],
 };
 
-function gerarProtocolo(): string {
-  const y = new Date().getFullYear();
-  const rand = randomBytes(4).toString('hex').toUpperCase();
-  return `RL-${y}-${rand}`;
-}
-
 const SOLICITACAO_ORDER_BY = new Set(['createdAt', 'protocolo', 'status']);
 
 @Injectable()
@@ -97,10 +91,10 @@ export class SolicitacoesService {
     }
 
     for (let attempt = 0; attempt < 5; attempt++) {
-      const protocolo = gerarProtocolo();
       try {
         return await this.prisma.$transaction(
           async (tx) => {
+            const protocolo = await nextProtocoloSolicitacao(tx);
             const sol = await tx.solicitacao.create({
               data: {
                 protocolo,

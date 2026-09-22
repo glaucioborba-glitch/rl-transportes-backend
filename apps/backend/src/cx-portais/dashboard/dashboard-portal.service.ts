@@ -1,8 +1,11 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import {
+  ModalidadeUnidadeProcesso,
   StatusCadastroCliente,
+  StatusPagamentoFatura,
   StatusSolicitacao,
+  StatusUnidadeProcesso,
   TipoOpcaoPagamento,
   type TipoCliente,
   TipoUnidade,
@@ -15,15 +18,19 @@ import { PlataformaTenantStore } from '../../plataforma-integracao/stores/plataf
 import { HoldReleaseService } from '../../hold-release/hold-release.service';
 import type { CxPortalRequestUser } from '../types/cx-portal.types';
 import { assertClienteDoTenant } from '../portal-cliente-tenant.util';
+import { SOLICITACAO_CONTROLE_INCLUDE } from '../../solicitacoes/protocolo-solicitacao.util';
 import {
   avaliarSlaOperacional,
+  dayBoundsInTimeZone,
   decToNumber,
   desempenhoPct,
   hoursBetween,
   mapStatusCounts,
   mapUnidadesPorTipo,
+  monthBoundsInTimeZone,
   monthBoundsUtc,
   prevMonthBoundsUtc,
+  utcDateOnly,
   type SlaHorasOperacionais,
 } from './dashboard-portal-metrics.util';
 import {
@@ -81,10 +88,16 @@ export type DashboardPortalConsolidated = {
   };
   financeiro: {
     boletosPendentes: number;
+    boletosVencidos: number;
     nfseEmitidas: number;
     faturadoMes: number;
     totalFaturadoPeriodo: number;
+    faturasEmAberto: number;
+    valorEmAberto: number;
+    saldoContaCorrente: number;
   };
+  unidadesNoPatio: number;
+  agendamentosHojeCount: number;
   unidades: {
     total: number;
     import: number;
@@ -157,6 +170,7 @@ const DASHBOARD_SOL_INC = {
   patio: true,
   saida: true,
   unidades: true,
+  ...SOLICITACAO_CONTROLE_INCLUDE,
 } satisfies Prisma.SolicitacaoInclude;
 
 const CACHE_TTL_SEC = 30;
@@ -299,15 +313,69 @@ export class DashboardPortalService {
   async getResumoFinanceiro(clienteId: string): Promise<DashboardPortalConsolidated['financeiro']> {
     const since30 = new Date();
     since30.setUTCDate(since30.getUTCDate() - 30);
-    const { start: mesInicio, end: mesFim } = monthBoundsUtc();
+    const { start: mesInicio, end: mesFim } = monthBoundsInTimeZone();
+    const agora = new Date();
+    const faturaAberta: Prisma.FaturaWhereInput = {
+      clienteId,
+      faturamentoId: null,
+      statusPagamento: {
+        notIn: [StatusPagamentoFatura.PAGO, StatusPagamentoFatura.CANCELADO],
+      },
+    };
+    const faturamentoAberto: Prisma.FaturamentoWhereInput = {
+      clienteId,
+      NOT: {
+        OR: [
+          { statusBoleto: { equals: 'pago', mode: 'insensitive' } },
+          { statusBoleto: { equals: 'cancelado', mode: 'insensitive' } },
+        ],
+      },
+    };
 
-    const [boletosPendentes, nfseEmitidas, sum30, sumMes] = await Promise.all([
+    const [
+      boletosPendentes,
+      boletosVencidos,
+      nfseFaturamento,
+      nfseGateAvulso,
+      sum30,
+      sumMesFaturamento,
+      sum30Gate,
+      sumMesGate,
+      fatsMensaisAbertos,
+      fatsGateAbertos,
+      valorMensalAberto,
+      valorGateAberto,
+      saldoCc,
+    ] = await Promise.all([
       this.safe(
         () =>
           this.prisma.boleto.count({
             where: {
               faturamento: { clienteId },
-              NOT: { statusPagamento: { equals: 'pago', mode: 'insensitive' } },
+              NOT: {
+                OR: [
+                  { statusPagamento: { equals: 'pago', mode: 'insensitive' } },
+                  { statusPagamento: { equals: 'cancelado', mode: 'insensitive' } },
+                ],
+              },
+            },
+          }),
+        0,
+      ),
+      this.safe(
+        () =>
+          this.prisma.boleto.count({
+            where: {
+              faturamento: { clienteId },
+              OR: [
+                { statusPagamento: { equals: 'vencido', mode: 'insensitive' } },
+                {
+                  AND: [
+                    { statusPagamento: { equals: 'pendente', mode: 'insensitive' } },
+                    { dataVencimento: { lt: agora } },
+                  ],
+                },
+              ],
             },
           }),
         0,
@@ -316,6 +384,13 @@ export class DashboardPortalService {
         () =>
           this.prisma.nfsEmitida.count({
             where: { faturamento: { clienteId } },
+          }),
+        0,
+      ),
+      this.safe(
+        () =>
+          this.prisma.fatura.count({
+            where: { clienteId, faturamentoId: null, linkNfse: { not: null } },
           }),
         0,
       ),
@@ -330,21 +405,64 @@ export class DashboardPortalService {
       this.safe(
         () =>
           this.prisma.faturamento.aggregate({
+            where: { clienteId, createdAt: { gte: mesInicio, lte: mesFim } },
+            _sum: { valorTotal: true },
+          }),
+        { _sum: { valorTotal: null } },
+      ),
+      this.safe(
+        () =>
+          this.prisma.fatura.aggregate({
             where: {
               clienteId,
-              createdAt: { gte: mesInicio, lte: mesFim },
+              faturamentoId: null,
+              dataEmissao: { gte: since30 },
             },
             _sum: { valorTotal: true },
           }),
         { _sum: { valorTotal: null } },
       ),
+      this.safe(
+        () =>
+          this.prisma.fatura.aggregate({
+            where: {
+              clienteId,
+              faturamentoId: null,
+              dataEmissao: { gte: mesInicio, lte: mesFim },
+            },
+            _sum: { valorTotal: true },
+          }),
+        { _sum: { valorTotal: null } },
+      ),
+      this.safe(() => this.prisma.faturamento.count({ where: faturamentoAberto }), 0),
+      this.safe(() => this.prisma.fatura.count({ where: faturaAberta }), 0),
+      this.safe(
+        () => this.prisma.faturamento.aggregate({ where: faturamentoAberto, _sum: { valorTotal: true } }),
+        { _sum: { valorTotal: null } },
+      ),
+      this.safe(
+        () => this.prisma.fatura.aggregate({ where: faturaAberta, _sum: { valorTotal: true } }),
+        { _sum: { valorTotal: null } },
+      ),
+      this.safe(
+        () =>
+          this.prisma.clienteContaCorrenteLancamento.aggregate({
+            where: { clienteId },
+            _sum: { valorSinal: true },
+          }),
+        { _sum: { valorSinal: null } },
+      ),
     ]);
 
     return {
       boletosPendentes,
-      nfseEmitidas,
-      faturadoMes: decToNumber(sumMes._sum.valorTotal),
-      totalFaturadoPeriodo: decToNumber(sum30._sum.valorTotal),
+      boletosVencidos,
+      nfseEmitidas: nfseFaturamento + nfseGateAvulso,
+      faturadoMes: decToNumber(sumMesFaturamento._sum?.valorTotal) + decToNumber(sumMesGate._sum?.valorTotal),
+      totalFaturadoPeriodo: decToNumber(sum30._sum?.valorTotal) + decToNumber(sum30Gate._sum?.valorTotal),
+      faturasEmAberto: fatsMensaisAbertos + fatsGateAbertos,
+      valorEmAberto: decToNumber(valorMensalAberto._sum?.valorTotal) + decToNumber(valorGateAberto._sum?.valorTotal),
+      saldoContaCorrente: decToNumber(saldoCc._sum?.valorSinal),
     };
   }
 
@@ -482,12 +600,17 @@ export class DashboardPortalService {
     }, null);
   }
 
-  private async loadKpisExtras(clienteId: string, resumo: ReturnType<typeof mapStatusCounts>) {
+  private async loadKpisExtras(
+    clienteId: string,
+    tenantId: string,
+    resumo: ReturnType<typeof mapStatusCounts>,
+    faturasEmAberto: number,
+  ) {
     const base: Prisma.SolicitacaoWhereInput = { clienteId, deletedAt: null };
     const since30 = new Date();
     since30.setUTCDate(since30.getUTCDate() - 30);
 
-    const [concluidas30d, cicloRows, containersAtivos, faturamentoAberto] = await Promise.all([
+    const [concluidas30d, cicloRows, unidadesNoPatio] = await Promise.all([
       this.safe(
         () =>
           this.prisma.solicitacao.count({
@@ -511,22 +634,12 @@ export class DashboardPortalService {
       ),
       this.safe(
         () =>
-          this.prisma.solicitacao.count({
+          this.prisma.unidadeProcesso.count({
             where: {
               clienteId,
-              deletedAt: null,
-              status: { in: [StatusSolicitacao.PENDENTE, StatusSolicitacao.APROVADO] },
-              saida: { is: null },
-            },
-          }),
-        0,
-      ),
-      this.safe(
-        () =>
-          this.prisma.faturamento.count({
-            where: {
-              clienteId,
-              statusBoleto: { not: 'pago' },
+              tenantId,
+              status: StatusUnidadeProcesso.ABERTO,
+              modalidade: ModalidadeUnidadeProcesso.PATIO,
             },
           }),
         0,
@@ -547,8 +660,9 @@ export class DashboardPortalService {
     return {
       concluidas30d,
       ciclo_medio_horas,
-      containers_ativos: containersAtivos,
-      faturamento_aberto: faturamentoAberto,
+      containers_ativos: unidadesNoPatio,
+      unidadesNoPatio,
+      faturamento_aberto: faturasEmAberto,
       totalSolicitacoes: resumo.total,
       abertas: resumo.abertas,
       emAndamento: resumo.emAndamento,
@@ -572,10 +686,16 @@ export class DashboardPortalService {
       slas: { cumpridos: 0, violados: 0, desempenho: 100 },
       financeiro: {
         boletosPendentes: 0,
+        boletosVencidos: 0,
         nfseEmitidas: 0,
         faturadoMes: 0,
         totalFaturadoPeriodo: 0,
+        faturasEmAberto: 0,
+        valorEmAberto: 0,
+        saldoContaCorrente: 0,
       },
+      unidadesNoPatio: 0,
+      agendamentosHojeCount: 0,
       unidades: { total: 0, import: 0, export: 0, gateIn: 0, gateOut: 0 },
       tendencias: { solicitacoesMesVsAnteriorPct: 0, faturadoMesVsAnteriorPct: 0 },
       totalSolicitacoes: 0,
@@ -672,6 +792,22 @@ export class DashboardPortalService {
     return { forma: formaLabel ?? null, prazo: prazoLabel ?? null };
   }
 
+  private whereAgendamentosHoje(clienteId: string): Prisma.SolicitacaoWhereInput {
+    const { ymd } = dayBoundsInTimeZone();
+    return {
+      clienteId,
+      deletedAt: null,
+      status: {
+        notIn: [
+          StatusSolicitacao.CANCELADO,
+          StatusSolicitacao.CANCELADO_CLIENTE,
+          StatusSolicitacao.REJEITADO,
+        ],
+      },
+      agendamentoSolicitacao: { is: { dataRef: utcDateOnly(ymd) } },
+    };
+  }
+
   async buildConsolidated(
     cx: CxPortalRequestUser,
     clienteIdParam?: string,
@@ -683,7 +819,7 @@ export class DashboardPortalService {
     const skip = (page - 1) * limit;
 
     try {
-      const cacheKey = `cxportal:dash:v5:${clienteId}:${clienteIdParam ?? 'self'}:${page}:${limit}`;
+      const cacheKey = `cxportal:dash:v7:${clienteId}:${clienteIdParam ?? 'self'}:${page}:${limit}`;
       try {
         const hit = await this.redis.get(cacheKey);
         if (hit) {
@@ -695,28 +831,30 @@ export class DashboardPortalService {
       }
 
       const limites = await this.limitesSla(cx);
-
-      const todayUtc = new Date();
-      const y = todayUtc.getUTCFullYear();
-      const m = String(todayUtc.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(todayUtc.getUTCDate()).padStart(2, '0');
-      const dayStart = new Date(`${y}-${m}-${day}T00:00:00.000Z`);
-      const dayEnd = new Date(`${y}-${m}-${day}T23:59:59.999Z`);
+      const agendaHojeWhere = this.whereAgendamentosHoje(clienteId);
 
       const resumoSol = await this.getResumoSolicitacoes(clienteId);
 
-      const [ultimas, slaReal, fin, unidades, tend, clienteCtx, solKpis] = await Promise.all([
+      const [ultimas, slaReal, fin, unidades, tend, clienteCtx] = await Promise.all([
         this.getUltimasSolicitacoes(clienteId, 10),
         this.getResumoSLAs(clienteId, limites),
         this.getResumoFinanceiro(clienteId),
         this.getResumoUnidades(clienteId),
         this.tendenciasFinanceirasESolicitacoes(clienteId),
         this.getClienteContext(clienteId),
-        this.loadKpisExtras(clienteId, resumoSol),
       ]);
 
-      const [solicitacoesRecentesPage, trackingSample, solicitacoesHoje, totalRecent, bloqueadoFin, cadastroMeta] =
-        await Promise.all([
+      const [
+        solKpis,
+        solicitacoesRecentesPage,
+        trackingSample,
+        solicitacoesHoje,
+        agendamentosHojeCount,
+        totalRecent,
+        bloqueadoFin,
+        cadastroMeta,
+      ] = await Promise.all([
+        this.loadKpisExtras(clienteId, cx.tenantId, resumoSol, fin.faturasEmAberto),
         this.safe(
           () =>
             this.prisma.solicitacao.findMany({
@@ -732,7 +870,7 @@ export class DashboardPortalService {
           () =>
             this.prisma.solicitacao.findMany({
               where: { clienteId, deletedAt: null },
-              take: 5,
+              take: 8,
               orderBy: { createdAt: 'desc' },
               include: DASHBOARD_SOL_INC,
             }),
@@ -741,17 +879,14 @@ export class DashboardPortalService {
         this.safe(
           () =>
             this.prisma.solicitacao.findMany({
-              where: {
-                clienteId,
-                deletedAt: null,
-                createdAt: { gte: dayStart, lte: dayEnd },
-              },
-              take: 100,
+              where: agendaHojeWhere,
+              take: 40,
               orderBy: { createdAt: 'desc' },
               include: DASHBOARD_SOL_INC,
             }),
           [],
         ),
+        this.safe(() => this.prisma.solicitacao.count({ where: agendaHojeWhere }), 0),
         this.safe(
           () =>
             this.prisma.solicitacao.count({
@@ -786,6 +921,8 @@ export class DashboardPortalService {
           desempenho: slaReal.desempenho,
         },
         financeiro: fin,
+        unidadesNoPatio: solKpis.unidadesNoPatio,
+        agendamentosHojeCount,
         unidades,
         tendencias: tend,
         totalSolicitacoes: solKpis.totalSolicitacoes,

@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AuditoriaAcaoBadge } from "@/components/audit-trail/auditoria-classificacao-badge";
+import { AuditoriaGerencialLink } from "@/components/audit-trail/auditoria-gerencial-link";
 
 type AuditRow = {
   id: string;
@@ -46,8 +48,9 @@ export function AuditTrail({ tabela, registroId }: { tabela: string; registroId:
 
   return (
     <Card className="border-white/10 bg-zinc-950/80">
-      <CardHeader>
-        <CardTitle className="text-base text-white">Auditoria</CardTitle>
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+        <CardTitle className="text-base text-white">Histórico deste registro</CardTitle>
+        <AuditoriaGerencialLink q={registroId} label="Ver no menu Auditoria" />
       </CardHeader>
       <CardContent>
         {err ? <p className="text-sm text-red-400">{err}</p> : null}
@@ -55,12 +58,17 @@ export function AuditTrail({ tabela, registroId }: { tabela: string; registroId:
         <ul className="max-h-72 space-y-3 overflow-y-auto text-sm">
           {rows.map((r) => (
             <li key={r.id} className="rounded-lg border border-white/10 bg-black/30 px-3 py-2">
-              <div className="flex flex-wrap justify-between gap-1 text-zinc-400">
+              <div className="flex flex-wrap items-center justify-between gap-1 text-zinc-400">
                 <span className="font-mono text-xs text-zinc-500">{new Date(r.createdAt).toLocaleString("pt-BR")}</span>
-                <span className="text-amber-200/90">{r.acao}</span>
+                <AuditoriaAcaoBadge
+                  acao={r.acao}
+                  tabela={r.tabela}
+                  dadosNovos={r.dadosDepois}
+                  dadosAnteriores={r.dadosAntes}
+                />
               </div>
               <p className="mt-1 text-zinc-300">
-                Usuário: <span className="font-mono text-xs">{r.usuario}</span>
+                {r.acao} · Usuário: <span className="font-mono text-xs">{r.usuario}</span>
               </p>
               {extractIp(r.dadosDepois) || extractIp(r.dadosAntes) ? (
                 <p className="text-xs text-zinc-500">IP: {extractIp(r.dadosDepois) ?? extractIp(r.dadosAntes)}</p>

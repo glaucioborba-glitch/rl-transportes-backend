@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantContextService } from '../tenant/tenant-context.service';
 import { resolveStoreTenantId } from '../common/stores/store-tenant.util';
+import { throwDocumentoUnicoSeConflito } from '../common/utils/documento-unico.util';
 import type {
   BeneficioRhEntity,
   ColaboradorRhEntity,
@@ -22,22 +23,26 @@ export class FolhaRhStoreService {
 
   async createColaborador(input: Omit<ColaboradorRhEntity, 'id' | 'createdAt'>): Promise<ColaboradorRhEntity> {
     const id = randomUUID();
-    const row = await this.prisma.folhaColaboradorRh.create({
-      data: {
-        id,
-        tenantId: this.tenantId(),
-        nome: input.nome,
-        cpf: input.cpf,
-        cargo: input.cargo,
-        turno: input.turno,
-        salarioBase: input.salarioBase,
-        tipoContratacao: input.tipoContratacao,
-        dataAdmissao: new Date(input.dataAdmissao.slice(0, 10)),
-        dataDemissao: input.dataDemissao ? new Date(input.dataDemissao.slice(0, 10)) : null,
-        beneficiosAtivos: input.beneficiosAtivos,
-      },
-    });
-    return this.mapColaborador(row);
+    try {
+      const row = await this.prisma.folhaColaboradorRh.create({
+        data: {
+          id,
+          tenantId: this.tenantId(),
+          nome: input.nome,
+          cpf: input.cpf,
+          cargo: input.cargo,
+          turno: input.turno,
+          salarioBase: input.salarioBase,
+          tipoContratacao: input.tipoContratacao,
+          dataAdmissao: new Date(input.dataAdmissao.slice(0, 10)),
+          dataDemissao: input.dataDemissao ? new Date(input.dataDemissao.slice(0, 10)) : null,
+          beneficiosAtivos: input.beneficiosAtivos,
+        },
+      });
+      return this.mapColaborador(row);
+    } catch (err) {
+      throwDocumentoUnicoSeConflito(err, 'CPF', input.nome);
+    }
   }
 
   async listColaboradores(): Promise<ColaboradorRhEntity[]> {

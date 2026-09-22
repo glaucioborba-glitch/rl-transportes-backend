@@ -34,6 +34,7 @@ import { ContainerNumber } from "@/components/ui/container-number";
 import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
 import { rotuloTomadaPedido } from "@/lib/cadastros/tomada-display";
 import { TomadaPedidoBadge } from "@/components/gate/tomada-pedido-badge";
+import { SolicitacaoDirecaoBadge } from "@/components/solicitacao/solicitacao-direcao-badge";
 import { listCadastrosTiposContainer } from "@/lib/api/cadastros-tipos-container-client";
 import { useTenantTurnos } from "@/hooks/use-tenant-turnos";
 import type { TenantTurnoConfig } from "@/lib/api/tenant-config-client";
@@ -225,7 +226,12 @@ export function GateAutorizacaoDetalhePanel({ id }: Props) {
           <h1 className="text-2xl font-bold text-white">{String(sol.protocolo ?? id)}</h1>
           <p className="text-sm text-muted-foreground">Criado em {formatDate(String(sol.createdAt ?? ""))}</p>
         </div>
-        <Badge variant="neutral">{status.replace(/_/g, " ")}</Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          <SolicitacaoDirecaoBadge
+            intent={typeof sol.tipoOperacao === "string" ? sol.tipoOperacao : null}
+          />
+          <Badge variant="neutral">{status.replace(/_/g, " ")}</Badge>
+        </div>
       </div>
 
       <div className={rodotrem ? "grid gap-4 md:grid-cols-2" : "grid gap-4"}>

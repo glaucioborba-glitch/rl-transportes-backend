@@ -54,6 +54,8 @@ enum TipoNotificacaoPortal {
   CONDICAO_PAGAMENTO_ALTERADA
   UNIDADE_PROCESSO_ABERTO
   UNIDADE_PROCESSO_ENCERRADO
+  PIX_CREDITO_APROVADO
+  PIX_CREDITO_NEGADO
 }
 
 /// Catálogo parametrizável de forma de pagamento vs. prazo comercial.
@@ -304,9 +306,18 @@ enum MotivoLancamentoContaCorrente {
   ACORDO_COMERCIAL
   AJUSTE_FATURA
   PIX_A_MAIOR
+  PIX_MANUAL_FORA_SISTEMA
   LIBERACAO_PAGAR_DEPOIS
   COMPENSACAO
+  QUITACAO_ID
   OUTRO
+}
+
+enum StatusPixCreditoComprovante {
+  PENDENTE
+  CONFERIDO
+  APROVADO
+  NEGADO
 }
 
 enum StatusIpm {
@@ -450,6 +461,9 @@ model Tenant {
   alugueis Aluguel[]
   fretes Frete[]
   contaCorrenteLancamentos ClienteContaCorrenteLancamento[]
+  pixCreditoComprovantes ClientePixCreditoComprovante[]
+  motoristaBiometrias MotoristaBiometria[]
+  gateUnidadeNotificacoes GateUnidadeNotificacao[]
 
   @@index([status])
   @@map("tenants")
@@ -482,6 +496,7 @@ model User {
   motoristaPerfil       Motorista?
   transportadoraAutorizada TransportadoraAutorizada?
   equipamentoVinculos   CadastroEquipamentoVinculo[] @relation("EquipamentoVinculoOperador")
+  gateNotificacaoLeituras GateUnidadeNotificacaoLeitura[]
 
   @@unique([tenantId, cpfCnpj])
   @@unique([tenantId, email])
@@ -598,6 +613,7 @@ model Cliente {
   fretes                Frete[]
   alugueis              Aluguel[]
   contaCorrenteLancamentos ClienteContaCorrenteLancamento[]
+  pixCreditoComprovantes ClientePixCreditoComprovante[]
 
   @@unique([tenantId, cpfCnpj])
   @@unique([tenantId, email])
@@ -628,6 +644,10 @@ model ClienteContaCorrenteLancamento {
   motivo          MotivoLancamentoContaCorrente  @default(OUTRO)
   descricao       String                         @db.VarChar(500)
   referencia      String?                        @db.VarChar(120)
+  anexoNome       String?                        @map("anexo_nome") @db.VarChar(180)
+  anexoMime       String?                        @map("anexo_mime") @db.VarChar(80)
+  anexoStorageKey String?                        @map("anexo_storage_key") @db.VarChar(500)
+  anexoTamanho    Int?                           @map("anexo_tamanho")
   createdByUserId String?                        @map("created_by_user_id")
   createdByNome   String?                        @map("created_by_nome") @db.VarChar(120)
   createdAt       DateTime                       @default(now()) @map("created_at")
@@ -635,6 +655,32 @@ model ClienteContaCorrenteLancamento {
   @@index([tenantId, clienteId, createdAt])
   @@index([clienteId])
   @@map("cliente_conta_corrente_lancamentos")
+}
+
+/// Comprovante PIX enviado pelo portal para crédito na conta comercial — análise manual.
+model ClientePixCreditoComprovante {
+  id                 String                       @id @default(uuid())
+  tenantId           String                       @map("tenant_id") @db.VarChar(64)
+  tenant             Tenant                       @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  clienteId          String                       @map("cliente_id")
+  cliente            Cliente                      @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  valor              Decimal                      @db.Decimal(12, 2)
+  referenciaExterna  String?                      @map("referencia_externa") @db.VarChar(120)
+  arquivoNome        String                       @map("arquivo_nome") @db.VarChar(180)
+  mimeType           String                       @map("mime_type") @db.VarChar(80)
+  storageKey         String                       @map("storage_key") @db.VarChar(500)
+  tamanhoBytes       Int                          @map("tamanho_bytes")
+  status             StatusPixCreditoComprovante  @default(PENDENTE)
+  createdBySub       String?                      @map("created_by_sub") @db.VarChar(120)
+  conferidoPorUserId String?                      @map("conferido_por_user_id")
+  conferidoPorNome   String?                      @map("conferido_por_nome") @db.VarChar(120)
+  conferidoEm        DateTime?                    @map("conferido_em")
+  decisaoObservacao  String?                      @map("decisao_observacao") @db.VarChar(500)
+  createdAt          DateTime                     @default(now()) @map("created_at")
+
+  @@index([tenantId, status, createdAt])
+  @@index([clienteId, status])
+  @@map("cliente_pix_credito_comprovantes")
 }
 
 /// Inbox do portal do cliente (cadastro e condição comercial).
@@ -740,6 +786,7 @@ model Solicitacao {
   id        String   @id @default(uuid())
   tenantId  String   @default("default") @map("tenant_id") @db.VarChar(64)
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  /// Sequência numerada (1, 2, 3…). Rastreio da OS até nascer o ID operacional; depois o protocolo fica secundário na auditoria.
   protocolo String   @unique
   clienteId String
   cliente   Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
@@ -1050,6 +1097,7 @@ model UnidadeProcesso {
   cessoesTitularidade CessaoTitularidade[]
   servicosLancados UnidadeProcessoServico[]
   aluguel Aluguel?
+  notificacoesGate GateUnidadeNotificacao[]
 
   @@unique([tenantId, numero])
   @@index([unidadeIso, status])
@@ -1058,6 +1106,41 @@ model UnidadeProcesso {
   @@index([saidaSolicitacaoId])
   @@index([modalidade, status])
   @@map("unidade_processos")
+}
+
+/// Alteração na unidade depois da criação do ID (baixa confirmada) — inbox do Gate.
+model GateUnidadeNotificacao {
+  id                 String   @id @default(uuid())
+  tenantId           String   @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  unidadeProcessoId  String   @map("unidade_processo_id")
+  unidadeProcesso    UnidadeProcesso @relation(fields: [unidadeProcessoId], references: [id], onDelete: Cascade)
+  unidadeIso         String   @map("unidade_iso") @db.VarChar(16)
+  processoNumero     Int      @map("processo_numero")
+  origem             String   @db.VarChar(16)
+  titulo             String   @db.VarChar(160)
+  corpo              String   @db.VarChar(2000)
+  atorNome           String   @map("ator_nome") @db.VarChar(255)
+  atorRole           String   @map("ator_role") @db.VarChar(64)
+  campos             Json
+  criadoEm           DateTime @default(now()) @map("criado_em")
+  leituras           GateUnidadeNotificacaoLeitura[]
+
+  @@index([tenantId, criadoEm])
+  @@index([unidadeProcessoId])
+  @@map("gate_unidade_notificacoes")
+}
+
+model GateUnidadeNotificacaoLeitura {
+  notificacaoId String   @map("notificacao_id")
+  notificacao   GateUnidadeNotificacao @relation(fields: [notificacaoId], references: [id], onDelete: Cascade)
+  userId        String   @map("user_id")
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lidaEm        DateTime @default(now()) @map("lida_em")
+
+  @@id([notificacaoId, userId])
+  @@index([userId])
+  @@map("gate_unidade_notificacao_leituras")
 }
 
 /// Cessão comercial do ID: solicitante da RIC permanece; titular/pagador muda.
@@ -1250,9 +1333,12 @@ model OutboxEvent {
   status        OutboxEventStatus @default(PENDING)
   errorText     String?           @map("error_text") @db.Text
   createdAt     DateTime          @default(now()) @map("created_at")
+  /// Instante em que o worker assumiu o evento — base do reclaim de PROCESSING travado.
+  claimedAt     DateTime?         @map("claimed_at")
   processedAt   DateTime?         @map("processed_at")
 
   @@index([status, createdAt])
+  @@index([status, claimedAt])
   @@map("outbox_events")
 }
 
@@ -1914,6 +2000,7 @@ model ColaboradorFamiliar {
   createdAt       DateTime            @default(now()) @map("created_at")
   updatedAt       DateTime            @updatedAt @map("updated_at")
 
+  @@unique([tenantId, cpf])
   @@index([colaboradorId], map: "idx_colab_familiares_colab")
   @@index([tenantId], map: "idx_colab_familiares_tenant")
   @@index([dataAniversario], map: "idx_colab_familiares_aniversario")
@@ -1985,7 +2072,28 @@ model CadastroMotorista {
   @@map("cadastros_motoristas")
 }
 
+/// Template FIR Nitgen (texto), por tenant + CPF. Não é imagem da digital.
+model MotoristaBiometria {
+  id       String @id @default(uuid())
+  tenantId String @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  cpf     String @db.VarChar(11)
+  firText String @map("fir_text") @db.Text
+
+  enrolledAt       DateTime @default(now()) @map("enrolled_at")
+  enrolledByUserId String?  @map("enrolled_by_user_id") @db.VarChar(64)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, cpf])
+  @@index([tenantId])
+  @@map("motorista_biometria")
+}
+
 /// Motoristas de terceiros informados em solicitação — só deste tenant. Autofill + blacklist.
+/// CPF único por tenant (uma linha no catálogo de pré-preenchimento).
 model CatalogoMotoristaExterno {
   id       String @id @default(uuid())
   tenantId String @default("default") @map("tenant_id") @db.VarChar(64)
@@ -2123,6 +2231,18 @@ model CatalogoContainerIso {
 
   @@index([tipoCodigo, tamanhoPes])
   @@map("catalogo_containers_iso")
+}
+
+/// Catálogo de navios — compartilhado entre tenants. Só o nome, sem duplicata.
+model CatalogoNavio {
+  id        String   @id @default(uuid())
+  nome      String   @db.VarChar(120)
+  nomeNorm  String   @unique @map("nome_norm") @db.VarChar(120)
+  origem    String   @default("IMPORT") @db.VarChar(32)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("catalogo_navios")
 }
 
 /// MDM — capacidade/cubagem do contêiner (HC, DC, etc.).
@@ -2407,6 +2527,7 @@ model CadastroBanco {
   deletedAt DateTime? @map("deleted_at")
 
   @@unique([tenantId, codigo])
+  @@unique([tenantId, cnpj])
   @@index([tenantId, ativo])
   @@map("cadastros_bancos")
 }
@@ -2820,6 +2941,7 @@ model TesourariaFornecedor {
   updatedAt             DateTime @updatedAt @map("updated_at")
   contratos             TesourariaContrato[]
 
+  @@unique([tenantId, cnpj])
   @@index([tenantId])
   @@map("tesouraria_fornecedores")
 }
@@ -2877,6 +2999,7 @@ model FolhaColaboradorRh {
   updatedAt        DateTime @updatedAt @map("updated_at")
   presencas        FolhaPresenca[]
 
+  @@unique([tenantId, cpf])
   @@index([tenantId])
   @@map("folha_colaboradores_rh")
 }

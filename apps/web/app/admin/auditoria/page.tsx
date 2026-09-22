@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Filter, Download, Printer } from "lucide-react";
 import {
   fetchAuditTrail,
@@ -8,7 +9,6 @@ import {
   fetchAuditTrailUsuarios,
   type AuditTrailItem,
   type AuditTrailQuery,
-  type CategoriaAuditLog,
 } from "@/lib/api/audit-trail-client";
 import { ApiError, staffRequest } from "@/lib/api/staff-client";
 import { getApiBase } from "@/lib/api/corporate-auth-client";
@@ -20,32 +20,58 @@ import { AuditTimeline } from "@/components/audit-trail/audit-timeline";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import {
+  CLASSIFICACAO_AUDITORIA,
+  type ClassificacaoAuditoria,
+} from "@/lib/auditoria/classificacao-auditoria";
 
-const TABS: { id: CategoriaAuditLog | "ALL"; label: string }[] = [
-  { id: "ALL", label: "Todos" },
-  { id: "OPERACIONAL", label: "Operacional (Gate/Pátio)" },
-  { id: "FINANCEIRO", label: "Financeiro (Faturas/Bloqueios)" },
-  { id: "SEGURANCA", label: "Segurança (Acessos/Senhas)" },
+const CLASSIF_TABS: { id: ClassificacaoAuditoria | "ALL"; label: string }[] = [
+  { id: "ALL", label: "Todas" },
+  { id: "VERDE", label: "Normais" },
+  { id: "AMARELO", label: "Alterações" },
+  { id: "VERMELHO", label: "Críticas" },
 ];
 
-export default function AdminAuditoriaPage() {
+function parseClassificacao(raw: string | null): ClassificacaoAuditoria | "ALL" {
+  if (raw === "VERDE" || raw === "AMARELO" || raw === "VERMELHO") return raw;
+  return "ALL";
+}
+
+function AdminAuditoriaClient() {
   const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
-  const [q, setQ] = useState("");
-  const [tab, setTab] = useState<CategoriaAuditLog | "ALL">("ALL");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tab = parseClassificacao(searchParams.get("classificacao"));
+  const qFromUrl = searchParams.get("q") ?? "";
+  const [q, setQ] = useState(qFromUrl);
   const [filters, setFilters] = useState<AuditTrailQuery>({ page: 1, limit: 40 });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [items, setItems] = useState<AuditTrailItem[]>([]);
   const [total, setTotal] = useState(0);
+  const [resumo, setResumo] = useState({ verde: 0, amarelo: 0, vermelho: 0 });
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [usuarios, setUsuarios] = useState<{ usuarioId: string; usuarioNome: string }[]>([]);
   const [acoes, setAcoes] = useState<string[]>([]);
 
+  useEffect(() => {
+    setQ(qFromUrl);
+  }, [qFromUrl]);
+
+  function setTab(next: ClassificacaoAuditoria | "ALL") {
+    const sp = new URLSearchParams(searchParams.toString());
+    if (next === "ALL") sp.delete("classificacao");
+    else sp.set("classificacao", next);
+    const qs = sp.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
   const query = useMemo(
     (): AuditTrailQuery => ({
       ...filters,
       q: q.trim() || undefined,
-      categoria: tab === "ALL" ? undefined : tab,
+      classificacao: tab === "ALL" ? undefined : tab,
     }),
     [filters, q, tab],
   );
@@ -57,6 +83,7 @@ export default function AdminAuditoriaPage() {
       const res = await fetchAuditTrail(query);
       setItems(res.items);
       setTotal(res.meta.total);
+      setResumo(res.resumo ?? { verde: 0, amarelo: 0, vermelho: 0 });
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Erro ao carregar auditoria");
     } finally {
@@ -83,6 +110,7 @@ export default function AdminAuditoriaPage() {
       const params = new URLSearchParams();
       if (query.q) params.set("q", query.q);
       if (query.categoria) params.set("categoria", query.categoria);
+      if (query.classificacao) params.set("classificacao", query.classificacao);
       if (query.usuarioId) params.set("usuarioId", query.usuarioId);
       if (query.acao) params.set("acao", query.acao);
       if (query.containerIso) params.set("containerIso", query.containerIso);
@@ -111,12 +139,22 @@ export default function AdminAuditoriaPage() {
     return <p className="text-amber-400">Somente gestão (ADMIN / GERENTE).</p>;
   }
 
+  const counts: Record<ClassificacaoAuditoria | "ALL", number> = {
+    ALL: resumo.verde + resumo.amarelo + resumo.vermelho,
+    VERDE: resumo.verde,
+    AMARELO: resumo.amarelo,
+    VERMELHO: resumo.vermelho,
+  };
+
   return (
     <div className="space-y-6">
       <div className="print:hidden">
-        <h1 className="font-serif text-3xl font-bold text-white">Auditoria</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          Linha do tempo narrativa centrada no contêiner — rastreabilidade para operação, financeiro e compliance.
+        <h1 className="font-serif text-3xl font-bold text-white">Auditoria gerencial</h1>
+        <p className="mt-1 max-w-3xl text-sm text-zinc-500">
+          Menu único da intranet para a trilha de auditoria. Verde: inclusões, solicitações e
+          processos comuns. Laranja: alteração de dado já gravado. Vermelho: senha de gestor,
+          faturamento ou mudança de fluxo. Alterações do portal do cliente entram nesta mesma
+          trilha, com empresa e operador.
         </p>
       </div>
 
@@ -126,16 +164,39 @@ export default function AdminAuditoriaPage() {
         <p className="text-xs text-zinc-500">{getApiBase()}</p>
       </div>
 
+      <div className="print:hidden grid gap-3 sm:grid-cols-3">
+        {(Object.keys(CLASSIFICACAO_AUDITORIA) as ClassificacaoAuditoria[]).map((id) => {
+          const meta = CLASSIFICACAO_AUDITORIA[id];
+          const active = tab === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(active ? "ALL" : id)}
+              className={cn(
+                "rounded-xl border px-4 py-3 text-left transition-colors",
+                meta.className,
+                active ? "ring-1 ring-white/30" : "opacity-80 hover:opacity-100",
+              )}
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide">{meta.titulo}</p>
+              <p className="mt-1 font-mono text-2xl">{counts[id]}</p>
+              <p className="mt-1 text-[11px] leading-snug opacity-80">{meta.descricao}</p>
+            </button>
+          );
+        })}
+      </div>
+
       <div className="print:hidden space-y-4">
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Digite o número do Contêiner, Nome do Usuário ou Protocolo"
+          placeholder="Contêiner, empresa, operador, protocolo, ID ou tabela"
           className="h-14 border-zinc-700 bg-zinc-900 text-base text-white placeholder:text-zinc-500"
         />
 
         <div className="flex flex-wrap gap-2">
-          {TABS.map((t) => (
+          {CLASSIF_TABS.map((t) => (
             <button
               key={t.id}
               type="button"
@@ -143,11 +204,12 @@ export default function AdminAuditoriaPage() {
               className={cn(
                 "rounded-lg px-3 py-2 text-xs font-semibold transition-colors",
                 tab === t.id
-                  ? "bg-emerald-500/20 text-emerald-100 ring-1 ring-emerald-500/30"
+                  ? "bg-white/10 text-white ring-1 ring-white/20"
                   : "bg-zinc-900 text-zinc-400 hover:text-white",
               )}
             >
               {t.label}
+              {counts[t.id] ? ` · ${counts[t.id]}` : ""}
             </button>
           ))}
         </div>
@@ -169,7 +231,8 @@ export default function AdminAuditoriaPage() {
       </div>
 
       <p className="text-xs text-zinc-500 print:hidden">
-        {loading ? "Carregando…" : `${total} evento(s) encontrado(s)`}
+        {loading ? "Carregando…" : `${total} evento(s) na classificação atual`}
+        {q.trim() ? ` · busca “${q.trim()}”` : ""}
       </p>
 
       <AuditTimeline
@@ -192,5 +255,13 @@ export default function AdminAuditoriaPage() {
         onClear={() => setFilters({ page: 1, limit: 40 })}
       />
     </div>
+  );
+}
+
+export default function AdminAuditoriaPage() {
+  return (
+    <Suspense fallback={<p className="text-zinc-500">Carregando auditoria…</p>}>
+      <AdminAuditoriaClient />
+    </Suspense>
   );
 }

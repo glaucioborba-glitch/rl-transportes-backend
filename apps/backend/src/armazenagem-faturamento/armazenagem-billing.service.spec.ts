@@ -14,6 +14,7 @@ describe('ArmazenagemBillingService', () => {
     patioUnidade: { findMany: jest.fn(), findFirst: jest.fn(), findFirstOrThrow: jest.fn() },
     cliente: { findUnique: jest.fn().mockResolvedValue({ tenantId: 'default' }) },
     tabelaPreco: { findFirst: jest.fn().mockResolvedValue({ regras: [{ diasFreeTime: 5 }] }) },
+    unidadeProcessoServico: { findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn(),
   };
   const outbox = { enqueue: jest.fn() };
@@ -72,7 +73,7 @@ describe('ArmazenagemBillingService', () => {
       preFatura: { ...prisma.preFatura, update: jest.fn() },
       cliente: { findUnique: jest.fn().mockResolvedValue({ tenantId: 'default' }) },
       fatura: { findFirst: jest.fn() },
-      itemFaturaArmazenagem: { deleteMany: jest.fn(), createMany: jest.fn() },
+      itemFaturaArmazenagem: { deleteMany: jest.fn(), createMany: jest.fn(), findFirst: jest.fn() },
       unidadeProcessoServico: { findMany: jest.fn().mockResolvedValue([]) },
       frete: { findFirst: jest.fn().mockResolvedValue(null) },
       unidadeProcesso: { findUnique: jest.fn().mockResolvedValue(null) },
@@ -123,7 +124,7 @@ describe('ArmazenagemBillingService', () => {
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({ id: 'fat1' }),
       },
-      itemFaturaArmazenagem: { deleteMany: jest.fn(), createMany: jest.fn() },
+      itemFaturaArmazenagem: { deleteMany: jest.fn(), createMany: jest.fn(), findFirst: jest.fn() },
       unidadeProcessoServico: { findMany: jest.fn().mockResolvedValue([]) },
       frete: { findFirst: jest.fn().mockResolvedValue(null) },
       unidadeProcesso: { findUnique: jest.fn().mockResolvedValue(null) },
@@ -187,5 +188,36 @@ describe('ArmazenagemBillingService', () => {
     expect(out.falhas).toBe(0);
     expect(spy).toHaveBeenCalledWith('up1', saidaEm, tx);
     spy.mockRestore();
+  });
+
+  it('openPreFaturasForProcesso não cria pré-fatura se a diária estiver ausente', async () => {
+    const { UnprocessableEntityException } = await import('@nestjs/common');
+    prisma.patioUnidade.findMany.mockResolvedValue([
+      { unidadeIso: 'GCXU5119401', solicitacaoId: 'sol-in' },
+    ]);
+    ruleEngine.evaluateForContainerCycleWithTenant.mockRejectedValue(
+      new UnprocessableEntityException(
+        'Tabela de preços sem diária de armazenagem para este tipo de contêiner. Ajuste a tabela padrão ou a tabela do cliente.',
+      ),
+    );
+    const tx = {
+      patioUnidade: prisma.patioUnidade,
+      preFatura: { findFirst: jest.fn().mockResolvedValue(null), upsert: jest.fn(), update: jest.fn() },
+      cliente: { findUnique: jest.fn().mockResolvedValue({ tenantId: 'default' }) },
+      fatura: { findFirst: jest.fn() },
+      unidadeProcessoServico: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+
+    await expect(
+      service.openPreFaturasForProcesso(
+        {
+          unidadeProcessoId: 'up1',
+          clienteId: 'c1',
+          entradaEm: new Date('2026-09-18T10:00:00.000Z'),
+        },
+        tx as never,
+      ),
+    ).resolves.toBeUndefined();
+    expect(tx.preFatura.upsert).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,12 @@ import { CategoriaAuditLog } from '@prisma/client';
 import { Type } from 'class-transformer';
 import { IsDateString, IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
+export enum ClassificacaoAuditoriaQuery {
+  VERDE = 'VERDE',
+  AMARELO = 'AMARELO',
+  VERMELHO = 'VERMELHO',
+}
+
 export class AuditTrailQueryDto {
   @IsOptional()
   @IsString()
@@ -10,6 +16,10 @@ export class AuditTrailQueryDto {
   @IsOptional()
   @IsEnum(CategoriaAuditLog)
   categoria?: CategoriaAuditLog;
+
+  @IsOptional()
+  @IsEnum(ClassificacaoAuditoriaQuery)
+  classificacao?: ClassificacaoAuditoriaQuery;
 
   @IsOptional()
   @IsString()

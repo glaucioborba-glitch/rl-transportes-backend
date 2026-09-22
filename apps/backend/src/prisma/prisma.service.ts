@@ -68,6 +68,11 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
                 }
               }
 
+              if (operation === 'upsert') {
+                const create = args.create as Record<string, unknown>;
+                create.tenantId = (create.tenantId as string | undefined) ?? tenantId;
+              }
+
               if (operation === 'update' || operation === 'updateMany' || operation === 'delete' || operation === 'deleteMany') {
                 args.where = { ...(args.where ?? {}), tenantId };
               }

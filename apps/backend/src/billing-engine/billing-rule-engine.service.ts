@@ -13,12 +13,14 @@ import {
 } from '@prisma/client';
 import { addCalendarDays } from '../armazenagem-faturamento/armazenagem-billing.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { stripContainerIsoCanonical } from '../common/utils/data-sanitize';
 import { TenantConfigService } from '../tenant/tenant-config.service';
 import { resolveOperacional } from '../tenant/tenant-config.types';
 import type {
   BillingRuleEngineInput,
   BillingRuleEngineResult,
   ContainerBillingContext,
+  ContainerMdmKeys,
 } from './billing-rule-engine.types';
 import {
   computeDiasEnergiaFromTomadaEvents,
@@ -134,8 +136,11 @@ export class BillingRuleEngineService {
     tipoContainer: TipoContainerTarifa,
     evento: EventoGatilhoTarifa,
     statusContainer: StatusContainerTarifa | null,
+    mdm?: ContainerMdmKeys,
   ): RegraTarifaria | undefined {
-    return pickRegra(regras, tipoContainer, evento, statusContainer) as RegraTarifaria | undefined;
+    return pickRegra(regras, tipoContainer, evento, statusContainer, mdm) as
+      | RegraTarifaria
+      | undefined;
   }
 
   /** PR-03: Free time — item cadastral > regra tarifária > tenant default. */
@@ -160,6 +165,7 @@ export class BillingRuleEngineService {
       tipo,
       EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
       status,
+      mdm,
     );
     if (regra) return regra.diasFreeTime;
 
@@ -182,12 +188,26 @@ export class BillingRuleEngineService {
     if (cadastroItem?.tarifaDiariaArmazenagem != null) {
       return Number(cadastroItem.tarifaDiariaArmazenagem);
     }
+    const faixasCadastro = cadastroItem
+      ? resolveFaixasFromCadastroItem({
+          faixasDiaria: cadastroItem.faixasDiaria,
+          tarifaDiariaArmazenagem:
+            cadastroItem.tarifaDiariaArmazenagem != null
+              ? Number(cadastroItem.tarifaDiariaArmazenagem)
+              : null,
+          freeTimeDias: cadastroItem.freeTimeDias,
+        })
+      : [];
+    if (faixasCadastro[0]?.valorDiaria != null) {
+      return Number(faixasCadastro[0].valorDiaria);
+    }
 
     const regra = this.resolveBillingRule(
       regras,
       tipo,
       EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
       status,
+      mdm,
     );
     if (regra) return Number(regra.valor);
 
@@ -216,6 +236,7 @@ export class BillingRuleEngineService {
       tipo,
       EventoGatilhoTarifa.ENERGIA_REEFER,
       status,
+      mdm,
     );
     if (regra) return Number(regra.valor);
 
@@ -268,7 +289,7 @@ export class BillingRuleEngineService {
       return Number(cadastroItem.valorHandling);
     }
 
-    const regra = this.resolveBillingRule(regras, tipo, EventoGatilhoTarifa.HANDLING, status);
+    const regra = this.resolveBillingRule(regras, tipo, EventoGatilhoTarifa.HANDLING, status, mdm);
     if (regra) return Number(regra.valor);
     return undefined;
   }
@@ -354,6 +375,10 @@ export class BillingRuleEngineService {
     containerIso?: string;
     /** Segmento após cessão: não cobra GATE_IN de novo (já ficou no segmento do solicitante). */
     omitirGateIn?: boolean;
+    /** Handling automático excluído com senha gerencial. */
+    omitirHandling?: boolean;
+    /** Tomada automática excluída com senha gerencial. */
+    omitirEnergia?: boolean;
     forcarDiasFreeTime?: number;
   }): Promise<BillingRuleEngineResult> {
     const incluirGateIn =
@@ -398,6 +423,8 @@ export class BillingRuleEngineService {
       container: params.container,
       incluirGateIn,
       incluirGateOut,
+      omitirHandling: params.omitirHandling,
+      omitirEnergia: params.omitirEnergia,
       shiftingExtras,
       pricingOverrides,
       diasEnergiaReefer,
@@ -486,15 +513,30 @@ export class BillingRuleEngineService {
   async loadContainerContext(
     gateInId: string | null | undefined,
     containerIso: string,
-    opts?: { unidadeProcessoId?: string | null; solicitacaoId?: string | null },
+    opts?: {
+      unidadeProcessoId?: string | null;
+      solicitacaoId?: string | null;
+      tx?: Prisma.TransactionClient;
+      /** Tipo/tamanho/situação da RIC — não depender só do pátio na mesma transação. */
+      containerHint?: {
+        tipo?: string | null;
+        tamanho?: string | null;
+        status?: string | null;
+        refrigerado?: boolean;
+        setPoint?: number | null;
+      };
+    },
   ): Promise<ContainerBillingContext> {
+    const db = opts?.tx ?? this.prisma;
+    const hint = opts?.containerHint;
     const isoNorm = containerIso.replace(/\s/g, '').toUpperCase();
+    const isoKey = stripContainerIsoCanonical(isoNorm);
     const or: Prisma.PatioUnidadeWhereInput[] = [];
     if (gateInId) or.push({ gateInId });
     if (opts?.unidadeProcessoId) or.push({ unidadeProcessoId: opts.unidadeProcessoId });
     if (opts?.solicitacaoId) or.push({ solicitacaoId: opts.solicitacaoId });
 
-    const unit = await this.prisma.patioUnidade.findFirst({
+    const unit = await db.patioUnidade.findFirst({
       where: {
         unidadeIso: isoNorm,
         ...(or.length ? { OR: or } : {}),
@@ -506,7 +548,7 @@ export class BillingRuleEngineService {
       },
     });
     if (!unit) {
-      const processoFlag = await this.prisma.unidadeProcesso.findFirst({
+      const processoFlag = await db.unidadeProcesso.findFirst({
         where: {
           ...(opts?.unidadeProcessoId
             ? { id: opts.unidadeProcessoId }
@@ -515,21 +557,23 @@ export class BillingRuleEngineService {
         select: { faturarHandlingComoCheio: true },
       });
       return {
-        tamanho: '40',
-        tipo: 'DRY',
-        refrigerado: false,
+        tamanho: hint?.tamanho ?? '40',
+        tipo: hint?.tipo ?? 'DRY',
+        refrigerado: hint?.refrigerado ?? false,
+        setPoint: hint?.setPoint ?? null,
+        statusContainer: this.mapContainerStatus(hint?.status),
         faturarHandlingComoCheio: processoFlag?.faturarHandlingComoCheio ?? false,
       };
     }
 
     const fromForm = unit.solicitacao.containersSolicitacao.find(
-      (c) => c.unidade.replace(/\s/g, '').toUpperCase() === isoNorm,
+      (c) => stripContainerIsoCanonical(c.unidade) === isoKey,
     );
 
     const statusFromPatio = unit.statusContainer;
     const statusFromForm = fromForm?.status;
 
-    const processoFlag = await this.prisma.unidadeProcesso.findFirst({
+    const processoFlag = await db.unidadeProcesso.findFirst({
       where: {
         ...(opts?.unidadeProcessoId
           ? { id: opts.unidadeProcessoId }
@@ -539,11 +583,13 @@ export class BillingRuleEngineService {
     });
 
     return {
-      tamanho: fromForm?.tamanho ?? '40',
-      tipo: fromForm?.tipo ?? 'DRY',
-      refrigerado: fromForm?.refrigerado ?? unit.refrigerado,
-      setPoint: fromForm?.setPoint ?? null,
-      statusContainer: this.mapContainerStatus(statusFromForm ?? statusFromPatio),
+      tamanho: fromForm?.tamanho ?? hint?.tamanho ?? '40',
+      tipo: fromForm?.tipo ?? hint?.tipo ?? 'DRY',
+      refrigerado: fromForm?.refrigerado ?? hint?.refrigerado ?? unit.refrigerado,
+      setPoint: fromForm?.setPoint ?? hint?.setPoint ?? null,
+      statusContainer: this.mapContainerStatus(
+        statusFromForm ?? hint?.status ?? statusFromPatio,
+      ),
       faturarHandlingComoCheio: processoFlag?.faturarHandlingComoCheio ?? false,
     };
   }
@@ -601,7 +647,7 @@ export class BillingRuleEngineService {
   }
 
   private mapContainerStatus(
-    status?: StatusContainer | StatusContainerTarifa | null,
+    status?: StatusContainer | StatusContainerTarifa | string | null,
   ): StatusContainerTarifa | null {
     if (!status || status === StatusContainerTarifa.AMBOS) return null;
     const s = String(status);

@@ -5,8 +5,10 @@ import { Loader2, Plus, Trash2, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { ExcluirHandlingDialog, type TipoExclusaoAutomatico } from "@/components/gate/excluir-handling-dialog";
 import { ApiError } from "@/lib/api/staff-client";
 import {
+  abrirAnexoExclusaoHandling,
   lancarUnidadeProcessoServico,
   listCatalogoServicosAtivos,
   listUnidadeProcessoServicos,
@@ -21,15 +23,29 @@ function isAutomaticoTabela(row: UnidadeProcessoServicoLancado) {
   return row.payload?.automatico === true;
 }
 
+function isHandlingAutomatico(row: UnidadeProcessoServicoLancado) {
+  return isAutomaticoTabela(row) && row.codigo.trim().toUpperCase() === "HANDLING";
+}
+
+function isTomadaAutomatico(row: UnidadeProcessoServicoLancado) {
+  return isAutomaticoTabela(row) && row.codigo.trim().toUpperCase() === "TOMADA";
+}
+
+function isExcluido(row: UnidadeProcessoServicoLancado) {
+  return row.payload?.excluido === true;
+}
+
 export function ServicosIdCard({
   unidadeProcessoId,
   numero,
   podeLancar = true,
+  onChanged,
 }: {
   unidadeProcessoId: string;
   numero: number;
   /** ID aberto no pátio. Encerrado: só consulta. */
   podeLancar?: boolean;
+  onChanged?: () => void;
 }) {
   const [catalogo, setCatalogo] = useState<CadastroServicoItem[]>([]);
   const [lancados, setLancados] = useState<UnidadeProcessoServicoLancado[]>([]);
@@ -40,6 +56,11 @@ export function ServicosIdCard({
   const [isoDestino, setIsoDestino] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [excluirAutomatico, setExcluirAutomatico] = useState<{
+    id: string;
+    valorTotal: number;
+    tipo: TipoExclusaoAutomatico;
+  } | null>(null);
   const selecionado = catalogo.find((s) => s.id === servicoItemId);
   const efeito = selecionado?.efeito ?? "NENHUM";
 
@@ -84,6 +105,7 @@ export function ServicosIdCard({
       setLacre("");
       setIsoDestino("");
       await carregar();
+      onChanged?.();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Erro ao lançar.");
     } finally {
@@ -98,6 +120,7 @@ export function ServicosIdCard({
       await removerUnidadeProcessoServico(unidadeProcessoId, lancamentoId);
       toast.success("Lançamento removido.");
       await carregar();
+      onChanged?.();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Erro ao remover.");
     } finally {
@@ -220,6 +243,9 @@ export function ServicosIdCard({
             <tbody>
               {lancados.map((row) => {
                 const automatico = isAutomaticoTabela(row);
+                const handling = isHandlingAutomatico(row);
+                const tomada = isTomadaAutomatico(row);
+                const excluido = isExcluido(row);
                 return (
                 <tr key={row.id} className="border-b border-white/5">
                   <td className="py-2 font-mono">{row.codigo}</td>
@@ -230,12 +256,55 @@ export function ServicosIdCard({
                         Tabela
                       </span>
                     ) : null}
+                    {excluido ? (
+                      <span className="ml-2 rounded border border-amber-500/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-amber-300">
+                        Excluído
+                      </span>
+                    ) : null}
+                    {excluido && row.payload?.exclusao?.motivo ? (
+                      <p className="mt-0.5 text-xs text-zinc-500">{row.payload.exclusao.motivo}</p>
+                    ) : null}
+                    {excluido && row.payload?.exclusao?.anexoNome ? (
+                      <button
+                        type="button"
+                        className="mt-0.5 text-xs text-cyan-400 underline"
+                        onClick={() =>
+                          void abrirAnexoExclusaoHandling(unidadeProcessoId, row.id).catch((err) =>
+                            toast.error(err instanceof ApiError ? err.message : "Falha ao abrir o anexo."),
+                          )
+                        }
+                      >
+                        Ver anexo
+                      </button>
+                    ) : null}
                   </td>
                   <td>{row.quantidade}</td>
-                  <td>{formatBRL(row.valorTotal)}</td>
+                  <td className={excluido ? "text-zinc-500 line-through" : undefined}>
+                    {formatBRL(row.valorTotal)}
+                  </td>
                   {podeLancar ? (
                     <td className="text-right">
-                      {automatico ? (
+                      {excluido ? (
+                        <span className="text-xs text-zinc-500">Fora da pré-fatura</span>
+                      ) : handling || tomada ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="border-red-500/40 text-red-300 hover:bg-red-950/40"
+                        disabled={saving}
+                        onClick={() =>
+                          setExcluirAutomatico({
+                            id: row.id,
+                            valorTotal: row.valorTotal,
+                            tipo: tomada ? "tomada" : "handling",
+                          })
+                        }
+                      >
+                        <Trash2 className="mr-1 h-3.5 w-3.5" />
+                        Excluir
+                      </Button>
+                      ) : automatico ? (
                         <span className="text-xs text-zinc-500">Automático</span>
                       ) : (
                       <Button
@@ -259,6 +328,17 @@ export function ServicosIdCard({
           </table>
         ) : null}
       </CardContent>
+      <ExcluirHandlingDialog
+        unidadeProcessoId={unidadeProcessoId}
+        lancamentoId={excluirAutomatico?.id ?? ""}
+        valorTotal={excluirAutomatico?.valorTotal ?? 0}
+        tipo={excluirAutomatico?.tipo ?? "handling"}
+        open={Boolean(excluirAutomatico)}
+        onOpenChange={(open) => {
+          if (!open) setExcluirAutomatico(null);
+        }}
+        onExcluido={() => void carregar()}
+      />
     </Card>
   );
 }

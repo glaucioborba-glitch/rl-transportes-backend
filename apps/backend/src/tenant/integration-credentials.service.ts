@@ -7,11 +7,16 @@ import {
   resolveGoogleMaps,
   resolveGoogleRoutes,
   resolveGoogleVision,
+  resolveIpm,
+  resolveNfseNacional,
   resolvePix,
   resolveS3,
   resolveWhatsapp,
   snapshotIntegrationEnv,
+  type IpmCertificadoLegado,
   type ResolvedBanking,
+  type ResolvedIpm,
+  type ResolvedNfseNacional,
   type ResolvedGoogleMaps,
   type ResolvedGoogleRoutes,
   type ResolvedGoogleVision,
@@ -25,6 +30,8 @@ import { mergeTenantParametros } from './tenant-config.types';
 @Injectable()
 export class IntegrationCredentialsService {
   private readonly cache = new Map<string, TenantIntegracoesCredenciais>();
+  /** Certificado A1 gravado em Parâmetros Fiscais antes da tela de integrações. */
+  private readonly certificadoLegado = new Map<string, IpmCertificadoLegado>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -39,8 +46,13 @@ export class IntegrationCredentialsService {
     return this.cache.get(tenantId) ?? {};
   }
 
-  remember(tenantId: string, creds: TenantIntegracoesCredenciais | undefined): void {
+  remember(
+    tenantId: string,
+    creds: TenantIntegracoesCredenciais | undefined,
+    certificadoLegado?: IpmCertificadoLegado,
+  ): void {
     this.cache.set(tenantId, creds ?? {});
+    if (certificadoLegado) this.certificadoLegado.set(tenantId, certificadoLegado);
   }
 
   async load(tenantId = this.currentTenantId()): Promise<TenantIntegracoesCredenciais> {
@@ -49,9 +61,27 @@ export class IntegrationCredentialsService {
     const row = await this.prisma.tenantConfig.findFirst({
       where: { OR: [{ tenantId }, { tenantKey: tenantId }] },
     });
-    const creds = mergeTenantParametros(row?.parametros).integracoesCredenciais ?? {};
+    const parametros = mergeTenantParametros(row?.parametros);
+    const creds = parametros.integracoesCredenciais ?? {};
     this.cache.set(tenantId, creds);
+    this.certificadoLegado.set(tenantId, {
+      certificadoBase64: parametros.nfse?.certificadoBase64,
+      certificadoSenha: parametros.nfse?.certificadoSenha,
+    });
     return creds;
+  }
+
+  async resolveIpm(tenantId = this.currentTenantId()): Promise<ResolvedIpm> {
+    const creds = await this.load(tenantId);
+    return resolveIpm(snapshotIntegrationEnv(), creds.ipm, this.certificadoLegado.get(tenantId));
+  }
+
+  peekIpm(tenantId = this.currentTenantId()): ResolvedIpm {
+    return resolveIpm(
+      snapshotIntegrationEnv(),
+      this.peek(tenantId).ipm,
+      this.certificadoLegado.get(tenantId),
+    );
   }
 
   async resolveGoogleVision(tenantId = this.currentTenantId()): Promise<ResolvedGoogleVision> {
@@ -87,6 +117,15 @@ export class IntegrationCredentialsService {
   async resolveGoogleRoutes(tenantId = this.currentTenantId()): Promise<ResolvedGoogleRoutes> {
     const creds = await this.load(tenantId);
     return resolveGoogleRoutes(snapshotIntegrationEnv(), creds.googleRoutes);
+  }
+
+  async resolveNfseNacional(tenantId = this.currentTenantId()): Promise<ResolvedNfseNacional> {
+    const creds = await this.load(tenantId);
+    return resolveNfseNacional(snapshotIntegrationEnv(), creds.nfseNacional);
+  }
+
+  peekNfseNacional(tenantId = this.currentTenantId()): ResolvedNfseNacional {
+    return resolveNfseNacional(snapshotIntegrationEnv(), this.peek(tenantId).nfseNacional);
   }
 
   peekGoogleVision(tenantId = this.currentTenantId()): ResolvedGoogleVision {

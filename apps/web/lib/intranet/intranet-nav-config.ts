@@ -7,6 +7,7 @@ import {
   ArrowLeftRight,
   ArrowUpCircle,
   Award,
+  Bell,
   BookOpen,
   Boxes,
   Briefcase,
@@ -61,7 +62,8 @@ export type IntranetModuleId =
   | "cockpit"
   | "bi"
   | "grc"
-  | "ssma";
+  | "ssma"
+  | "auditoria";
 
 export type IntranetNavItem = {
   id: IntranetModuleId;
@@ -143,6 +145,12 @@ export const MODULOS_INTRANET: IntranetNavItem[] = [
     roles: ["ADMIN", "GERENTE"],
   },
   {
+    id: "auditoria",
+    label: "Auditoria",
+    href: "/admin/auditoria",
+    roles: ["ADMIN", "GERENTE"],
+  },
+  {
     id: "admin",
     label: "Admin",
     href: "/admin",
@@ -187,6 +195,7 @@ export const MODULE_META: Record<
   financeiro: { title: "Financeiro", subtitle: "Tesouraria corporativa" },
   rh: { title: "RH", subtitle: "Recursos humanos" },
   admin: { title: "Admin", subtitle: "Administração corporativa" },
+  auditoria: { title: "Auditoria", subtitle: "Trilha gerencial classificada" },
   cockpit: { title: "Cockpit", subtitle: "Centro de controle" },
   bi: { title: "BI", subtitle: "Business Intelligence" },
   grc: { title: "GRC", subtitle: "Governança, risco e compliance" },
@@ -215,6 +224,13 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
       icon: ShieldCheck,
       badgeKey: "gate.autorizacoes",
       description: "Aprovar solicitações antes da portaria",
+    },
+    {
+      label: "Notificações",
+      href: "/operador/gate/notificacoes",
+      icon: Bell,
+      badgeKey: "gate.notificacoes",
+      description: "Alterações na unidade depois da baixa (ID criado)",
     },
     {
       label: "Controle de Gate",
@@ -279,13 +295,13 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
       label: "Operacional",
       href: "/cadastros/operacional",
       icon: Boxes,
-      description: "Equipamentos, Posições, Origens e destinos, Turnos",
+      description: "Equipamentos, Posições, Origens e destinos",
     },
     {
       label: "Financeiro",
       href: "/cadastros/financeiro",
       icon: DollarSign,
-      description: "Bancos, Tabelas de Preços, Tabela de transportes, Serviços, Forma e prazo",
+      description: "Bancos, Tabelas de Preços, Tabela de transportes, Serviços, Forma e Prazo de Pagamento",
       roles: ["ADMIN", "GERENTE", "FINANCEIRO"],
     },
     {
@@ -335,6 +351,7 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
       href: "/financeiro/conta-corrente",
       icon: BookOpen,
       description: "Crédito e débito manuais do cliente — folga do processo",
+      badgeKey: "financeiro.contaCorrente",
     },
     {
       label: "Cessão de titularidade",
@@ -364,8 +381,33 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
     { label: "Jurídico", href: "/admin/juridico", icon: Scale },
     { label: "Penalidades", href: "/admin/penalidades", icon: AlertTriangle },
     { label: "SLA Interno", href: "/admin/slainterno", icon: Target },
-    { label: "Auditoria", href: "/admin/auditoria", icon: Search },
     { label: "Régua de Cobrança", href: "/admin/config/regua-cobranca", icon: Settings },
+  ],
+  auditoria: [
+    {
+      label: "Todas",
+      href: "/admin/auditoria",
+      icon: Search,
+      description: "Trilha unificada — operação, cadastro e faturamento",
+    },
+    {
+      label: "Normais",
+      href: "/admin/auditoria?classificacao=VERDE",
+      icon: CheckCircle,
+      description: "Inclusões, solicitações e processos comuns",
+    },
+    {
+      label: "Alterações",
+      href: "/admin/auditoria?classificacao=AMARELO",
+      icon: History,
+      description: "Mudança em dado já gravado",
+    },
+    {
+      label: "Críticas",
+      href: "/admin/auditoria?classificacao=VERMELHO",
+      icon: Shield,
+      description: "Senha de gestor, fluxo ou faturamento",
+    },
   ],
   cockpit: [
     { label: "Dashboard", href: "/cockpit", icon: LayoutDashboard },

@@ -12,6 +12,7 @@ const NAV = [
   { href: "/super-admin", label: "Terminais SaaS" },
   { href: "/super-admin/integracoes", label: "Integrações" },
   { href: "/super-admin/catalogo-containers", label: "Catálogo de caixas" },
+  { href: "/super-admin/catalogo-navios", label: "Catálogo de navios" },
   { href: "/super-admin/tipos-container", label: "Tipos de contêiner" },
 ];
 

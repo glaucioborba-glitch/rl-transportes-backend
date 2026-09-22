@@ -12,15 +12,19 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { AcaoAuditoria, Role } from '@prisma/client';
 import type { Request } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { IsBoolean, IsIn, IsString, MinLength } from 'class-validator';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { contextoAuditoriaPortal } from './portal-auditoria-contexto.util';
 import { PlataformaMarketplaceService } from '../plataforma-integracao/services/plataforma-marketplace.service';
 import type { PlataformaServicoId } from '../plataforma-integracao/plataforma.types';
 import { SolicitacoesService } from '../solicitacoes/solicitacoes.service';
@@ -36,6 +40,7 @@ import { PortalCxInterceptor } from './interceptors/portal-cx.interceptor';
 import { PortalClienteSolicitacoesQueryDto } from './dto/portal-cliente-solicitacoes-query.dto';
 import { PixCreditoContaCorrenteDto } from './dto/pix-credito-conta-corrente.dto';
 import { UpdatePortalSolicitacaoDto } from './dto/update-portal-solicitacao.dto';
+import { UpdatePortalEmbarqueDto } from './dto/update-portal-embarque.dto';
 import { PortalClienteDataService } from './services/portal-cliente-data.service';
 import { PortalMarketplaceCxStore } from './stores/portal-marketplace-cx.store';
 import { PortalTicketsStore } from './stores/portal-tickets.store';
@@ -54,6 +59,7 @@ import { PatioV2Service } from '../patio-v2/patio.service';
 import { PortalSolicitarTomadaDto } from '../patio-v2/dto/tomada.dto';
 import { TenantConfigService } from '../tenant/tenant-config.service';
 import { CatalogoContainersService } from '../catalogo-containers/catalogo-containers.service';
+import { CatalogoNaviosService } from '../catalogo-navios/catalogo-navios.service';
 import { CatalogoMotoristasExternosService } from '../catalogo-motoristas-externos/catalogo-motoristas-externos.service';
 
 class ChamadoDto {
@@ -104,6 +110,7 @@ export class PortalClienteController {
     private readonly patio: PatioV2Service,
     private readonly tenantConfig: TenantConfigService,
     private readonly catalogoContainers: CatalogoContainersService,
+    private readonly catalogoNavios: CatalogoNaviosService,
     private readonly catalogoMotoristas: CatalogoMotoristasExternosService,
   ) {}
 
@@ -327,6 +334,33 @@ export class PortalClienteController {
     return this.data.pixCreditoContaCorrente(u, dto.valor, clienteId);
   }
 
+  @Post('financeiro/conta-corrente/pix-credito/comprovante')
+  @HttpCode(HttpStatus.CREATED)
+  @PessoaPode('visualizarFinanceiro')
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Envia comprovante PIX para análise manual do crédito na conta corrente' })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
+  async pixCreditoComprovante(
+    @Req() req: Request & { cxUser?: CxPortalRequestUser },
+    @UploadedFile() file: Express.Multer.File,
+    @Body('valor') valorRaw: string,
+    @Body('referenciaExterna') referenciaExterna: string,
+    @Query('clienteId') clienteId?: string,
+  ) {
+    const u = this.cx(req);
+    await this.audPortal(u, 'POST financeiro/conta-corrente/pix-credito/comprovante', undefined, AcaoAuditoria.INSERT);
+    return this.data.enviarComprovantePixCredito(
+      u,
+      { valorRaw, referenciaExterna, file },
+      clienteId,
+    );
+  }
+
   @Get('financeiro/faturas-armazenagem')
   @PessoaPode('visualizarFinanceiro')
   @ApiOperation({ summary: 'Faturas Gate-Out (armazenagem) com NFS-e, boleto e PIX' })
@@ -385,6 +419,18 @@ export class PortalClienteController {
     return this.data.saldoPatio(u, clienteIdParam);
   }
 
+  @Patch('patio/embarque')
+  @PessoaPode('verOS')
+  @ApiOperation({ summary: 'Editar booking, processo ou navio de unidade depositada' })
+  async atualizarEmbarquePatio(
+    @Req() req: Request & { cxUser?: CxPortalRequestUser },
+    @Body() dto: UpdatePortalEmbarqueDto,
+  ) {
+    const u = this.cx(req);
+    await this.audPortal(u, 'PATCH /cliente/portal/patio/embarque', undefined, AcaoAuditoria.UPDATE);
+    return this.data.atualizarEmbarquePatio(u, dto);
+  }
+
   @Get('catalogo-motoristas-externos/:cpf')
   @PessoaPode('criarSolicitacao')
   @ApiOperation({ summary: 'Lookup do motorista externo deste terminal (autofill por CPF)' })
@@ -405,6 +451,16 @@ export class PortalClienteController {
   ) {
     this.cx(req);
     return this.catalogoContainers.buscar(iso);
+  }
+
+  @Get('catalogo-navios')
+  @ApiOperation({ summary: 'Autocomplete de navios (catálogo compartilhado)' })
+  async listarCatalogoNavios(
+    @Req() req: Request & { cxUser?: CxPortalRequestUser },
+    @Query('q') q?: string,
+  ) {
+    this.cx(req);
+    return this.catalogoNavios.listar(q, 80);
   }
 
   @Get('patio/unidades-estoque')
@@ -526,7 +582,7 @@ export class PortalClienteController {
         registroId: u.sub,
         acao,
         usuario: u.sub,
-        dadosDepois: { portal: true, tipo: 'PORTAL', rota, portalPapel: u.portalPapel, ...extra },
+        dadosDepois: contextoAuditoriaPortal(u, { rota, ...extra }),
       });
     } catch {
       /* não bloquear CX */

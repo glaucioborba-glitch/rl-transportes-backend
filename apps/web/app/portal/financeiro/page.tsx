@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
 import { KpiCard, SectionTitle } from "@/components/portal/portal-primitives";
 import { PortalTable } from "@/components/portal/portal-table";
@@ -23,6 +24,7 @@ import { boletoStatusVariant } from "@/lib/portal-status";
 import {
   ApiError,
   criarPixCreditoContaCorrente,
+  enviarComprovantePixCredito,
   fetchBoletosPaginated,
   fetchFaturamentoPaginated,
   fetchNfsePaginated,
@@ -52,6 +54,60 @@ function nfseResumo(row: PortalFatEnvelope) {
   return String(row.statusNfe || "—");
 }
 
+function nfseNumero(row: PortalFatEnvelope) {
+  const n = row.nfsEmitidas?.[0];
+  return n?.numeroNfe?.trim() || "—";
+}
+
+function nfseStatus(row: PortalFatEnvelope) {
+  const n = row.nfsEmitidas?.[0];
+  return (n?.statusIpm || row.statusNfe || "—").trim() || "—";
+}
+
+function nfseStatusVariant(status: string) {
+  const s = status.toLowerCase();
+  if (/autoriz|aprov|emitid|ok|sucesso/.test(s)) return "aprovado" as const;
+  if (/rejeit|cancel|erro|negad/.test(s)) return "rejeitado" as const;
+  if (/pend|process|aguard/.test(s)) return "pendente" as const;
+  return "neutral" as const;
+}
+
+/** PIX: FAT, NFS-e, status e valor no mesmo quadrado. */
+function FatPixCard({ row }: { row: PortalFatEnvelope }) {
+  const valor = Number(row.valorTotal ?? 0);
+  const status = nfseStatus(row);
+  return (
+    <div className="flex h-full flex-col rounded-xl border border-white/10 bg-black/20 p-4">
+      <p className="text-[11px] font-medium uppercase tracking-widest text-slate-400">Fatura</p>
+      <p className="mt-1 font-semibold tabular-nums text-white">{row.numeroFat?.trim() || "—"}</p>
+      {(row.referencia || row.periodo) && (
+        <p className="mt-0.5 text-xs text-slate-500">{row.referencia || row.periodo}</p>
+      )}
+      <dl className="mt-4 grid flex-1 gap-3 text-sm">
+        <div>
+          <dt className="text-[11px] uppercase tracking-wide text-slate-500">NFS-e</dt>
+          <dd className="mt-0.5 font-medium tabular-nums text-white">{nfseNumero(row)}</dd>
+        </div>
+        <div>
+          <dt className="text-[11px] uppercase tracking-wide text-slate-500">Status</dt>
+          <dd className="mt-1">
+            <RawStatusBadge label={status} variant={nfseStatusVariant(status)} />
+          </dd>
+        </div>
+        <div>
+          <dt className="text-[11px] uppercase tracking-wide text-slate-500">Valor</dt>
+          <dd className="mt-0.5 text-lg font-semibold tabular-nums text-white">
+            {formatBRL(Number.isFinite(valor) ? valor : 0)}
+          </dd>
+        </div>
+      </dl>
+      <Button variant="outline" size="sm" className="mt-4 w-full" asChild>
+        <Link href={hrefPortalFat(row)}>Abrir</Link>
+      </Button>
+    </div>
+  );
+}
+
 function boletoResumo(row: PortalFatEnvelope) {
   const b = row.boletos?.[0];
   if (b?.numeroBoleto) return b.numeroBoleto;
@@ -79,6 +135,9 @@ export default function FinanceiroPage() {
   const [pixValor, setPixValor] = useState("");
   const [pixLoading, setPixLoading] = useState(false);
   const [pixResult, setPixResult] = useState<PortalPixCreditoContaCorrente | null>(null);
+  const [pixComprovante, setPixComprovante] = useState<File | null>(null);
+  const [pixComprovanteEnviando, setPixComprovanteEnviando] = useState(false);
+  const [pixComprovanteEnviado, setPixComprovanteEnviado] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -168,12 +227,41 @@ export default function FinanceiroPage() {
     }
   }
 
+  async function enviarComprovante() {
+    if (!pixResult) return;
+    if (!pixComprovante) {
+      toast.error("Selecione o comprovante do PIX (JPG, PNG ou PDF).");
+      return;
+    }
+    if (pixComprovante.size > 5 * 1024 * 1024) {
+      toast.error("O comprovante não pode passar de 5 MB.");
+      return;
+    }
+    setPixComprovanteEnviando(true);
+    try {
+      await enviarComprovantePixCredito({
+        valor: pixResult.valor,
+        referenciaExterna: pixResult.referenciaExterna,
+        file: pixComprovante,
+      });
+      setPixComprovanteEnviado(true);
+      toast.success("Comprovante enviado para análise manual.");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Não foi possível enviar o comprovante.");
+    } finally {
+      setPixComprovanteEnviando(false);
+    }
+  }
+
   function fecharPixDialog(open: boolean) {
     setPixOpen(open);
     if (!open) {
       setPixValor("");
       setPixResult(null);
       setPixLoading(false);
+      setPixComprovante(null);
+      setPixComprovanteEnviando(false);
+      setPixComprovanteEnviado(false);
     }
   }
 
@@ -211,8 +299,8 @@ export default function FinanceiroPage() {
             title="Financeiro"
             description={
               layoutFaturamento
-                ? "Faturas FAT com demonstrativo, NFS-e e boleto. Estimativas de diárias e extras ficam na Simulação de valores."
-                : "Faturas FAT com demonstrativo e NFS-e. Estimativas de diárias e extras ficam na Simulação de valores."
+                ? "Faturas FAT com demonstrativo, NFS-e e boleto. Previsão de estadia até a saída fica na Simulação de valores."
+                : "Faturas FAT com demonstrativo e NFS-e. Previsão de estadia até a saída fica na Simulação de valores."
             }
           />
         </div>
@@ -245,7 +333,7 @@ export default function FinanceiroPage() {
             <p className="mt-1 text-sm text-muted-foreground">{condicao.descricao}</p>
             {layoutFaturamento || layoutPix ? (
               <p className="mt-2 text-xs text-slate-500">
-                Para simular valores de estadia e serviços, abra{" "}
+                Para simular a estadia até uma data de saída, abra{" "}
                 <Link href="/portal/simulacao-valores" className="text-[var(--accent)] underline-offset-2 hover:underline">
                   Simulação de valores
                 </Link>
@@ -294,7 +382,7 @@ export default function FinanceiroPage() {
       )}
 
       <Dialog open={pixOpen} onOpenChange={fecharPixDialog}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Adicionar crédito à sua conta corrente</DialogTitle>
             <DialogDescription>
@@ -349,20 +437,65 @@ export default function FinanceiroPage() {
               </Button>
             )}
           </DialogFooter>
+          {pixResult ? (
+            <div className="space-y-3 border-t border-white/10 pt-4">
+              <Label htmlFor="pix-comprovante">Comprovante do PIX</Label>
+              <Input
+                id="pix-comprovante"
+                type="file"
+                accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
+                disabled={pixComprovanteEnviado || pixComprovanteEnviando}
+                onChange={(e) => setPixComprovante(e.target.files?.[0] ?? null)}
+              />
+              {pixComprovante ? (
+                <p className="text-xs text-emerald-300">{pixComprovante.name}</p>
+              ) : null}
+              <p className="text-xs leading-relaxed text-slate-400">
+                Está com dificuldades? Envie o comprovante do PIX para análise manual. Ela acontece de segunda a
+                sexta, das 9:00 às 18:00 horas e pode levar até 2 horas para ser confirmada e o saldo entrar em sua
+                conta. Crédito não garantido, depende de verificação.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pixComprovanteEnviado || pixComprovanteEnviando}
+                onClick={() => void enviarComprovante()}
+              >
+                {pixComprovanteEnviado
+                  ? "Comprovante enviado"
+                  : pixComprovanteEnviando
+                    ? "Enviando…"
+                    : "Enviar comprovante"}
+              </Button>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
 
       <Card>
         <CardHeader>
-          <CardTitle>FAT</CardTitle>
+          <CardTitle>{layoutPix ? "Fatura" : "FAT"}</CardTitle>
         </CardHeader>
+        {layoutPix ? (
+          <CardContent>
+            {fats.length === 0 ? (
+              <p className="py-8 text-center text-sm text-slate-500">Nenhum registro</p>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {fats.map((r) => (
+                  <FatPixCard key={`${r.origem}-${r.id}`} row={r} />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        ) : (
         <CardContent className="p-0">
           <PortalTable
             columns={[
               { key: "fat", header: "FAT" },
               { key: "ref", header: "Referência" },
               { key: "nfse", header: "NFS-e" },
-              ...(layoutPix ? [] : [{ key: "boleto", header: "Boleto" }]),
+              { key: "boleto", header: "Boleto" },
               { key: "act", header: "" },
             ]}
             rows={fats}
@@ -382,10 +515,11 @@ export default function FinanceiroPage() {
             }}
           />
         </CardContent>
+        )}
       </Card>
 
-      <div className={layoutPix ? "grid gap-6" : "grid gap-6 lg:grid-cols-2"}>
-        {layoutPix ? null : (
+      {layoutPix ? null : (
+      <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Boletos</CardTitle>
@@ -421,7 +555,6 @@ export default function FinanceiroPage() {
             />
           </CardContent>
         </Card>
-        )}
 
         <Card>
           <CardHeader>
@@ -454,6 +587,7 @@ export default function FinanceiroPage() {
           </CardContent>
         </Card>
       </div>
+      )}
     </main>
   );
 }

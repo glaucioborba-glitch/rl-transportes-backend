@@ -1,5 +1,20 @@
 import { withSentryConfig } from "@sentry/nextjs";
 import withPWAInit from "@ducanh2912/next-pwa";
+import { copyFileSync, existsSync } from "fs";
+import { createRequire } from "module";
+import { join } from "path";
+
+try {
+  const require = createRequire(import.meta.url);
+  const destDir = join(process.cwd(), "public");
+  for (const file of ["pdf.worker.min.mjs", "pdf.min.mjs"]) {
+    const workerSrc = require.resolve(`pdfjs-dist/build/${file}`);
+    const workerDest = join(destDir, file);
+    if (existsSync(workerSrc)) copyFileSync(workerSrc, workerDest);
+  }
+} catch {
+  /* pdfjs-dist ainda não instalado */
+}
 
 /** @type {import('next').NextConfig} */
 const isProd = process.env.NODE_ENV === "production";
@@ -16,6 +31,10 @@ function buildConnectSrc() {
     "'self'",
     "http://localhost:3001",
     "http://127.0.0.1:3001",
+    "http://localhost:39201",
+    "http://127.0.0.1:39201",
+    "http://localhost:39202",
+    "http://127.0.0.1:39202",
     "ws://localhost:3000",
     "ws://localhost:3001",
     "https://*.sentry.io",
@@ -47,7 +66,9 @@ const securityHeaders = [
       img-src 'self' data: blob: http://localhost:3001 http://127.0.0.1:3001 https://tile.openstreetmap.org https://*.tile.openstreetmap.org https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.ggpht.com ${storageImgHosts.join(" ")};
       connect-src ${buildConnectSrc()} https://maps.googleapis.com https://maps.gstatic.com https://*.googleapis.com https://*.gstatic.com;
       font-src 'self' https://fonts.gstatic.com;
-      frame-src 'self' https://maps.google.com https://www.google.com;
+      worker-src 'self' blob:;
+      object-src 'self' blob: data:;
+      frame-src 'self' blob: data: https://maps.google.com https://www.google.com;
     `.replace(/\s{2,}/g, " "),
   },
 ];

@@ -7,9 +7,16 @@ import { EnterpriseDomainModule } from './enterprise/enterprise-domain.module';
 /**
  * Módulos opcionais conforme FEATURE_PHASES.
  * operational | lean → só bounded contexts críticos (Gate, Pátio, Billing, Portal).
+ * Em produção o padrão é enxuto: BI/Analytics/Enterprise só entram se pedidos.
  */
+function faseConfigurada(): string {
+  const bruta = process.env.FEATURE_PHASES?.toLowerCase().trim();
+  if (bruta) return bruta;
+  return process.env.NODE_ENV === 'production' ? 'operational' : 'full';
+}
+
 export function resolvePhaseImports(): Type[] {
-  const phase = (process.env.FEATURE_PHASES ?? 'full').toLowerCase().trim();
+  const phase = faseConfigurada();
   const lean = phase === 'operational' || phase === 'lean' || phase === '0';
   if (lean) {
     return [BillingLazyModule];
@@ -29,7 +36,7 @@ export function resolvePhaseImports(): Type[] {
 }
 
 export function isOperationalPhase(): boolean {
-  const phase = (process.env.FEATURE_PHASES ?? 'full').toLowerCase().trim();
+  const phase = faseConfigurada();
   return phase === 'operational' || phase === 'lean' || phase === '0';
 }
 

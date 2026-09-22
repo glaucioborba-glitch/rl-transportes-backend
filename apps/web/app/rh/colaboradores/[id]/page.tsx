@@ -12,6 +12,8 @@ import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { toast } from "@/lib/toast";
 import { rhUserOverridesKey, readJson, writeJson } from "@/lib/rh/storage";
+import { AuditoriaAcaoBadge } from "@/components/audit-trail/auditoria-classificacao-badge";
+import { AuditoriaGerencialLink } from "@/components/audit-trail/auditoria-gerencial-link";
 
 type AuditRow = {
   id: string;
@@ -214,14 +216,26 @@ export default function RhColaboradorDetailPage() {
         </RhCard>
       )}
 
-      <RhCard title="E) Auditoria RH" subtitle="GET /auditoria?tabela=users">
+      <RhCard
+        title="E) Histórico deste colaborador"
+        subtitle="Classificação alinhada ao menu Auditoria"
+      >
+        <div className="mb-3">
+          <AuditoriaGerencialLink q={idRaw} label="Abrir no menu Auditoria" />
+        </div>
         {audit.length === 0 ? (
           <p className="text-sm text-zinc-500">Nenhum evento indexado para este registro.</p>
         ) : (
           <ul className="space-y-2 text-sm">
             {audit.map((a) => (
-              <li key={a.id} className="rounded-md border border-white/5 bg-zinc-900/40 px-3 py-2">
-                <span className="text-zinc-500 text-xs">{a.createdAt}</span> ·{" "}
+              <li key={a.id} className="flex flex-wrap items-center gap-2 rounded-md border border-white/5 bg-zinc-900/40 px-3 py-2">
+                <span className="text-zinc-500 text-xs">{a.createdAt}</span>
+                <AuditoriaAcaoBadge
+                  acao={a.acao}
+                  tabela={a.tabela}
+                  dadosNovos={a.dadosDepois}
+                  dadosAnteriores={a.dadosAntes}
+                />
                 <span className="text-cyan-300">{a.acao}</span>
               </li>
             ))}

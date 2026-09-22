@@ -2,7 +2,10 @@ import {
   buildLinhaTomadaDiaria,
   buildLinhasAberturaTabela,
   diasTomadaFaturaveis,
+  isLancamentoAutomaticoExcluido,
   isLancamentoAutomaticoTabela,
+  isTomadaAutomaticoCodigo,
+  tipoAutomaticoExcluivel,
   pickItemMatrizArmazenagem,
   pickItemMatrizEnergia,
 } from './servicos-abertura-tabela.util';
@@ -142,5 +145,19 @@ describe('servicos-abertura-tabela', () => {
   it('reconhece payload automático da tabela', () => {
     expect(isLancamentoAutomaticoTabela({ automatico: true, origem: 'TABELA_PRECO' })).toBe(true);
     expect(isLancamentoAutomaticoTabela({ efeito: 'NENHUM' })).toBe(false);
+  });
+
+  it('marca handling automático excluído sem perder o lançamento', () => {
+    expect(
+      isLancamentoAutomaticoExcluido({
+        automatico: true,
+        origem: 'TABELA_PRECO',
+        cobranca: 'HANDLING',
+        excluido: true,
+      }),
+    ).toBe(true);
+    expect(isLancamentoAutomaticoExcluido({ automatico: true, origem: 'TABELA_PRECO' })).toBe(false);
+    expect(isTomadaAutomaticoCodigo('TOMADA')).toBe(true);
+    expect(tipoAutomaticoExcluivel('tomada')).toBe('TOMADA');
   });
 });

@@ -1,28 +1,23 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { PatioStatus, StatusSolicitacao } from '@prisma/client';
-import { CadastrosTabelasServicosService } from '../../cadastros/cadastros-tabelas-servicos.service';
+import { PatioStatus, StatusPreFatura, StatusSolicitacao } from '@prisma/client';
 import { BillingRuleEngineService } from '../../billing-engine/billing-rule-engine.service';
+import { ArmazenagemBillingService } from '../../armazenagem-faturamento/armazenagem-billing.service';
+import { flagsExclusaoAutomatica } from '../../armazenagem-faturamento/fatura-extras.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { CxPortalRequestUser } from '../types/cx-portal.types';
 import { assertClienteDoTenant } from '../portal-cliente-tenant.util';
 import { PortalClienteDataService } from './portal-cliente-data.service';
 import {
-  isServicoAdicionalCodigo,
-  labelUnidadeCobranca,
-  normalizeOperacaoCodigo,
+  AVISO_PREVISAO_SIMULACAO,
+  MAX_UNIDADES_SIMULACAO,
+  mesclarPreFaturaComProjecao,
   parseDataSaida,
+  roundMoneySimulacao,
+  type ItemSimulacaoLike,
 } from '../portal-simulacao-valores.util';
+import type { SimularValoresPortalDto } from '../dto/portal-simulacao-valores.dto';
 
 const PATIO_ATIVO: PatioStatus[] = [PatioStatus.ESTOCADO, PatioStatus.MOVIMENTANDO, PatioStatus.SEPARADO];
-
-export type PortalSimulacaoServico = {
-  codigo: string;
-  nome: string;
-  descricao: string | null;
-  unidadeCobranca: string;
-  unidadeCobrancaLabel: string;
-  valorEstimado: number | null;
-};
 
 export type PortalSimulacaoItem = {
   descricao: string;
@@ -30,7 +25,20 @@ export type PortalSimulacaoItem = {
   quantidade: number;
   valorUnitario: number;
   valorTotal: number;
-  origem: 'ARMAZENAGEM' | 'SERVICO_ADICIONAL';
+  origem: 'PRE_FATURA' | 'PROJECAO';
+  eventoGatilho?: string;
+};
+
+type UnidadeSaldo = {
+  id: string;
+  unidadeIso: string;
+  tipo: string;
+  tamanho: string | null;
+  statusContainer: 'CHEIO' | 'VAZIO' | null;
+  refrigerado: boolean;
+  entradaEm: string;
+  protocolo: string;
+  diasNoPatio: number;
 };
 
 @Injectable()
@@ -39,36 +47,100 @@ export class PortalSimulacaoValoresService {
     private readonly prisma: PrismaService,
     private readonly patio: PortalClienteDataService,
     private readonly rules: BillingRuleEngineService,
-    private readonly tabelasServicos: CadastrosTabelasServicosService,
+    private readonly billing: ArmazenagemBillingService,
   ) {}
 
-  async catalogo(cx: CxPortalRequestUser, clienteIdParam?: string, _unidadeId?: string) {
-    const saldo = await this.patio.saldoPatio(cx, clienteIdParam);
+  async catalogo(cx: CxPortalRequestUser, clienteIdParam?: string) {
     const clienteId = await this.resolveClienteId(cx, clienteIdParam);
-    const servicos = await this.listarServicos(clienteId);
+    const saldo = await this.patio.saldoPatio(cx, clienteIdParam);
+    const lancados = await this.valoresLancadosPorIso(
+      clienteId,
+      saldo.items.map((i) => i.unidadeIso),
+    );
     return {
-      unidades: saldo.items,
-      servicos,
+      unidades: saldo.items.map((u) => {
+        const hit = lancados.get(this.isoKey(u.unidadeIso));
+        return {
+          ...u,
+          valorLancado: hit?.valor ?? 0,
+          preFaturaId: hit?.id ?? null,
+        };
+      }),
+      servicos: [] as const,
       atualizadoEm: saldo.atualizadoEm,
+      aviso: AVISO_PREVISAO_SIMULACAO,
     };
   }
 
-  async simular(
-    cx: CxPortalRequestUser,
-    dto: { unidadeId: string; dataSaida: string; servicos?: string[] },
-    clienteIdParam?: string,
-  ) {
+  async simular(cx: CxPortalRequestUser, dto: SimularValoresPortalDto, clienteIdParam?: string) {
+    const ids = this.idsSolicitados(dto);
     const clienteId = await this.resolveClienteId(cx, clienteIdParam);
     const saldo = await this.patio.saldoPatio(cx, clienteIdParam);
-    const unidade = saldo.items.find((i) => i.id === dto.unidadeId || i.unidadeIso === dto.unidadeId);
-    if (!unidade) {
-      throw new NotFoundException('Unidade não encontrada no pátio da sua empresa.');
+    parseDataSaida(dto.dataSaida);
+
+    const unidades: PortalSimulacaoUnidadeResultado[] = [];
+    for (const rawId of ids) {
+      const unidade = saldo.items.find((i) => i.id === rawId || this.isoKey(i.unidadeIso) === this.isoKey(rawId));
+      if (!unidade) {
+        throw new NotFoundException(`Unidade ${rawId} não encontrada no pátio da sua empresa.`);
+      }
+      unidades.push(await this.simularUma(clienteId, unidade as UnidadeSaldo, dto.dataSaida));
     }
 
-    const asOf = parseDataSaida(dto.dataSaida);
+    const totalGeral = roundMoneySimulacao(unidades.reduce((acc, u) => acc + u.total, 0));
+    const valorLancadoGeral = roundMoneySimulacao(unidades.reduce((acc, u) => acc + u.valorLancado, 0));
+
+    return {
+      dataSaida: dto.dataSaida,
+      estimativa: true,
+      avisoGeral: AVISO_PREVISAO_SIMULACAO,
+      unidades,
+      totalGeral,
+      valorLancadoGeral,
+    };
+  }
+
+  private idsSolicitados(dto: SimularValoresPortalDto): string[] {
+    const fromList = (dto.unidadeIds ?? []).map((id) => id.trim()).filter(Boolean);
+    const legacy = dto.unidadeId?.trim();
+    const merged = [...new Set(legacy ? [legacy, ...fromList] : fromList)];
+    if (!merged.length) {
+      throw new BadRequestException('Selecione ao menos uma unidade no pátio.');
+    }
+    if (merged.length > MAX_UNIDADES_SIMULACAO) {
+      throw new BadRequestException(`Simule no máximo ${MAX_UNIDADES_SIMULACAO} unidades por vez.`);
+    }
+    return merged;
+  }
+
+  private async simularUma(
+    clienteId: string,
+    unidade: UnidadeSaldo,
+    dataSaida: string,
+  ): Promise<PortalSimulacaoUnidadeResultado> {
+    if (dataSaida < unidade.entradaEm.slice(0, 10)) {
+      throw new BadRequestException(
+        `A data de saída não pode ser anterior à entrada de ${unidade.unidadeIso} no pátio.`,
+      );
+    }
+
+    const asOf = parseDataSaida(dataSaida);
     const entrada = new Date(unidade.entradaEm);
-    if (dto.dataSaida < unidade.entradaEm.slice(0, 10)) {
-      throw new BadRequestException('A data de saída não pode ser anterior à entrada da unidade no pátio.');
+    let pf = await this.prisma.preFatura.findFirst({
+      where: {
+        clienteId,
+        containerIso: { equals: this.isoKey(unidade.unidadeIso), mode: 'insensitive' },
+        status: StatusPreFatura.ABERTA,
+      },
+      include: { itens: { orderBy: { createdAt: 'asc' } } },
+      orderBy: { gateInAt: 'desc' },
+    });
+    if (pf?.unidadeProcessoId) {
+      await this.billing.refreshExtrasForProcesso(pf.unidadeProcessoId);
+      pf = await this.prisma.preFatura.findFirst({
+        where: { id: pf.id },
+        include: { itens: { orderBy: { createdAt: 'asc' } } },
+      });
     }
 
     const resolved = await this.resolveCiclo(clienteId, unidade.id, unidade.unidadeIso, entrada);
@@ -78,6 +150,7 @@ export class PortalSimulacaoValoresService {
       select: { tenantId: true },
     });
     const tenantId = cliente?.tenantId ?? 'default';
+    const exclusao = await flagsExclusaoAutomatica(this.prisma, pf?.unidadeProcessoId);
 
     const evaluation = await this.rules.evaluateForContainerCycleWithTenant(tenantId, {
       gateInAt: resolved.gateInAt,
@@ -89,22 +162,43 @@ export class PortalSimulacaoValoresService {
       tabelaPrecoId: pricing.tabelaPrecoId,
       gateInId: resolved.gateInId,
       containerIso: unidade.unidadeIso,
+      forcarDiasFreeTime: pf?.freeTimeZerado ? 0 : undefined,
+      omitirHandling: exclusao.omitirHandling,
+      omitirEnergia: exclusao.omitirEnergia,
     });
 
-    const itens: PortalSimulacaoItem[] = evaluation.items.map((item) => ({
-      descricao: item.descricao,
-      detalheCobranca: item.detalheCobranca,
-      quantidade: item.quantidade,
-      valorUnitario: item.valorUnitario,
-      valorTotal: item.valorTotal,
-      origem: 'ARMAZENAGEM' as const,
+    const lancados: ItemSimulacaoLike[] = (pf?.itens ?? []).map((i) => ({
+      eventoGatilho: i.eventoGatilho,
+      descricao: i.descricao,
+      quantidade: i.quantidade,
+      valorUnitario: Number(i.valorUnitario),
+      valorTotal: Number(i.valorTotal),
     }));
+    const projetados: ItemSimulacaoLike[] = evaluation.items.map((i) => ({
+      eventoGatilho: i.eventoGatilho,
+      descricao: i.descricao,
+      detalheCobranca: i.detalheCobranca,
+      quantidade: i.quantidade,
+      valorUnitario: i.valorUnitario,
+      valorTotal: i.valorTotal,
+    }));
+    const mesclados = mesclarPreFaturaComProjecao(lancados, projetados);
+    const itens: PortalSimulacaoItem[] = mesclados.map((i) => ({
+      descricao: i.descricao,
+      detalheCobranca: i.detalheCobranca,
+      quantidade: i.quantidade,
+      valorUnitario: i.valorUnitario,
+      valorTotal: i.valorTotal,
+      origem: i.origem,
+      eventoGatilho: i.eventoGatilho,
+    }));
+    const total = roundMoneySimulacao(itens.reduce((acc, i) => acc + i.valorTotal, 0));
+    const valorLancado = roundMoneySimulacao(Number(pf?.valorAcumulado ?? 0));
 
     const avisos: string[] = [];
-    const extras = await this.precificarExtras(dto.servicos ?? [], avisos, clienteId);
-    itens.push(...extras);
-
-    const total = Math.round(itens.reduce((acc, i) => acc + i.valorTotal, 0) * 100) / 100;
+    if (!pf) {
+      avisos.push('Não há pré-fatura aberta para esta unidade. A previsão usa só a tabela vigente.');
+    }
 
     return {
       unidade: {
@@ -117,15 +211,52 @@ export class PortalSimulacaoValoresService {
         entradaEm: unidade.entradaEm,
         protocolo: unidade.protocolo,
       },
-      dataSaida: dto.dataSaida,
+      dataSaida,
       diasNoPatio: evaluation.diasNoPatio,
       diasFreeTime: evaluation.diasFreeTime,
       diasFaturaveis: evaluation.diasFaturaveis,
+      valorLancado,
+      preFaturaId: pf?.id ?? null,
       itens,
       total,
       avisos,
       estimativa: true,
     };
+  }
+
+  private async valoresLancadosPorIso(clienteId: string, isos: string[]) {
+    const keys = new Set(isos.map((iso) => this.isoKey(iso)).filter(Boolean));
+    if (!keys.size) return new Map<string, { id: string; valor: number }>();
+    const rows = await this.prisma.preFatura.findMany({
+      where: { clienteId, status: StatusPreFatura.ABERTA },
+      select: { id: true, containerIso: true, valorAcumulado: true, gateInAt: true, unidadeProcessoId: true },
+      orderBy: { gateInAt: 'desc' },
+    });
+    const seen = new Set<string>();
+    for (const row of rows) {
+      const k = this.isoKey(row.containerIso);
+      if (!keys.has(k) || seen.has(k) || !row.unidadeProcessoId) continue;
+      seen.add(k);
+      if (Number(row.valorAcumulado) === 0) {
+        await this.billing.refreshExtrasForProcesso(row.unidadeProcessoId);
+      }
+    }
+    const refreshed = await this.prisma.preFatura.findMany({
+      where: { clienteId, status: StatusPreFatura.ABERTA },
+      select: { id: true, containerIso: true, valorAcumulado: true, gateInAt: true },
+      orderBy: { gateInAt: 'desc' },
+    });
+    const map = new Map<string, { id: string; valor: number }>();
+    for (const row of refreshed) {
+      const k = this.isoKey(row.containerIso);
+      if (!keys.has(k) || map.has(k)) continue;
+      map.set(k, { id: row.id, valor: Number(row.valorAcumulado) });
+    }
+    return map;
+  }
+
+  private isoKey(iso: string): string {
+    return iso.replace(/\s/g, '').toUpperCase();
   }
 
   private async resolveClienteId(cx: CxPortalRequestUser, clienteIdParam?: string): Promise<string> {
@@ -137,58 +268,6 @@ export class PortalSimulacaoValoresService {
     const id = cx.clienteId?.trim();
     if (!id) throw new BadRequestException('Usuário portal sem vínculo de cliente');
     return id;
-  }
-
-  private async listarServicos(clienteId: string): Promise<PortalSimulacaoServico[]> {
-    const catalogo = await this.tabelasServicos.listCatalogoAtivo('default', { clienteId });
-    return catalogo.items
-      .filter((i) => isServicoAdicionalCodigo(i.codigo))
-      .map((i) => ({
-        codigo: i.codigo,
-        nome: i.nome,
-        descricao: null,
-        unidadeCobranca: i.unidade,
-        unidadeCobrancaLabel: labelUnidadeCobranca(i.unidade),
-        valorEstimado: i.valor,
-      }))
-      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-  }
-
-  private async precificarExtras(
-    servicos: string[],
-    avisos: string[],
-    clienteId: string,
-  ): Promise<PortalSimulacaoItem[]> {
-    const wanted = [...new Set(servicos.map(normalizeOperacaoCodigo).filter(isServicoAdicionalCodigo))];
-    if (!wanted.length) return [];
-
-    const catalogo = await this.tabelasServicos.listCatalogoAtivo('default', { clienteId });
-    if (!catalogo.items.length) {
-      avisos.push('Não há tabela de serviços vigente para os adicionais.');
-      return [];
-    }
-    const byCodigo = new Map(catalogo.items.map((i) => [normalizeOperacaoCodigo(i.codigo), i]));
-
-    const itens: PortalSimulacaoItem[] = [];
-    for (const codigo of wanted) {
-      const hit = byCodigo.get(codigo);
-      if (!hit) {
-        avisos.push(`Sem preço vigente para ${codigo} na tabela de serviços.`);
-        continue;
-      }
-      const porHora = hit.unidade.toUpperCase() === 'POR_HORA';
-      if (porHora) {
-        avisos.push(`${hit.nome}: valor por hora — estimativa com 1 hora.`);
-      }
-      itens.push({
-        descricao: porHora ? `${hit.nome} (1 hora)` : hit.nome,
-        quantidade: 1,
-        valorUnitario: hit.valor,
-        valorTotal: hit.valor,
-        origem: 'SERVICO_ADICIONAL',
-      });
-    }
-    return itens;
   }
 
   private async resolveCiclo(
@@ -283,3 +362,26 @@ export class PortalSimulacaoValoresService {
     };
   }
 }
+
+export type PortalSimulacaoUnidadeResultado = {
+  unidade: {
+    id: string;
+    unidadeIso: string;
+    tipo: string;
+    tamanho: string | null;
+    statusContainer: 'CHEIO' | 'VAZIO' | null;
+    refrigerado: boolean;
+    entradaEm: string;
+    protocolo: string;
+  };
+  dataSaida: string;
+  diasNoPatio: number;
+  diasFreeTime: number;
+  diasFaturaveis: number;
+  valorLancado: number;
+  preFaturaId: string | null;
+  itens: PortalSimulacaoItem[];
+  total: number;
+  avisos: string[];
+  estimativa: boolean;
+};

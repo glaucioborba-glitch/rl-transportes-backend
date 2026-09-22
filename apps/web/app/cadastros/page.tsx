@@ -45,14 +45,14 @@ const BLOCOS: BlocoCardDef[] = [
     title: "Operacional",
     href: "/cadastros/operacional",
     icon: Boxes,
-    desc: "Equipamentos, Posições, Tipos de Operação, Origens e destinos",
+    desc: "Equipamentos, Posições, Origens e destinos",
   },
   {
     id: "financeiro",
     title: "Financeiro",
     href: "/cadastros/financeiro",
     icon: DollarSign,
-    desc: "Bancos, Tabelas de Preços, Tabela de transportes, Serviços, Forma e prazo",
+    desc: "Bancos, Tabelas de Preços, Tabela de transportes, Serviços, Forma e Prazo de Pagamento",
   },
   {
     id: "contratos",

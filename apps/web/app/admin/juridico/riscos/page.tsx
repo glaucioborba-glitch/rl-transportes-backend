@@ -9,26 +9,24 @@ import { readJson, adminContractsKey } from "@/lib/admin/storage";
 import type { AdminContract } from "@/lib/admin/types";
 import { ContractCard } from "@/components/admin/contract-card";
 import { LegalRiskGauge } from "@/components/admin/legal-risk-gauge";
-import { ComplianceTimeline } from "@/components/admin/compliance-timeline";
 import { ViolationList, type ViolationItem } from "@/components/admin/violation-list";
+import { AuditoriaHubCard } from "@/components/audit-trail/auditoria-hub-card";
 
 export default function AdminJuridicoRiscosPage() {
   const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [violations, setViolations] = useState<ViolationItem[]>([]);
-  const [auditEvents, setAuditEvents] = useState<{ id: string; at: string; label: string; tone?: "neutral" | "warn" | "crit" }[]>([]);
   const [riskNum, setRiskNum] = useState(45);
 
   useEffect(() => {
     const { ini, fim } = lastNDays(14);
     void (async () => {
       try {
-        const [dash, perf, aud] = await Promise.all([
+        const [dash, perf] = await Promise.all([
           staffJson<{ conflitos: { unidadesComISORepetido: number; gatesSemPortaria: number; saidasSemGateOuPatio: number; tentativas403PorEscopo: number } }>(`/dashboard?dataInicio=${ini}&dataFim=${fim}`),
           staffJson<{
             gargalos: { isoDuplicado: number; violacoesGateSemPortaria: number; violacoesSaidaSemCompleto: number };
             estrategicos: { taxaRetrabalho: number | null };
           }>(`/dashboard-performance?dataInicio=${ini}&dataFim=${fim}`),
-          staffJson<{ data: { id: string; createdAt: string; tabela: string; acao: string }[] }>(`/auditoria?limit=15&order=desc`).catch(() => ({ data: [] })),
         ]);
         const v: ViolationItem[] = [];
         if (dash.conflitos.unidadesComISORepetido > 0) {
@@ -105,14 +103,6 @@ export default function AdminJuridicoRiscosPage() {
           });
         }
         setViolations(v);
-        setAuditEvents(
-          (aud.data ?? []).map((a) => ({
-            id: a.id,
-            at: a.createdAt,
-            label: `${a.tabela} · ${a.acao}`,
-            tone: a.acao.includes("DELETE") ? "crit" : "neutral",
-          })),
-        );
         setRiskNum(Math.min(95, v.length * 12 + Math.round(retr * 100)));
       } catch {
         setViolations([]);
@@ -126,7 +116,7 @@ export default function AdminJuridicoRiscosPage() {
     <div className="space-y-6">
       <div>
         <h1 className="font-serif text-3xl font-bold text-white">Riscos & conformidade</h1>
-        <p className="text-sm text-zinc-500">Dados reais do backend + leitura de auditoria.</p>
+        <p className="text-sm text-zinc-500">Dados reais do backend. A trilha de auditoria fica no menu Auditoria.</p>
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
         <ContractCard title="Índice composto" subtitle="Proxy local">
@@ -137,11 +127,10 @@ export default function AdminJuridicoRiscosPage() {
             <ViolationList items={violations} />
           </div>
         </ContractCard>
-        <ContractCard title="Linha do tempo — auditoria" subtitle="GET /auditoria">
-          <div className="max-h-[420px] overflow-y-auto">
-            {auditEvents.length === 0 ? <p className="text-sm text-zinc-500">Sem eventos.</p> : <ComplianceTimeline events={auditEvents} />}
-          </div>
-        </ContractCard>
+        <AuditoriaHubCard
+          titulo="Linha do tempo — auditoria"
+          descricao="O dump local saiu desta tela. Eventos jurídicos, exclusões e alterações críticas estão classificados no menu Auditoria."
+        />
       </div>
       <ContractCard title="Análise de adequação contratual (front)" subtitle="Recomendações heurísticas">
         <AdequacaoPanel />

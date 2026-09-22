@@ -219,6 +219,44 @@ export function tiposEquivalentesFoto(tipo: string): string[] {
   return [...(ALIASES_FOTO_REFAZER[key] ?? [key])];
 }
 
+/** Fotos mínimas da vistoria na portaria (cavalo + carreta + 4 faces). */
+export const TIPOS_FOTO_VISTORIA_BASE = [
+  'CONTAINER_OCR',
+  'PLACA_OCR',
+  'PLACA_CARRETA_OCR',
+  'LADO_FRONTAL',
+  'LADO_TRASEIRO',
+  'LADO_DIREITO',
+  'LADO_ESQUERDO',
+] as const;
+
+export function tiposFotoVistoriaObrigatorias(tipoCaminhao?: string | null): string[] {
+  const tipos: string[] = [...TIPOS_FOTO_VISTORIA_BASE];
+  if (isRodotrem(tipoCaminhao)) {
+    const idx = tipos.indexOf('PLACA_CARRETA_OCR');
+    tipos.splice(idx + 1, 0, 'PLACA_CARRETA_02_OCR');
+  }
+  return tipos;
+}
+
+export function fotoVistoriaPresente(
+  fotos: Array<{ tipo?: string; imagem?: string }> | null | undefined,
+  tipoCanonico: string,
+): boolean {
+  const aliases = new Set(tiposEquivalentesFoto(tipoCanonico).map((t) => t.toUpperCase()));
+  return (fotos ?? []).some((f) => {
+    if (!aliases.has(String(f.tipo ?? '').toUpperCase())) return false;
+    return String(f.imagem ?? '').trim().length > 0;
+  });
+}
+
+export function fotosVistoriaObrigatoriasAusentes(
+  fotos: Array<{ tipo?: string; imagem?: string }> | null | undefined,
+  tipoCaminhao?: string | null,
+): string[] {
+  return tiposFotoVistoriaObrigatorias(tipoCaminhao).filter((t) => !fotoVistoriaPresente(fotos, t));
+}
+
 export function rotuloFotoVistoria(tipo: string): string {
   const key = String(tipo ?? '').toUpperCase();
   return ROTULO_FOTO_VISTORIA[key] ?? key.replace(/_/g, ' ').toLowerCase();
@@ -400,6 +438,25 @@ export function aplicarConfirmacaoGate(
       semCaptura: itens.filter((i) => i.status === 'SEM_CAPTURA').length,
     },
   };
+}
+
+/**
+ * Na conferência OCR o Gate só escolhe agendamento ou OCR — sem valor digitado.
+ * `informado` já deve estar normalizado com a mesma função.
+ */
+export function origemValorConferenciaOcr(
+  solicitado: string | null | undefined,
+  capturado: string | null | undefined,
+  informado: string,
+  normalizar: (value: string | null | undefined) => string,
+): 'ocr' | 'agendamento' | null {
+  const next = normalizar(informado);
+  if (!next) return null;
+  const ocr = normalizar(capturado === '—' ? '' : capturado);
+  const agenda = normalizar(solicitado === '—' ? '' : solicitado);
+  if (ocr && next === ocr) return 'ocr';
+  if (agenda && next === agenda) return 'agendamento';
+  return null;
 }
 
 export function colunaControle(state: string, atualizadoEm?: Date | string | null): ControleColuna | null {

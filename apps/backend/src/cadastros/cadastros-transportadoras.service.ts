@@ -18,6 +18,9 @@ import {
 } from './cliente-transportadora-sync.util';
 import { CadastrosTransportadoraFormDto } from './dto/cadastros-transportadora-form.dto';
 import { CadastrosTransportadoraQueryDto } from './dto/cadastros-transportadora-query.dto';
+import {
+  mensagemCnpjJaCadastrado,
+} from '../common/utils/documento-unico.util';
 
 const PAGE_SIZE = 10;
 
@@ -161,11 +164,11 @@ export class CadastrosTransportadorasService {
     this.assertCnpjValido(dto.cnpj);
     const cnpj = dto.cnpj.replace(/\D/g, '');
     const dup = await this.prisma.cadastroTransportadora.findFirst({
-      where: { cnpj, deletedAt: null },
+      where: { cnpj },
       select: { id: true, razaoSocial: true },
     });
     if (dup) {
-      throw new ConflictException(`CNPJ já cadastrado: ${dup.razaoSocial}.`);
+      throw new ConflictException(mensagemCnpjJaCadastrado(dup.razaoSocial));
     }
 
     const data = this.buildPrismaData(dto, cnpj);
@@ -204,11 +207,11 @@ export class CadastrosTransportadorasService {
     const cnpj = dto.cnpj.replace(/\D/g, '');
     if (cnpj !== antes.cnpj) {
       const dup = await this.prisma.cadastroTransportadora.findFirst({
-        where: { cnpj, deletedAt: null, NOT: { id } },
+        where: { cnpj, NOT: { id } },
         select: { razaoSocial: true },
       });
       if (dup) {
-        throw new ConflictException(`CNPJ já cadastrado: ${dup.razaoSocial}.`);
+        throw new ConflictException(mensagemCnpjJaCadastrado(dup.razaoSocial));
       }
     }
 

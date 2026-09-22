@@ -7,8 +7,10 @@ export const MOTIVO_CONTA_CORRENTE_LABEL: Record<MotivoLancamentoContaCorrente, 
   ACORDO_COMERCIAL: 'Acordo comercial',
   AJUSTE_FATURA: 'Ajuste de fatura',
   PIX_A_MAIOR: 'PIX a maior',
+  PIX_MANUAL_FORA_SISTEMA: 'PIX manual fora do sistema',
   LIBERACAO_PAGAR_DEPOIS: 'Liberação — pagar depois',
   COMPENSACAO: 'Compensação',
+  QUITACAO_ID: 'Quitação do ID',
   OUTRO: 'Outro',
 };
 
@@ -39,6 +41,9 @@ export function rotuloSaldo(saldo: number): string {
   return 'Em aberto — pagar depois';
 }
 
+export const ANEXO_LANCAMENTO_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+export const ANEXO_LANCAMENTO_MAX = 5 * 1024 * 1024;
+
 export function toMoneyNumber(value: unknown): number {
   if (typeof value === 'number') return Math.round(value * 100) / 100;
   if (typeof value === 'string') return Math.round(Number(value) * 100) / 100 || 0;
@@ -46,4 +51,15 @@ export function toMoneyNumber(value: unknown): number {
     return Math.round(Number(String(value)) * 100) / 100 || 0;
   }
   return 0;
+}
+
+export function ordenarContasCorrente<
+  T extends { comprovantesPendentes: number; saldo: number; razaoSocial: string },
+>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const pa = a.comprovantesPendentes > 0 ? 1 : 0;
+    const pb = b.comprovantesPendentes > 0 ? 1 : 0;
+    if (pb !== pa) return pb - pa;
+    return Math.abs(b.saldo) - Math.abs(a.saldo) || a.razaoSocial.localeCompare(b.razaoSocial, 'pt-BR');
+  });
 }

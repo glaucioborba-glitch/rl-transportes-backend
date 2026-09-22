@@ -29,6 +29,23 @@ export function isSolicitacaoSaidaIntent(
   return value === "SOLICITAR_COLETA" || value === "SOLICITAR_EXPORTACAO_ENTREGA_DEPOT";
 }
 
+export function isSolicitacaoEntradaIntent(
+  value: string | null | undefined,
+): value is "SOLICITAR_BAIXA" | "SOLICITAR_IMPORTACAO_COLETA_DEPOT" {
+  return value === "SOLICITAR_BAIXA" || value === "SOLICITAR_IMPORTACAO_COLETA_DEPOT";
+}
+
+export type DirecaoSolicitacao = "ENTRADA" | "SAIDA" | "INTERNA";
+
+/** Direção da unidade no pátio — baixa/importação = entrada; coleta/exportação = saída. */
+export function direcaoSolicitacao(
+  intent: string | null | undefined,
+): DirecaoSolicitacao {
+  if (isSolicitacaoEntradaIntent(intent)) return "ENTRADA";
+  if (isSolicitacaoSaidaIntent(intent ?? null)) return "SAIDA";
+  return "INTERNA";
+}
+
 export function portalSolicitacaoSaidaHref(
   intent: TipoOperacaoSolicitacaoIntent,
   unidadeIso: string,

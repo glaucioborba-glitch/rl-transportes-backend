@@ -4,6 +4,7 @@ const INTRANET_HUBS = new Set([
   "/financeiro",
   "/rh",
   "/admin",
+  "/admin/auditoria",
   "/cockpit",
   "/bi",
   "/grc",

@@ -1,10 +1,55 @@
 export type IntegracaoOrigem = 'env' | 'tenant' | 'none';
 
+/** Quando o Emissor Nacional entra em campo. */
+export type AtivacaoNfseNacional = 'DESLIGADO' | 'CONTINGENCIA' | 'SEMPRE';
+
+export type NfseNacionalCredenciais = {
+  ambiente?: 'homologacao' | 'producao';
+  ativacao?: AtivacaoNfseNacional;
+  /** Certificado A1 (PFX em base64) — é a chave de acesso da integração. */
+  certificadoPfxBase64?: string;
+  certificadoSenha?: string;
+  cnpjPrestador?: string;
+  inscricaoMunicipal?: string;
+  municipioIbge?: string;
+  serieDps?: string;
+  /** Código de tributação nacional do serviço (cTribNac). */
+  codigoTributacaoNacional?: string;
+  aliquotaIssPercent?: number;
+  /** 1 = MEI, 2 = ME/EPP do Simples, 3 = fora do Simples. */
+  optanteSimplesNacional?: number;
+  regimeEspecialTributacao?: number;
+};
+
+/** NFS-e municipal via IPM/Atende.Net. Dados fiscais são de cada terminal. */
+export type IpmCredenciais = {
+  baseUrl?: string;
+  prestadorCnpj?: string;
+  /** Código do município do prestador no Atende.Net (TOM). */
+  prestadorTom?: string;
+  /** Senha do portal da prefeitura (usuário = CNPJ). Sem ela, o sistema fica em sandbox. */
+  senha?: string;
+  municipioIbge?: string;
+  tagIndicadorCancelamento?: string;
+  /** Certificado A1 (PFX em base64) para o mTLS com a prefeitura. */
+  certificadoPfxBase64?: string;
+  certificadoSenha?: string;
+  /** Serviço de armazenagem no XML. */
+  codigoLocalPrestacao?: string;
+  codigoAtividade?: string;
+  codigoItemListaServico?: string;
+  aliquotaPercent?: number;
+  situacaoTributaria?: string;
+  tomadorTomFallback?: string;
+};
+
 export type TenantIntegracoesCredenciais = {
   googleVision?: {
     credentialsJson?: string;
     apiKey?: string;
   };
+  ipm?: IpmCredenciais;
+  nfseNacional?: NfseNacionalCredenciais;
   whatsapp?: {
     enabled?: boolean;
     phoneNumberId?: string;
@@ -46,6 +91,8 @@ export type IntegracoesCredenciaisPatch = {
     credentialsJson?: string;
     apiKey?: string;
   };
+  ipm?: IpmCredenciais;
+  nfseNacional?: NfseNacionalCredenciais;
   whatsapp?: {
     enabled?: boolean;
     phoneNumberId?: string;
@@ -107,6 +154,23 @@ export type IntegrationEnvSnapshot = {
   s3AccessKeyId?: string;
   s3SecretAccessKey?: string;
   s3PublicBaseUrl?: string;
+  nfseNacionalAmbiente?: string;
+  nfseNacionalCertBase64?: string;
+  nfseNacionalCertSenha?: string;
+  ipmBaseUrl?: string;
+  ipmPrestadorCnpj?: string;
+  ipmPrestadorTom?: string;
+  ipmSenha?: string;
+  ipmMunicipioIbge?: string;
+  ipmCertPath?: string;
+  ipmCertPass?: string;
+  ipmTagCancel?: string;
+  ipmArmCodigoLocal?: string;
+  ipmArmCodigoAtividade?: string;
+  ipmArmCodigoItem?: string;
+  ipmArmAliquota?: string;
+  ipmArmSitTrib?: string;
+  ipmTomadorTomFallback?: string;
 };
 
 export type GoogleServiceAccountHint = {
@@ -171,6 +235,53 @@ export type ResolvedGoogleRoutes = {
   apiKey?: string;
 };
 
+export type ResolvedIpm = {
+  origem: IntegracaoOrigem;
+  lockedByEnv: boolean;
+  /** Transmite de verdade (tem senha do portal). Sem senha, o sistema fica em sandbox. */
+  configured: boolean;
+  baseUrl: string;
+  prestadorCnpj: string;
+  prestadorTom: string;
+  senha: string;
+  senhaPresente: boolean;
+  municipioIbge: string;
+  tagIndicadorCancelamento: string;
+  /** PFX em base64 (terminal) ou arquivo do servidor. */
+  certificadoPfxBase64?: string;
+  certificadoCaminho?: string;
+  certificadoSenha: string;
+  certificadoPresente: boolean;
+  armazenagem: {
+    codigoLocalPrestacao: string;
+    codigoAtividade: string;
+    codigoItemListaServico: string;
+    aliquotaPercent: number;
+    situacaoTributaria: string;
+  };
+  tomadorTomFallback: string;
+};
+
+export type ResolvedNfseNacional = {
+  origem: IntegracaoOrigem;
+  lockedByEnv: boolean;
+  /** Pronto para emitir: certificado + CNPJ + município. */
+  configured: boolean;
+  ativacao: AtivacaoNfseNacional;
+  ambiente: 'homologacao' | 'producao';
+  certificadoPfxBase64?: string;
+  certificadoSenha?: string;
+  certificadoPresente: boolean;
+  cnpjPrestador?: string;
+  inscricaoMunicipal?: string;
+  municipioIbge?: string;
+  serieDps: string;
+  codigoTributacaoNacional?: string;
+  aliquotaIssPercent: number;
+  optanteSimplesNacional: number;
+  regimeEspecialTributacao: number;
+};
+
 export type ResolvedS3 = {
   origem: IntegracaoOrigem;
   lockedByEnv: boolean;
@@ -218,6 +329,23 @@ export function snapshotIntegrationEnv(env: NodeJS.ProcessEnv = process.env): In
     s3AccessKeyId: trimOrEmpty(env.AWS_ACCESS_KEY_ID) || undefined,
     s3SecretAccessKey: trimOrEmpty(env.AWS_SECRET_ACCESS_KEY) || undefined,
     s3PublicBaseUrl: trimOrEmpty(env.STORAGE_PUBLIC_BASE_URL) || undefined,
+    nfseNacionalAmbiente: trimOrEmpty(env.NFSE_NACIONAL_AMBIENTE) || undefined,
+    nfseNacionalCertBase64: trimOrEmpty(env.NFSE_NACIONAL_CERT_BASE64) || undefined,
+    nfseNacionalCertSenha: trimOrEmpty(env.NFSE_NACIONAL_CERT_SENHA) || undefined,
+    ipmBaseUrl: trimOrEmpty(env.NFSE_IPM_BASE_URL) || undefined,
+    ipmPrestadorCnpj: trimOrEmpty(env.NFSE_IPM_PRESTADOR_CNPJ) || undefined,
+    ipmPrestadorTom: trimOrEmpty(env.NFSE_IPM_PRESTADOR_TOM) || undefined,
+    ipmSenha: trimOrEmpty(env.NFSE_IPM_SENHA) || undefined,
+    ipmMunicipioIbge: trimOrEmpty(env.NFSE_IPM_MUNICIPIO_IBGE) || undefined,
+    ipmCertPath: trimOrEmpty(env.NFSE_IPM_CERT_PATH) || undefined,
+    ipmCertPass: trimOrEmpty(env.NFSE_IPM_CERT_PASS) || undefined,
+    ipmTagCancel: trimOrEmpty(env.NFSE_IPM_TAG_CANCEL) || undefined,
+    ipmArmCodigoLocal: trimOrEmpty(env.NFSE_ARM_CODIGO_LOCAL) || undefined,
+    ipmArmCodigoAtividade: trimOrEmpty(env.NFSE_ARM_CODIGO_ATIVIDADE) || undefined,
+    ipmArmCodigoItem: trimOrEmpty(env.NFSE_ARM_CODIGO_ITEM) || undefined,
+    ipmArmAliquota: trimOrEmpty(env.NFSE_ARM_ALIQUOTA) || undefined,
+    ipmArmSitTrib: trimOrEmpty(env.NFSE_ARM_SIT_TRIB) || undefined,
+    ipmTomadorTomFallback: trimOrEmpty(env.NFSE_TOMADOR_TOM_FALLBACK) || undefined,
   };
 }
 
@@ -280,6 +408,8 @@ export function mergeIntegracoesCredenciais(
     | undefined;
   const base: TenantIntegracoesCredenciais = {
     googleVision: current?.googleVision ? { ...current.googleVision } : undefined,
+    ipm: current?.ipm ? { ...current.ipm } : undefined,
+    nfseNacional: current?.nfseNacional ? { ...current.nfseNacional } : undefined,
     whatsapp: current?.whatsapp ? { ...current.whatsapp } : undefined,
     boleto: current?.boleto
       ? { ...current.boleto }
@@ -305,6 +435,68 @@ export function mergeIntegracoesCredenciais(
     );
     const apiKey = applyOptionalString(base.googleVision?.apiKey, patch.googleVision.apiKey);
     base.googleVision = credentialsJson || apiKey ? { credentialsJson, apiKey } : undefined;
+  }
+
+  if (patch.ipm) {
+    const p = patch.ipm;
+    const next: IpmCredenciais = { ...(base.ipm ?? {}) };
+    next.baseUrl = applyOptionalString(next.baseUrl, p.baseUrl);
+    next.prestadorCnpj = applyOptionalString(next.prestadorCnpj, p.prestadorCnpj);
+    next.prestadorTom = applyOptionalString(next.prestadorTom, p.prestadorTom);
+    // Senha e certificado só mudam quando reenviados; vazio apaga.
+    next.senha = applyOptionalString(next.senha, p.senha);
+    next.municipioIbge = applyOptionalString(next.municipioIbge, p.municipioIbge);
+    next.tagIndicadorCancelamento = applyOptionalString(
+      next.tagIndicadorCancelamento,
+      p.tagIndicadorCancelamento,
+    );
+    next.certificadoPfxBase64 = applyOptionalString(
+      next.certificadoPfxBase64,
+      p.certificadoPfxBase64,
+    );
+    next.certificadoSenha = applyOptionalString(next.certificadoSenha, p.certificadoSenha);
+    next.codigoLocalPrestacao = applyOptionalString(
+      next.codigoLocalPrestacao,
+      p.codigoLocalPrestacao,
+    );
+    next.codigoAtividade = applyOptionalString(next.codigoAtividade, p.codigoAtividade);
+    next.codigoItemListaServico = applyOptionalString(
+      next.codigoItemListaServico,
+      p.codigoItemListaServico,
+    );
+    next.situacaoTributaria = applyOptionalString(next.situacaoTributaria, p.situacaoTributaria);
+    next.tomadorTomFallback = applyOptionalString(next.tomadorTomFallback, p.tomadorTomFallback);
+    if (p.aliquotaPercent !== undefined) next.aliquotaPercent = p.aliquotaPercent;
+    base.ipm = Object.values(next).some((v) => v !== undefined) ? next : undefined;
+  }
+
+  if (patch.nfseNacional) {
+    const p = patch.nfseNacional;
+    const next: NfseNacionalCredenciais = { ...(base.nfseNacional ?? {}) };
+    // Certificado e senha só mudam quando reenviados; vazio apaga.
+    next.certificadoPfxBase64 = applyOptionalString(
+      next.certificadoPfxBase64,
+      p.certificadoPfxBase64,
+    );
+    next.certificadoSenha = applyOptionalString(next.certificadoSenha, p.certificadoSenha);
+    next.cnpjPrestador = applyOptionalString(next.cnpjPrestador, p.cnpjPrestador);
+    next.inscricaoMunicipal = applyOptionalString(next.inscricaoMunicipal, p.inscricaoMunicipal);
+    next.municipioIbge = applyOptionalString(next.municipioIbge, p.municipioIbge);
+    next.serieDps = applyOptionalString(next.serieDps, p.serieDps);
+    next.codigoTributacaoNacional = applyOptionalString(
+      next.codigoTributacaoNacional,
+      p.codigoTributacaoNacional,
+    );
+    if (p.ambiente !== undefined) next.ambiente = p.ambiente;
+    if (p.ativacao !== undefined) next.ativacao = p.ativacao;
+    if (p.aliquotaIssPercent !== undefined) next.aliquotaIssPercent = p.aliquotaIssPercent;
+    if (p.optanteSimplesNacional !== undefined) {
+      next.optanteSimplesNacional = p.optanteSimplesNacional;
+    }
+    if (p.regimeEspecialTributacao !== undefined) {
+      next.regimeEspecialTributacao = p.regimeEspecialTributacao;
+    }
+    base.nfseNacional = Object.values(next).some((v) => v !== undefined) ? next : undefined;
   }
 
   if (patch.whatsapp) {
@@ -601,11 +793,169 @@ export function resolveS3(
   };
 }
 
+function numeroOu(valor: unknown, padrao: number): number {
+  const n = Number(valor);
+  return Number.isFinite(n) ? n : padrao;
+}
+
+/** Defaults históricos do IPM (Navegantes-SC), mantidos para não mudar o que já roda. */
+export const IPM_PADRAO = {
+  baseUrl: 'https://ws-navegantes.atende.net:7443/?pg=rest&service=WNERestServiceNFSe',
+  prestadorCnpj: '27692077000126',
+  prestadorTom: '8221',
+  municipioIbge: '4211306',
+  tagIndicadorCancelamento: 'tipo',
+  codigoLocalPrestacao: '8221',
+  codigoAtividade: '4930201',
+  codigoItemListaServico: '160201',
+  aliquotaPercent: 2,
+  situacaoTributaria: '0',
+  tomadorTomFallback: '8221',
+} as const;
+
+/** Certificado gravado antes desta tela, em parametros.nfse. */
+export type IpmCertificadoLegado = {
+  certificadoBase64?: string;
+  certificadoSenha?: string;
+};
+
+/**
+ * IPM/Atende.Net: o .env do servidor tem prioridade (instalação inteira);
+ * sem ele, cada terminal usa a própria senha, certificado e dados fiscais.
+ */
+export function resolveIpm(
+  env: IntegrationEnvSnapshot,
+  tenant?: IpmCredenciais,
+  legado?: IpmCertificadoLegado,
+): ResolvedIpm {
+  const lockedByEnv = Boolean(env.ipmSenha);
+  const escolher = (doEnv: string | undefined, doTenant: string | undefined, padrao: string) =>
+    doEnv?.trim() || doTenant?.trim() || padrao;
+
+  const senha = lockedByEnv ? (env.ipmSenha ?? '') : (tenant?.senha ?? '');
+  const certificadoPfxBase64 = lockedByEnv
+    ? undefined
+    : tenant?.certificadoPfxBase64?.trim() || legado?.certificadoBase64?.trim() || undefined;
+  const certificadoCaminho = env.ipmCertPath?.trim() || undefined;
+  const certificadoSenha = certificadoCaminho
+    ? (env.ipmCertPass ?? '')
+    : (tenant?.certificadoSenha ?? legado?.certificadoSenha ?? '');
+
+  const temAlgoDoTenant = Boolean(
+    tenant && Object.values(tenant).some((v) => v !== undefined && v !== ''),
+  );
+
+  return {
+    origem: lockedByEnv ? 'env' : temAlgoDoTenant ? 'tenant' : 'none',
+    lockedByEnv,
+    configured: Boolean(senha),
+    baseUrl: escolher(env.ipmBaseUrl, tenant?.baseUrl, IPM_PADRAO.baseUrl),
+    prestadorCnpj: escolher(
+      env.ipmPrestadorCnpj,
+      tenant?.prestadorCnpj,
+      IPM_PADRAO.prestadorCnpj,
+    ).replace(/\D/g, ''),
+    prestadorTom: escolher(env.ipmPrestadorTom, tenant?.prestadorTom, IPM_PADRAO.prestadorTom),
+    senha,
+    senhaPresente: Boolean(senha),
+    municipioIbge: escolher(env.ipmMunicipioIbge, tenant?.municipioIbge, IPM_PADRAO.municipioIbge),
+    tagIndicadorCancelamento:
+      escolher(
+        env.ipmTagCancel,
+        tenant?.tagIndicadorCancelamento,
+        IPM_PADRAO.tagIndicadorCancelamento,
+      ).replace(/[^a-zA-Z0-9_]/g, '') || IPM_PADRAO.tagIndicadorCancelamento,
+    certificadoPfxBase64,
+    certificadoCaminho,
+    certificadoSenha,
+    certificadoPresente: Boolean(certificadoPfxBase64 || certificadoCaminho),
+    armazenagem: {
+      codigoLocalPrestacao: escolher(
+        env.ipmArmCodigoLocal,
+        tenant?.codigoLocalPrestacao,
+        IPM_PADRAO.codigoLocalPrestacao,
+      ),
+      codigoAtividade: escolher(
+        env.ipmArmCodigoAtividade,
+        tenant?.codigoAtividade,
+        IPM_PADRAO.codigoAtividade,
+      ),
+      codigoItemListaServico: escolher(
+        env.ipmArmCodigoItem,
+        tenant?.codigoItemListaServico,
+        IPM_PADRAO.codigoItemListaServico,
+      ),
+      aliquotaPercent: numeroOu(
+        env.ipmArmAliquota ?? tenant?.aliquotaPercent,
+        IPM_PADRAO.aliquotaPercent,
+      ),
+      situacaoTributaria: escolher(
+        env.ipmArmSitTrib,
+        tenant?.situacaoTributaria,
+        IPM_PADRAO.situacaoTributaria,
+      ),
+    },
+    tomadorTomFallback: escolher(
+      env.ipmTomadorTomFallback,
+      tenant?.tomadorTomFallback,
+      IPM_PADRAO.tomadorTomFallback,
+    ),
+  };
+}
+
+/**
+ * NFS-e Emissor Nacional: o certificado do .env trava a integração para toda a
+ * instalação; sem ele, cada terminal usa o próprio certificado e os próprios dados fiscais.
+ */
+export function resolveNfseNacional(
+  env: IntegrationEnvSnapshot,
+  tenant?: NfseNacionalCredenciais,
+): ResolvedNfseNacional {
+  const lockedByEnv = Boolean(env.nfseNacionalCertBase64);
+  const certificadoPfxBase64 = lockedByEnv
+    ? env.nfseNacionalCertBase64
+    : tenant?.certificadoPfxBase64?.trim() || undefined;
+  const certificadoSenha = lockedByEnv
+    ? env.nfseNacionalCertSenha
+    : tenant?.certificadoSenha ?? undefined;
+
+  const cnpjPrestador = tenant?.cnpjPrestador?.replace(/\D/g, '') || undefined;
+  const municipioIbge = tenant?.municipioIbge?.replace(/\D/g, '') || undefined;
+  const configured = Boolean(certificadoPfxBase64 && cnpjPrestador && municipioIbge);
+  const ativacao: AtivacaoNfseNacional =
+    tenant?.ativacao === 'SEMPRE' || tenant?.ativacao === 'CONTINGENCIA'
+      ? tenant.ativacao
+      : 'DESLIGADO';
+
+  return {
+    origem: lockedByEnv ? 'env' : certificadoPfxBase64 || cnpjPrestador ? 'tenant' : 'none',
+    lockedByEnv,
+    configured,
+    ativacao,
+    ambiente:
+      String(tenant?.ambiente ?? env.nfseNacionalAmbiente ?? '').toLowerCase() === 'producao'
+        ? 'producao'
+        : 'homologacao',
+    certificadoPfxBase64,
+    certificadoSenha,
+    certificadoPresente: Boolean(certificadoPfxBase64),
+    cnpjPrestador,
+    inscricaoMunicipal: tenant?.inscricaoMunicipal?.trim() || undefined,
+    municipioIbge,
+    serieDps: (tenant?.serieDps?.replace(/\D/g, '') || '1').slice(0, 5),
+    codigoTributacaoNacional: tenant?.codigoTributacaoNacional?.replace(/\D/g, '') || undefined,
+    aliquotaIssPercent: numeroOu(tenant?.aliquotaIssPercent, 2),
+    optanteSimplesNacional: numeroOu(tenant?.optanteSimplesNacional, 3),
+    regimeEspecialTributacao: numeroOu(tenant?.regimeEspecialTributacao, 0),
+  };
+}
+
 export function sanitizeTenantParametrosForClient<T extends Record<string, unknown>>(
   parametros: T,
 ): T {
-  const { integracoesCredenciais: _creds, nfse, ...rest } = parametros as T & {
+  const { integracoesCredenciais: _creds, emailSmtp: _smtp, nfse, ...rest } = parametros as T & {
     integracoesCredenciais?: unknown;
+    emailSmtp?: unknown;
     nfse?: { certificadoBase64?: string; certificadoSenha?: string };
   };
   return {

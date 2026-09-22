@@ -80,10 +80,10 @@ export function SolicitacaoDetailPanel({ row }: { row: SolicitacaoRow }) {
               </CardHeader>
               <CardContent className="grid gap-2 text-sm text-slate-300 sm:grid-cols-2">
                 <p>
-                  Motorista: <span className="text-white">{row.transporteSolicitacao.nomeMotorista}</span>
+                  CPF: <span className="font-mono text-white">{row.transporteSolicitacao.cpfMotorista}</span>
                 </p>
                 <p>
-                  CPF: <span className="font-mono text-white">{row.transporteSolicitacao.cpfMotorista}</span>
+                  Motorista: <span className="text-white">{row.transporteSolicitacao.nomeMotorista}</span>
                 </p>
                 <p>
                   Tipo: <span className="text-white">{row.transporteSolicitacao.tipoCaminhao}</span>
@@ -253,9 +253,6 @@ export function SolicitacaoDetailPanel({ row }: { row: SolicitacaoRow }) {
             <CardTitle className="text-base">Documentos</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" asChild>
-              <Link href="/portal/documentos">Central de documentos</Link>
-            </Button>
             <Button variant="outline" size="sm" asChild>
               <Link href="/portal/financeiro">Financeiro</Link>
             </Button>

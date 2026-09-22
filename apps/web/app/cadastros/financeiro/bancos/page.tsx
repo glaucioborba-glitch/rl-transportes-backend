@@ -11,6 +11,7 @@ import { useWidgetData, WidgetError } from "@/components/ui/widget-error";
 import { listCadastrosBancos } from "@/lib/api/cadastros-bancos-client";
 import { formatCNPJ } from "@/lib/cadastros/formatters";
 import { canDo } from "@/lib/cadastros/permission-matrix";
+import { cn } from "@/lib/utils";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 
 function LoadingSkeleton() {
@@ -92,14 +93,31 @@ export default function BancosListPage() {
             </thead>
             <tbody>
               {bancos.map((banco) => (
-                <tr key={banco.id} className="border-b border-border/50 hover:bg-muted/20">
+                <tr
+                  key={banco.id}
+                  className={cn(
+                    "border-b border-border/50",
+                    banco.ativo
+                      ? "hover:bg-muted/20"
+                      : "bg-muted/40 text-muted-foreground",
+                  )}
+                >
                   <td className="p-4">
-                    <span className="font-mono font-bold text-[var(--accent)]">{banco.codigo}</span>
+                    <span
+                      className={cn(
+                        "font-mono font-bold",
+                        banco.ativo ? "text-[var(--accent)]" : "text-zinc-400",
+                      )}
+                    >
+                      {banco.codigo}
+                    </span>
                   </td>
                   <td className="p-4">
                     <div className="flex items-center gap-2">
                       <Building className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-medium">{banco.nome}</span>
+                      <span className={cn("font-medium", !banco.ativo && "text-zinc-400")}>
+                        {banco.nome}
+                      </span>
                     </div>
                   </td>
                   <td className="p-4 font-mono text-sm tabular-nums">
@@ -117,7 +135,7 @@ export default function BancosListPage() {
                       className={
                         banco.ativo
                           ? "border-green-500/30 bg-green-500/15 text-green-400"
-                          : "border-red-500/30 bg-red-500/15 text-red-400"
+                          : "border-zinc-500/40 bg-zinc-500/15 text-zinc-400"
                       }
                     >
                       {banco.ativo ? "Ativo" : "Inativo"}

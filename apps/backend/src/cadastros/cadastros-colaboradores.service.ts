@@ -12,6 +12,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CadastrosColaboradorFormDto } from './dto/cadastros-colaborador-form.dto';
 import { CadastrosColaboradorQueryDto } from './dto/cadastros-colaborador-query.dto';
 import {
+  mensagemCpfJaCadastrado,
+} from '../common/utils/documento-unico.util';
+import {
   ColaboradorFamiliarFormDto,
   CreateFamiliarDto,
   UpdateFamiliarDto,
@@ -126,7 +129,7 @@ export class CadastrosColaboradoresService {
   async checkCpf(cpf: string, excludeId?: string) {
     const clean = cpf.replace(/\D/g, '');
     const existing = await this.prisma.cadastroColaborador.findFirst({
-      where: { cpf: clean, deletedAt: null },
+      where: { cpf: clean },
       select: { id: true, nome: true, matricula: true },
     });
     if (!existing || existing.id === excludeId) {
@@ -151,7 +154,9 @@ export class CadastrosColaboradoresService {
     const dup = await this.checkCpf(cpf);
     if (dup.exists) {
       throw new ConflictException(
-        `CPF já cadastrado: ${dup.nome} (matrícula ${dup.matricula ?? '—'}).`,
+        mensagemCpfJaCadastrado(
+          `${dup.nome} (matrícula ${dup.matricula ?? '—'})`,
+        ),
       );
     }
 
@@ -201,7 +206,7 @@ export class CadastrosColaboradoresService {
     if (cpf !== antes.cpf) {
       const dup = await this.checkCpf(cpf, id);
       if (dup.exists) {
-        throw new ConflictException(`CPF já cadastrado: ${dup.nome}.`);
+        throw new ConflictException(mensagemCpfJaCadastrado(dup.nome));
       }
     }
 
@@ -320,6 +325,7 @@ export class CadastrosColaboradoresService {
   async addFamiliar(colaboradorId: string, dto: CreateFamiliarDto) {
     const colaborador = await this.getRowOrThrow(colaboradorId);
     this.assertFamiliarCpfValido(dto.cpf);
+    await this.assertFamiliarCpfUnico(colaborador.tenantId, dto.cpf);
     const count = await this.prisma.colaboradorFamiliar.count({
       where: { colaboradorId, ativo: true },
     });
@@ -339,6 +345,9 @@ export class CadastrosColaboradoresService {
       throw new NotFoundException('Familiar não encontrado.');
     }
     if (dto.cpf !== undefined) this.assertFamiliarCpfValido(dto.cpf);
+    if (dto.cpf !== undefined) {
+      await this.assertFamiliarCpfUnico(existing.tenantId, dto.cpf, familiarId);
+    }
     return this.prisma.colaboradorFamiliar.update({
       where: { id: familiarId },
       data: this.buildFamiliarUpdateData(dto),
@@ -503,6 +512,38 @@ export class CadastrosColaboradoresService {
     }
   }
 
+  private async assertFamiliarCpfUnico(
+    tenantId: string,
+    cpf?: string | null,
+    excludeId?: string,
+  ) {
+    const clean = cpf?.replace(/\D/g, '') || '';
+    if (clean.length !== 11) return;
+    const dup = await this.prisma.colaboradorFamiliar.findFirst({
+      where: {
+        tenantId,
+        cpf: clean,
+        ...(excludeId ? { NOT: { id: excludeId } } : {}),
+      },
+      select: { nome: true },
+    });
+    if (dup) {
+      throw new ConflictException(mensagemCpfJaCadastrado(dup.nome));
+    }
+  }
+
+  private assertFamiliaresCpfSemDuplicataNoLote(items: ColaboradorFamiliarFormDto[]) {
+    const seen = new Set<string>();
+    for (const f of items) {
+      const clean = f.cpf?.replace(/\D/g, '') || '';
+      if (clean.length !== 11) continue;
+      if (seen.has(clean)) {
+        throw new ConflictException(mensagemCpfJaCadastrado());
+      }
+      seen.add(clean);
+    }
+  }
+
   private buildFamiliarCreateData(
     colaboradorId: string,
     tenantId: string,
@@ -541,6 +582,10 @@ export class CadastrosColaboradoresService {
     for (const f of items) {
       this.assertFamiliarCpfValido(f.cpf);
     }
+    this.assertFamiliaresCpfSemDuplicataNoLote(items);
+    for (const f of items) {
+      await this.assertFamiliarCpfUnico(tenantId, f.cpf);
+    }
     if (items.length === 0) return;
     await tx.colaboradorFamiliar.createMany({
       data: items.map((f) => ({
@@ -562,6 +607,7 @@ export class CadastrosColaboradoresService {
   ) {
     const items = this.normalizeFamiliaresInput(familiares);
     this.assertFamiliaresLimit(items.length);
+    this.assertFamiliaresCpfSemDuplicataNoLote(items);
 
     const existing = await tx.colaboradorFamiliar.findMany({
       where: { colaboradorId, ativo: true },
@@ -579,6 +625,7 @@ export class CadastrosColaboradoresService {
 
     for (const f of items) {
       this.assertFamiliarCpfValido(f.cpf);
+      await this.assertFamiliarCpfUnico(tenantId, f.cpf, f.id);
       if (f.id) {
         const match = existing.find((e) => e.id === f.id);
         if (!match) {

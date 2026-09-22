@@ -142,6 +142,14 @@ export class CadastrosMotivosRejeicaoService {
     return this.toShape(row);
   }
 
+  async remove(id: string) {
+    await this.getRowOrThrow(id);
+    await this.prisma.cadastroMotivoRejeicao.update({
+      where: { id },
+      data: { ativo: false, deletedAt: new Date() },
+    });
+  }
+
   private toData(dto: CadastrosMotivoRejeicaoFormDto, codigo: string) {
     return {
       tenantId: DEFAULT_TENANT,

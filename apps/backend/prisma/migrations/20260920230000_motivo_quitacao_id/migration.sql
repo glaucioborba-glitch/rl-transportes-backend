@@ -1,0 +1,1 @@
+ALTER TYPE "MotivoLancamentoContaCorrente" ADD VALUE IF NOT EXISTS 'QUITACAO_ID';

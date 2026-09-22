@@ -8,6 +8,9 @@ import { Permissions } from '../common/decorators/permissions.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { EmailService } from '../common/email/email.service';
+import { TenantContextService } from './tenant-context.service';
+import { EnviarEmailTesteDto } from './dto/enviar-email-teste.dto';
 import { UpdateParametrosGeraisDto } from './dto/update-parametros-gerais.dto';
 import { FeriadoMunicipalDto } from './dto/feriado-municipal.dto';
 import { UpdateReguaCobrancaDto } from './dto/update-regua-cobranca.dto';
@@ -20,7 +23,11 @@ const PARAMETROS_ROLES: Role[] = [Role.ADMIN, Role.GERENTE];
 @ApiTags('tenant-config')
 @Controller('tenant-config')
 export class TenantConfigController {
-  constructor(private readonly config: TenantConfigService) {}
+  constructor(
+    private readonly config: TenantConfigService,
+    private readonly email: EmailService,
+    private readonly tenantCtx: TenantContextService,
+  ) {}
 
   @Get('turnos')
   @UseGuards(AuthGuard('jwt'))
@@ -65,7 +72,12 @@ export class TenantConfigController {
   @Get('maps-config')
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Chave Maps JS do terminal (restrita por referrer no Google Cloud)' })
+  @ApiOperation({
+    summary: 'Chave Maps JS do terminal (restrita por referrer no Google Cloud)',
+    description:
+      'Aberta a staff porque a tela de localização de motoristas é do operador. ' +
+      'A chave DEVE ser restrita por referrer/IP no Google Cloud; o certo é servir o mapa por proxy.',
+  })
   async mapsConfig(@Req() req: Request & { tenantId?: string }) {
     return this.config.getMapsConfig(req.tenantId ?? DEFAULT_TENANT_ID);
   }
@@ -83,6 +95,21 @@ export class TenantConfigController {
       throw new ForbiddenException('Integrações do sistema só o Super Admin configura.');
     }
     return this.config.updateParametrosGerais(req.tenantId ?? DEFAULT_TENANT_ID, dto);
+  }
+
+  @Post('parametros-gerais/email-teste')
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @ApiBearerAuth('access-token')
+  @Roles(...PARAMETROS_ROLES)
+  @ApiOperation({ summary: 'Envia e-mail de teste com o remetente e SMTP do terminal' })
+  async enviarEmailTeste(
+    @Req() req: Request & { tenantId?: string },
+    @Body() dto: EnviarEmailTesteDto,
+  ) {
+    const tenantId = req.tenantId ?? DEFAULT_TENANT_ID;
+    return this.tenantCtx.run({ tenantId, bypassIsolation: false }, () =>
+      this.email.sendTeste(dto.destinatario.trim()),
+    );
   }
 
   @Get('parametros-gerais/capacidade-calc')

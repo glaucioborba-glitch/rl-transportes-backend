@@ -165,7 +165,7 @@ export default function PerfilPage() {
             <CardTitle>Gestão de equipe / Autorizações</CardTitle>
             <CardDescription>
               Delegue acessos a colaboradores (CPF) ou transportadoras terceirizadas (CNPJ). Edite
-              permissões ou revogue acessos quando necessário.
+              permissões, revogue ou reative o perfil quando necessário.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">

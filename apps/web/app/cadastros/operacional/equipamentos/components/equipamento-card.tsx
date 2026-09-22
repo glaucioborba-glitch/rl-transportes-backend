@@ -1,18 +1,9 @@
 "use client";
 
-import {
-  AlertTriangle,
-  BadgeCheck,
-  Calendar,
-  FileText,
-  Forklift,
-  User,
-  Wrench,
-} from "lucide-react";
+import { AlertTriangle, BadgeCheck, FileText, Forklift, User, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { CadastrosEquipamentoListItem } from "@/lib/api/cadastros-equipamentos-client";
-import { daysUntil, formatDate } from "@/lib/cadastros/formatters";
 
 const STATUS_CONFIG: Record<
   string,
@@ -50,21 +41,9 @@ type Props = {
 export function EquipamentoCard({ equip, canEdit, onEdit, onAuditoria }: Props) {
   const status = STATUS_CONFIG[equip.status] || STATUS_CONFIG.DISPONIVEL;
   const StatusIcon = status.icon;
-  const diasManutencao = equip.proximaManutencao ? daysUntil(equip.proximaManutencao) : null;
-  const manutencaoVencida = diasManutencao !== null && diasManutencao < 0;
-  const manutencaoVencendo =
-    diasManutencao !== null && diasManutencao >= 0 && diasManutencao <= 7;
 
   return (
-    <div
-      className={`flex flex-col gap-3 rounded-lg border bg-card p-5 transition-colors hover:border-[var(--accent)]/30 ${
-        manutencaoVencida
-          ? "border-red-500/40"
-          : manutencaoVencendo
-            ? "border-amber-500/40"
-            : "border-border"
-      }`}
-    >
+    <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-5 transition-colors hover:border-[var(--accent)]/30">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--accent)]/10">
@@ -104,25 +83,6 @@ export function EquipamentoCard({ equip, canEdit, onEdit, onAuditoria }: Props) 
           </p>
         </div>
       </div>
-
-      {manutencaoVencida ? (
-        <div className="flex items-center gap-1 rounded bg-red-500/10 px-2 py-1 text-xs text-red-400">
-          <AlertTriangle className="h-3 w-3" />
-          Manutenção preventiva VENCIDA há {Math.abs(diasManutencao!)} dias
-        </div>
-      ) : null}
-      {manutencaoVencendo ? (
-        <div className="flex items-center gap-1 rounded bg-amber-500/10 px-2 py-1 text-xs text-amber-400">
-          <AlertTriangle className="h-3 w-3" />
-          Manutenção preventiva em {diasManutencao} dias
-        </div>
-      ) : null}
-      {equip.proximaManutencao && !manutencaoVencida && !manutencaoVencendo ? (
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Calendar className="h-3 w-3" />
-          Próx. manutenção: {formatDate(equip.proximaManutencao)}
-        </div>
-      ) : null}
 
       <div className="mt-2 flex gap-2">
         {canEdit ? (

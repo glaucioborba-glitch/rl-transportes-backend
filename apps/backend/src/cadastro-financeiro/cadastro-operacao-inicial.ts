@@ -29,3 +29,19 @@ export function formaEfetivaCadastro(
   const t = forma?.trim();
   return t || null;
 }
+
+const FORMAS_PIX = new Set(['AVISTA_PIX', 'PIX', 'FATURAMENTO_PIX', 'A_VISTA']);
+
+/** PIX à vista (cadastro pendente, AVISTA_PIX, PIX, FATURAMENTO_PIX, A_VISTA). */
+export function isFormaPagamentoPix(forma: string | null | undefined): boolean {
+  return FORMAS_PIX.has((forma ?? '').trim().toUpperCase());
+}
+
+/** Cliente PIX quita o ID na solicitação de coleta/exportação/depot. */
+export function clienteExigeQuitacaoPix(
+  status: StatusCadastroCliente | null | undefined,
+  forma: string | null | undefined,
+): boolean {
+  if (status === StatusCadastroCliente.REJEITADO) return false;
+  return isFormaPagamentoPix(formaEfetivaCadastro(status, forma));
+}

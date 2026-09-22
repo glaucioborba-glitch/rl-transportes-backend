@@ -3,6 +3,7 @@
 import { Building2, FileText, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { NotificationBadge } from "@/components/ui/notification-badge";
 import type { CadastrosClienteListItem } from "@/lib/api/cadastros-clientes-client";
 import { CLIENTE_PAPEL_LABEL, defaultClientePapeisSafe } from "@/lib/cadastros/cliente-papeis";
 import { formatCNPJ, formatPhone } from "@/lib/cadastros/formatters";
@@ -32,7 +33,10 @@ export function ClienteCard({
             <Building2 className="h-5 w-5 text-[var(--accent)]" />
           </div>
           <div>
-            <p className="text-base font-bold">{cliente.razaoSocial}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-base font-bold">{cliente.razaoSocial}</p>
+              <NotificationBadge count={cliente.comprovantesPendentes ?? 0} />
+            </div>
             <p className="text-sm text-muted-foreground">{cliente.nomeFantasia || "—"}</p>
           </div>
         </div>

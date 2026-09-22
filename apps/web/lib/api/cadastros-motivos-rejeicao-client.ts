@@ -48,3 +48,9 @@ export async function updateCadastroMotivoRejeicao(
     },
   );
 }
+
+export async function deleteCadastroMotivoRejeicao(id: string) {
+  return staffJson<void>(`/v2/cadastros/motivos-rejeicao/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}

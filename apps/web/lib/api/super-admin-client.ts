@@ -185,6 +185,51 @@ export async function importarCatalogoContainers(file: File): Promise<CatalogoCo
   });
 }
 
+export type CatalogoNavio = {
+  nome: string;
+  origem: string;
+  criadoEm: string;
+  atualizadoEm: string;
+};
+
+export async function listSaasCatalogoNavios(q?: string) {
+  const query = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+  return staffJson<{ items: CatalogoNavio[]; total: number }>(`/super-admin/catalogo-navios${query}`);
+}
+
+export type CatalogoNaviosImportResultado = {
+  criados: number;
+  atualizados: number;
+  duplicadosNaPlanilha: number;
+  erros: Array<{ linha: number; nome: string; motivo: string }>;
+};
+
+export async function baixarModeloCatalogoNavios(): Promise<void> {
+  const res = await staffRequest("/super-admin/catalogo-navios/modelo", {
+    method: "GET",
+    headers: { Accept: "application/vnd.ms-excel" },
+  });
+  if (!res.ok) {
+    throw new ApiError("Não foi possível baixar o modelo.", res.status);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "catalogo-navios-modelo.xls";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function importarCatalogoNavios(file: File): Promise<CatalogoNaviosImportResultado> {
+  const form = new FormData();
+  form.append("file", file);
+  return staffJson<CatalogoNaviosImportResultado>("/super-admin/catalogo-navios/importar", {
+    method: "POST",
+    body: form,
+  });
+}
+
 export async function listFeatureFlags(): Promise<FeatureFlagRow[]> {
   return staffJson<FeatureFlagRow[]>("/super-admin/feature-flags");
 }
@@ -305,6 +350,36 @@ export type SaasIntegracoes = {
     apiTokenPresent: boolean;
   };
   s3: SaasIntegracaoStatus & { bucket?: string; endpoint?: string; region?: string };
+  ipm?: SaasIntegracaoStatus & {
+    baseUrl: string;
+    prestadorCnpj: string;
+    prestadorTom: string;
+    municipioIbge: string;
+    senhaPresente: boolean;
+    certificadoPresente: boolean;
+    certificadoOrigem: "tenant" | "servidor" | "nenhum";
+    codigoLocalPrestacao: string;
+    codigoAtividade: string;
+    codigoItemListaServico: string;
+    aliquotaPercent: number;
+    situacaoTributaria: string;
+    tomadorTomFallback: string;
+  };
+  nfseNacional?: SaasIntegracaoStatus & {
+    ativacao: "DESLIGADO" | "CONTINGENCIA" | "SEMPRE";
+    ambiente: "homologacao" | "producao";
+    certificadoPresente: boolean;
+    certificadoTitular?: string;
+    certificadoValidoAte?: string;
+    certificadoDiasParaVencer?: number;
+    certificadoErro?: string;
+    cnpjPrestador?: string;
+    inscricaoMunicipal?: string;
+    municipioIbge?: string;
+    serieDps: string;
+    codigoTributacaoNacional?: string;
+    aliquotaIssPercent: number;
+  };
 };
 
 export type SaasIntegracoesPatch = {
@@ -328,6 +403,38 @@ export type SaasIntegracoesPatch = {
     secretAccessKey?: string;
     publicBaseUrl?: string;
   };
+  ipm?: {
+    baseUrl?: string;
+    prestadorCnpj?: string;
+    prestadorTom?: string;
+    /** Somente escrita: vazio apaga a senha do portal. */
+    senha?: string;
+    municipioIbge?: string;
+    tagIndicadorCancelamento?: string;
+    certificadoPfxBase64?: string;
+    certificadoSenha?: string;
+    codigoLocalPrestacao?: string;
+    codigoAtividade?: string;
+    codigoItemListaServico?: string;
+    aliquotaPercent?: number;
+    situacaoTributaria?: string;
+    tomadorTomFallback?: string;
+  };
+  nfseNacional?: {
+    ambiente?: "homologacao" | "producao";
+    ativacao?: "DESLIGADO" | "CONTINGENCIA" | "SEMPRE";
+    /** PFX em base64 (sem cabeçalho data:). Vazio apaga o certificado salvo. */
+    certificadoPfxBase64?: string;
+    certificadoSenha?: string;
+    cnpjPrestador?: string;
+    inscricaoMunicipal?: string;
+    municipioIbge?: string;
+    serieDps?: string;
+    codigoTributacaoNacional?: string;
+    aliquotaIssPercent?: number;
+    optanteSimplesNacional?: number;
+    regimeEspecialTributacao?: number;
+  };
 };
 
 export type SaasIntegrationId =
@@ -338,7 +445,9 @@ export type SaasIntegrationId =
   | "banking"
   | "boleto"
   | "pix"
-  | "s3";
+  | "s3"
+  | "ipm"
+  | "nfse-nacional";
 
 export async function fetchSaasIntegracoes(tenantId: string) {
   return staffJson<{ tenantId: string; integracoes: SaasIntegracoes }>(

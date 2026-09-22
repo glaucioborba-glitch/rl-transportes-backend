@@ -1,0 +1,27 @@
+Handoff — 13/09/2026. Abrir chat NOVO e anexar só este arquivo.
+
+NÃO inventar preço comercial. NÃO unificar fatura de aluguel + pátio (perguntar).
+Aluguel e pátio são IDs independentes (ALUGUEL / PATIO) no mesmo ISO.
+
+Super Admin: /super-admin (CPF 036.501.639-00). Intranet staff: /login/staff
+(ADMIN 390.533.447-05 / Admin@123). “Abrir intranet” grava cookie rl_sa_tenant.
+Gestão de tela: isIntranetGestorRole (ADMIN + GERENTE + SUPER_ADMIN).
+Plano STANDARD/PREMIUM/ENTERPRISE é só rótulo — não amarrar feature flag agora.
+
+Catálogo de containers ISO (global, SEM tenant):
+- Tabela catalogo_containers_iso. Grava na assinatura da RIC.
+- Autofill tipo/tamanho se vazio (portal + gate criar-agendamento).
+- Super Admin: /super-admin/catalogo-containers.
+- Só placa física (ISO, 45G1, tara/MGW/payload). Nunca cliente/booking/lacre.
+
+Motoristas externos (POR TENANT — oposto do catálogo de caixa):
+- Tabela catalogo_motoristas_externos. Unique (tenantId, cpf).
+- Isolado em TENANT_SCOPED_MODELS. Não reutilizar CadastroMotorista / Motorista FL.
+- Entra ao criar solicitação (portal + intranet). Ignora CPF 00000000000 (frota FL).
+- Autofill do nome com 11 dígitos. Se suspensoAte > agora, bloqueia criar/editar.
+- Intranet: /cadastros/pessoas/motoristas-externos (lista, suspender X dias + motivo, liberar).
+- API staff: /v2/cadastros/motoristas-externos. Portal lookup: /cliente/portal/catalogo-motoristas-externos/:cpf.
+- Módulo: apps/backend/src/catalogo-motoristas-externos/
+
+Se o Nest em watch ficar mudo (rota 404 na tela nova), reiniciar start:dev.
+Backend local: porta 3001. Front: 3000.

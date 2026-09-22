@@ -15,6 +15,7 @@ export type CadastrosClienteListItem = {
   ativo: boolean;
   contratosAtivos: number;
   solicitacoes: number;
+  comprovantesPendentes?: number;
 };
 
 export type CadastrosClienteFormData = {

@@ -17,6 +17,8 @@ import type { GatePatioUnidade } from "@/lib/gate/gate-cockpit-types";
 import { GATE_POLLING_INTERVAL_MS, GATE_WEBSOCKET_ENABLED } from "@/lib/dev-performance";
 import { useRealtimeSocket } from "@/lib/realtime/use-realtime-socket";
 import { toast } from "@/lib/toast";
+import { useDocumentoSaida } from "@/components/documento-saida/documento-saida-dialog";
+import { downloadBlob } from "@/lib/documento-saida";
 
 function diasEntre(iso: string | null | undefined): number {
   if (!iso) return 0;
@@ -82,15 +84,6 @@ function mapInventario(inv: StaffPatioInventario): {
   };
 }
 
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 2_000);
-}
-
 function stamp(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -99,6 +92,7 @@ export default function GatePatioPage() {
   const [inv, setInv] = useState<StaffPatioInventario | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const documentoSaida = useDocumentoSaida();
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -128,13 +122,21 @@ export default function GatePatioPage() {
 
   const mapped = inv ? mapInventario(inv) : null;
 
-  async function exportar(kind: "pdf" | "xml", filtro: StaffPatioSaldoFiltro) {
+  function exportarPdf(filtro: StaffPatioSaldoFiltro) {
+    documentoSaida.pedir({
+      titulo: "Saldo de unidades",
+      descricao: "Relatório em PDF. Baixe o arquivo ou envie direto para a impressora.",
+      filename: `saldo-unidades-${stamp()}.pdf`,
+      obter: () => staffPatioSaldoPdf(filtro),
+    });
+  }
+
+  async function exportarXml(filtro: StaffPatioSaldoFiltro) {
     setExporting(true);
     try {
-      const blob =
-        kind === "pdf" ? await staffPatioSaldoPdf(filtro) : await staffPatioSaldoXml(filtro);
-      downloadBlob(blob, `saldo-unidades-${stamp()}.${kind}`);
-      toast.success(kind === "pdf" ? "PDF gerado." : "XML gerado.");
+      const blob = await staffPatioSaldoXml(filtro);
+      downloadBlob(blob, `saldo-unidades-${stamp()}.xml`);
+      toast.success("XML gerado.");
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Falha ao gerar o relatório.");
     } finally {
@@ -168,13 +170,14 @@ export default function GatePatioPage() {
           semBaia={mapped.semBaia}
           unidades={mapped.unidades}
           exporting={exporting}
-          onExportPdf={(filtro) => void exportar("pdf", filtro)}
-          onExportXml={(filtro) => void exportar("xml", filtro)}
+          onExportPdf={(filtro) => exportarPdf(filtro)}
+          onExportXml={(filtro) => void exportarXml(filtro)}
           onTomadaChanged={() => void load(true)}
         />
       ) : (
         <p className="text-sm text-muted-foreground">Não foi possível carregar o saldo de unidades.</p>
       )}
+      {documentoSaida.dialog}
     </div>
   );
 }

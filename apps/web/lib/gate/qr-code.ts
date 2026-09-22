@@ -26,6 +26,7 @@ export function decodeQRPayload(payload: string): QRCodeData | null {
 }
 
 export function isQRValid(data: QRCodeData): boolean {
-  if (!data.validade) return false;
+  if (!data.protocolo) return false;
+  if (!data.validade) return true;
   return new Date(data.validade) > new Date();
 }

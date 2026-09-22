@@ -67,7 +67,9 @@ import { PortalNotificacaoController } from './portal-notificacao.controller';
 import { PortalSimulacaoValoresController } from './portal-simulacao-valores.controller';
 import { PortalSimulacaoValoresService } from './services/portal-simulacao-valores.service';
 import { CatalogoContainersModule } from '../catalogo-containers/catalogo-containers.module';
+import { CatalogoNaviosModule } from '../catalogo-navios/catalogo-navios.module';
 import { CatalogoMotoristasExternosModule } from '../catalogo-motoristas-externos/catalogo-motoristas-externos.module';
+import { GateUnidadeNotificacaoModule } from '../gate-v2/gate-unidade-notificacao.module';
 
 /**
  * Fase 20 — Camada CX: portais cliente/fornecedor, IAM dedicado, branding, tickets e analytics.
@@ -103,7 +105,9 @@ import { CatalogoMotoristasExternosModule } from '../catalogo-motoristas-externo
     TenantModule,
     FiscalIntegracaoModule,
     CatalogoContainersModule,
+    CatalogoNaviosModule,
     CatalogoMotoristasExternosModule,
+    GateUnidadeNotificacaoModule,
     PlataformaCoreModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

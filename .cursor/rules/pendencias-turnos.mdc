@@ -1,0 +1,10 @@
+---
+description: Turnos vêm só de Parâmetros → Operacional
+alwaysApply: true
+---
+
+# Turnos
+
+Fonte única: `/cadastros/parametros/operacional` (`tenant.operacional.turnos`).
+
+O menu Cadastros → Operacional → Turnos **não existe mais**. Quem precisar de horário, capacidade ou dia da semana do turno lê os parâmetros do tenant — não a tabela `cadastros_turnos`.

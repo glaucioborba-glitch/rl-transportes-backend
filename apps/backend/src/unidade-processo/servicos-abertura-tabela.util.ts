@@ -55,6 +55,61 @@ export function isLancamentoAutomaticoTabela(payload: unknown): boolean {
   return (payload as { automatico?: unknown }).automatico === true;
 }
 
+export function isHandlingAutomaticoCodigo(codigo: string | null | undefined): boolean {
+  return (codigo ?? '').trim().toUpperCase() === CODIGO_HANDLING_ABERTURA;
+}
+
+export function isTomadaAutomaticoCodigo(codigo: string | null | undefined): boolean {
+  return (codigo ?? '').trim().toUpperCase() === CODIGO_TOMADA_ABERTURA;
+}
+
+export type TipoAutomaticoExcluivel = 'HANDLING' | 'TOMADA';
+
+export function tipoAutomaticoExcluivel(codigo: string | null | undefined): TipoAutomaticoExcluivel | null {
+  if (isHandlingAutomaticoCodigo(codigo)) return 'HANDLING';
+  if (isTomadaAutomaticoCodigo(codigo)) return 'TOMADA';
+  return null;
+}
+
+/** Soft-exclude: o lançamento permanece (evita relançar) mas some da pré-fatura. */
+export function isLancamentoAutomaticoExcluido(payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object') return false;
+  return (payload as { excluido?: unknown }).excluido === true;
+}
+
+export type PayloadExclusaoAutomatico = {
+  motivo: string;
+  gerenteId: string;
+  gerenteEmail?: string;
+  actorUserId: string;
+  em: string;
+  anexoNome?: string;
+  anexoMime?: string;
+  anexoStorageKey?: string;
+  anexoTamanho?: number;
+};
+
+export function payloadExclusaoAutomatico(payload: unknown): PayloadExclusaoAutomatico | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const raw = (payload as { exclusao?: unknown }).exclusao;
+  if (!raw || typeof raw !== 'object') return null;
+  const exclusao = raw as Record<string, unknown>;
+  const motivo = typeof exclusao.motivo === 'string' ? exclusao.motivo : '';
+  const gerenteId = typeof exclusao.gerenteId === 'string' ? exclusao.gerenteId : '';
+  if (!motivo || !gerenteId) return null;
+  return {
+    motivo,
+    gerenteId,
+    gerenteEmail: typeof exclusao.gerenteEmail === 'string' ? exclusao.gerenteEmail : undefined,
+    actorUserId: typeof exclusao.actorUserId === 'string' ? exclusao.actorUserId : '',
+    em: typeof exclusao.em === 'string' ? exclusao.em : '',
+    anexoNome: typeof exclusao.anexoNome === 'string' ? exclusao.anexoNome : undefined,
+    anexoMime: typeof exclusao.anexoMime === 'string' ? exclusao.anexoMime : undefined,
+    anexoStorageKey: typeof exclusao.anexoStorageKey === 'string' ? exclusao.anexoStorageKey : undefined,
+    anexoTamanho: typeof exclusao.anexoTamanho === 'number' ? exclusao.anexoTamanho : undefined,
+  };
+}
+
 function toMoney(value: unknown): number | null {
   if (value == null || value === '') return null;
   const n = Number(value);
@@ -180,7 +235,7 @@ export function buildLinhasAberturaTabela(input: {
     input.tipo,
     input.tamanho,
     status,
-    false,
+    Boolean(input.refrigerado),
   );
 
   const linhas: LinhaAberturaTabela[] = [];

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import QRCode from "react-qr-code";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +22,8 @@ import {
 import { buildContainerPrimaryDisplay } from "@/lib/container-display";
 import { formatContainerISO } from "@/utils/containerFormatter";
 import { toast } from "@/lib/toast";
+import { useDocumentoSaida } from "@/components/documento-saida/documento-saida-dialog";
+import { dataUrlToBlob } from "@/lib/documento-saida";
 import { RlLogo } from "./rl-logo";
 
 type Props = {
@@ -36,6 +38,8 @@ function formatContainers(isos: string[]): string {
 
 export function CredencialMotoristaModal({ open, onClose, credencial }: Props) {
   const exportRef = useRef<HTMLDivElement>(null);
+  const documentoSaida = useDocumentoSaida();
+  const [capturando, setCapturando] = useState(false);
 
   async function handleShare() {
     if (!credencial) return;
@@ -57,6 +61,7 @@ export function CredencialMotoristaModal({ open, onClose, credencial }: Props) {
 
   async function handleDownload() {
     if (!credencial || !exportRef.current) return;
+    setCapturando(true);
     try {
       const { toPng } = await import("html-to-image");
       const dataUrl = await toPng(exportRef.current, {
@@ -64,12 +69,17 @@ export function CredencialMotoristaModal({ open, onClose, credencial }: Props) {
         pixelRatio: 2,
         backgroundColor: "#ffffff",
       });
-      const a = document.createElement("a");
-      a.href = dataUrl;
-      a.download = `credencial-${credencial.protocolo}.png`;
-      a.click();
+      const blob = await dataUrlToBlob(dataUrl);
+      documentoSaida.pedir({
+        titulo: "Credencial de acesso",
+        descricao: "Imagem da credencial. Baixe o arquivo ou envie direto para a impressora.",
+        filename: `credencial-${credencial.protocolo}.png`,
+        obter: async () => blob,
+      });
     } catch {
       toast.error("Não foi possível gerar a imagem da credencial.");
+    } finally {
+      setCapturando(false);
     }
   }
 
@@ -81,6 +91,7 @@ export function CredencialMotoristaModal({ open, onClose, credencial }: Props) {
   const placasFmt = credencial.placas.length ? credencial.placas.join(" · ") : "—";
 
   return (
+    <>
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-md border-white/15 bg-zinc-950 p-0 sm:max-w-lg">
         <div className="rounded-lg bg-white p-5 text-zinc-950 sm:p-6">
@@ -171,13 +182,16 @@ export function CredencialMotoristaModal({ open, onClose, credencial }: Props) {
             <Button
               type="button"
               className="flex-1 bg-zinc-900 text-white hover:bg-zinc-800"
+              disabled={capturando}
               onClick={() => void handleDownload()}
             >
-              Baixar imagem
+              {capturando ? "Preparando…" : "Baixar imagem"}
             </Button>
           </div>
         </div>
       </DialogContent>
     </Dialog>
+    {documentoSaida.dialog}
+    </>
   );
 }

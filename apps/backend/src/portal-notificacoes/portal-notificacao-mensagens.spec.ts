@@ -4,6 +4,8 @@ import {
   mensagemCadastroEmAnalise,
   mensagemCadastroRejeitado,
   mensagemCondicaoAlterada,
+  mensagemPixCreditoAprovado,
+  mensagemPixCreditoNegado,
   mensagemUnidadeProcessoAberto,
   mensagemUnidadeProcessoEncerrado,
 } from './portal-notificacao-mensagens';
@@ -44,5 +46,14 @@ describe('portal-notificacao-mensagens', () => {
     const saida = mensagemUnidadeProcessoEncerrado(1284, 'MSKU1234567');
     expect(saida.tipo).toBe(TipoNotificacaoPortal.UNIDADE_PROCESSO_ENCERRADO);
     expect(saida.corpo).toMatch(/consolidada/i);
+  });
+
+  it('notifica aprovação e negativa do comprovante PIX', () => {
+    const ok = mensagemPixCreditoAprovado(150);
+    expect(ok.tipo).toBe(TipoNotificacaoPortal.PIX_CREDITO_APROVADO);
+    expect(ok.corpo).toMatch(/R\$ 150,00/);
+    const neg = mensagemPixCreditoNegado(80, 'Valor divergente da conta');
+    expect(neg.tipo).toBe(TipoNotificacaoPortal.PIX_CREDITO_NEGADO);
+    expect(neg.corpo).toContain('Valor divergente da conta');
   });
 });

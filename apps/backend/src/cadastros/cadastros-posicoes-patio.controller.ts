@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -67,5 +68,12 @@ export class CadastrosPosicoesPatioController {
   @ApiOperation({ summary: 'Atualizar posição de pátio' })
   update(@Param('id') id: string, @Body() dto: CadastrosPosicaoPatioFormDto) {
     return this.service.update(id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Excluir posição de pátio' })
+  remove(@Param('id') id: string) {
+    return this.service.remove(id);
   }
 }

@@ -20,11 +20,29 @@ import {
   OperacaoState,
   STATE_LABELS,
 } from './operacao-states.constants';
-import { buildQrOnApproval } from './operacao-fluxo-qr.util';
+import { buildQrOnApproval, qrEstaAtivo } from './operacao-fluxo-qr.util';
 import type { AssinaturaRicDto } from './dto/assinatura-ric.dto';
+import { generateRicPdfA4Dupla } from './ric-pdf-a4-dupla';
+import { generateRicPdfTermica80, usaRicTermica80 } from './ric-pdf-termica';
 import { generateRICPDF, type RICData } from './ric-pdf.service';
 import { EmpresaOperadoraService } from '../tenant/empresa-operadora.service';
 import { CatalogoContainersService } from '../catalogo-containers/catalogo-containers.service';
+import { CatalogoNaviosService } from '../catalogo-navios/catalogo-navios.service';
+import { MotoristaBiometriaService } from '../motorista-biometria/motorista-biometria.service';
+import { GateUnidadeNotificacaoService } from './gate-unidade-notificacao.service';
+import {
+  deltasDePatch,
+  LABEL_PATCH_CONTAINER,
+  LABEL_PATCH_TRANSPORTE,
+} from './gate-unidade-notificacao.util';
+import { ASSINATURA_BIOMETRIA_OK, isAssinaturaBiometria } from './assinatura-ric.util';
+import {
+  lacreRic,
+  lacreTrocaPatio,
+  textoLacreTroca,
+} from '../common/utils/lacre-operacional.util';
+import { composeObservacao, separarObservacaoLivreEEfeitos } from '../cadastros/servico-efeito';
+import { stripContainerIsoCanonical } from '../common/utils/data-sanitize';
 import {
   formatTamanhoContainerMatrix,
   formatTipoContainerCodigo,
@@ -48,6 +66,9 @@ import {
   mergeFotosVistoria,
   removerFotosRefazer,
   tiposEquivalentesFoto,
+  fotosVistoriaObrigatoriasAusentes,
+  rotuloFotoVistoria,
+  origemValorConferenciaOcr,
   ALIASES_FOTO_REFAZER,
   type MotivoDevolverPortaria,
   normalizeContainer,
@@ -134,6 +155,9 @@ export class GateOperacaoFlowService {
     private readonly auth: AuthService,
     private readonly empresa: EmpresaOperadoraService,
     private readonly catalogoContainers: CatalogoContainersService,
+    private readonly catalogoNavios: CatalogoNaviosService,
+    private readonly biometria: MotoristaBiometriaService,
+    private readonly gateNotificacoes: GateUnidadeNotificacaoService,
   ) {}
 
   private parseFluxoJson(raw: Prisma.JsonValue | null): OperacaoFluxoJson {
@@ -285,6 +309,10 @@ export class GateOperacaoFlowService {
         }
       : null;
     const transp = transportadoraDoDossie(s);
+    const observacaoSeparada = separarObservacaoLivreEEfeitos(
+      fluxo.observacaoGate,
+      fluxo.observacoesEfeito,
+    );
 
     return {
       id: s.id,
@@ -302,6 +330,7 @@ export class GateOperacaoFlowService {
       containerSetPoint: c?.setPoint ?? null,
       placa: t?.placaCavalo?.trim() || s.portaria?.placaVeiculo || '—',
       motoristaNome: t?.nomeMotorista?.trim() || s.portaria?.motoristaNome || '—',
+      motoristaCpf: t?.cpfMotorista?.trim() || s.portaria?.motoristaCpf || '',
       transportadoraNome: transp.nome || '—',
       transportadoraId: transp.id,
       transportadoraCnpj: transp.cnpj || '',
@@ -324,7 +353,8 @@ export class GateOperacaoFlowService {
       caboTomadaFotoObrigatoria: caboObrigatorio,
       caboTomadaFotoPresente: caboPresente,
       devolucaoPortaria: fluxo.devolucaoPortaria ?? null,
-      observacaoGate: fluxo.observacaoGate?.trim() || '',
+      observacaoGate: observacaoSeparada.livre,
+      observacoesEfeito: observacaoSeparada.efeitos,
       confirmadosGate: fluxo.correcoesGate?.confirmados ?? [],
       conferencia,
       ocrIndicativos: opts?.compact
@@ -388,6 +418,51 @@ export class GateOperacaoFlowService {
     };
   }
 
+  private async toOperacaoDto(s: SolicitacaoFull, opts?: { compact?: boolean }) {
+    const dto = this.mapOperacaoDto(s, opts);
+    if (opts?.compact) return dto;
+    return this.anexarLacreTroca(s, dto);
+  }
+
+  /** Troca de lacre no pátio — o operador do gate precisa ver o número atual e o da entrada. */
+  private async anexarLacreTroca(
+    s: SolicitacaoFull,
+    dto: ReturnType<GateOperacaoFlowService['mapOperacaoDto']>,
+  ) {
+    const iso = stripContainerIsoCanonical(this.containerNumero(s));
+    let processo =
+      s.unidadeProcessosSaida?.[0] ?? s.unidadeProcessosEntrada?.[0] ?? null;
+    if (!processo?.lacreSaida?.trim() && iso) {
+      processo =
+        (await this.unidadeProcesso.findAbertoPorIso(iso, this.prisma, {
+          clienteId: s.clienteId,
+        })) ?? processo;
+    }
+    if (!processo?.lacreSaida?.trim()) return dto;
+
+    let lacreEntrada = s.containersSolicitacao[0]?.lacre ?? null;
+    if (dto.direcaoUnidade === 'SAIDA' && processo.entradaSolicitacaoId) {
+      const entrada = await this.prisma.containerSolicitacao.findMany({
+        where: { solicitacaoId: processo.entradaSolicitacaoId },
+        select: { unidade: true, lacre: true },
+      });
+      const match = entrada.find((c) => stripContainerIsoCanonical(c.unidade) === iso);
+      if (match?.lacre?.trim()) lacreEntrada = match.lacre;
+    }
+
+    const troca = lacreTrocaPatio({
+      lacreEntrada,
+      lacreSaida: processo.lacreSaida,
+      observacao: processo.lacreSaidaObservacao,
+      origem: processo.lacreSaidaOrigem,
+    });
+    if (!troca) return dto;
+    return {
+      ...dto,
+      lacreTroca: { ...troca, texto: textoLacreTroca(troca) },
+    };
+  }
+
   private async transition(
     s: SolicitacaoFull,
     to: OperacaoState,
@@ -432,7 +507,7 @@ export class GateOperacaoFlowService {
 
   async getOperacao(protocolo: string) {
     const s = await this.findByProtocolo(protocolo);
-    return this.mapOperacaoDto(s);
+    return this.toOperacaoDto(s);
   }
 
   /** Dropdown de tipo/tamanho e transportadoras do dossiê (cadastro MDM). */
@@ -586,6 +661,29 @@ export class GateOperacaoFlowService {
       return item?.status === 'CONFERE' && !confirmados.has(campo);
     };
 
+    const itemConferencia = (campo: string) =>
+      byCampo[campo] ?? (campo === 'placaCavalo' ? byCampo.placa : undefined);
+
+    const assertSomenteAgendaOuOcr = (
+      campo: string,
+      informado: string,
+      normalizar: (value: string | null | undefined) => string,
+    ): 'ocr' | 'agendamento' => {
+      const item = itemConferencia(campo);
+      const origem = origemValorConferenciaOcr(
+        item?.solicitado,
+        item?.capturado,
+        informado,
+        normalizar,
+      );
+      if (!origem) {
+        throw new BadRequestException(
+          'Na conferência, confirme os dados do agendamento ou os dados do OCR. Não é permitido digitar outro valor.',
+        );
+      }
+      return origem;
+    };
+
     const t = s.transporteSolicitacao;
     const c = s.containersSolicitacao[0];
     const transporteData: Prisma.TransporteSolicitacaoUpdateInput = {};
@@ -619,8 +717,12 @@ export class GateOperacaoFlowService {
       }
       const next = normalizeContainer(body.container);
       if (!next) throw new BadRequestException('Número do contêiner inválido');
-      registrarOriginal('container', this.containerNumero(s));
-      containerData.unidade = next;
+      if (assertSomenteAgendaOuOcr('container', next, normalizeContainer) === 'agendamento') {
+        confirmados.add('container');
+      } else {
+        registrarOriginal('container', this.containerNumero(s));
+        containerData.unidade = next;
+      }
     }
     if (body.tipo != null) {
       const next = resolveTipoContainerCodigo(body.tipo, catalogoCodigos);
@@ -681,8 +783,13 @@ export class GateOperacaoFlowService {
       if (ocrTravado('lacre')) {
         throw new BadRequestException('Lacre conferido pelo OCR não pode ser alterado');
       }
-      registrarOriginal('lacre', c?.lacre ?? '');
-      containerData.lacre = normalizeLacre(body.lacre) || null;
+      const next = normalizeLacre(body.lacre);
+      if (assertSomenteAgendaOuOcr('lacre', next || body.lacre, normalizeLacre) === 'agendamento') {
+        confirmados.add('lacre');
+      } else {
+        registrarOriginal('lacre', c?.lacre ?? '');
+        containerData.lacre = next || null;
+      }
     }
     if (body.placaCavalo != null) {
       if (ocrTravado('placaCavalo')) {
@@ -690,8 +797,12 @@ export class GateOperacaoFlowService {
       }
       const next = normalizePlaca(body.placaCavalo);
       if (next.length < 7) throw new BadRequestException('Placa do cavalo inválida');
-      registrarOriginal('placaCavalo', t?.placaCavalo ?? '');
-      transporteData.placaCavalo = next;
+      if (assertSomenteAgendaOuOcr('placaCavalo', next, normalizePlaca) === 'agendamento') {
+        confirmados.add('placaCavalo');
+      } else {
+        registrarOriginal('placaCavalo', t?.placaCavalo ?? '');
+        transporteData.placaCavalo = next;
+      }
     }
     if (body.placaCarreta != null) {
       if (ocrTravado('placaCarreta')) {
@@ -699,16 +810,24 @@ export class GateOperacaoFlowService {
       }
       const next = normalizePlaca(body.placaCarreta);
       if (next.length < 7) throw new BadRequestException('Placa da carreta inválida');
-      registrarOriginal('placaCarreta', t?.placaCarreta01 ?? '');
-      transporteData.placaCarreta01 = next;
+      if (assertSomenteAgendaOuOcr('placaCarreta', next, normalizePlaca) === 'agendamento') {
+        confirmados.add('placaCarreta');
+      } else {
+        registrarOriginal('placaCarreta', t?.placaCarreta01 ?? '');
+        transporteData.placaCarreta01 = next;
+      }
     }
     if (body.placaCarreta02 != null) {
       if (ocrTravado('placaCarreta02')) {
         throw new BadRequestException('Placa carreta 02 conferida pelo OCR não pode ser alterada');
       }
       const next = normalizePlaca(body.placaCarreta02);
-      registrarOriginal('placaCarreta02', t?.placaCarreta02 ?? '');
-      transporteData.placaCarreta02 = next || null;
+      if (assertSomenteAgendaOuOcr('placaCarreta02', next, normalizePlaca) === 'agendamento') {
+        confirmados.add('placaCarreta02');
+      } else {
+        registrarOriginal('placaCarreta02', t?.placaCarreta02 ?? '');
+        transporteData.placaCarreta02 = next || null;
+      }
     }
     if (body.tipoCaminhao != null) {
       const next = String(body.tipoCaminhao).toUpperCase();
@@ -759,14 +878,16 @@ export class GateOperacaoFlowService {
       return atual;
     }
 
+    const separado = separarObservacaoLivreEEfeitos(fluxo.observacaoGate, fluxo.observacoesEfeito);
     const observacaoGate = temObservacao
       ? String(body.observacao).trim().slice(0, 2000)
-      : fluxo.observacaoGate?.trim() || '';
+      : separado.livre;
 
     const nextFluxo = JSON.parse(
       JSON.stringify({
         ...fluxo,
         observacaoGate: observacaoGate || undefined,
+        observacoesEfeito: separado.efeitos,
         correcoesGate: {
           confirmados: Array.from(confirmados),
           originais,
@@ -820,6 +941,12 @@ export class GateOperacaoFlowService {
       });
     });
 
+    if (typeof containerData.navio === 'string') {
+      void this.catalogoNavios.registrar(containerData.navio, 'GATE').catch((err) =>
+        this.logger.warn(`Catálogo de navio não atualizou: ${(err as Error).message}`),
+      );
+    }
+
     try {
       await this.auditoria.registrar({
         tabela: 'solicitacoes',
@@ -861,7 +988,58 @@ export class GateOperacaoFlowService {
       // Correção do Gate não pode falhar por auditoria.
     }
 
-    return this.mapOperacaoDto(await this.findByProtocolo(protocolo));
+    const processoId =
+      s.unidadeProcessosEntrada[0] ?? s.unidadeProcessosSaida[0] ?? null;
+    if (processoId) {
+      const mudancas = [
+        ...deltasDePatch(
+          containerData as Record<string, unknown>,
+          (c ?? null) as Record<string, unknown> | null,
+          LABEL_PATCH_CONTAINER,
+        ),
+        ...deltasDePatch(
+          transporteData as Record<string, unknown>,
+          (t ?? null) as Record<string, unknown> | null,
+          LABEL_PATCH_TRANSPORTE,
+        ),
+      ];
+      if (transportadoraPatch) {
+        const antes = s.portaria?.transportadoraNome ?? '';
+        const depois = transportadoraPatch.transportadoraNome ?? '';
+        if (antes !== depois) {
+          mudancas.push({
+            campo: 'transportadora',
+            label: 'Transportadora',
+            antes,
+            depois,
+          });
+        }
+      }
+      if (mudancas.length) {
+        const operador = await this.prisma.user.findUnique({
+          where: { id: actorUserId },
+          select: { email: true, role: true },
+        });
+        void this.gateNotificacoes
+          .registrar({
+            tenantId: s.tenantId || DEFAULT_TENANT_ID,
+            unidadeProcessoId: processoId.id,
+            unidadeIso: processoId.unidadeIso,
+            processoNumero: processoId.numero,
+            origem: 'GATE',
+            atorNome: operador?.email ?? actorUserId,
+            atorRole: String(operador?.role ?? 'OPERADOR_GATE'),
+            campos: mudancas,
+          })
+          .catch((err) =>
+            this.logger.warn(
+              `Notificação do Gate não gravou: ${(err as Error).message}`,
+            ),
+          );
+      }
+    }
+
+    return this.toOperacaoDto(await this.findByProtocolo(protocolo));
   }
 
   async autorizarGerente(
@@ -1001,7 +1179,7 @@ export class GateOperacaoFlowService {
     const updated = await this.transition(s, 'CHECKIN_PORTARIA', {}, actorUserId, {
       status: StatusSolicitacao.EM_EXECUCAO,
     });
-    return this.mapOperacaoDto(updated);
+    return this.toOperacaoDto(updated);
   }
 
   async submitVistoria(
@@ -1039,19 +1217,14 @@ export class GateOperacaoFlowService {
       body.avarias.length > 0
         ? body.avarias.map((a) => ({ ...a, timestamp: new Date().toISOString() }))
         : (fluxo.vistoria?.avarias ?? []);
-    const obrigatorias = [
-      'CONTAINER_OCR',
-      'PLACA_OCR',
-      'LADO_FRONTAL',
-      'LADO_TRASEIRO',
-      'LADO_DIREITO',
-      'LADO_ESQUERDO',
-    ];
-    const tipos = new Set(fotos.map((f) => f.tipo));
-    for (const t of obrigatorias) {
-      if (!tipos.has(t)) {
-        throw new BadRequestException(`Foto obrigatória ausente: ${t}`);
-      }
+    const ausentes = fotosVistoriaObrigatoriasAusentes(
+      fotos,
+      s.transporteSolicitacao?.tipoCaminhao ? String(s.transporteSolicitacao.tipoCaminhao) : null,
+    );
+    if (ausentes.length) {
+      throw new BadRequestException(
+        `Foto obrigatória ausente: ${ausentes.map((t) => rotuloFotoVistoria(t)).join(', ')}`,
+      );
     }
     const container = s.containersSolicitacao[0];
     if (
@@ -1079,7 +1252,7 @@ export class GateOperacaoFlowService {
       },
       actorUserId,
     );
-    return this.mapOperacaoDto(updated);
+    return this.toOperacaoDto(updated);
   }
 
   async getVistoria(protocolo: string) {
@@ -1132,7 +1305,7 @@ export class GateOperacaoFlowService {
       },
       actorUserId,
     );
-    return this.mapOperacaoDto(updated);
+    return this.toOperacaoDto(updated);
   }
 
   async reconfirmar(
@@ -1173,7 +1346,7 @@ export class GateOperacaoFlowService {
       },
       actorUserId,
     );
-    return this.mapOperacaoDto(updated);
+    return this.toOperacaoDto(updated);
   }
 
   async rejeitar(
@@ -1214,7 +1387,7 @@ export class GateOperacaoFlowService {
       );
       return u;
     });
-    return this.mapOperacaoDto(updated);
+    return this.toOperacaoDto(updated);
   }
 
   async saveAssinatura(protocolo: string, body: AssinaturaRicDto, actorUserId: string) {
@@ -1224,7 +1397,28 @@ export class GateOperacaoFlowService {
       throw new BadRequestException('Assinatura permitida após reconfirmação');
     }
     const modo = body.modo === 'MANUAL' ? 'MANUAL' : 'DIGITAL';
-    const assinatura = modo === 'MANUAL' ? '' : (body.assinatura ?? '').trim();
+    const rawAssinatura = (body.assinatura ?? '').trim();
+    const usaBiometria =
+      modo === 'DIGITAL' &&
+      (body.biometriaVerificada === true || isAssinaturaBiometria(rawAssinatura));
+    let assinatura = modo === 'MANUAL' ? '' : rawAssinatura;
+    if (usaBiometria) {
+      const cpf = (
+        s.transporteSolicitacao?.cpfMotorista?.trim() ||
+        s.portaria?.motoristaCpf ||
+        ''
+      ).replace(/\D/g, '');
+      if (cpf.length !== 11) {
+        throw new BadRequestException('CPF do motorista é obrigatório para assinar com digital.');
+      }
+      const bio = await this.biometria.status(s.tenantId ?? DEFAULT_TENANT_ID, cpf);
+      if (!bio.enrolled) {
+        throw new BadRequestException(
+          'Motorista sem digital cadastrada. Cadastre no leitor ou use assinatura no papel.',
+        );
+      }
+      assinatura = ASSINATURA_BIOMETRIA_OK;
+    }
     if (modo === 'DIGITAL' && !assinatura) {
       throw new BadRequestException('Assinatura do motorista é obrigatória no modo digital');
     }
@@ -1240,6 +1434,19 @@ export class GateOperacaoFlowService {
       assinaturaModo: modo,
       assinaturaOperadorId: actorUserId,
       ricGeradoEm: fluxo.ricGeradoEm ?? new Date().toISOString(),
+      ...(usaBiometria
+        ? {
+            assinaturaBiometria: {
+              cpf: (
+                s.transporteSolicitacao?.cpfMotorista?.trim() ||
+                s.portaria?.motoristaCpf ||
+                ''
+              ).replace(/\D/g, ''),
+              verificadoEm: new Date().toISOString(),
+              matched: true as const,
+            },
+          }
+        : {}),
     };
     const updated =
       state === 'RIC_GERADO'
@@ -1271,7 +1478,7 @@ export class GateOperacaoFlowService {
       .catch((err) =>
         this.logger.warn(`Catálogo da caixa não atualizou: ${(err as Error).message}`),
       );
-    return this.mapOperacaoDto(await this.findByProtocolo(updated.protocolo));
+    return this.toOperacaoDto(await this.findByProtocolo(updated.protocolo));
   }
 
   async buildRicData(protocolo: string, actorUserId?: string): Promise<RICData> {
@@ -1332,6 +1539,10 @@ export class GateOperacaoFlowService {
     const agendamento = dataRef
       ? `${dataRef.toLocaleDateString('pt-BR')}${turno ? ` - ${turno}` : ''}`
       : '—';
+    const observacaoSeparada = separarObservacaoLivreEEfeitos(
+      fluxo.observacaoGate,
+      fluxo.observacoesEfeito,
+    );
 
     return {
       protocolo: s.protocolo,
@@ -1351,9 +1562,11 @@ export class GateOperacaoFlowService {
       clienteNome: s.cliente.nomeFantasia || s.cliente.razaoSocial,
       clienteCNPJ: s.cliente.cpfCnpj ?? '',
       lacre:
-        direcao === 'SAIDA' && processoRow?.lacreSaida
-          ? processoRow.lacreSaida
-          : c?.lacre?.trim() || '—',
+        lacreRic(
+          direcao === 'SAIDA' ? 'SAIDA' : 'ENTRADA',
+          c?.lacre,
+          processoRow?.lacreSaida,
+        ) || '—',
       booking: c?.booking?.trim() || '—',
       processo: c?.processo?.trim() || '—',
       navio: c?.navio?.trim() || '—',
@@ -1377,12 +1590,11 @@ export class GateOperacaoFlowService {
       assinaturaModo: fluxo.assinaturaModo === 'MANUAL' ? 'MANUAL' : 'DIGITAL',
       dataAssinatura: fluxo.ricGeradoEm ?? new Date().toISOString(),
       qrToken: fluxo.qrToken ?? '',
-      observacaoGate: [
-        fluxo.observacaoGate?.trim(),
-        direcao === 'SAIDA' ? processoRow?.lacreSaidaObservacao?.trim() : '',
-      ]
-        .filter(Boolean)
-        .join(' '),
+      observacaoGate: composeObservacao(
+        observacaoSeparada.livre,
+        observacaoSeparada.efeitos,
+        direcao === 'SAIDA' ? processoRow?.lacreSaidaObservacao : '',
+      ),
       operadorNome: operadorAssinatura.nome,
       operadorCPF: operadorAssinatura.cpf,
       logoPng: logoPng ?? undefined,
@@ -1422,8 +1634,27 @@ export class GateOperacaoFlowService {
     return { nome, cpf };
   }
 
-  async streamRicPdf(protocolo: string, actorUserId?: string): Promise<PassThrough> {
+  async streamRicPdf(
+    protocolo: string,
+    actorUserId?: string,
+    modelo?: string,
+  ): Promise<PassThrough> {
     const data = await this.buildRicData(protocolo, actorUserId);
+    const m = (modelo ?? '').trim().toLowerCase();
+    if (m === 'dupla') {
+      return generateRicPdfA4Dupla(data);
+    }
+    if (m === 'cupom') {
+      if (!usaRicTermica80(data)) {
+        throw new BadRequestException(
+          'O cupom térmico só é emitido quando a RIC foi assinada com impressão digital.',
+        );
+      }
+      return generateRicPdfTermica80(data);
+    }
+    if (m === 'completa') {
+      return generateRICPDF(data, { forcarCompleta: true });
+    }
     return generateRICPDF(data);
   }
 
@@ -1465,7 +1696,7 @@ export class GateOperacaoFlowService {
       await this.unidadeProcesso.onLiberarOperacao(s.id, actorUserId, tx);
       return next;
     });
-    return this.mapOperacaoDto(await this.findByProtocolo(updated.protocolo));
+    return this.toOperacaoDto(await this.findByProtocolo(updated.protocolo));
   }
 
   async iniciarOperacao(protocolo: string, equipamentoId: string | undefined, actorUserId: string) {
@@ -1480,7 +1711,7 @@ export class GateOperacaoFlowService {
       { tatInicio: new Date().toISOString(), equipamentoId },
       actorUserId,
     );
-    return this.mapOperacaoDto(updated);
+    return this.toOperacaoDto(updated);
   }
 
   async concluirOperacao(protocolo: string, actorUserId: string) {
@@ -1497,7 +1728,7 @@ export class GateOperacaoFlowService {
       actorUserId,
       { status: StatusSolicitacao.CONCLUIDO },
     );
-    return this.mapOperacaoDto(updated);
+    return this.toOperacaoDto(updated);
   }
 
   async countAguardandoReconfirmacao(): Promise<number> {
@@ -1583,22 +1814,25 @@ export class GateOperacaoFlowService {
     for (const s of rows) {
       const fluxo = this.parseFluxoJson(s.operacaoFluxoJson);
       if (fluxo.qrToken !== token) continue;
-      if (fluxo.qrValidade && new Date(fluxo.qrValidade) <= new Date()) {
-        throw new BadRequestException('QR Code expirado');
+      if (!qrEstaAtivo(fluxo)) {
+        throw new BadRequestException(
+          fluxo.qrAtivo === false ? 'QR Code aguardando aprovação no Gate' : 'QR Code expirado',
+        );
       }
-      return this.mapOperacaoDto(s);
+      return this.toOperacaoDto(s);
     }
     throw new NotFoundException('QR Code inválido');
   }
 
-  /** Gera token QR na aprovação (24h). */
+  /** Gera/reativa o QR na aprovação — reutiliza o token se já existir. */
   buildQrOnApproval(
     existingJson: OperacaoFluxoJson,
     protocolo: string,
     clienteId: string,
     container: string,
+    validadeHoras?: number,
   ) {
-    return buildQrOnApproval(existingJson, protocolo, clienteId, container);
+    return buildQrOnApproval(existingJson, protocolo, clienteId, container, validadeHoras);
   }
 
   async portariaStats() {

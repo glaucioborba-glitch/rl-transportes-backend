@@ -140,6 +140,7 @@ export function mapStatusCounts(
         canceladas += n;
         break;
       case StatusSolicitacao.CANCELADO:
+      case StatusSolicitacao.CANCELADO_CLIENTE:
         canceladas += n;
         break;
       default:
@@ -192,4 +193,89 @@ export function desempenhoPct(cumpridos: number, violados: number): number {
   const d = cumpridos + violados;
   if (d <= 0) return 100;
   return Math.round((100 * cumpridos) / d);
+}
+
+const TZ_PORTAL = 'America/Sao_Paulo';
+
+/** Calendário civil do portal (Brasil), não UTC. */
+export function ymdInTimeZone(ref = new Date(), timeZone = TZ_PORTAL): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(ref);
+}
+
+/** Meia-noite UTC do dia civil `YYYY-MM-DD` — adequado a colunas `@db.Date`. */
+export function utcDateOnly(ymd: string): Date {
+  return new Date(`${ymd}T00:00:00.000Z`);
+}
+
+function tzOffsetMs(instant: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(instant);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  const asUtc = Date.UTC(
+    get('year'),
+    get('month') - 1,
+    get('day'),
+    get('hour'),
+    get('minute'),
+    get('second'),
+  );
+  return asUtc - instant.getTime();
+}
+
+function startOfZonedDay(ymd: string, timeZone: string): Date {
+  const utcGuess = new Date(`${ymd}T00:00:00.000Z`);
+  const first = new Date(utcGuess.getTime() - tzOffsetMs(utcGuess, timeZone));
+  return new Date(utcGuess.getTime() - tzOffsetMs(first, timeZone));
+}
+
+function addCalendarDay(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+}
+
+/** Instante inicial e final do dia civil no fuso do portal. */
+export function dayBoundsInTimeZone(
+  ref = new Date(),
+  timeZone = TZ_PORTAL,
+): { start: Date; end: Date; ymd: string } {
+  const ymd = ymdInTimeZone(ref, timeZone);
+  const start = startOfZonedDay(ymd, timeZone);
+  const nextStart = startOfZonedDay(addCalendarDay(ymd), timeZone);
+  return { start, end: new Date(nextStart.getTime() - 1), ymd };
+}
+
+export function monthBoundsInTimeZone(
+  ref = new Date(),
+  timeZone = TZ_PORTAL,
+): { start: Date; end: Date } {
+  const ymd = ymdInTimeZone(ref, timeZone);
+  const [y, m] = ymd.split('-').map(Number);
+  const startYmd = `${y}-${String(m).padStart(2, '0')}-01`;
+  const nextMonth = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`;
+  const start = startOfZonedDay(startYmd, timeZone);
+  const nextStart = startOfZonedDay(nextMonth, timeZone);
+  return { start, end: new Date(nextStart.getTime() - 1) };
+}
+
+const BOLETO_QUITADO = new Set(['pago', 'cancelado']);
+
+export function boletoStatusAberto(status: string | null | undefined): boolean {
+  return !BOLETO_QUITADO.has((status ?? '').trim().toLowerCase());
+}
+
+export function faturamentoStatusAberto(statusBoleto: string | null | undefined): boolean {
+  return boletoStatusAberto(statusBoleto);
 }

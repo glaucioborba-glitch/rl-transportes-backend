@@ -171,7 +171,6 @@ export class CadastrosTerceirosService {
       where: {
         tenantId: DEFAULT_TENANT,
         motoristaCpf: cpf,
-        deletedAt: null,
         ...(excludeId ? { NOT: { id: excludeId } } : {}),
       },
     });

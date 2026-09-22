@@ -19,11 +19,10 @@ import { clienteLogoPublicUrl } from "@/lib/api/empresa-client";
 const NAV_ALL = [
   { href: "/portal/dashboard", label: "Dashboard" },
   { href: "/portal/solicitacoes", label: "Solicitações", perm: "podeVerOS" as const },
-  { href: "/portal/patio", label: "Saldo no pátio", perm: "podeVerOS" as const },
+  { href: "/portal/patio", label: "Consulta de estoque", perm: "podeVerOS" as const },
   { href: "/portal/simulacao-valores", label: "Simulação de valores", perm: "podeVerOS" as const },
   { href: "/portal/financeiro", label: "Financeiro", perm: "podeVisualizarFinanceiro" as const },
   { href: "/portal/notificacoes", label: "Notificações" },
-  { href: "/portal/documentos", label: "Documentos" },
   { href: "/portal/perfil/seguranca", label: "Segurança" },
   { href: "/portal/perfil", label: "Perfil" },
 ] as const;

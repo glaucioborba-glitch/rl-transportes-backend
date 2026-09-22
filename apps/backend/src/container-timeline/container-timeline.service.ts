@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { stripContainerIsoCanonical } from '../common/utils/data-sanitize';
+import { lacreRic } from '../common/utils/lacre-operacional.util';
 import { PrismaService } from '../prisma/prisma.service';
 import type {
   ContainerRicPayload,
@@ -137,16 +138,13 @@ export class ContainerTimelineService {
     const form = ctx.containerSolicitacoes.find(
       (c) => c.unidade.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() === iso,
     );
-    const lacreEntrada = form?.lacre?.trim() || undefined;
-    if (tipo !== 'SAIDA') return lacreEntrada ? { lacre: lacreEntrada } : {};
     const processo = ctx.unidadeProcessos.find((p) => p.unidadeIso === iso && p.lacreSaida);
-    if (processo?.lacreSaida) {
-      return {
-        lacre: processo.lacreSaida,
-        lacreObservacao: processo.lacreSaidaObservacao ?? undefined,
-      };
+    const lacre = lacreRic(tipo, form?.lacre, processo?.lacreSaida);
+    if (!lacre) return {};
+    if (tipo === 'SAIDA' && processo?.lacreSaida) {
+      return { lacre, lacreObservacao: processo.lacreSaidaObservacao ?? undefined };
     }
-    return lacreEntrada ? { lacre: lacreEntrada } : {};
+    return { lacre };
   }
 
   private async assertClienteOwnsIso(iso: string, clienteId: string): Promise<void> {

@@ -24,6 +24,10 @@ export type BillingRuleEngineInput = {
   container: ContainerBillingContext;
   incluirGateIn?: boolean;
   incluirGateOut?: boolean;
+  /** Handling automático excluído com senha gerencial — não relança nem substitui por taxa de gate. */
+  omitirHandling?: boolean;
+  /** Tomada automática excluída com senha gerencial — não relança energia reefer. */
+  omitirEnergia?: boolean;
   shiftingExtras?: number;
   /**
    * Dias com tomada reefer conectada (prorata).

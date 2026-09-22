@@ -13,6 +13,7 @@ import { CxPortalRateLimitGuard } from './guards/cx-portal-rate-limit.guard';
 import { CxPortalSegmentGuard } from './guards/cx-portal-segment.guard';
 import { PortalCxInterceptor } from './interceptors/portal-cx.interceptor';
 import { PortalFornecedorDataService } from './services/portal-fornecedor-data.service';
+import { contextoAuditoriaPortal } from './portal-auditoria-contexto.util';
 import type { CxPortalRequestUser } from './types/cx-portal.types';
 
 class ConfirmarEntregaDto {
@@ -115,7 +116,7 @@ export class PortalFornecedorController {
         registroId: u.sub,
         acao,
         usuario: u.sub,
-        dadosDepois: { portal: true, tipo: 'PORTAL', segmento: 'fornecedor', rota, ...extra },
+        dadosDepois: contextoAuditoriaPortal(u, { segmento: 'fornecedor', rota, ...extra }),
       });
     } catch {
       /* noop */

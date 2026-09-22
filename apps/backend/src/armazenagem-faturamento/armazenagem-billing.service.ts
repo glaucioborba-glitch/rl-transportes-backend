@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { EventoGatilhoTarifa, Prisma, StatusPreFatura, StatusPagamentoFatura } from '@prisma/client';
 import { AlertService } from '../alert/alert.service';
@@ -20,7 +21,7 @@ import {
 } from '../aluguel/aluguel-pricing.util';
 import { toDecimal } from './armazenagem-billing.util';
 import { assertNoConflictingBilling } from './billing-coexistence.util';
-import { syncExtrasOnPreFatura } from './fatura-extras.util';
+import { flagsExclusaoAutomatica, processoTemHandlingExcluido, syncExtrasOnPreFatura } from './fatura-extras.util';
 
 export type PreFaturaPortalView = {
   containerIso: string;
@@ -53,6 +54,36 @@ export class ArmazenagemBillingService {
     private readonly ruleEngine: BillingRuleEngineService,
     private readonly alerts: AlertService,
   ) {}
+
+  /** Tabela incompleta não pode travar o ID da RIC. */
+  private async resolvePricingForGateInOrSkip(clienteId: string) {
+    try {
+      return await this.ruleEngine.resolvePricingForCliente(clienteId);
+    } catch (err) {
+      if (err instanceof UnprocessableEntityException || err instanceof NotFoundException) {
+        this.logger.warn(`Pré-fatura não abriu (tabela incompleta): ${err.message}`);
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  private async evaluateGateInOrSkip(
+    tenantId: string,
+    params: Parameters<BillingRuleEngineService['evaluateForContainerCycleWithTenant']>[1],
+  ) {
+    try {
+      return await this.ruleEngine.evaluateForContainerCycleWithTenant(tenantId, params);
+    } catch (err) {
+      if (err instanceof UnprocessableEntityException) {
+        this.logger.warn(
+          `Pré-fatura não abriu para ${'containerIso' in params ? params.containerIso : 'ISO'}: ${err.message}`,
+        );
+        return null;
+      }
+      throw err;
+    }
+  }
 
   /** Abre pré-faturas ABERTAS para cada ISO provisionado no gate-in. */
   async openPreFaturasForGateIn(
@@ -106,7 +137,7 @@ export class ArmazenagemBillingService {
         pf.id,
         evaluation,
         tx,
-        [EventoGatilhoTarifa.GATE_IN],
+        [EventoGatilhoTarifa.GATE_IN, EventoGatilhoTarifa.HANDLING],
       );
       const total = await this.ruleEngine.sumItensTotal(pf.id, tx);
       await tx.preFatura.update({
@@ -127,10 +158,18 @@ export class ArmazenagemBillingService {
       clienteId: string;
       entradaEm: Date;
       gateInId?: string | null;
+      containerHint?: {
+        tipo?: string | null;
+        tamanho?: string | null;
+        status?: string | null;
+        refrigerado?: boolean;
+        setPoint?: number | null;
+      };
     },
     tx: Prisma.TransactionClient,
   ) {
-    const pricing = await this.ruleEngine.resolvePricingForCliente(input.clienteId);
+    const pricing = await this.resolvePricingForGateInOrSkip(input.clienteId);
+    if (!pricing) return;
     const clienteRow = await tx.cliente.findUnique({
       where: { id: input.clienteId },
       select: { tenantId: true },
@@ -149,6 +188,32 @@ export class ArmazenagemBillingService {
         unidadeProcessoId: input.unidadeProcessoId,
         gateInId: input.gateInId,
       });
+      const container = await this.ruleEngine.loadContainerContext(
+        input.gateInId,
+        containerIso,
+        {
+          unidadeProcessoId: input.unidadeProcessoId,
+          solicitacaoId: u.solicitacaoId,
+          tx,
+          containerHint: input.containerHint,
+        },
+      );
+      const exclusao = await flagsExclusaoAutomatica(tx, input.unidadeProcessoId);
+      const evaluation = await this.evaluateGateInOrSkip(tenantId, {
+        gateInAt: input.entradaEm,
+        asOf: input.entradaEm,
+        regras: pricing.regras,
+        container,
+        fase: 'GATE_IN',
+        clienteId: input.clienteId,
+        tabelaPrecoId: pricing.tabelaPrecoId,
+        gateInId: input.gateInId ?? input.unidadeProcessoId,
+        containerIso,
+        omitirHandling: exclusao.omitirHandling,
+        omitirEnergia: exclusao.omitirEnergia,
+      });
+      if (!evaluation) continue;
+
       const pf = await tx.preFatura.upsert({
         where: {
           unidadeProcessoId_containerIso_segmento: {
@@ -172,24 +237,10 @@ export class ArmazenagemBillingService {
         },
       });
 
-      const container = await this.ruleEngine.loadContainerContext(
-        input.gateInId,
-        containerIso,
-        { unidadeProcessoId: input.unidadeProcessoId, solicitacaoId: u.solicitacaoId },
-      );
-      const evaluation = await this.ruleEngine.evaluateForContainerCycleWithTenant(tenantId, {
-        gateInAt: input.entradaEm,
-        asOf: input.entradaEm,
-        regras: pricing.regras,
-        container,
-        fase: 'GATE_IN',
-        clienteId: input.clienteId,
-        tabelaPrecoId: pricing.tabelaPrecoId,
-        gateInId: input.gateInId ?? input.unidadeProcessoId,
-        containerIso,
-      });
-
-      await this.ruleEngine.persistItens(pf.id, evaluation, tx, [EventoGatilhoTarifa.GATE_IN]);
+      await this.ruleEngine.persistItens(pf.id, evaluation, tx, [
+        EventoGatilhoTarifa.GATE_IN,
+        EventoGatilhoTarifa.HANDLING,
+      ]);
       const total = await this.totalComExtras(tx, {
         preFaturaId: pf.id,
         unidadeProcessoId: input.unidadeProcessoId,
@@ -442,6 +493,7 @@ export class ArmazenagemBillingService {
         gateInId: pf.freeTimeZerado ? undefined : (pf.gateInId ?? pf.unidadeProcessoId ?? pf.id),
         containerIso: pf.containerIso,
         forcarDiasFreeTime: pf.freeTimeZerado ? 0 : undefined,
+        ...(await flagsExclusaoAutomatica(this.prisma, pf.unidadeProcessoId ?? pf.unidadeProcesso?.id)),
       });
 
       await this.ruleEngine.persistItens(pf.id, diariaEval, undefined, [
@@ -586,6 +638,7 @@ export class ArmazenagemBillingService {
       tabelaPrecoId: pricing.tabelaPrecoId,
       gateInId: resolvedGateInId ?? pf?.unidadeProcessoId ?? containerIso,
       containerIso,
+      ...(await flagsExclusaoAutomatica(this.prisma, pf?.unidadeProcessoId ?? pf?.unidadeProcesso?.id)),
     });
 
     const gateInItems =
@@ -733,6 +786,7 @@ export class ArmazenagemBillingService {
           containerIso: pf.containerIso,
           forcarDiasFreeTime: pf.freeTimeZerado ? 0 : undefined,
           omitirGateIn: pf.segmento > 0,
+          ...(await flagsExclusaoAutomatica(tx, unidadeProcessoId)),
         });
 
         await this.ruleEngine.persistItens(pf.id, evaluation, tx);
@@ -893,6 +947,7 @@ export class ArmazenagemBillingService {
         tabelaPrecoId: pricing.tabelaPrecoId,
         gateInId,
         containerIso: pf.containerIso,
+        ...(await flagsExclusaoAutomatica(tx, pf.unidadeProcessoId)),
       });
 
       await this.ruleEngine.persistItens(pf.id, evaluation, tx);
@@ -1086,6 +1141,7 @@ export class ArmazenagemBillingService {
 
   /** Recalcula a linha de handling com tarifa CHEIO (troca de status / transbordo). */
   async persistHandlingCheio(unidadeProcessoId: string): Promise<void> {
+    if (await processoTemHandlingExcluido(this.prisma, unidadeProcessoId)) return;
     const pfs = await this.prisma.preFatura.findMany({
       where: { unidadeProcessoId, status: StatusPreFatura.ABERTA },
       include: { cliente: { select: { tenantId: true } } },

@@ -603,11 +603,15 @@ export function normalizePortalDashboard(
 ): PortalDashboardConsolidatedResponse {
   return {
     ...dash,
-    financeiro: dash.financeiro ?? {
-      boletosPendentes: 0,
-      nfseEmitidas: 0,
-      faturadoMes: 0,
-      totalFaturadoPeriodo: 0,
+    financeiro: {
+      boletosPendentes: dash.financeiro?.boletosPendentes ?? 0,
+      boletosVencidos: dash.financeiro?.boletosVencidos ?? 0,
+      nfseEmitidas: dash.financeiro?.nfseEmitidas ?? 0,
+      faturadoMes: dash.financeiro?.faturadoMes ?? 0,
+      totalFaturadoPeriodo: dash.financeiro?.totalFaturadoPeriodo ?? 0,
+      faturasEmAberto: dash.financeiro?.faturasEmAberto ?? 0,
+      valorEmAberto: dash.financeiro?.valorEmAberto ?? 0,
+      saldoContaCorrente: dash.financeiro?.saldoContaCorrente ?? 0,
     },
     slas: dash.slas ?? { cumpridos: 0, violados: 0, desempenho: 100 },
     kpisCx: dash.kpisCx ?? DEFAULT_PORTAL_KPIS,
@@ -625,6 +629,8 @@ export function normalizePortalDashboard(
     },
     trackingSample: dash.trackingSample ?? [],
     solicitacoesHoje: dash.solicitacoesHoje ?? [],
+    unidadesNoPatio: dash.unidadesNoPatio ?? dash.kpisCx?.valores.containers_ativos ?? 0,
+    agendamentosHojeCount: dash.agendamentosHojeCount ?? dash.solicitacoesHoje?.length ?? 0,
     recent: dash.recent ?? {
       items: [],
       total: 0,
@@ -719,6 +725,10 @@ export function portalAtualizarPessoaAutorizada(
 
 export function portalRevogarPessoaAutorizada(pessoaId: string) {
   return portalAtualizarPessoaAutorizada(pessoaId, { ativo: false });
+}
+
+export function portalReativarPessoaAutorizada(pessoaId: string) {
+  return portalAtualizarPessoaAutorizada(pessoaId, { ativo: true });
 }
 
 export type TransportadoraAutorizadaRow = {
@@ -1010,6 +1020,8 @@ export type PortalPatioSaldoItem = {
   booking: string | null;
   processo: string | null;
   navio?: string | null;
+  lacre?: string | null;
+  setPoint?: number | null;
   protocolo: string;
   solicitacaoId: string;
   unidadeProcessoNumero?: number | null;
@@ -1033,6 +1045,32 @@ export function fetchPatioSaldo() {
   return portalJson<PortalPatioSaldoResponse>("/cliente/portal/patio/saldo");
 }
 
+export type CampoEmbarquePatio = "booking" | "processo" | "navio";
+export type AlcanceEmbarquePatio = "unidade" | "processo" | "booking" | "navio";
+
+export type PortalEmbarqueUpdatePayload = {
+  solicitacaoId: string;
+  unidadeIso: string;
+  campo: CampoEmbarquePatio;
+  valor: string;
+  alcance?: AlcanceEmbarquePatio;
+};
+
+export type PortalEmbarqueUpdateResponse = {
+  atualizadas: number;
+  alcance: AlcanceEmbarquePatio;
+  booking: string | null;
+  processo: string | null;
+  navio: string | null;
+};
+
+export function atualizarPatioEmbarque(body: PortalEmbarqueUpdatePayload) {
+  return portalJson<PortalEmbarqueUpdateResponse>("/cliente/portal/patio/embarque", {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
 export type PortalEstoqueClienteResponse = {
   total: number;
   atualizadoEm: string;
@@ -1054,10 +1092,16 @@ export type PortalSimulacaoServico = {
   valorEstimado: number | null;
 };
 
+export type PortalSimulacaoUnidade = PortalPatioSaldoItem & {
+  valorLancado?: number;
+  preFaturaId?: string | null;
+};
+
 export type PortalSimulacaoCatalogo = {
-  unidades: PortalPatioSaldoItem[];
+  unidades: PortalSimulacaoUnidade[];
   servicos: PortalSimulacaoServico[];
   atualizadoEm: string;
+  aviso?: string;
 };
 
 export type PortalSimulacaoItem = {
@@ -1066,7 +1110,8 @@ export type PortalSimulacaoItem = {
   quantidade: number;
   valorUnitario: number;
   valorTotal: number;
-  origem: "ARMAZENAGEM" | "SERVICO_ADICIONAL";
+  origem: "PRE_FATURA" | "PROJECAO" | "ARMAZENAGEM" | "SERVICO_ADICIONAL";
+  eventoGatilho?: string;
 };
 
 export type PortalSimulacaoResultado = {
@@ -1084,23 +1129,32 @@ export type PortalSimulacaoResultado = {
   diasNoPatio: number;
   diasFreeTime: number;
   diasFaturaveis: number;
+  valorLancado: number;
+  preFaturaId?: string | null;
   itens: PortalSimulacaoItem[];
   total: number;
   avisos: string[];
   estimativa: boolean;
 };
 
-export function fetchSimulacaoValoresCatalogo(unidadeId?: string) {
-  const q = unidadeId ? `?unidadeId=${encodeURIComponent(unidadeId)}` : "";
-  return portalJson<PortalSimulacaoCatalogo>(`/cliente/portal/simulacao-valores${q}`);
+export type PortalSimulacaoLote = {
+  dataSaida: string;
+  estimativa: boolean;
+  avisoGeral: string;
+  unidades: PortalSimulacaoResultado[];
+  totalGeral: number;
+  valorLancadoGeral: number;
+};
+
+export function fetchSimulacaoValoresCatalogo() {
+  return portalJson<PortalSimulacaoCatalogo>(`/cliente/portal/simulacao-valores`);
 }
 
 export function simularValoresPortal(payload: {
-  unidadeId: string;
+  unidadeIds: string[];
   dataSaida: string;
-  servicos?: string[];
 }) {
-  return portalJson<PortalSimulacaoResultado>("/cliente/portal/simulacao-valores", {
+  return portalJson<PortalSimulacaoLote>("/cliente/portal/simulacao-valores", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -1128,6 +1182,12 @@ export type SolicitacaoRow = {
   protocolo: string;
   status: string;
   versaoCredencial?: number;
+  operacaoFluxoEstado?: string | null;
+  operacaoFluxoJson?: {
+    qrToken?: string;
+    qrValidade?: string;
+    qrAtivo?: boolean;
+  } | null;
   tipoOperacao?: TipoOperacaoSolicitacaoIntent | null;
   createdAt: string;
   updatedAt?: string;
@@ -1183,6 +1243,10 @@ export type SolicitacaoRow = {
   gate?: unknown | null;
   patio?: unknown | null;
   saida?: unknown | null;
+  unidadeProcessoNumero?: number | null;
+  unidadeProcessoLabel?: string | null;
+  unidadeProcessosEntrada?: Array<{ id?: string; numero: number; status?: string; entradaEm?: string }>;
+  unidadeProcessosSaida?: Array<{ id?: string; numero: number; status?: string }>;
 };
 
 export type SolicitacoesEscopo = "minhas" | "todas";
@@ -1238,6 +1302,18 @@ export function fetchPortalMotoristaExterno(cpf: string) {
 export function fetchPortalCatalogoContainer(iso: string) {
   return portalJson<import("@/lib/catalogo-container-iso").CatalogoContainerIso | null>(
     `/cliente/portal/catalogo-containers/${encodeURIComponent(iso)}`,
+  );
+}
+
+export type CatalogoNavioItem = {
+  nome: string;
+  origem: string;
+};
+
+export function fetchPortalCatalogoNavios(q?: string) {
+  const query = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+  return portalJson<{ items: CatalogoNavioItem[]; total: number }>(
+    `/cliente/portal/catalogo-navios${query}`,
   );
 }
 
@@ -1438,6 +1514,33 @@ export type CreateSolicitacaoV2Payload = {
   bookingDeadline?: string;
 };
 
+export type CotacaoPixIdItem = {
+  unidadeIso: string;
+  unidadeProcessoId: string;
+  unidadeProcessoNumero: number;
+  unidadeProcessoLabel: string;
+  valor: number;
+};
+
+export type CotacaoPixSaida = {
+  exigido: boolean;
+  suficiente: boolean;
+  saldo: number;
+  valor: number;
+  saldoApos: number;
+  ids: CotacaoPixIdItem[];
+};
+
+export function cotarPixSaidaSolicitacao(body: {
+  tipoOperacao: TipoOperacaoSolicitacaoIntent;
+  unidades: string[];
+}) {
+  return portalJson<CotacaoPixSaida>("/portal/v2/solicitacoes/cotacao-pix", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export function criarSolicitacaoV2(body: CreateSolicitacaoV2Payload) {
   return portalJson<SolicitacaoRow>("/portal/v2/solicitacoes", {
     method: "POST",
@@ -1590,6 +1693,22 @@ export function criarPixCreditoContaCorrente(body: { valor: number }) {
   });
 }
 
+export function enviarComprovantePixCredito(body: {
+  valor: number;
+  referenciaExterna: string;
+  file: File;
+}) {
+  const fd = new FormData();
+  fd.append("valor", String(body.valor));
+  fd.append("referenciaExterna", body.referenciaExterna);
+  fd.append("file", body.file);
+  return portalMultipartJson<{ ok: true; comprovanteId?: string; ticketId?: string; arquivo: string }>(
+    "/cliente/portal/financeiro/conta-corrente/pix-credito/comprovante",
+    fd,
+    "POST",
+  );
+}
+
 export async function fetchBoletosPaginated(params: { page?: number; limit?: number }) {
   const rows = await portalJson<Record<string, unknown>[]>("/cliente/portal/financeiro/boletos");
   const page = params.page ?? 1;
@@ -1682,10 +1801,16 @@ export type PortalDashboardConsolidatedResponse = {
   kpisCx: KpisResponse;
   financeiro: {
     boletosPendentes: number;
+    boletosVencidos?: number;
     nfseEmitidas: number;
     faturadoMes: number;
     totalFaturadoPeriodo: number;
+    faturasEmAberto?: number;
+    valorEmAberto?: number;
+    saldoContaCorrente?: number;
   };
+  unidadesNoPatio?: number;
+  agendamentosHojeCount?: number;
   slas: { cumpridos: number; violados: number; desempenho: number };
   slasCx: SlasResponse;
   unidades: {
@@ -1748,7 +1873,7 @@ export function fetchPortalDashboard(
 
 export type PortalNotificacao = {
   id: string;
-  tipo: "CADASTRO_EM_ANALISE" | "CADASTRO_APROVADO" | "CADASTRO_REJEITADO" | "CONDICAO_PAGAMENTO_ALTERADA" | "UNIDADE_PROCESSO_ABERTO" | "UNIDADE_PROCESSO_ENCERRADO";
+  tipo: "CADASTRO_EM_ANALISE" | "CADASTRO_APROVADO" | "CADASTRO_REJEITADO" | "CONDICAO_PAGAMENTO_ALTERADA" | "UNIDADE_PROCESSO_ABERTO" | "UNIDADE_PROCESSO_ENCERRADO" | "PIX_CREDITO_APROVADO" | "PIX_CREDITO_NEGADO";
   titulo: string;
   corpo: string;
   link: string | null;

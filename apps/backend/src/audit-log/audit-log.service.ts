@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   AUDIT_ACAO_UPDATE,
   AUDIT_ENTIDADE_SOLICITACAO,
+  formatAuditActorLabel,
   type AuditFieldDelta,
   type SolicitacaoAuditSnapshot,
 } from './audit-log-solicitacao.util';
@@ -75,22 +76,44 @@ export class AuditLogService {
 
   async appendSolicitacaoUpdate(
     solicitacaoId: string,
-    actor: { usuarioId: string; usuarioNome: string; usuarioRole: string },
+    actor: {
+      usuarioId: string;
+      usuarioNome: string;
+      usuarioRole: string;
+      empresaNome?: string | null;
+      operadorNome?: string;
+    },
     before: SolicitacaoAuditSnapshot,
     after: SolicitacaoAuditSnapshot,
     deltas: AuditFieldDelta[],
     tx?: Prisma.TransactionClient,
+    extras?: { ipAddress?: string; protocolo?: string | null },
   ): Promise<AuditLog | null> {
     if (!deltas.length) return null;
+    const operador = actor.operadorNome ?? actor.usuarioNome;
+    const campos = deltas.map((d) => d.label).join(', ');
+    const atorLabel = formatAuditActorLabel(actor.usuarioRole, operador, actor.empresaNome);
+    const alvo = extras?.protocolo ? `protocolo ${extras.protocolo}` : 'a solicitação';
     return this.append(
       {
         entidadeId: solicitacaoId,
         entidadeTipo: AUDIT_ENTIDADE_SOLICITACAO,
         acao: AUDIT_ACAO_UPDATE,
-        ...actor,
+        usuarioId: actor.usuarioId,
+        usuarioNome: actor.usuarioNome,
+        usuarioRole: actor.usuarioRole,
+        descricaoNarrativa: `${atorLabel} alterou ${campos} em ${alvo}.`,
         dadosAnteriores: before,
-        dadosNovos: after,
+        dadosNovos: {
+          ...after,
+          ator: {
+            tipo: 'cliente',
+            empresaNome: actor.empresaNome ?? null,
+            operadorNome: operador,
+          },
+        },
         deltas,
+        ipAddress: extras?.ipAddress,
       },
       tx,
     );

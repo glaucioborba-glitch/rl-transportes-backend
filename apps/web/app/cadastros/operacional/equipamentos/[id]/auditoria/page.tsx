@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { useWidgetData, WidgetError } from "@/components/ui/widget-error";
 import { fetchCadastrosEquipamentoAuditoria } from "@/lib/api/cadastros-equipamentos-client";
 import { formatDateTime } from "@/lib/cadastros/formatters";
+import { AuditoriaAcaoBadge } from "@/components/audit-trail/auditoria-classificacao-badge";
+import { AuditoriaGerencialLink } from "@/components/audit-trail/auditoria-gerencial-link";
 
 type Props = {
   params: { id: string };
@@ -22,11 +24,14 @@ export default function AuditoriaEquipamentoPage({ params }: Props) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">Auditoria do Equipamento</h1>
-          <p className="text-sm text-muted-foreground">Histórico completo de alterações</p>
+          <p className="text-sm text-muted-foreground">Histórico deste cadastro — classificação alinhada ao menu Auditoria</p>
         </div>
-        <Button variant="outline" size="sm" asChild>
-          <Link href={`/cadastros/operacional/equipamentos/${params.id}`}>Ver cadastro</Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <AuditoriaGerencialLink q={params.id} label="Ver no menu Auditoria" />
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/cadastros/operacional/equipamentos/${params.id}`}>Ver cadastro</Link>
+          </Button>
+        </div>
       </div>
 
       {loading ? <div className="h-24 animate-pulse rounded-lg border border-border bg-card" /> : null}
@@ -54,12 +59,15 @@ export default function AuditoriaEquipamentoPage({ params }: Props) {
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-medium">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium">
                       {entry.action === "CREATE" && "Equipamento cadastrado"}
                       {entry.action === "UPDATE" && "Dados atualizados"}
                       {entry.action === "DELETE" && "Equipamento inativado"}
                       {entry.action === "READ" && "Consulta registrada"}
-                    </p>
+                      </p>
+                      <AuditoriaAcaoBadge acao={entry.action} />
+                    </div>
                     <span className="shrink-0 text-xs text-muted-foreground">
                       {formatDateTime(entry.createdAt)}
                     </span>

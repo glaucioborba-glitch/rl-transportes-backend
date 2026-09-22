@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { BookOpen, History } from "lucide-react";
+import { History } from "lucide-react";
 import { ClienteForm } from "../components/cliente-form";
+import { ClienteContaCorrenteLink } from "../components/cliente-conta-corrente-link";
 import { Button } from "@/components/ui/button";
 import { CADASTRO_PAGE_CLASS } from "@/components/cadastros/form-field";
 
@@ -27,12 +28,7 @@ export default function ClienteDetailPage({ params }: Props) {
           <h1 className="text-2xl font-bold">Editar cadastro</h1>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <Link href={`/financeiro/conta-corrente/${params.id}`}>
-              <BookOpen className="mr-1.5 h-3.5 w-3.5" />
-              Conta corrente
-            </Link>
-          </Button>
+          <ClienteContaCorrenteLink clienteId={params.id} />
           <Button variant="outline" size="sm" asChild>
             <Link href={`/cadastros/pessoas/clientes/${params.id}/auditoria`}>
               <History className="mr-1.5 h-3.5 w-3.5" />

@@ -1,4 +1,5 @@
 import { PatioStatus, StatusContainerTarifa } from '@prisma/client';
+import { rotuloOrigemLacre } from '../common/utils/lacre-operacional.util';
 
 /** Unidade fisicamente na empresa (pátio). Não existe status “já saiu” — o registro some no gate-out. */
 export const PATIO_STATUS_ARMAZENADA: PatioStatus[] = [
@@ -73,6 +74,119 @@ export function statusParaHandling(
 export function observacaoLacreRic(nomeServico: string, config: ServicoEfeitoConfig): string {
   if (config.observacaoRic) return config.observacaoRic;
   return `Número do lacre alterado por ${nomeServico.trim() || 'serviço adicional'}.`;
+}
+
+const OBSERVACAO_GATE_MAX = 2000;
+const OBSERVACAO_LACRE_SAIDA_MAX = 255;
+
+export function appendObservacao(atual: string | null | undefined, linha: string, max = OBSERVACAO_GATE_MAX): string {
+  const linhaT = linha.trim();
+  const prev = atual?.trim() || '';
+  if (!linhaT) return prev;
+  if (prev.includes(linhaT)) return prev;
+  const next = prev ? `${prev} · ${linhaT}` : linhaT;
+  return next.length <= max ? next : next.slice(0, max);
+}
+
+export function linhaObservacaoTrocaLacre(params: {
+  servico: string;
+  anterior?: string | null;
+  atual: string;
+  origem?: string | null;
+}): string {
+  const servico = params.servico.trim() || 'serviço adicional';
+  const de = params.anterior?.trim() || '—';
+  const para = params.atual.trim() || '—';
+  const origem = rotuloOrigemLacre(params.origem);
+  const origemTxt = origem ? ` (origem ${origem})` : '';
+  return `${servico}: lacre ${de} → ${para}${origemTxt}.`;
+}
+
+export function linhaObservacaoTransbordo(params: {
+  servico: string;
+  isoOrigem: string;
+  isoDestino: string;
+  papel: 'ORIGEM' | 'DESTINO';
+  statusAntes: string;
+  statusDepois: string;
+  lacre?: string | null;
+}): string {
+  const servico = params.servico.trim() || 'Transbordo';
+  const a = params.isoOrigem.trim() || '—';
+  const b = params.isoDestino.trim() || '—';
+  const lacre = params.lacre?.trim();
+  if (params.papel === 'ORIGEM') {
+    return `${servico}: transbordo de ${a} (${params.statusAntes} → ${params.statusDepois}) para ${b}.`;
+  }
+  return `${servico}: transbordo de ${a} para ${b} (${params.statusAntes} → ${params.statusDepois})${lacre ? `; lacre ${lacre}` : ''}.`;
+}
+
+export function recortarObservacaoLacreSaida(linha: string): string {
+  return appendObservacao('', linha, OBSERVACAO_LACRE_SAIDA_MAX);
+}
+
+export function linhasObservacaoEfeito(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((x) => String(x ?? '').trim()).filter(Boolean);
+}
+
+export function appendLinhaObservacaoEfeito(lista: unknown, linha: string): string[] {
+  const prev = linhasObservacaoEfeito(lista);
+  const linhaT = linha.trim();
+  if (!linhaT) return prev;
+  if (prev.some((p) => p === linhaT)) return prev;
+  return [...prev, linhaT];
+}
+
+export function pareceLinhaEfeitoServico(texto: string): boolean {
+  const t = texto.trim();
+  if (!t) return false;
+  if (/^Desfeito:/i.test(t)) return true;
+  if (/: lacre .+ → /.test(t)) return true;
+  if (/: transbordo de /i.test(t)) return true;
+  return false;
+}
+
+function partesObservacao(livre: string): string[] {
+  return livre
+    .split(/\s*·\s*|\n+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/** Separa texto livre do operador das linhas geradas por serviço (não mistura os dois). */
+export function separarObservacaoLivreEEfeitos(
+  livreRaw: unknown,
+  efeitosRaw: unknown,
+): { livre: string; efeitos: string[] } {
+  const efeitos = [...linhasObservacaoEfeito(efeitosRaw)];
+  const livreStr = typeof livreRaw === 'string' ? livreRaw.trim() : '';
+  if (!livreStr) return { livre: '', efeitos };
+  const kept: string[] = [];
+  for (const parte of partesObservacao(livreStr)) {
+    if (efeitos.includes(parte) || pareceLinhaEfeitoServico(parte)) {
+      if (!efeitos.includes(parte)) efeitos.push(parte);
+      continue;
+    }
+    kept.push(parte);
+  }
+  return { livre: kept.join(' · '), efeitos };
+}
+
+/** Junta observação livre + lançamentos de serviço, sem apagar nem duplicar. */
+export function composeObservacao(
+  livre?: string | null,
+  efeitos?: string[] | null,
+  extra?: string | null,
+): string {
+  const out: string[] = [];
+  for (const p of [livre, ...(efeitos ?? []), extra]) {
+    const t = p?.trim() || '';
+    if (!t) continue;
+    if (out.some((x) => x === t || x.includes(t))) continue;
+    out.push(t);
+  }
+  return out.join(' · ');
 }
 
 export function validarCamposEfeito(

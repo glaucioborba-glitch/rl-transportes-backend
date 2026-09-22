@@ -4,7 +4,24 @@ import { IpmNfseAdapter } from '../nfse/nfse.adapter';
 import type { Cliente, Fatura } from '@prisma/client';
 
 describe('FiscalIpmService', () => {
+  /** Terminal sem senha do portal: o fiscal deve cair no sandbox local. */
+  const configIpmSandbox = {
+    configured: false,
+    prestadorCnpj: '27692077000126',
+    prestadorTom: '8221',
+    tomadorTomFallback: '8221',
+    armazenagem: {
+      codigoLocalPrestacao: '8221',
+      codigoAtividade: '4930201',
+      codigoItemListaServico: '160201',
+      aliquotaPercent: 2,
+      situacaoTributaria: '0',
+    },
+  };
+
   const ipm = {
+    config: jest.fn().mockResolvedValue(configIpmSandbox),
+    configSync: jest.fn().mockReturnValue(configIpmSandbox),
     isConfigured: jest.fn().mockReturnValue(false),
     getPrestadorCnpj: jest.fn().mockReturnValue('27692077000126'),
     getPrestadorTom: jest.fn().mockReturnValue('8221'),

@@ -1,10 +1,58 @@
 import { EventoGatilhoTarifa, Prisma, StatusFrete } from '@prisma/client';
 import { pairLocaisTransporte, valorCobradoTransporte } from '../cadastros/local-transporte-pair.util';
 import { PrismaService } from '../prisma/prisma.service';
-import { isLancamentoAutomaticoTabela } from '../unidade-processo/servicos-abertura-tabela.util';
+import {
+  CODIGO_HANDLING_ABERTURA,
+  CODIGO_TOMADA_ABERTURA,
+  isHandlingAutomaticoCodigo,
+  isLancamentoAutomaticoExcluido,
+  isLancamentoAutomaticoTabela,
+  isTomadaAutomaticoCodigo,
+} from '../unidade-processo/servicos-abertura-tabela.util';
 import { roundMoney, toDecimal } from './armazenagem-billing.util';
 
 type Db = Prisma.TransactionClient | PrismaService;
+
+export async function processoTemHandlingExcluido(
+  db: Db,
+  unidadeProcessoId?: string | null,
+): Promise<boolean> {
+  const flags = await flagsExclusaoAutomatica(db, unidadeProcessoId);
+  return flags.omitirHandling;
+}
+
+export async function processoTemTomadaExcluida(
+  db: Db,
+  unidadeProcessoId?: string | null,
+): Promise<boolean> {
+  const flags = await flagsExclusaoAutomatica(db, unidadeProcessoId);
+  return flags.omitirEnergia;
+}
+
+export async function flagsExclusaoAutomatica(
+  db: Db,
+  unidadeProcessoId?: string | null,
+): Promise<{ omitirHandling: boolean; omitirEnergia: boolean }> {
+  if (!unidadeProcessoId) return { omitirHandling: false, omitirEnergia: false };
+  const rows = await db.unidadeProcessoServico.findMany({
+    where: {
+      unidadeProcessoId,
+      OR: [
+        { codigo: { equals: CODIGO_HANDLING_ABERTURA, mode: 'insensitive' } },
+        { codigo: { equals: CODIGO_TOMADA_ABERTURA, mode: 'insensitive' } },
+      ],
+    },
+    select: { codigo: true, payload: true },
+  });
+  let omitirHandling = false;
+  let omitirEnergia = false;
+  for (const r of rows) {
+    if (!isLancamentoAutomaticoExcluido(r.payload)) continue;
+    if (isHandlingAutomaticoCodigo(r.codigo)) omitirHandling = true;
+    if (isTomadaAutomaticoCodigo(r.codigo)) omitirEnergia = true;
+  }
+  return { omitirHandling, omitirEnergia };
+}
 
 export async function syncExtrasOnPreFatura(
   db: Db,
@@ -24,13 +72,45 @@ export async function syncExtrasOnPreFatura(
   });
 
   const linhas: Prisma.ItemFaturaArmazenagemCreateManyInput[] = [];
+  let handlingExcluido = false;
+  let tomadaExcluida = false;
+  const handlingJaLancado = await db.itemFaturaArmazenagem.findFirst({
+    where: { preFaturaId: input.preFaturaId, eventoGatilho: EventoGatilhoTarifa.HANDLING },
+    select: { id: true },
+  });
+  let copiouHandling = Boolean(handlingJaLancado);
 
   if (input.unidadeProcessoId) {
     const servicos = await db.unidadeProcessoServico.findMany({
       where: { unidadeProcessoId: input.unidadeProcessoId },
     });
     for (const s of servicos) {
-      if (isLancamentoAutomaticoTabela(s.payload)) continue;
+      if (isLancamentoAutomaticoTabela(s.payload)) {
+        if (isHandlingAutomaticoCodigo(s.codigo) && isLancamentoAutomaticoExcluido(s.payload)) {
+          handlingExcluido = true;
+          continue;
+        }
+        if (isTomadaAutomaticoCodigo(s.codigo) && isLancamentoAutomaticoExcluido(s.payload)) {
+          tomadaExcluida = true;
+          continue;
+        }
+        if (
+          !copiouHandling &&
+          isHandlingAutomaticoCodigo(s.codigo) &&
+          Number(s.valorTotal) > 0
+        ) {
+          linhas.push({
+            preFaturaId: input.preFaturaId,
+            eventoGatilho: EventoGatilhoTarifa.HANDLING,
+            descricao: s.nome?.trim() || 'Handling',
+            quantidade: Math.max(1, Math.round(Number(s.quantidade))),
+            valorUnitario: toDecimal(Number(s.valorUnitario)),
+            valorTotal: toDecimal(Number(s.valorTotal)),
+          });
+          copiouHandling = true;
+        }
+        continue;
+      }
       const qtd = Number(s.quantidade);
       linhas.push({
         preFaturaId: input.preFaturaId,
@@ -41,6 +121,17 @@ export async function syncExtrasOnPreFatura(
         valorTotal: toDecimal(Number(s.valorTotal)),
       });
     }
+  }
+
+  if (handlingExcluido) {
+    await db.itemFaturaArmazenagem.deleteMany({
+      where: { preFaturaId: input.preFaturaId, eventoGatilho: EventoGatilhoTarifa.HANDLING },
+    });
+  }
+  if (tomadaExcluida) {
+    await db.itemFaturaArmazenagem.deleteMany({
+      where: { preFaturaId: input.preFaturaId, eventoGatilho: EventoGatilhoTarifa.ENERGIA_REEFER },
+    });
   }
 
   const frete = await resolveFreteDaFatura(db, input);

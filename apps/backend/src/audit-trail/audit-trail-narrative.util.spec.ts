@@ -59,4 +59,24 @@ describe('audit-trail-narrative.util', () => {
       resolveAuditAcao('Solicitacao', 'update', { status: StatusSolicitacao.AGUARDANDO_GATE_IN }, { status: StatusSolicitacao.EM_PATIO }),
     ).toBe('GATE_IN_REALIZADO');
   });
+
+  it('narrativa operacional usa ID como controle principal e protocolo como secundário', () => {
+    const text = buildAuditNarrative({
+      ...base,
+      entidadeTipo: 'SOLICITACAO',
+      entidadeId: 'sol-1',
+      acao: 'SOLICITACAO_ALTERADA',
+      categoria: CategoriaAuditLog.OPERACIONAL,
+      containerIso: 'HLBU1234567',
+      dadosAnteriores: { status: StatusSolicitacao.PENDENTE, protocolo: '18' },
+      dadosNovos: {
+        status: StatusSolicitacao.EM_PATIO,
+        protocolo: '18',
+        unidadeProcessoNumero: 1284,
+      },
+    });
+    expect(text).toContain('ID 1284');
+    expect(text).toContain('Protocolo 18');
+    expect(text).toContain('HLBU1234567');
+  });
 });

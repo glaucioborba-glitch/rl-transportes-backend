@@ -36,6 +36,7 @@ import {
   SOLICITACAO_SPAN2 as SPAN2,
 } from "@/components/portal/solicitacao-form-layout";
 import { useMotoristaCpfAutofill } from "@/hooks/use-motorista-cpf-autofill";
+import { NavioAutocompleteInput } from "@/components/catalogo/navio-autocomplete-input";
 
 type ContainerDraft = {
   unidade: string;
@@ -84,6 +85,7 @@ export function SolicitacaoEditModal({
   const [solNome, setSolNome] = useState("");
   const [solTelefone, setSolTelefone] = useState("");
   const [solEmail, setSolEmail] = useState("");
+  const [statusAtual, setStatusAtual] = useState("");
 
   const isFrotaFL = useMemo(() => intentUsesFlFrete(intent), [intent]);
   const { hint: motoristaHint, bloqueio: motoristaBloqueio } = useMotoristaCpfAutofill({
@@ -102,6 +104,7 @@ export function SolicitacaoEditModal({
       .then((row: SolicitacaoRow) => {
         setProtocolo(row.protocolo);
         setIntent((row.tipoOperacao as TipoOperacaoSolicitacaoIntent) ?? null);
+        setStatusAtual(row.status ?? "");
         const ag = row.agendamentoSolicitacao;
         const dateStr = ag?.dataRef ? String(ag.dataRef).slice(0, 10) : "";
         setDataRef(dateStr);
@@ -243,7 +246,13 @@ export function SolicitacaoEditModal({
     setSaving(true);
     try {
       await atualizarSolicitacaoPortal(solicitacaoId, buildPayload());
-      toast.success("Solicitação atualizada.");
+      const reenviado =
+        statusAtual === "APROVADO" || statusAtual === "AGUARDANDO_GATE_IN";
+      toast.success(
+        reenviado
+          ? "Alterações enviadas ao Gate para nova aprovação. O QR impresso permanece o mesmo e será reativado após a autorização."
+          : "Solicitação atualizada.",
+      );
       onUpdated?.();
       onClose();
     } catch (err) {
@@ -262,7 +271,9 @@ export function SolicitacaoEditModal({
           verb="Editar"
           description={
             <p className="text-sm text-slate-500">
-              {loading ? "Carregando…" : intentLabel(intent)}
+              {loading
+                ? "Carregando…"
+                : `${intentLabel(intent)}. ISO e solicitante não podem ser alterados. Qualquer outra correção volta para Autorizações no Gate; o QR impresso continua o mesmo.`}
             </p>
           }
         />
@@ -304,10 +315,10 @@ export function SolicitacaoEditModal({
                   </div>
                   <div>
                     <label className="mb-1 block text-xs text-slate-500">Navio (opcional)</label>
-                    <Input
+                    <NavioAutocompleteInput
+                      source="portal"
                       value={c.navio}
-                      onChange={(e) => updateContainer(idx, { navio: e.target.value })}
-                      className="bg-black/40"
+                      onChange={(v) => updateContainer(idx, { navio: v })}
                     />
                   </div>
                   <div>
@@ -398,15 +409,6 @@ export function SolicitacaoEditModal({
                   <CardTitle className="text-sm text-white">Transporte</CardTitle>
                 </CardHeader>
                 <CardContent className={`${GRID} ${CARD_C}`}>
-                  <div className={SPAN2}>
-                    <label className="mb-1 block text-xs text-slate-500">Motorista</label>
-                    <Input
-                      value={nomeMotorista}
-                      onChange={(e) => setNomeMotorista(e.target.value)}
-                      required
-                      className="bg-black/40"
-                    />
-                  </div>
                   <div>
                     <label className="mb-1 block text-xs text-slate-500">CPF</label>
                     <Input
@@ -420,6 +422,26 @@ export function SolicitacaoEditModal({
                     ) : motoristaHint ? (
                       <p className="mt-1 text-[11px] text-slate-400">{motoristaHint}</p>
                     ) : null}
+                  </div>
+                  <div className={SPAN2}>
+                    <label className="mb-1 block text-xs text-slate-500">Motorista</label>
+                    <Input
+                      value={nomeMotorista}
+                      onChange={(e) => setNomeMotorista(e.target.value)}
+                      required
+                      className="bg-black/40"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">Tipo de caminhão</label>
+                    <select
+                      className={SELECT_CLS}
+                      value={containers.length > 1 ? "RODOTREM" : "LS"}
+                      disabled
+                    >
+                      <option value="LS">LS (1 contêiner)</option>
+                      <option value="RODOTREM">Rodotrem (2 contêineres)</option>
+                    </select>
                   </div>
                   <div>
                     <label className="mb-1 block text-xs text-slate-500">Placa cavalo</label>
@@ -456,15 +478,14 @@ export function SolicitacaoEditModal({
 
             <Card className="border-white/10 bg-black/25">
               <CardHeader className={CARD_H}>
-                <CardTitle className="text-sm text-white">Solicitante</CardTitle>
+                <CardTitle className="text-sm text-white">Solicitante — imutável</CardTitle>
               </CardHeader>
               <CardContent className={`${GRID} ${CARD_C}`}>
                 <div className={SPAN2}>
                   <label className="mb-1 block text-xs text-slate-500">Nome</label>
                   <Input
                     value={solNome}
-                    onChange={(e) => setSolNome(e.target.value)}
-                    required
+                    disabled
                     className="bg-black/40"
                   />
                 </div>
@@ -472,8 +493,7 @@ export function SolicitacaoEditModal({
                   <label className="mb-1 block text-xs text-slate-500">Telefone</label>
                   <Input
                     value={solTelefone}
-                    onChange={(e) => setSolTelefone(formatPhoneBr(e.target.value))}
-                    required
+                    disabled
                     className="bg-black/40"
                   />
                 </div>
@@ -482,8 +502,7 @@ export function SolicitacaoEditModal({
                   <Input
                     type="email"
                     value={solEmail}
-                    onChange={(e) => setSolEmail(e.target.value)}
-                    required
+                    disabled
                     className="bg-black/40"
                   />
                 </div>

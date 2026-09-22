@@ -64,8 +64,20 @@ export default function FaturaDetailPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">{numero}</h1>
           <p className="text-sm text-slate-400">
-            {row.referencia || row.periodo} · NFS-e: {row.statusNfe || "—"}
-            {layoutPix ? null : ` · Boleto: ${row.statusBoleto || "—"}`}
+            {row.referencia || row.periodo}
+            {layoutPix ? (
+              <>
+                {" · "}
+                {nfs.length > 0
+                  ? nfs.map((n) => `${n.numeroNfe ? `NFS-e ${n.numeroNfe}` : "NFS-e"}${n.statusIpm ? ` · ${n.statusIpm}` : ""}`).join(" · ")
+                  : `NFS-e: ${row.statusNfe || "ainda não emitida"}`}
+              </>
+            ) : (
+              <>
+                {" · "}NFS-e: {row.statusNfe || "—"}
+                {` · Boleto: ${row.statusBoleto || "—"}`}
+              </>
+            )}
           </p>
         </div>
         <Button variant="outline" asChild>
@@ -97,6 +109,17 @@ export default function FaturaDetailPage() {
         </CardContent>
       </Card>
 
+      {layoutPix ? (
+        nfs.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {nfs.map((n) => (
+              <Button key={n.id} variant="outline" size="sm" asChild>
+                <Link href={`/portal/financeiro/nfse/${n.id}`}>Ver NFS-e {n.numeroNfe}</Link>
+              </Button>
+            ))}
+          </div>
+        ) : null
+      ) : (
       <Card>
         <CardHeader>
           <CardTitle>NFS-e</CardTitle>
@@ -118,6 +141,7 @@ export default function FaturaDetailPage() {
           )}
         </CardContent>
       </Card>
+      )}
 
       {layoutPix ? null : (
       <Card>

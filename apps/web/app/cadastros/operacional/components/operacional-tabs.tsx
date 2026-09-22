@@ -8,8 +8,6 @@ import { cn } from "@/lib/utils";
 export const OPERACIONAL_TABS = [
   { label: "Equipamentos", href: "/cadastros/operacional/equipamentos" },
   { label: "Posições de Pátio", href: "/cadastros/operacional/posicoes-patio" },
-  { label: "Tipos de Operação", href: "/cadastros/operacional/tipos-operacao" },
-  { label: "Turnos", href: "/cadastros/operacional/turnos" },
   { label: "Motivos de Rejeição", href: "/cadastros/operacional/motivos-rejeicao" },
   { label: "Origens e destinos", href: "/cadastros/operacional/origens-destinos" },
   { label: "Unidades de aluguel", href: "/cadastros/operacional/unidades-aluguel" },

@@ -4,6 +4,10 @@
     "description": "Sistema de Gerenciamento RL Transportes",
     "private": true,
     "scripts": {
+        "bio-agent": "node apps/bio-agent/index.mjs",
+        "bio-agent:build": "powershell -ExecutionPolicy Bypass -File apps/bio-agent/build-bridge.ps1",
+        "print-agent": "node apps/print-agent/index.mjs",
+        "print-agent:install": "powershell -ExecutionPolicy Bypass -File apps/print-agent/install-startup.ps1",
         "install:all": "npm install && cd apps/backend && npm install && cd ../web && npm install",
         "docker:up": "docker compose up -d",
         "docker:down": "docker compose down",

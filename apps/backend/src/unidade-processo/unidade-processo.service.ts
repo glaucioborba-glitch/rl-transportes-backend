@@ -2,8 +2,12 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
+  Optional,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import {
+  AcaoAuditoria,
   ModalidadeUnidadeProcesso,
   PatioStatus,
   Prisma,
@@ -11,16 +15,22 @@ import {
   StatusSolicitacao,
   StatusUnidadeProcesso,
   TipoOperacaoSolicitacaoIntent,
+  EventoGatilhoTarifa,
 } from '@prisma/client';
 import { ArmazenagemBillingService } from '../armazenagem-faturamento/armazenagem-billing.service';
 import { isBillingEligibleIntent } from '../billing-engine/billing-eligible-intents.util';
 import { normalizeContainerIso } from '../common/utils/data-sanitize';
+import { lacreTrocaPatio, textoLacreTroca } from '../common/utils/lacre-operacional.util';
 import { OutboxService } from '../outbox/outbox.service';
+import { AuditoriaService } from '../auditoria/auditoria.service';
 import { PatioV2Service } from '../patio-v2/patio.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { tipoRequerTomadaReefer } from '../cadastros/tipo-container-tomada.util';
 import { rotuloTipoOperacao } from '../gate-v2/conferencia-entrada-saida.util';
 import { UnidadeProcessoServicosService } from './unidade-processo-servicos.service';
+import {
+  isLancamentoAutomaticoExcluido,
+} from './servicos-abertura-tabela.util';
 import {
   type ConsultaRicFiltro,
   prismaWhereConsultaRic,
@@ -51,12 +61,15 @@ function pickContainerDaSolicitacao<T extends { unidade?: string | null }>(
 
 @Injectable()
 export class UnidadeProcessoService {
+  private readonly logger = new Logger(UnidadeProcessoService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly patio: PatioV2Service,
     private readonly billing: ArmazenagemBillingService,
     private readonly outbox: OutboxService,
     private readonly servicos: UnidadeProcessoServicosService,
+    @Optional() private readonly auditoria?: AuditoriaService,
   ) {}
 
   async findAbertoPorIso(
@@ -195,6 +208,7 @@ export class UnidadeProcessoService {
             clienteId: sol.cliente.id,
             unidadeIso: iso,
             solicitacaoId: sol.id,
+            protocolo: sol.protocolo,
             tipo: c.tipo,
             tamanho: c.tamanho,
             status: c.status,
@@ -266,6 +280,7 @@ export class UnidadeProcessoService {
           clienteId: sol.cliente.id,
           unidadeIso: iso,
           solicitacaoId: sol.id,
+          protocolo: sol.protocolo,
           tipo: c.tipo,
           tamanho: c.tamanho,
           status: c.status,
@@ -296,6 +311,7 @@ export class UnidadeProcessoService {
       clienteId: string;
       unidadeIso: string;
       solicitacaoId: string;
+      protocolo?: string | null;
       tipo?: string | null;
       tamanho?: string | null;
       status?: string | null;
@@ -360,15 +376,32 @@ export class UnidadeProcessoService {
     });
 
     if (isBillingEligibleIntent(input.intent as TipoOperacaoSolicitacaoIntent)) {
-      await this.billing.openPreFaturasForProcesso(
-        {
-          unidadeProcessoId: processo.id,
-          clienteId: input.clienteId,
-          entradaEm: input.entradaEm,
-          gateInId: input.gateInId,
-        },
-        tx,
-      );
+      try {
+        await this.billing.openPreFaturasForProcesso(
+          {
+            unidadeProcessoId: processo.id,
+            clienteId: input.clienteId,
+            entradaEm: input.entradaEm,
+            gateInId: input.gateInId,
+            containerHint: {
+              tipo: input.tipo,
+              tamanho: input.tamanho,
+              status: input.status,
+              refrigerado: input.refrigerado,
+              setPoint: input.setPoint,
+            },
+          },
+          tx,
+        );
+      } catch (err) {
+        if (err instanceof UnprocessableEntityException) {
+          this.logger.warn(
+            `${formatUnidadeProcessoId(processo.numero)} aberto sem pré-fatura: ${err.message}`,
+          );
+        } else {
+          throw err;
+        }
+      }
     }
 
     await this.outbox.enqueue(tx, {
@@ -385,6 +418,24 @@ export class UnidadeProcessoService {
         actorUserId: input.actorUserId,
       },
     });
+
+    await this.auditoria?.registrar(
+      {
+        tabela: 'unidade_processos',
+        registroId: processo.id,
+        acao: AcaoAuditoria.INSERT,
+        usuario: input.actorUserId,
+        solicitacaoId: input.solicitacaoId,
+        dadosDepois: {
+          numero: processo.numero,
+          protocolo: input.protocolo ?? null,
+          unidadeIso: input.unidadeIso,
+          controlePrincipal: formatUnidadeProcessoId(processo.numero),
+          controleSecundario: input.protocolo ? `Protocolo ${input.protocolo}` : undefined,
+        },
+      },
+      tx,
+    );
   }
 
   private async encerrarProcesso(
@@ -563,6 +614,7 @@ export class UnidadeProcessoService {
                 processo: true,
                 navio: true,
                 status: true,
+                lacre: true,
               },
             },
           },
@@ -584,6 +636,7 @@ export class UnidadeProcessoService {
                 processo: true,
                 navio: true,
                 status: true,
+                lacre: true,
               },
             },
           },
@@ -591,6 +644,22 @@ export class UnidadeProcessoService {
         patioUnidades: {
           select: { refrigerado: true, unidadeIso: true },
           orderBy: { updatedAt: 'desc' },
+        },
+        servicosLancados: {
+          where: { codigo: { equals: 'HANDLING', mode: 'insensitive' } },
+          select: { valorTotal: true, payload: true },
+          take: 1,
+        },
+        preFaturas: {
+          where: { status: StatusPreFatura.ABERTA },
+          select: {
+            valorAcumulado: true,
+            itens: {
+              where: { eventoGatilho: EventoGatilhoTarifa.HANDLING },
+              select: { valorTotal: true },
+            },
+          },
+          take: 1,
         },
       },
       orderBy: [{ entradaEm: 'desc' }, { numero: 'desc' }],
@@ -609,6 +678,17 @@ export class UnidadeProcessoService {
           pickContainerDaSolicitacao(row.saidaSolicitacao?.containersSolicitacao, row.unidadeIso);
         const patioU =
           row.patioUnidades.find((p) => p.unidadeIso === row.unidadeIso) ?? row.patioUnidades[0];
+        const handlingExcluido = isLancamentoAutomaticoExcluido(row.servicosLancados[0]?.payload);
+        const handlingServico = handlingExcluido ? 0 : Number(row.servicosLancados[0]?.valorTotal ?? 0);
+        const handlingPf = handlingExcluido ? 0 : Number(row.preFaturas[0]?.itens[0]?.valorTotal ?? 0);
+        const valorLancado = Number(row.preFaturas[0]?.valorAcumulado ?? 0);
+        const lacreEntrada = form?.lacre ?? null;
+        const troca = lacreTrocaPatio({
+          lacreEntrada,
+          lacreSaida: row.lacreSaida,
+          observacao: row.lacreSaidaObservacao,
+          origem: row.lacreSaidaOrigem,
+        });
         return {
           id: row.id,
           numero: row.numero,
@@ -618,8 +698,12 @@ export class UnidadeProcessoService {
           tipoContainer: form?.tipo ?? null,
           tamanhoContainer: form?.tamanho ?? null,
           situacao: form?.status ?? null,
+          lacre: troca?.atual ?? lacreEntrada?.trim() ?? null,
+          lacreTroca: troca ? { ...troca, texto: textoLacreTroca(troca) } : null,
           tomadaReefer: tipoRequerTomadaReefer(tipos, form?.tipo),
           tomadaConectada: patioU?.refrigerado === true,
+          handlingValor: handlingPf || handlingServico,
+          valorLancado,
           clienteNome: row.cliente.nomeFantasia || row.cliente.razaoSocial,
           titularNome: row.cliente.nomeFantasia || row.cliente.razaoSocial,
           solicitanteNome:

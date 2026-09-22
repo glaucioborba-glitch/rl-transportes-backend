@@ -48,9 +48,23 @@ export class NfsePollingCronService {
             },
           });
 
+          // Só a fatura desta nota: o RPS é o que liga NfsEmitida a Fatura.
+          // Sem esse filtro, uma nota autorizada liberava todas as faturas do mês
+          // com o link dela, inclusive as de notas ainda pendentes.
           const faturas = await tx.fatura.findMany({
-            where: { faturamentoId: nfs.faturamentoId, statusPagamento: StatusPagamentoFatura.PROCESSANDO },
+            where: {
+              faturamentoId: nfs.faturamentoId,
+              statusPagamento: StatusPagamentoFatura.PROCESSANDO,
+              ...(nfs.rpsNumero
+                ? { numeroRps: nfs.rpsNumero, serieRps: nfs.rpsSerie ?? undefined }
+                : {}),
+            },
           });
+          if (!faturas.length) {
+            this.logger.warn(
+              `NFS-e ${nfs.id} autorizada sem fatura correspondente (RPS ${nfs.rpsSerie ?? '-'}/${nfs.rpsNumero ?? '-'})`,
+            );
+          }
           for (const f of faturas) {
             const boletoOk = !!f.linkBoleto;
             await tx.fatura.update({

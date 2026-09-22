@@ -12,6 +12,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CadastrosMotoristaFormDto } from './dto/cadastros-motorista-form.dto';
 import { CadastrosMotoristaQueryDto } from './dto/cadastros-motorista-query.dto';
 import { parseOptionalPlacaPreferencial } from './motorista-placas-preferenciais.util';
+import {
+  mensagemCpfJaCadastrado,
+  throwDocumentoUnicoSeConflito,
+} from '../common/utils/documento-unico.util';
 
 const PAGE_SIZE = 10;
 
@@ -110,7 +114,7 @@ export class CadastrosMotoristasService {
   async checkCpf(cpf: string, excludeId?: string) {
     const clean = cpf.replace(/\D/g, '');
     const existing = await this.prisma.cadastroMotorista.findFirst({
-      where: { cpf: clean, deletedAt: null },
+      where: { cpf: clean },
       select: { id: true, nome: true },
     });
     if (!existing || existing.id === excludeId) {
@@ -135,29 +139,32 @@ export class CadastrosMotoristasService {
     const cpf = dto.cpf.replace(/\D/g, '');
     const dup = await this.checkCpf(cpf);
     if (dup.exists) {
-      throw new ConflictException(`CPF já cadastrado: ${dup.nome}.`);
+      throw new ConflictException(mensagemCpfJaCadastrado(dup.nome));
     }
 
     const data = this.buildPrismaData(dto, cpf);
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      const row = await tx.cadastroMotorista.create({ data });
-      await this.auditoriaService.registrar(
-        {
-          tabela: 'cadastros_motoristas',
-          registroId: row.id,
-          acao: AcaoAuditoria.INSERT,
-          usuario: usuarioId,
-          dadosDepois: row,
-          ip,
-          userAgent,
-        },
-        tx,
-      );
-      return row;
-    });
-
-    return this.toFormShape(await this.getRowOrThrow(created.id));
+    try {
+      const created = await this.prisma.$transaction(async (tx) => {
+        const row = await tx.cadastroMotorista.create({ data });
+        await this.auditoriaService.registrar(
+          {
+            tabela: 'cadastros_motoristas',
+            registroId: row.id,
+            acao: AcaoAuditoria.INSERT,
+            usuario: usuarioId,
+            dadosDepois: row,
+            ip,
+            userAgent,
+          },
+          tx,
+        );
+        return row;
+      });
+      return this.toFormShape(await this.getRowOrThrow(created.id));
+    } catch (err) {
+      throwDocumentoUnicoSeConflito(err, 'CPF', dto.nome);
+    }
   }
 
   async update(
@@ -175,7 +182,7 @@ export class CadastrosMotoristasService {
     if (cpf !== antes.cpf) {
       const dup = await this.checkCpf(cpf, id);
       if (dup.exists) {
-        throw new ConflictException(`CPF já cadastrado: ${dup.nome}.`);
+        throw new ConflictException(mensagemCpfJaCadastrado(dup.nome));
       }
     }
 

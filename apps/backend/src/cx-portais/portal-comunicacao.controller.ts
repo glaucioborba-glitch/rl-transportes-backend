@@ -24,6 +24,7 @@ import { PortalCxInterceptor } from './interceptors/portal-cx.interceptor';
 import { PortalTicketsStore } from './stores/portal-tickets.store';
 import type { CxPortalRequestUser } from './types/cx-portal.types';
 import { assertTenantDaSessao } from './portal-cliente-tenant.util';
+import { contextoAuditoriaPortal } from './portal-auditoria-contexto.util';
 
 class NovoTicketDto {
   @ApiProperty()
@@ -126,7 +127,7 @@ export class PortalComunicacaoController {
         registroId: cx.sub,
         acao,
         usuario: cx.sub,
-        dadosDepois: { portal: true, tipo: 'PORTAL', ...extra },
+        dadosDepois: contextoAuditoriaPortal(cx, extra),
       });
     } catch {
       /* noop */

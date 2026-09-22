@@ -67,3 +67,9 @@ export async function updateCadastroPosicaoPatio(
     body: JSON.stringify(data),
   });
 }
+
+export async function deleteCadastroPosicaoPatio(id: string) {
+  return staffJson<void>(`/v2/cadastros/posicoes-patio/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}

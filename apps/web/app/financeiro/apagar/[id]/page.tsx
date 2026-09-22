@@ -213,8 +213,7 @@ export default function ApagarDetalhePage() {
         <div className="col-span-12">
           <AuditTrail tabela="faturamentos" registroId={fat.id} />
           <p className="mt-2 text-xs text-zinc-500">
-            Boletos: histórico em <code className="text-zinc-400">GET /auditoria/registro/boletos/&lt;id&gt;</code>{" "}
-            (mesmo padrão do cabeçalho de faturamento).
+            Histórico deste ID e dos boletos no menu Auditoria, com classificação verde / amarelo / vermelho.
           </p>
         </div>
       </div>

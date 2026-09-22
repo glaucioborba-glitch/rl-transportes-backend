@@ -8,11 +8,25 @@ export const TENANT_SCOPED_MODELS = new Set([
   'Fatura',
   'Faturamento',
   'ClienteContaCorrenteLancamento',
+  'ClientePixCreditoComprovante',
   'AgendamentoTerminal',
   'GateCheckIn',
   'TabelaPreco',
   'CatalogoMotoristaExterno',
+  'CadastroMotorista',
+  'CadastroColaborador',
+  'CadastroTransportadora',
+  'CadastroTerceiro',
+  'CadastroBanco',
+  'ColaboradorFamiliar',
+  'TesourariaFornecedor',
+  'FolhaColaboradorRh',
   'MotoristaPosicao',
+  'MotoristaBiometria',
+  // Vazavam entre terminais: tabela de preço listada sem filtro e processo
+  // encontrado só pelo ISO (dois terminais com o mesmo contêiner colidiam).
+  'CadastroTabelaPreco',
+  'UnidadeProcesso',
 ]);
 
 export const DEFAULT_TENANT_ID = 'default';

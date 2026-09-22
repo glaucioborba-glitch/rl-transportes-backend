@@ -30,7 +30,6 @@ export default function SsmaIncidentesPage() {
   const [perf, setPerf] = useState<Record<string, unknown> | null>(null);
   const [relTotal, setRelTotal] = useState<number | null>(null);
   const [clienteTotal, setClienteTotal] = useState<number | null>(null);
-  const [auditoriaN, setAuditoriaN] = useState<number | null>(null);
 
   const [w2h, setW2h] = useState<Investigation5w2h>(() => ssmaStorage.investigation.get5w2h());
   const [fish, setFish] = useState<IshikawaBranches>(() => ssmaStorage.investigation.getIshikawa());
@@ -43,18 +42,16 @@ export default function SsmaIncidentesPage() {
     const di = start.toISOString().slice(0, 10);
     const df = end.toISOString().slice(0, 10);
     try {
-      const [d, p, r, cl, aud] = await Promise.all([
+      const [d, p, r, cl] = await Promise.all([
         staffJson<Record<string, unknown>>(`/dashboard?dataInicio=${di}&dataFim=${df}`),
         staffJson<Record<string, unknown>>(`/dashboard-performance?dataInicio=${di}&dataFim=${df}`),
         staffJson<{ total?: number }>(`/relatorios/operacional/solicitacoes?dataInicio=${di}&dataFim=${df}&page=1&limit=1`).catch(() => ({ total: null })),
         staffJson<{ meta?: { total?: number } }>(`/clientes?page=1&limit=1`).catch(() => null),
-        staffJson<{ data?: unknown[] }>(`/auditoria?limit=80&order=desc`).catch(() => ({ data: [] })),
       ]);
       setDash(d);
       setPerf(p);
       setRelTotal(r.total ?? null);
       setClienteTotal(cl?.meta?.total ?? null);
-      setAuditoriaN(Array.isArray(aud.data) ? aud.data.length : 0);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Falha ao carregar dados SSMA");
     }
@@ -169,10 +166,9 @@ export default function SsmaIncidentesPage() {
         <div className="min-w-0 flex-1 space-y-5">
           <p className="text-xs text-zinc-500">
             Leitura: <code className="text-zinc-400">/dashboard</code>, <code className="text-zinc-400">/dashboard-performance</code>,{" "}
-            <code className="text-zinc-400">/relatorios/operacional/solicitacoes</code>, <code className="text-zinc-400">/clientes</code>,{" "}
-            <code className="text-zinc-400">/auditoria</code>. Registros locais no navegador.
+            <code className="text-zinc-400">/relatorios/operacional/solicitacoes</code>, <code className="text-zinc-400">/clientes</code>.
+            Trilha de auditoria no menu Auditoria.
             {clienteTotal != null ? ` · ${clienteTotal} clientes.` : ""}
-            {auditoriaN != null ? ` · ${auditoriaN} eventos de auditoria (amostra).` : ""}
           </p>
 
           <SsmaSection id="registro" title="Registro de incidentes" subtitle="Formulário SSMA + evidências (somente local)">

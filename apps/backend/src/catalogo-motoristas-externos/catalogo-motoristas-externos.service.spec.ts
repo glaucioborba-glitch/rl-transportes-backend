@@ -7,11 +7,13 @@ describe('CatalogoMotoristasExternosService', () => {
       findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      upsert: jest.fn(),
       findMany: jest.fn(),
       count: jest.fn(),
     },
   };
-  const service = new CatalogoMotoristasExternosService(prisma as never);
+  const tenantCtx = { getTenantId: () => 'default' };
+  const service = new CatalogoMotoristasExternosService(prisma as never, tenantCtx as never);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -23,6 +25,7 @@ describe('CatalogoMotoristasExternosService', () => {
       nome: 'Frota FL',
       origem: 'PORTAL',
     });
+    expect(prisma.catalogoMotoristaExterno.upsert).not.toHaveBeenCalled();
     expect(prisma.catalogoMotoristaExterno.findFirst).not.toHaveBeenCalled();
   });
 
@@ -74,5 +77,29 @@ describe('CatalogoMotoristasExternosService', () => {
     await expect(service.suspender('x', 3, 'motivo ok', 'u1')).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  it('grava CPF uma vez no catálogo de pré-preenchimento (upsert)', async () => {
+    prisma.catalogoMotoristaExterno.upsert.mockResolvedValue({
+      id: 'm1',
+      cpf: '39053344705',
+      nome: 'João Silva',
+    });
+    await service.registrarDaSolicitacao({
+      cpf: '390.533.447-05',
+      nome: 'João Silva',
+      origem: 'PORTAL',
+    });
+    expect(prisma.catalogoMotoristaExterno.upsert).toHaveBeenCalledWith({
+      where: { tenantId_cpf: { tenantId: 'default', cpf: '39053344705' } },
+      create: {
+        tenantId: 'default',
+        cpf: '39053344705',
+        nome: 'João Silva',
+        origem: 'PORTAL',
+      },
+      update: { nome: 'João Silva', origem: 'PORTAL' },
+    });
+    expect(prisma.catalogoMotoristaExterno.create).not.toHaveBeenCalled();
   });
 });

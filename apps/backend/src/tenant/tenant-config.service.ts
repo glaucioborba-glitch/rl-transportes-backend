@@ -103,7 +103,10 @@ export class TenantConfigService {
 
     const { tenantId: tid, parametros } = await this.getParametros(tenantId);
     const envMunicipio = this.config.get<string>('nfse.ipm.municipioIbge');
-    this.integrationCreds.remember(tenantId, parametros.integracoesCredenciais);
+    this.integrationCreds.remember(tenantId, parametros.integracoesCredenciais, {
+      certificadoBase64: parametros.nfse?.certificadoBase64,
+      certificadoSenha: parametros.nfse?.certificadoSenha,
+    });
     const integracoes = this.probes.buildIntegracoesStatus();
     const templates = await this.probes.revalidateWhatsappTemplates();
     integracoes.whatsapp.templatesAprovados = templates.filter((t) => t.status === 'APPROVED').length;
@@ -143,7 +146,10 @@ export class TenantConfigService {
       data: { parametros: merged as object },
     });
     await this.cache.invalidate(this.cacheKey(tenantId));
-    this.integrationCreds.remember(tenantId, merged.integracoesCredenciais);
+    this.integrationCreds.remember(tenantId, merged.integracoesCredenciais, {
+      certificadoBase64: merged.nfse?.certificadoBase64,
+      certificadoSenha: merged.nfse?.certificadoSenha,
+    });
     await this.getParametrosSeguranca(tenantId);
     return { tenantId: updated.tenantId, parametros: mergeTenantParametros(updated.parametros) };
   }
@@ -159,7 +165,15 @@ export class TenantConfigService {
     };
 
     const patch: Partial<TenantParametros> = {};
-    if (dto.operacional) patch.operacional = { ...current.parametros.operacional, ...dto.operacional };
+    if (dto.operacional) {
+      const { emailSmtpSenha, ...operacionalFields } = dto.operacional;
+      patch.operacional = { ...current.parametros.operacional, ...operacionalFields };
+      if (emailSmtpSenha !== undefined) {
+        patch.emailSmtp = emailSmtpSenha.trim()
+          ? { ...current.parametros.emailSmtp, senha: emailSmtpSenha }
+          : {};
+      }
+    }
     if (dto.financeiro) patch.financeiro = { ...current.parametros.financeiro, ...dto.financeiro };
     if (dto.fiscal) {
       const { certificadoBase64, certificadoSenha, ...fiscalFields } = dto.fiscal;
@@ -196,7 +210,10 @@ export class TenantConfigService {
       data: { parametros: merged as object },
     });
     await this.cache.invalidate(this.cacheKey(tenantId));
-    this.integrationCreds.remember(tenantId, merged.integracoesCredenciais);
+    this.integrationCreds.remember(tenantId, merged.integracoesCredenciais, {
+      certificadoBase64: merged.nfse?.certificadoBase64,
+      certificadoSenha: merged.nfse?.certificadoSenha,
+    });
     await this.getParametrosSeguranca(tenantId);
 
     const actor = this.auditContext.resolveActor();
@@ -262,7 +279,10 @@ export class TenantConfigService {
       data: { parametros: merged as object },
     });
     await this.cache.invalidate(this.cacheKey(tenantId));
-    this.integrationCreds.remember(tenantId, merged.integracoesCredenciais);
+    this.integrationCreds.remember(tenantId, merged.integracoesCredenciais, {
+      certificadoBase64: merged.nfse?.certificadoBase64,
+      certificadoSenha: merged.nfse?.certificadoSenha,
+    });
 
     const actor = this.auditContext.resolveActor();
     await appendAuditTrailEntry(this.prisma, actor, {
@@ -287,7 +307,9 @@ export class TenantConfigService {
       | 'banking'
       | 'boleto'
       | 'pix'
-      | 's3',
+      | 's3'
+      | 'ipm'
+      | 'nfse-nacional',
   ) {
     await this.ensureTenant(tenantId);
     return this.tenantCtx.run({ tenantId, bypassIsolation: false }, async () => {
@@ -308,6 +330,10 @@ export class TenantConfigService {
           return this.probes.testPixConnection();
         case 's3':
           return this.probes.testS3Connection();
+        case 'ipm':
+          return this.probes.testIpmConnection(tenantId);
+        case 'nfse-nacional':
+          return this.probes.testNfseNacionalConnection(tenantId);
         default:
           throw new BadRequestException('Integração desconhecida');
       }
@@ -348,7 +374,9 @@ export class TenantConfigService {
     const feriadosMunicipais = resolveOperacional(parametros).feriadosMunicipais ?? [];
 
     try {
-      const response = await fetch(`https://brasilapi.com.br/api/feriados/v1/${ano}`);
+      const response = await fetch(`https://brasilapi.com.br/api/feriados/v1/${ano}`, {
+        signal: AbortSignal.timeout(8_000),
+      });
       if (!response.ok) {
         return { nacionais: [], municipais: feriadosMunicipais };
       }

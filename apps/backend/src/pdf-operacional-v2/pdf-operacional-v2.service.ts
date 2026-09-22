@@ -148,6 +148,7 @@ export class PdfOperacionalV2Service {
       : '—';
     return {
       protocolo: String(dados.s.protocolo ?? '—'),
+      token: this.qrTokenFromFluxo(dados.s.operacaoFluxoJson),
       unidadeLabel: rodotrem || unidades.length > 1 ? 'Unidades' : 'Unidade',
       unidades: unidades.length ? unidades : ['—'],
       empresa,
@@ -159,17 +160,18 @@ export class PdfOperacionalV2Service {
     };
   }
 
+  private qrTokenFromFluxo(raw: unknown): string | undefined {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+    const t = (raw as { qrToken?: unknown }).qrToken;
+    return typeof t === 'string' && t.trim() ? t.trim() : undefined;
+  }
+
   private qrPayloadCredencial(card: ReturnType<PdfOperacionalV2Service['viewModelCredencialMotorista']>): string {
-    return [
-      'RL TRANSPORTES',
-      card.protocolo,
-      `${card.unidadeLabel.toUpperCase()}: ${card.unidades.join(' | ')}`,
-      `EMPRESA: ${card.empresa}`,
-      `MOTORISTA: ${card.motorista}`,
-      `CAVALO: ${card.placaCavalo}`,
-      `${card.carretaLabel.toUpperCase()}: ${card.placasCarreta.join(' | ')}`,
-      `AGENDA: ${card.agendamento}`,
-    ].join('\n');
+    return JSON.stringify(
+      card.token
+        ? { protocolo: card.protocolo, token: card.token }
+        : { protocolo: card.protocolo },
+    );
   }
 
   private loadTemplate(name = 'solicitacao-v2.hbs'): handlebars.TemplateDelegate {

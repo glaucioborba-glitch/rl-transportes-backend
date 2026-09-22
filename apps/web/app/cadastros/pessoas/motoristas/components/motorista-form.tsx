@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   FileText,
+  Fingerprint,
   IdCard,
   Loader2,
   MapPin,
@@ -34,6 +35,7 @@ import {
 import { formatCEP, formatCNPJ, formatCPF, formatPhone, isValidCPF } from "@/lib/cadastros/formatters";
 import { isValidPlacaMercosul } from "@/lib/placa-mercosul";
 import { toast } from "@/lib/toast";
+import { MotoristaDigitalPanel } from "@/components/biometria/motorista-digital-panel";
 
 const SELECT_CLASS =
   "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -444,6 +446,10 @@ export function MotoristaForm({ motoristaId }: Props) {
             />
           </FormField>
         </div>
+      </FormSection>
+
+      <FormSection title="Impressão digital (RIC)" icon={Fingerprint}>
+        <MotoristaDigitalPanel cpf={formData.cpf} variant="cadastro" />
       </FormSection>
 
       <FormSection title="Observações" icon={FileText}>

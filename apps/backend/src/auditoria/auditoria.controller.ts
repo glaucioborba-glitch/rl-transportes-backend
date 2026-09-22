@@ -18,7 +18,7 @@ export class AuditoriaController {
   constructor(private readonly auditoriaService: AuditoriaService) {}
 
   @Get()
-  @Roles(Role.ADMIN, Role.GERENTE)
+  @Roles(Role.ADMIN, Role.GERENTE, Role.SUPER_ADMIN)
   @Permissions('auditoria:ler')
   listar(
     @Query() query: AuditoriaQueryDto,
@@ -31,7 +31,7 @@ export class AuditoriaController {
   }
 
   @Get('registro/:tabela/:registroId')
-  @Roles(Role.ADMIN, Role.GERENTE)
+  @Roles(Role.ADMIN, Role.GERENTE, Role.SUPER_ADMIN)
   @Permissions('auditoria:ler')
   historicoRegistro(
     @Param('tabela') tabela: string,
@@ -51,7 +51,7 @@ export class AuditoriaController {
   }
 
   @Get('usuario/:userId')
-  @Roles(Role.ADMIN, Role.GERENTE)
+  @Roles(Role.ADMIN, Role.GERENTE, Role.SUPER_ADMIN)
   @Permissions('auditoria:ler')
   historicoUsuario(
     @Param('userId') userId: string,

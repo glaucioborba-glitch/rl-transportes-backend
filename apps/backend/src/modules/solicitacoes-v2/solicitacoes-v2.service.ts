@@ -18,13 +18,18 @@ import {
   TipoCaminhao,
   TipoUnidade,
 } from '@prisma/client';
-import { buildQrOnApproval } from '../../gate-v2/operacao-fluxo-qr.util';
-import { randomBytes } from 'crypto';
+import { buildQrOnApproval, issueQrInactive } from '../../gate-v2/operacao-fluxo-qr.util';
+import type { OperacaoFluxoJson } from '../../gate-v2/operacao-states.constants';
+import { TenantConfigService } from '../../tenant/tenant-config.service';
+import { DEFAULT_TENANT_ID } from '../../tenant/tenant.constants';
+import { resolveOperacional } from '../../tenant/tenant-config.types';
 import { Request } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PRISMA_SERIALIZABLE_TX } from '../../prisma/transaction-options';
 import { AuditoriaService } from '../../auditoria/auditoria.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
+import { resolveAuditActor } from '../../audit-log/audit-log-solicitacao.util';
+import { rotuloEmpresaCliente } from '../../audit-trail/audit-ator.util';
 import { AgendamentosService } from '../../agendamentos/agendamentos.service';
 import { RedisService } from '../../redis/redis.service';
 import { SecurityEventsService } from '../../security-center/security-events.service';
@@ -36,14 +41,24 @@ import {
 import { SolicitacaoAnexoStorageService } from './solicitacao-anexo.storage';
 import { parseOptionalDateTime, YardAllocationService } from '../../yard-allocation/yard-allocation.service';
 import { isValidIso6346 } from '../../common/utils/iso6346';
-import { normalizeContainerIso, normalizeCpfDigits, normalizePlate } from '../../common/utils/data-sanitize';
+import {
+  normalizeContainerIso,
+  normalizeCpfDigits,
+  normalizePlate,
+  stripContainerIsoCanonical,
+} from '../../common/utils/data-sanitize';
 import { isValidPlacaMercosulExtended } from '../../common/utils/mercosul';
 import type { CxPortalRequestUser } from '../../cx-portais/types/cx-portal.types';
 import type { AuthUser } from '../../common/decorators/current-user.decorator';
 import { buildPessoaAuditMeta } from '../../pessoas-autorizadas/pessoa-context.util';
 import { HoldReleaseService } from '../../hold-release/hold-release.service';
 import { UnidadeProcessoService } from '../../unidade-processo/unidade-processo.service';
+import { formatUnidadeProcessoId } from '../../unidade-processo/unidade-direcao.util';
+import { nextProtocoloSolicitacao, SOLICITACAO_CONTROLE_INCLUDE } from '../../solicitacoes/protocolo-solicitacao.util';
 import { CatalogoMotoristasExternosService } from '../../catalogo-motoristas-externos/catalogo-motoristas-externos.service';
+import { CatalogoNaviosService } from '../../catalogo-navios/catalogo-navios.service';
+import { PixQuitacaoSaidaService } from './pix-quitacao-saida.service';
+import { conflictSaldoInsuficiente } from './pix-quitacao-saida.util';
 import { isCpfFrotaPlaceholder } from '../../catalogo-motoristas-externos/catalogo-motoristas-externos.util';
 import { freteUncheckedCreateFromAgendamento } from '../../fretes/frete-from-agendamento';
 import { CreateBloqueioDto } from '../../hold-release/dto/create-bloqueio.dto';
@@ -56,12 +71,6 @@ import {
 
 const ANEXO_MAX = 5 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/jpeg', 'application/pdf']);
-
-function gerarProtocolo(): string {
-  const y = new Date().getFullYear();
-  const rand = randomBytes(4).toString('hex').toUpperCase();
-  return `RL-${y}-${rand}`;
-}
 
 @Injectable()
 export class SolicitacoesV2Service {
@@ -79,6 +88,9 @@ export class SolicitacoesV2Service {
     private readonly holdRelease: HoldReleaseService,
     private readonly unidadeProcesso: UnidadeProcessoService,
     private readonly catalogoMotoristas: CatalogoMotoristasExternosService,
+    private readonly catalogoNavios: CatalogoNaviosService,
+    private readonly tenantConfig: TenantConfigService,
+    private readonly pixQuitacao: PixQuitacaoSaidaService,
   ) {}
 
   /** Rótulo para PDF/relatório sem mudar o enum PostgreSQL (`APROVADO` → `APROVADA`). */
@@ -426,6 +438,22 @@ export class SolicitacoesV2Service {
     return row;
   }
 
+  async cotarPixSaidaPortal(
+    cx: CxPortalRequestUser,
+    intent: string,
+    unidades: string[],
+  ) {
+    if (!cx.clienteId) {
+      throw new BadRequestException('Informe o cliente da solicitação.');
+    }
+    return this.pixQuitacao.cotar({
+      clienteId: cx.clienteId,
+      intent,
+      unidades,
+      refreshExtras: true,
+    });
+  }
+
   async criarPortal(
     dto: CreateSolicitacaoV2Dto,
     cx: CxPortalRequestUser,
@@ -483,10 +511,21 @@ export class SolicitacoesV2Service {
     }
 
     const agendamentoIntent = resolveAgendamentoFromTipoOperacao(dto.tipoOperacao);
+    const isoNestaSolicitacao = new Set<string>();
+    for (const c of dto.containers) {
+      const iso = stripContainerIsoCanonical(c.unidade);
+      if (!iso || !isValidIso6346(iso)) continue;
+      if (isoNestaSolicitacao.has(iso)) {
+        throw new ConflictException(
+          'Número ISO duplicado nesta solicitação. Ajuste o campo Unidade.',
+        );
+      }
+      isoNestaSolicitacao.add(iso);
+    }
     const containersComIso = dto.containers
       .map((c) => {
         const unidadeNorm = normalizeContainerIso(c.unidade.trim());
-        const iso = unidadeNorm.replace(/\s/g, '');
+        const iso = stripContainerIsoCanonical(c.unidade);
         return { container: c, iso, unidadeNorm };
       })
       .filter((row) => isValidIso6346(row.iso));
@@ -502,12 +541,22 @@ export class SolicitacoesV2Service {
     const previsaoRetirada = parseOptionalDateTime(dto.previsaoRetirada);
     const bookingDeadline = parseOptionalDateTime(dto.bookingDeadline);
 
+    const quotePix = await this.pixQuitacao.cotar({
+      clienteId: clienteIdFaturamento,
+      intent: dto.tipoOperacao,
+      unidades: dto.containers.map((c) => c.unidade),
+      refreshExtras: true,
+    });
+    if (quotePix.exigido && !quotePix.suficiente) {
+      throw conflictSaldoInsuficiente(quotePix);
+    }
+
     for (let attempt = 0; attempt < 5; attempt++) {
-      const protocolo = gerarProtocolo();
       try {
         const agendamentoIdsPos: string[] = [];
         const result = await this.prisma.$transaction(
           async (tx) => {
+            const protocolo = await nextProtocoloSolicitacao(tx);
             const sol = await tx.solicitacao.create({
               data: {
                 protocolo,
@@ -516,6 +565,8 @@ export class SolicitacoesV2Service {
                 tipoOperacao: dto.tipoOperacao,
                 previsaoRetirada,
                 bookingDeadline,
+                operacaoFluxoEstado: 'SOLICITADA',
+                operacaoFluxoJson: issueQrInactive() as Prisma.InputJsonValue,
               },
             });
 
@@ -533,6 +584,7 @@ export class SolicitacoesV2Service {
 
             for (const c of dto.containers) {
               const unidadeNorm = normalizeContainerIso(c.unidade.trim());
+              const iso = stripContainerIsoCanonical(c.unidade);
               await tx.containerSolicitacao.create({
                 data: {
                   solicitacaoId: sol.id,
@@ -550,7 +602,6 @@ export class SolicitacoesV2Service {
                   ordem: c.ordem,
                 },
               });
-              const iso = unidadeNorm.replace(/\s/g, '');
               if (isValidIso6346(iso)) {
                 try {
                   await tx.unidade.create({
@@ -642,6 +693,17 @@ export class SolicitacoesV2Service {
               clienteIdFaturamento,
             );
 
+            await this.pixQuitacao.debitarNaTransacao(tx, {
+              clienteId: clienteIdFaturamento!,
+              tenantId: cliente.tenantId || cx.tenantId || DEFAULT_TENANT_ID,
+              intent: dto.tipoOperacao,
+              unidades: dto.containers.map((c) => c.unidade),
+              protocolo,
+              solicitacaoId: sol.id,
+              actorId: cx.sub,
+              actorNome: cx.email || 'portal',
+            });
+
             const full = await tx.solicitacao.findUniqueOrThrow({
               where: { id: sol.id },
               include: {
@@ -666,6 +728,7 @@ export class SolicitacoesV2Service {
                   protocolo,
                   tipoOperacao: dto.tipoOperacao,
                   clienteId: cx.clienteId,
+                  empresaNome: rotuloEmpresaCliente(cliente),
                   origem: cx.auth === 'staff' ? 'GATE_STAFF' : 'PORTAL',
                   ...(pessoaMeta
                     ? {
@@ -684,6 +747,32 @@ export class SolicitacoesV2Service {
               },
               tx,
             );
+
+            if (cx.auth !== 'staff') {
+              const empresaNome = rotuloEmpresaCliente(cliente);
+              const actor = resolveAuditActor(cx, empresaNome);
+              const iso = dto.containers[0]?.unidade?.replace(/\s/g, '') || null;
+              await this.auditLog.append(
+                {
+                  entidadeId: sol.id,
+                  entidadeTipo: 'SOLICITACAO',
+                  acao: 'SOLICITACAO_CRIADA',
+                  usuarioId: actor.usuarioId,
+                  usuarioNome: actor.usuarioNome,
+                  usuarioRole: actor.usuarioRole,
+                  containerIso: iso,
+                  descricaoNarrativa: `O operador ${actor.operadorNome}${empresaNome ? ` da empresa ${empresaNome}` : ''} incluiu a solicitação protocolo ${protocolo}.`,
+                  dadosNovos: {
+                    protocolo,
+                    tipoOperacao: dto.tipoOperacao,
+                    ator: { tipo: 'cliente', empresaNome, operadorNome: actor.operadorNome },
+                  },
+                  tenantId: cx.tenantId,
+                  ipAddress: req.ip,
+                },
+                tx,
+              );
+            }
 
             return full;
           },
@@ -725,6 +814,13 @@ export class SolicitacoesV2Service {
               this.logger.warn(`Catálogo de motorista não atualizou: ${(err as Error).message}`),
             );
         }
+
+        void this.catalogoNavios
+          .registrarMuitos(
+            dto.containers.map((c) => c.navio),
+            cx.auth === 'staff' ? 'GATE' : 'SOLICITACAO',
+          )
+          .catch((err) => this.logger.warn(`Catálogo de navio não atualizou: ${(err as Error).message}`));
 
         return result;
       } catch (e) {
@@ -912,6 +1008,7 @@ export class SolicitacoesV2Service {
       dadosDepois: unknown;
     }>,
     securityAlerts: Array<{ id: string; tipo: string; createdAt: Date; risco: number | null }>,
+    idsOperacionais: Array<{ id: string; numero: number; entradaEm: Date }> = [],
   ) {
     type Tl = {
       id: string;
@@ -934,9 +1031,19 @@ export class SolicitacoesV2Service {
       id: `criacao-${s.id}`,
       tipo: 'criacao',
       titulo: 'Solicitação criada',
-      subtitulo: s.protocolo,
+      subtitulo: `Protocolo ${s.protocolo}`,
       createdAt: s.createdAt.toISOString(),
     });
+
+    for (const up of idsOperacionais) {
+      items.push({
+        id: `id-${up.id}`,
+        tipo: 'gate_in',
+        titulo: `${formatUnidadeProcessoId(up.numero)} criado`,
+        subtitulo: `Protocolo ${s.protocolo}`,
+        createdAt: up.entradaEm.toISOString(),
+      });
+    }
 
     const anexSorted = [...anexos].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
     for (const ax of anexSorted) {
@@ -1045,6 +1152,7 @@ export class SolicitacoesV2Service {
         anexosSolicitacao: { orderBy: { createdAt: 'asc' } },
         unidades: true,
         portaria: true,
+        ...SOLICITACAO_CONTROLE_INCLUDE,
         gateCheckIns: {
           orderBy: { dataHora: 'asc' },
           take: 20,
@@ -1119,6 +1227,7 @@ export class SolicitacoesV2Service {
         createdAt: a.createdAt,
         risco: a.risco != null ? Number(a.risco) : null,
       })),
+      s.unidadeProcessosEntrada,
     );
     const gateTimeline = s.gateCheckIns.flatMap((gi) => {
       const rows: (typeof timeline)[number][] = [];
@@ -1192,7 +1301,18 @@ export class SolicitacoesV2Service {
       throw new BadRequestException('Somente pendente ou em análise pode ser aprovada');
     }
     const container = s.containersSolicitacao?.[0]?.unidade?.trim() ?? '';
-    const qr = buildQrOnApproval({}, s.protocolo, s.clienteId, container);
+    const existingFluxo =
+      s.operacaoFluxoJson && typeof s.operacaoFluxoJson === 'object' && !Array.isArray(s.operacaoFluxoJson)
+        ? (s.operacaoFluxoJson as OperacaoFluxoJson)
+        : {};
+    const { parametros } = await this.tenantConfig.getParametros(user.tenantId ?? DEFAULT_TENANT_ID);
+    const qr = buildQrOnApproval(
+      existingFluxo,
+      s.protocolo,
+      s.clienteId,
+      container,
+      resolveOperacional(parametros).qrValidadeHoras,
+    );
     const updated = await this.prisma.$transaction(async (tx) => {
       const u = await tx.solicitacao.update({
         where: { id },

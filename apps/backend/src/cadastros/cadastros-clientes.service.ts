@@ -8,6 +8,7 @@ import {
   AcaoAuditoria,
   Prisma,
   TipoCliente,
+  StatusPixCreditoComprovante,
 } from '@prisma/client';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
 import { validateCnpjDigits } from '../common/utils/br-documents';
@@ -98,6 +99,7 @@ export class CadastrosClientesService {
           _count: {
             select: {
               solicitacoes: { where: { deletedAt: null } },
+              pixCreditoComprovantes: { where: { status: StatusPixCreditoComprovante.PENDENTE } },
             },
           },
         },
@@ -119,6 +121,7 @@ export class CadastrosClientesService {
         ativo: r.deletedAt == null,
         contratosAtivos: 0,
         solicitacoes: r._count.solicitacoes,
+        comprovantesPendentes: r._count.pixCreditoComprovantes,
       })),
       total,
       page,
@@ -131,7 +134,13 @@ export class CadastrosClientesService {
     if (!cliente) {
       throw new NotFoundException(`Cliente com ID ${id} não encontrado.`);
     }
-    return this.toFormShape(cliente as unknown as Record<string, unknown>);
+    const comprovantesPendentes = await this.prisma.clientePixCreditoComprovante.count({
+      where: { clienteId: id, status: StatusPixCreditoComprovante.PENDENTE },
+    });
+    return {
+      ...this.toFormShape(cliente as unknown as Record<string, unknown>),
+      comprovantesPendentes,
+    };
   }
 
   async create(

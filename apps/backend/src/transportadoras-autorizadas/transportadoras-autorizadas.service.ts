@@ -74,7 +74,7 @@ export class TransportadorasAutorizadasService {
       }
 
       const dupCliente = await this.prisma.cliente.findFirst({
-        where: { cpfCnpj: cnpj, deletedAt: null },
+        where: { cpfCnpj: cnpj },
       });
       if (dupCliente) {
         throw new ConflictException(`CNPJ já cadastrado como cliente: ${dto.razaoSocial.trim()}.`);
@@ -129,7 +129,7 @@ export class TransportadorasAutorizadasService {
     if (dupUser) throw new ConflictException('CNPJ já possui usuário cadastrado no sistema.');
 
     const dupCliente = await this.prisma.cliente.findFirst({
-      where: { cpfCnpj: cnpj, deletedAt: null },
+      where: { cpfCnpj: cnpj },
     });
     if (dupCliente) {
       throw new ConflictException('CNPJ já cadastrado como cliente principal.');

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Forklift, Plus, Search } from "lucide-react";
 import { EquipamentoCard } from "./components/equipamento-card";
@@ -59,13 +58,6 @@ export default function EquipamentosListPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <div className="mb-1 flex items-center gap-2 text-sm text-muted-foreground">
-            <Link href="/cadastros/operacional" className="hover:text-white">
-              Operacional
-            </Link>
-            <span>/</span>
-            <span>Equipamentos</span>
-          </div>
           <h1 className="text-2xl font-bold">Equipamentos</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Empilhadeiras, Reach Stackers e RTGs · Vínculo com operador feito no login

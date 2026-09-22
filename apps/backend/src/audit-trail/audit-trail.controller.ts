@@ -14,7 +14,7 @@ import { AuditTrailExportQueryDto, AuditTrailQueryDto } from './dto/audit-trail-
 @ApiTags('audit-trail')
 @ApiBearerAuth('access-token')
 @UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
-@Roles(Role.ADMIN, Role.GERENTE)
+@Roles(Role.ADMIN, Role.GERENTE, Role.SUPER_ADMIN)
 @Permissions('auditoria:ler')
 @Controller('audit-trail')
 export class AuditTrailController {

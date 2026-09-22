@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
+import { json, urlencoded } from 'express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { IoAdapter } from '@nestjs/platform-socket.io';
@@ -19,7 +20,10 @@ import { initSentry } from './common/observability/sentry.init';
 async function bootstrap() {
   initSentry();
   assertProductionEnvBoot();
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create(AppModule, { bufferLogs: true, bodyParser: false });
+  // Vistoria da portaria envia JPEG em data URL (várias fotos ~0,3 MB cada).
+  app.use(json({ limit: '25mb' }));
+  app.use(urlencoded({ extended: true, limit: '25mb' }));
   app.useWebSocketAdapter(new IoAdapter(app));
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
   const logger = new Logger('Bootstrap');

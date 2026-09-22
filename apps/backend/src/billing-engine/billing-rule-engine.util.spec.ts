@@ -55,7 +55,20 @@ describe('billing-rule-engine.util', () => {
       ativa: true,
       nome: 'Diária reefer',
     },
+    {
+      id: 'r-energia',
+      eventoGatilho: EventoGatilhoTarifa.ENERGIA_REEFER,
+      tipoContainer: TipoContainerTarifa.REEFER,
+      statusContainer: StatusContainerTarifa.AMBOS,
+      valor: new Prisma.Decimal(45),
+      diasFreeTime: 0,
+      ativa: true,
+      nome: 'Energia reefer',
+    },
   ];
+
+  /** Tabela sem a regra de energia: fechamento deve travar, não inventar tarifa. */
+  const regrasSemEnergia = regras.filter((r) => r.id !== 'r-energia');
 
   it('inferTipoContainer detecta reefer e IMO', () => {
     expect(inferTipoContainer({ tamanho: '40', tipo: 'DRY', refrigerado: false })).toBe(
@@ -112,6 +125,47 @@ describe('billing-rule-engine.util', () => {
     );
     expect(picked?.id).toBe('r-cheio');
     expect(picked?.diasFreeTime).toBe(3);
+  });
+
+  it('não acha diária CHEIO/VAZIO se a RIC não trouxer situação', () => {
+    const soCheioVazio = [
+      {
+        id: 'r-cheio',
+        eventoGatilho: EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
+        tipoContainer: TipoContainerTarifa.DRY_40,
+        statusContainer: StatusContainerTarifa.CHEIO,
+        valor: new Prisma.Decimal(30),
+        diasFreeTime: 7,
+        ativa: true,
+        nome: 'Diária DRY / 40\' / CHEIO',
+      },
+      {
+        id: 'r-vazio',
+        eventoGatilho: EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
+        tipoContainer: TipoContainerTarifa.DRY_40,
+        statusContainer: StatusContainerTarifa.VAZIO,
+        valor: new Prisma.Decimal(30),
+        diasFreeTime: 7,
+        ativa: true,
+        nome: 'Diária DRY / 40\' / VAZIO',
+      },
+    ];
+    expect(
+      pickRegra(
+        soCheioVazio as never,
+        TipoContainerTarifa.DRY_40,
+        EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
+        null,
+      ),
+    ).toBeUndefined();
+    expect(
+      pickRegra(
+        soCheioVazio as never,
+        TipoContainerTarifa.DRY_40,
+        EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
+        StatusContainerTarifa.CHEIO,
+      )?.id,
+    ).toBe('r-cheio');
   });
 
   it('PR-03: pricingOverrides aplicam free time e tarifa do item cadastral', () => {
@@ -222,6 +276,19 @@ describe('billing-rule-engine.util', () => {
     expect(energia).toBeUndefined();
   });
 
+  it('trava o fechamento quando a energia reefer não está cadastrada', () => {
+    expect(() =>
+      evaluateBillingRules({
+        gateInAt: gateIn,
+        asOf: new Date('2026-06-10T10:00:00.000Z'),
+        regras: regrasSemEnergia as never,
+        container: { tamanho: '40', tipo: 'REEFER', refrigerado: true, setPoint: -18 },
+        incluirGateIn: false,
+        incluirGateOut: false,
+      }),
+    ).toThrow(/energia reefer não cadastrada/i);
+  });
+
   it('evaluateBillingRules usa diasEnergiaReefer (prorata da tomada)', () => {
     const asOf = new Date('2026-06-10T10:00:00.000Z');
     const result = evaluateBillingRules({
@@ -276,6 +343,56 @@ describe('billing-rule-engine.util', () => {
     expect(energia?.quantidade).toBe(16);
     expect(energia?.valorTotal).toBe(3520);
     expect(energia?.detalheCobranca).toBe('16 dias de R$ 220,00');
+  });
+
+  it('lanca handling da tabela já no gate-in (baixa / estoque)', () => {
+    const gateInAt = new Date('2026-09-20T10:00:00.000Z');
+    const result = evaluateBillingRules({
+      gateInAt,
+      asOf: gateInAt,
+      regras: regras as never,
+      container: { tamanho: '40', tipo: 'DRYDC', statusContainer: StatusContainerTarifa.VAZIO },
+      incluirGateIn: true,
+      incluirGateOut: false,
+      pricingOverrides: { diasFreeTime: 7, valorHandling: 300, valorDiaria: 85 },
+    });
+    const handling = result.items.find((i) => i.eventoGatilho === EventoGatilhoTarifa.HANDLING);
+    expect(handling?.valorTotal).toBe(300);
+    expect(handling?.descricao).toBe('Handling');
+    expect(result.items.some((i) => i.eventoGatilho === EventoGatilhoTarifa.GATE_IN)).toBe(false);
+  });
+
+  it('omitirHandling não relança handling nem inventa taxa de gate', () => {
+    const gateInAt = new Date('2026-09-20T10:00:00.000Z');
+    const result = evaluateBillingRules({
+      gateInAt,
+      asOf: gateInAt,
+      regras: regras as never,
+      container: { tamanho: '40', tipo: 'DRYDC', statusContainer: StatusContainerTarifa.VAZIO },
+      incluirGateIn: true,
+      incluirGateOut: true,
+      omitirHandling: true,
+      pricingOverrides: { diasFreeTime: 7, valorHandling: 300, valorDiaria: 85 },
+    });
+    expect(result.items.some((i) => i.eventoGatilho === EventoGatilhoTarifa.HANDLING)).toBe(false);
+    expect(result.items.some((i) => i.eventoGatilho === EventoGatilhoTarifa.GATE_IN)).toBe(false);
+    expect(result.items.some((i) => i.eventoGatilho === EventoGatilhoTarifa.GATE_OUT)).toBe(false);
+  });
+
+  it('omitirEnergia não relança energia de tomada', () => {
+    const asOf = new Date('2026-06-10T10:00:00.000Z');
+    const result = evaluateBillingRules({
+      gateInAt: gateIn,
+      asOf,
+      regras: regras as never,
+      container: { tamanho: '40', tipo: 'REEFER', refrigerado: true, setPoint: -18 },
+      incluirGateIn: false,
+      incluirGateOut: false,
+      omitirEnergia: true,
+    });
+    expect(result.items.some((i) => i.eventoGatilho === EventoGatilhoTarifa.ENERGIA_REEFER)).toBe(
+      false,
+    );
   });
 
   it('energia reefer usa faixas por dias conectados (8–15 / 16+)', () => {

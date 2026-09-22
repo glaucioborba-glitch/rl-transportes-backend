@@ -4,8 +4,10 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AuditContextModule } from '../audit-trail/audit-context.module';
 import { ConfigCacheModule } from '../common/cache/config-cache.module';
+import { EmailModule } from '../common/email/email.module';
 import { ObjectStorageModule } from '../common/storage/object-storage.module';
 import { FiscalIntegracaoModule } from '../fiscal-integracao/fiscal-integracao.module';
+import { NfseNacionalModule } from '../nfse-nacional/nfse-nacional.module';
 import { NotificationModule } from '../notification/notification.module';
 import { OCRModule } from '../modules/ocr/ocr.module';
 import nfseConfig from '../config/nfse.config';
@@ -29,8 +31,10 @@ import { EmpresaEncargosCronService } from './empresa-encargos.cron';
     PrismaModule,
     AuditContextModule,
     ConfigCacheModule,
+    EmailModule,
     ConfigModule.forFeature(nfseConfig),
     FiscalIntegracaoModule,
+    NfseNacionalModule,
     NotificationModule,
     OCRModule,
     ObjectStorageModule,

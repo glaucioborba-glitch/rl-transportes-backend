@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/portal/status-badge";
+import { SolicitacaoDirecaoBadge } from "@/components/solicitacao/solicitacao-direcao-badge";
 import { SolicitacaoEditModal } from "@/components/portal/solicitacao-edit-modal";
 import {
   ApiError,
@@ -16,14 +17,15 @@ import {
 import {
   formatDateTime,
   solicitacaoBookingLabel,
+  solicitacaoControleDisplay,
   solicitacaoEquipamentoLabel,
-  solicitacaoProtocoloDisplay,
   solicitacaoSolicitanteLabel,
   solicitacaoTransporteLabel,
 } from "@/lib/portal-tracking";
 import { collectSolicitacaoContainerISOs } from "@/lib/container-display";
 import { ContainerNumber } from "@/components/ui/container-number";
 import { toast } from "@/lib/toast";
+import { useDocumentoSaida } from "@/components/documento-saida/documento-saida-dialog";
 import { confirmarAcaoJanelaExecucao } from "@/utils/janelaExecucao";
 import { usePessoaPermissoesStore } from "@/stores/pessoaPermissoesStore";
 
@@ -35,6 +37,8 @@ function dataAgendamento(row: SolicitacaoRow): string {
 
 function statusPermiteQr(status: string): boolean {
   return (
+    status === "PENDENTE" ||
+    status === "EM_ANALISE" ||
     status === "APROVADO" ||
     status === "AGUARDANDO_GATE_IN" ||
     status === "EM_TRANSITO" ||
@@ -44,7 +48,12 @@ function statusPermiteQr(status: string): boolean {
 }
 
 function statusPermiteEdicao(status: string): boolean {
-  return status === "PENDENTE" || status === "EM_ANALISE";
+  return (
+    status === "PENDENTE" ||
+    status === "EM_ANALISE" ||
+    status === "APROVADO" ||
+    status === "AGUARDANDO_GATE_IN"
+  );
 }
 
 function CardField({ label, value }: { label: string; value: string }) {
@@ -70,7 +79,7 @@ export function SolicitacaoCompactCard({
   const podeGerarPdf = usePessoaPermissoesStore((s) => s.permissoes?.podeGerarPDF ?? true);
   const [editOpen, setEditOpen] = useState(false);
   const [canceling, setCanceling] = useState(false);
-  const [qrBusy, setQrBusy] = useState(false);
+  const documentoSaida = useDocumentoSaida();
 
   const detailHref = `/portal/solicitacoes/${row.id}`;
   const acoesDisponiveis = podeEditar && statusPermiteEdicao(row.status);
@@ -78,26 +87,16 @@ export function SolicitacaoCompactCard({
     podeGerarPdf && statusPermiteQr(row.status) && Boolean(row.transporteSolicitacao);
   const containerIsos = useMemo(() => collectSolicitacaoContainerISOs(row), [row]);
   const containerDefinido = containerIsos.length > 0;
+  const controle = solicitacaoControleDisplay(row);
 
-  async function baixarQrcode() {
-    setQrBusy(true);
-    try {
-      const blob = await portalDownloadSolicitacaoV2Pdf(row.id);
-      const protocolo = row.protocolo?.replace(/[^\w.-]+/g, "_") || row.id;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `autorizacao-${protocolo}.pdf`;
-      a.rel = "noopener";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Falha ao baixar QRCode");
-    } finally {
-      setQrBusy(false);
-    }
+  function baixarQrcode() {
+    const protocolo = row.protocolo?.replace(/[^\w.-]+/g, "_") || row.id;
+    documentoSaida.pedir({
+      titulo: "Autorização",
+      descricao: "PDF da solicitação com QR Code. Baixe o arquivo ou envie direto para a impressora.",
+      filename: `autorizacao-${protocolo}.pdf`,
+      obter: () => portalDownloadSolicitacaoV2Pdf(row.id),
+    });
   }
 
   async function handleCancelar() {
@@ -135,9 +134,15 @@ export function SolicitacaoCompactCard({
       >
         <div className="flex items-start justify-between gap-3 p-4 pb-0" onClick={stopCardNav}>
           <div className="min-w-0">
-            <p className="font-mono text-base font-semibold tracking-tight text-white">
-              {solicitacaoProtocoloDisplay(row.protocolo)}
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-mono text-base font-semibold tracking-tight text-white">
+                {controle.primario}
+              </p>
+              <SolicitacaoDirecaoBadge intent={row.tipoOperacao} />
+            </div>
+            {controle.secundario ? (
+              <p className="mt-0.5 font-mono text-xs text-slate-500">{controle.secundario}</p>
+            ) : null}
             <p className="mt-0.5 text-xs text-slate-500">{formatDateTime(row.createdAt)}</p>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-2">
@@ -150,11 +155,10 @@ export function SolicitacaoCompactCard({
                     variant="outline"
                     size="sm"
                     className="gap-1"
-                    disabled={qrBusy}
-                    onClick={() => void baixarQrcode()}
+                    onClick={() => baixarQrcode()}
                   >
                     <QrCode className="mr-1 h-3.5 w-3.5" />
-                    {qrBusy ? "Baixando…" : "Baixar QRcode"}
+                    Baixar QRcode
                   </Button>
                 ) : null}
                 {acoesDisponiveis ? (
@@ -222,6 +226,7 @@ export function SolicitacaoCompactCard({
         onClose={() => setEditOpen(false)}
         onUpdated={() => onChanged?.()}
       />
+      {documentoSaida.dialog}
     </>
   );
 }

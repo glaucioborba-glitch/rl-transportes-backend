@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/portal/status-badge";
+import { SolicitacaoDirecaoBadge } from "@/components/solicitacao/solicitacao-direcao-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -17,7 +18,7 @@ import {
   portalDownloadSolicitacaoV2Pdf,
   type SolicitacaoRow,
 } from "@/lib/api/portal-client";
-import { formatDateTime } from "@/lib/portal-tracking";
+import { formatDateTime, solicitacaoControleDisplay } from "@/lib/portal-tracking";
 import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
 import type { VistoriaPortalRow } from "@/lib/gate-vistoria";
 import { VistoriaGallery } from "@/components/portal/vistoria-gallery";
@@ -33,6 +34,7 @@ import { usePortalTiposContainer } from "@/hooks/use-portal-tipos-container";
 import { findPortalTipo } from "@/components/portal/container-form-fields";
 import { rotuloTomadaPedido } from "@/lib/cadastros/tomada-display";
 import { TomadaPedidoBadge } from "@/components/gate/tomada-pedido-badge";
+import { useDocumentoSaida } from "@/components/documento-saida/documento-saida-dialog";
 
 function PhotoStrip({ title, urls }: { title: string; urls: unknown }) {
   const list = Array.isArray(urls) ? urls.filter((u) => typeof u === "string") : [];
@@ -92,7 +94,7 @@ export default function SolicitacaoDetailPage() {
   const [vistorias, setVistorias] = useState<VistoriaPortalRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [aproving, setAproving] = useState(false);
-  const [pdfBusy, setPdfBusy] = useState(false);
+  const documentoSaida = useDocumentoSaida();
   const { tipos } = usePortalTiposContainer(true);
 
   useEffect(() => {
@@ -121,28 +123,15 @@ export default function SolicitacaoDetailPage() {
     };
   }, [id, router]);
 
-  async function onBaixarPdfCorporativo() {
+  function onBaixarPdfCorporativo() {
     if (!id) return;
-    setPdfBusy(true);
-    try {
-      const blob = await portalDownloadSolicitacaoV2Pdf(id);
-      const protocolo = row?.protocolo?.replace(/[^\w.-]+/g, "_") || id;
-      const filename = `autorizacao-${protocolo}.pdf`;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.rel = "noopener";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.open(url, "_blank", "noopener,noreferrer");
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "Falha ao gerar PDF");
-    } finally {
-      setPdfBusy(false);
-    }
+    const protocolo = row?.protocolo?.replace(/[^\w.-]+/g, "_") || id;
+    documentoSaida.pedir({
+      titulo: "Autorização",
+      descricao: "PDF da solicitação com QR Code. Baixe o arquivo ou envie direto para a impressora.",
+      filename: `autorizacao-${protocolo}.pdf`,
+      obter: () => portalDownloadSolicitacaoV2Pdf(id),
+    });
   }
 
   async function onAprovar() {
@@ -173,13 +162,20 @@ export default function SolicitacaoDetailPage() {
   const p = row.portaria;
 
   const isos = collectSolicitacaoContainerISOs(row);
+  const controle = solicitacaoControleDisplay(row);
 
   return (
     <main className="mx-auto w-[90%] space-y-6 px-4 py-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1 space-y-2">
           <ContainerNumber value={isos[0] ?? "—"} size="lg" />
-          <ProtocolRefLabel protocolo={row.protocolo} prefix="Protocolo:" />
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-mono text-base font-semibold tracking-tight text-white">{controle.primario}</p>
+            <SolicitacaoDirecaoBadge intent={row.tipoOperacao} />
+          </div>
+          {controle.secundario ? (
+            <ProtocolRefLabel protocolo={row.protocolo} prefix="Protocolo:" />
+          ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           <StatusBadge status={row.status} />
@@ -187,10 +183,9 @@ export default function SolicitacaoDetailPage() {
             <Button
               type="button"
               variant="outline"
-              disabled={pdfBusy}
-              onClick={() => void onBaixarPdfCorporativo()}
+              onClick={() => onBaixarPdfCorporativo()}
             >
-              {pdfBusy ? "…" : "Baixar PDF"}
+              Baixar PDF
             </Button>
           ) : null}
           {row.status === "PENDENTE" && !isCorporativa && permissoes?.podeAprovarOS ? (
@@ -225,10 +220,10 @@ export default function SolicitacaoDetailPage() {
                 </CardHeader>
                 <CardContent className="grid gap-2 text-sm text-slate-300 sm:grid-cols-2">
                   <p>
-                    Motorista: <span className="text-white">{row.transporteSolicitacao.nomeMotorista}</span>
+                    CPF: <span className="font-mono text-white">{row.transporteSolicitacao.cpfMotorista}</span>
                   </p>
                   <p>
-                    CPF: <span className="font-mono text-white">{row.transporteSolicitacao.cpfMotorista}</span>
+                    Motorista: <span className="text-white">{row.transporteSolicitacao.nomeMotorista}</span>
                   </p>
                   <p>
                     Tipo: <span className="text-white">{row.transporteSolicitacao.tipoCaminhao}</span>
@@ -451,15 +446,13 @@ export default function SolicitacaoDetailPage() {
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" asChild>
-                <Link href="/portal/documentos">Central de documentos</Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
                 <Link href="/portal/financeiro">Financeiro</Link>
               </Button>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+      {documentoSaida.dialog}
     </main>
   );
 }

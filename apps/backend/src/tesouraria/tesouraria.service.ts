@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { StatusPagamentoFatura } from '@prisma/client';
 import { BOLETO_STATUS_ABERTO } from '../common/finance/boleto-status.constants';
@@ -33,6 +33,7 @@ import type {
   SugestaoTesourariaDto,
 } from './dto/tesouraria-response.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { mensagemCnpjJaCadastrado } from '../common/utils/documento-unico.util';
 
 function num(d: { toFixed: (n: number) => string } | null | undefined): number {
   if (d === null || d === undefined) return 0;
@@ -92,9 +93,15 @@ export class TesourariaService {
   }
 
   async createFornecedor(dto: CreateFornecedorDto): Promise<FornecedorRespostaDto> {
+    const cnpj = dto.cnpj.replace(/\D/g, '');
+    const existentes = await this.store.listFornecedores();
+    const dup = existentes.find((f) => f.cnpj.replace(/\D/g, '') === cnpj);
+    if (dup) {
+      throw new ConflictException(mensagemCnpjJaCadastrado(dup.nome));
+    }
     const e = await this.store.createFornecedor({
       nome: dto.nome.trim(),
-      cnpj: dto.cnpj.replace(/\D/g, ''),
+      cnpj,
       categoriaFornecedor: dto.categoriaFornecedor,
       contato: dto.contato.trim(),
       prazoPagamentoPadrao: dto.prazoPagamentoPadrao,

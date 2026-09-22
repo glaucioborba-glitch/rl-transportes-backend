@@ -10,7 +10,7 @@ export default function FinanceiroPage() {
       <div>
         <h1 className="text-2xl font-bold">Financeiro</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Bancos, centros de custo, plano de contas, tabelas de preços, tabela de transportes, serviços, aluguel e forma/prazo
+          Bancos, centros de custo, plano de contas, tabelas de preços, tabela de transportes, serviços, aluguel e forma e prazo de pagamento
         </p>
       </div>
 

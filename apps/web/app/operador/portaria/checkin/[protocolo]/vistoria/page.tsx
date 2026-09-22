@@ -25,6 +25,8 @@ import { toast } from "@/lib/toast";
 type FotoTipo =
   | "CONTAINER_OCR"
   | "PLACA_OCR"
+  | "PLACA_CARRETA_OCR"
+  | "PLACA_CARRETA_02_OCR"
   | "LADO_FRONTAL"
   | "LADO_TRASEIRO"
   | "LADO_DIREITO"
@@ -46,9 +48,10 @@ type FotoVistoria = {
   ocrExtras?: ContainerOcrExtras;
 };
 
-const FOTOS_OBRIGATORIAS: FotoVistoria[] = [
+const FOTOS_BASE: FotoVistoria[] = [
   { tipo: "CONTAINER_OCR", label: "Número do Contêiner", obrigatoria: true },
   { tipo: "PLACA_OCR", label: "Placa do Cavalo", obrigatoria: true },
+  { tipo: "PLACA_CARRETA_OCR", label: "Placa da Carreta", obrigatoria: true },
   { tipo: "LADO_FRONTAL", label: "Lado Frontal", obrigatoria: true },
   { tipo: "LADO_TRASEIRO", label: "Lado Traseiro (Portas)", obrigatoria: true },
   { tipo: "LADO_DIREITO", label: "Lado Direito", obrigatoria: true },
@@ -56,12 +59,53 @@ const FOTOS_OBRIGATORIAS: FotoVistoria[] = [
   { tipo: "LACRE", label: "Lacre", obrigatoria: false },
 ];
 
+function isRodotremOperacao(op: OperacaoDto | null | undefined): boolean {
+  return String(op?.dossie?.solicitacao?.tipoCaminhao ?? "").toUpperCase() === "RODOTREM";
+}
+
+function slotsVistoria(op?: OperacaoDto | null): FotoVistoria[] {
+  const slots = [...FOTOS_BASE];
+  if (!isRodotremOperacao(op)) return slots;
+  const carretaIdx = slots.findIndex((s) => s.tipo === "PLACA_CARRETA_OCR");
+  slots.splice(carretaIdx + 1, 0, {
+    tipo: "PLACA_CARRETA_02_OCR",
+    label: "Placa da Carreta 02",
+    obrigatoria: true,
+  });
+  return slots;
+}
+
 function tiposEquivalentes(tipo: string): string[] {
   if (tipo === "LACRE" || tipo === "LACRE_OCR") return ["LACRE", "LACRE_OCR"];
   if (tipo === "CABO_TOMADA" || tipo === "CABO_REEFER" || tipo === "TOMADA_REEFER") {
     return ["CABO_TOMADA", "CABO_REEFER", "TOMADA_REEFER"];
   }
+  if (tipo === "PLACA_OCR" || tipo === "PLACA_CAVALO_OCR") {
+    return ["PLACA_OCR", "PLACA_CAVALO_OCR"];
+  }
+  if (tipo === "PLACA_CARRETA_OCR" || tipo === "PLACA_CARRETA01_OCR" || tipo === "PLACA_CARRETA_01_OCR") {
+    return ["PLACA_CARRETA_OCR", "PLACA_CARRETA01_OCR", "PLACA_CARRETA_01_OCR"];
+  }
+  if (tipo === "PLACA_CARRETA_02_OCR" || tipo === "PLACA_CARRETA02_OCR") {
+    return ["PLACA_CARRETA_02_OCR", "PLACA_CARRETA02_OCR"];
+  }
   return [tipo];
+}
+
+function esperadoOcr(op: OperacaoDto | null, tipo: FotoTipo): string | undefined {
+  const raw =
+    tipo === "CONTAINER_OCR"
+      ? op?.containerNumero
+      : tipo === "PLACA_OCR"
+        ? op?.placa
+        : tipo === "PLACA_CARRETA_OCR"
+          ? op?.dossie?.solicitacao?.placaCarreta
+          : tipo === "PLACA_CARRETA_02_OCR"
+            ? op?.dossie?.solicitacao?.placaCarreta02
+            : undefined;
+  const v = String(raw ?? "").trim();
+  if (!v || v === "—") return undefined;
+  return v;
 }
 
 function hidratarFotos(op: OperacaoDto): FotoVistoria[] {
@@ -74,7 +118,7 @@ function hidratarFotos(op: OperacaoDto): FotoVistoria[] {
     return existentes.find((f) => tiposEquivalentes(tipo).includes(f.tipo) && String(f.imagem ?? "").trim());
   };
 
-  const mapped = FOTOS_OBRIGATORIAS.map((slot) => {
+  const mapped = slotsVistoria(op).map((slot) => {
     const hit = achar(slot.tipo);
     let next: FotoVistoria = hit
       ? {
@@ -127,7 +171,7 @@ export default function VistoriaPage({ params }: { params: { protocolo: string }
   const router = useRouter();
   const protocolo = decodeURIComponent(params.protocolo);
   const [operacao, setOperacao] = useState<OperacaoDto | null>(null);
-  const [fotos, setFotos] = useState<FotoVistoria[]>(FOTOS_OBRIGATORIAS);
+  const [fotos, setFotos] = useState<FotoVistoria[]>(slotsVistoria());
   const [fotoAtual, setFotoAtual] = useState<FotoVistoria | null>(null);
   const [avarias, setAvarias] = useState<
     Array<{ foto: string; descricao: string; localizacao: string }>
@@ -160,16 +204,18 @@ export default function VistoriaPage({ params }: { params: { protocolo: string }
       prev.map((f) => (f.tipo === tipoFoto.tipo ? { ...f, foto: dataUrl } : f)),
     );
 
-    if (tipoFoto.tipo === "CONTAINER_OCR" || tipoFoto.tipo === "PLACA_OCR") {
-      const esperado =
-        tipoFoto.tipo === "CONTAINER_OCR"
-          ? operacao?.containerNumero
-          : operacao?.placa;
+    if (
+      tipoFoto.tipo === "CONTAINER_OCR" ||
+      tipoFoto.tipo === "PLACA_OCR" ||
+      tipoFoto.tipo === "PLACA_CARRETA_OCR" ||
+      tipoFoto.tipo === "PLACA_CARRETA_02_OCR"
+    ) {
+      const esperado = esperadoOcr(operacao, tipoFoto.tipo);
       try {
         const result = await processarOcr(
           dataUrl,
           tipoFoto.tipo === "CONTAINER_OCR" ? "CONTAINER" : "PLACA",
-          esperado !== "—" ? esperado : undefined,
+          esperado,
         );
         setFotos((prev) =>
           prev.map((f) =>

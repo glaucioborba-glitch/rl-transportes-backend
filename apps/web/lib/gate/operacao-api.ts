@@ -1,4 +1,4 @@
-import { ApiError, staffJson, staffRequest } from "@/lib/api/staff-client";
+import { ApiError, nestErrorMessage, staffJson, staffRequest } from "@/lib/api/staff-client";
 import type { OperacaoState } from "./operacao-states";
 
 export type ConferenciaStatus = "CONFERE" | "DIVERGENTE" | "SEM_CAPTURA";
@@ -59,6 +59,7 @@ export type OperacaoDto = {
   containerSetPoint?: number | null;
   placa: string;
   motoristaNome: string;
+  motoristaCpf?: string;
   transportadoraNome: string;
   transportadoraId?: string | null;
   transportadoraCnpj?: string;
@@ -107,6 +108,7 @@ export type OperacaoDto = {
     fotosRefazer?: string[];
   } | null;
   observacaoGate?: string;
+  observacoesEfeito?: string[];
   confirmadosGate?: string[];
   conferencia?: {
     itens: ConferenciaCampo[];
@@ -115,6 +117,13 @@ export type OperacaoDto = {
   ocrIndicativos?: {
     tipo: OcrIndicativoTipo | null;
   };
+  lacreTroca?: {
+    atual: string;
+    anterior: string;
+    observacao: string;
+    origem: string;
+    texto: string;
+  } | null;
   dossie?: {
     solicitacao: {
       container: string;
@@ -225,6 +234,13 @@ export async function fetchStaffCatalogoContainer(iso: string) {
   );
 }
 
+export async function fetchStaffCatalogoNavios(q?: string) {
+  const query = q?.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
+  return staffJson<{ items: Array<{ nome: string; origem: string }>; total: number }>(
+    `/v2/catalogo-navios${query}`,
+  );
+}
+
 export async function processarOcr(imagem: string, tipo: "CONTAINER" | "PLACA", esperado?: string) {
   return staffJson<{
     sucesso: boolean;
@@ -281,8 +297,18 @@ export type ConsultaRicItem = {
   tipoContainer?: string | null;
   tamanhoContainer?: string | null;
   situacao?: string | null;
+  lacre?: string | null;
+  lacreTroca?: {
+    atual: string;
+    anterior: string;
+    observacao: string;
+    origem: string;
+    texto: string;
+  } | null;
   tomadaReefer?: boolean;
   tomadaConectada?: boolean;
+  handlingValor?: number;
+  valorLancado?: number;
   clienteNome: string;
   titularNome?: string;
   solicitanteNome?: string;
@@ -314,6 +340,50 @@ export async function fetchControleEntradaSaidaCount() {
     ricPendente: number;
     prontoSaida?: number;
   }>("/v2/gate/controle-entrada-saida/count");
+}
+
+export type GateUnidadeNotificacaoCampo = {
+  campo: string;
+  label: string;
+  antes: string;
+  depois: string;
+};
+
+export type GateUnidadeNotificacao = {
+  id: string;
+  titulo: string;
+  corpo: string;
+  origem: "PORTAL" | "GATE";
+  unidadeIso: string;
+  processoNumero: number;
+  unidadeProcessoId: string;
+  campos: GateUnidadeNotificacaoCampo[];
+  atorNome: string;
+  atorRole: string;
+  criadoEm: string;
+  lidaEm: string | null;
+  href: string;
+};
+
+export async function fetchGateNotificacoes() {
+  return staffJson<GateUnidadeNotificacao[]>("/v2/gate/notificacoes");
+}
+
+export async function fetchGateNotificacoesNaoLidas() {
+  return staffJson<{ count: number }>("/v2/gate/notificacoes/nao-lidas");
+}
+
+export async function marcarGateNotificacaoLida(id: string) {
+  return staffJson<GateUnidadeNotificacao>(
+    `/v2/gate/notificacoes/${encodeURIComponent(id)}/lida`,
+    { method: "POST" },
+  );
+}
+
+export async function marcarTodasGateNotificacoesLidas() {
+  return staffJson<{ atualizadas: number }>("/v2/gate/notificacoes/marcar-todas-lidas", {
+    method: "POST",
+  });
 }
 
 export type CatalogoTipoContainer = {
@@ -424,7 +494,7 @@ export async function postRejeitar(protocolo: string, motivo: string, etapa: str
 
 export async function postAssinatura(
   protocolo: string,
-  body: { modo: "DIGITAL" | "MANUAL"; assinatura?: string },
+  body: { modo: "DIGITAL" | "MANUAL"; assinatura?: string; biometriaVerificada?: boolean },
 ) {
   return staffJson<OperacaoDto>(`/v2/gate/operacoes/${encodeURIComponent(protocolo)}/assinatura`, {
     method: "POST",
@@ -432,14 +502,18 @@ export async function postAssinatura(
   });
 }
 
-export async function downloadRicPdf(protocolo: string): Promise<Blob> {
-  const res = await staffRequest(`/v2/gate/operacoes/${encodeURIComponent(protocolo)}/ric-pdf`, {
+export async function downloadRicPdf(
+  protocolo: string,
+  modelo?: "dupla" | "cupom" | "completa",
+): Promise<Blob> {
+  const qs = modelo ? `?modelo=${modelo}` : "";
+  const res = await staffRequest(`/v2/gate/operacoes/${encodeURIComponent(protocolo)}/ric-pdf${qs}`, {
     method: "POST",
     headers: { Accept: "application/pdf" },
   });
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(err || `Erro HTTP ${res.status}`);
+    throw new ApiError(nestErrorMessage(err, res.status), res.status);
   }
   const contentType = res.headers.get("content-type") ?? "";
   if (!contentType.includes("application/pdf")) {

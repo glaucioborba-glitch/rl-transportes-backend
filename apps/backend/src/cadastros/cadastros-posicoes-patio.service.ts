@@ -87,6 +87,14 @@ export class CadastrosPosicoesPatioService {
     return this.toShape(row);
   }
 
+  async remove(id: string) {
+    await this.getRowOrThrow(id);
+    await this.prisma.cadastroPosicaoPatio.update({
+      where: { id },
+      data: { ativo: false, deletedAt: new Date() },
+    });
+  }
+
   private buildCodigo(baiaCodigo: string, slotNumero: number, stackAltura: number) {
     return `${baiaCodigo}-${String(slotNumero).padStart(2, '0')}-${stackAltura}`;
   }

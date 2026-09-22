@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MoreHorizontal, Pencil, UserX } from "lucide-react";
+import { MoreHorizontal, Pencil, UserCheck, UserX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +21,7 @@ import {
 import { formatCpfBr } from "@/lib/format-cpf-cnpj-br";
 import type { PessoaAutorizadaRow } from "@/lib/api/portal-client";
 import { PessoaEditDialog } from "./pessoa-edit-dialog";
+import { PessoaReativarDialog } from "./pessoa-reativar-dialog";
 import { PessoaRevokeDialog } from "./pessoa-revoke-dialog";
 
 type EquipeAutorizacoesTableProps = {
@@ -43,6 +44,7 @@ export function EquipeAutorizacoesTable({
 }: EquipeAutorizacoesTableProps) {
   const [modalEdicao, setModalEdicao] = useState<PessoaAutorizadaRow | null>(null);
   const [modalRevogacao, setModalRevogacao] = useState<PessoaAutorizadaRow | null>(null);
+  const [modalReativacao, setModalReativacao] = useState<PessoaAutorizadaRow | null>(null);
 
   if (rows.length === 0) {
     return <p className="text-sm text-muted-foreground">Nenhum operador cadastrado.</p>;
@@ -79,7 +81,7 @@ export function EquipeAutorizacoesTable({
                   )}
                 </TableCell>
                 <TableCell className="text-right">
-                  {podeGerenciar && ativo && !isSelf ? (
+                  {podeGerenciar && !isSelf ? (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Ações">
@@ -87,17 +89,26 @@ export function EquipeAutorizacoesTable({
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setModalEdicao(row)}>
-                          <Pencil className="mr-2 h-4 w-4" />
-                          Editar Permissões
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => setModalRevogacao(row)}
-                          className="text-red-400 focus:text-red-400 focus:bg-red-500/10"
-                        >
-                          <UserX className="mr-2 h-4 w-4" />
-                          Revogar Acesso
-                        </DropdownMenuItem>
+                        {ativo ? (
+                          <>
+                            <DropdownMenuItem onClick={() => setModalEdicao(row)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Editar Permissões
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => setModalRevogacao(row)}
+                              className="text-red-400 focus:text-red-400 focus:bg-red-500/10"
+                            >
+                              <UserX className="mr-2 h-4 w-4" />
+                              Revogar Acesso
+                            </DropdownMenuItem>
+                          </>
+                        ) : (
+                          <DropdownMenuItem onClick={() => setModalReativacao(row)}>
+                            <UserCheck className="mr-2 h-4 w-4" />
+                            Reativar perfil
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   ) : (
@@ -121,6 +132,12 @@ export function EquipeAutorizacoesTable({
         open={Boolean(modalRevogacao)}
         onClose={() => setModalRevogacao(null)}
         onRevoked={onChanged}
+      />
+      <PessoaReativarDialog
+        pessoa={modalReativacao}
+        open={Boolean(modalReativacao)}
+        onClose={() => setModalReativacao(null)}
+        onReativado={onChanged}
       />
     </>
   );

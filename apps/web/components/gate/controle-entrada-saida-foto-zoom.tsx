@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { cn } from "@/lib/utils";
 
 const MIN = 1;
 const MAX = 8;
@@ -9,13 +10,14 @@ const FACTOR = 1.14;
 type Props = {
   src: string;
   alt: string;
+  compact?: boolean;
 };
 
 /**
  * Visualizador de foto com zoom pela roda do mouse e pan por arraste.
  * O zoom é em direção ao cursor para inspecionar um detalhe (lacre, dígito, avaria).
  */
-export function ControleEntradaSaidaFotoZoom({ src, alt }: Props) {
+export function ControleEntradaSaidaFotoZoom({ src, alt, compact }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const zoomRef = useRef(1);
   const offsetRef = useRef({ x: 0, y: 0 });
@@ -86,7 +88,10 @@ export function ControleEntradaSaidaFotoZoom({ src, alt }: Props) {
     <div className="space-y-2">
       <div
         ref={viewportRef}
-        className="relative max-h-[70vh] overflow-hidden rounded-md bg-black touch-none select-none overscroll-contain"
+        className={cn(
+          "relative overflow-hidden rounded-md bg-black touch-none select-none overscroll-contain",
+          compact ? "min-h-[36vh] max-h-[63vh] sm:min-h-[48vh]" : "max-h-[70vh]",
+        )}
         style={{ cursor: zoom > 1 ? (dragging ? "grabbing" : "grab") : "zoom-in" }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -99,7 +104,10 @@ export function ControleEntradaSaidaFotoZoom({ src, alt }: Props) {
           src={src}
           alt={alt}
           draggable={false}
-          className="max-h-[70vh] w-full object-contain"
+          className={cn(
+            "w-full object-contain",
+            compact ? "min-h-[36vh] max-h-[63vh] sm:min-h-[48vh]" : "max-h-[70vh]",
+          )}
           style={{
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
             transformOrigin: "center center",

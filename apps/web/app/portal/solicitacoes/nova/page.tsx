@@ -16,6 +16,7 @@ import {
   type PortalPatioSaldoItem,
 } from "@/lib/api/portal-client";
 import { catalogoContainerHint, patchFromCatalogo } from "@/lib/catalogo-container-iso";
+import { NavioAutocompleteInput } from "@/components/catalogo/navio-autocomplete-input";
 import { toast } from "@/lib/toast";
 import { usePessoaAutorizadaStore } from "@/stores/pessoaAutorizadaStore";
 import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
@@ -29,14 +30,16 @@ import {
   ContainerTipoSelect,
   findPortalTipo,
 } from "@/components/portal/container-form-fields";
-import { formatContainerISO, stripContainerISO } from "@/utils/containerFormatter";
+import { stripContainerISO } from "@/utils/containerFormatter";
 import { fieldErrorForContainer, parseUnidadeEstoqueError } from "@/lib/solicitacao-estoque-error";
 import { usePortalEstoqueCliente } from "@/hooks/use-portal-estoque-cliente";
 import { PortalAgendamentoGuard } from "@/components/portal/portal-agendamento-guard";
+import { QuitacaoPixSaidaDialog, useQuitacaoPixSaidaDialog } from "@/components/portal/quitacao-pix-saida-dialog";
 import { useTenantTurnos } from "@/hooks/use-tenant-turnos";
 import { resolveAgendamentoTurno } from "@/lib/api/tenant-config-client";
 import { usePortalTiposContainer } from "@/hooks/use-portal-tipos-container";
 import { formatTamanhoContainerDisplay, normalizeTamanhoContainer } from "@/lib/cadastros/tipo-container-tamanhos";
+import { patchContainerFromEstoquePatio } from "@/lib/portal-estoque-container";
 import {
   SOLICITACAO_CARD_C as CARD_C,
   SOLICITACAO_CARD_H as CARD_H,
@@ -110,6 +113,7 @@ export default function NovaSolicitacaoCorporativaPage() {
   const [files, setFiles] = useState<File[]>([]);
   const { tipos: tiposContainer, loading: loadingTipos } = usePortalTiposContainer(true);
   const estoque = usePortalEstoqueCliente(true);
+  const pixQuitacao = useQuitacaoPixSaidaDialog();
 
   const pessoa = usePessoaAutorizadaStore((s) => s.pessoa);
   const user = usePortalClienteAuthStore((s) => s.user);
@@ -203,16 +207,7 @@ export default function NovaSolicitacaoCorporativaPage() {
       setCatalogoHints((prev) => ({ ...prev, [idx]: "" }));
       return;
     }
-    updateContainer(idx, {
-      unidade: formatContainerISO(item.unidadeIso),
-      tipo: item.tipo?.trim().toUpperCase() ?? "",
-      tamanho: item.tamanho ? normalizeTamanhoContainer(item.tamanho) : "",
-      status: item.statusContainer === "VAZIO" ? "VAZIO" : "CHEIO",
-      booking: item.booking ?? "",
-      processo: item.processo ?? "",
-      navio: item.navio ?? "",
-      refrigerado: item.refrigerado,
-    });
+    updateContainer(idx, patchContainerFromEstoquePatio(item));
     void applyCatalogo(idx, stripContainerISO(item.unidadeIso));
   }
 
@@ -300,18 +295,24 @@ export default function NovaSolicitacaoCorporativaPage() {
     setSaving(true);
     try {
       const body = buildPayload();
-      const created = files.length
-        ? await criarSolicitacaoV2ComAnexos(body, files)
-        : await criarSolicitacaoV2(body);
-      const id = created.id;
-      toast.success(files.length ? "Solicitação registrada com anexos." : "Solicitação registrada.");
-      router.push(`/portal/solicitacoes/${id}`);
+      await pixQuitacao.runWithQuitacao({
+        tipoOperacao: "SOLICITAR_COLETA",
+        unidades: ordens.map((c) => stripContainerISO(c.unidade)),
+        create: async () => {
+          const created = files.length
+            ? await criarSolicitacaoV2ComAnexos(body, files)
+            : await criarSolicitacaoV2(body);
+          const id = created.id;
+          toast.success(files.length ? "Solicitação registrada com anexos." : "Solicitação registrada.");
+          router.push(`/portal/solicitacoes/${id}`);
+        },
+      });
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Falha ao salvar";
       toast.error(msg);
       const parsed = parseUnidadeEstoqueError(msg);
       const next: Record<number, string> = {};
-      containers.slice(0, containerCount).forEach((c, i) => {
+      ordens.forEach((c, i) => {
         const field = fieldErrorForContainer(c.unidade, parsed, msg);
         if (field) next[i] = field;
       });
@@ -340,10 +341,6 @@ export default function NovaSolicitacaoCorporativaPage() {
             <CardTitle className="text-sm text-white">1 · Transporte</CardTitle>
           </CardHeader>
           <CardContent className={`${GRID} ${CARD_C}`}>
-            <div className={SPAN2}>
-              <label className="mb-1 block text-xs text-slate-500">Nome do motorista</label>
-              <Input value={nomeMotorista} onChange={(e) => setNomeMotorista(e.target.value)} required className="bg-black/40" />
-            </div>
             <div>
               <label className="mb-1 block text-xs text-slate-500">CPF (apenas dígitos)</label>
               <Input value={cpfMotorista} onChange={(e) => setCpfMotorista(e.target.value)} required minLength={11} className="bg-black/40" />
@@ -352,6 +349,10 @@ export default function NovaSolicitacaoCorporativaPage() {
               ) : motoristaHint ? (
                 <p className="mt-1 text-[11px] text-slate-400">{motoristaHint}</p>
               ) : null}
+            </div>
+            <div className={SPAN2}>
+              <label className="mb-1 block text-xs text-slate-500">Nome do motorista</label>
+              <Input value={nomeMotorista} onChange={(e) => setNomeMotorista(e.target.value)} required className="bg-black/40" />
             </div>
             <div>
               <label className="mb-1 block text-xs text-slate-500">Tipo de caminhão</label>
@@ -432,7 +433,11 @@ export default function NovaSolicitacaoCorporativaPage() {
               </div>
               <div>
                 <label className="mb-1 block text-xs text-slate-500">Navio (opcional)</label>
-                <Input value={c.navio} onChange={(e) => updateContainer(idx, { navio: e.target.value })} className="bg-black/40" />
+                <NavioAutocompleteInput
+                  source="portal"
+                  value={c.navio}
+                  onChange={(v) => updateContainer(idx, { navio: v })}
+                />
               </div>
               <div>
                 <label className="mb-1 block text-xs text-slate-500">Tipo</label>
@@ -578,11 +583,18 @@ export default function NovaSolicitacaoCorporativaPage() {
         </Card>
 
         <div className="flex flex-wrap gap-3">
-          <Button type="submit" disabled={saving} className="min-w-[180px]">
+          <Button type="submit" disabled={saving || pixQuitacao.open} className="min-w-[180px]">
             {saving ? "Salvando…" : "Salvar solicitação"}
           </Button>
         </div>
       </form>
+      <QuitacaoPixSaidaDialog
+        open={pixQuitacao.open}
+        quote={pixQuitacao.quote}
+        confirming={pixQuitacao.confirming}
+        onConfirm={() => void pixQuitacao.confirm()}
+        onDismiss={pixQuitacao.dismiss}
+      />
     </main>
     </PortalAgendamentoGuard>
   );

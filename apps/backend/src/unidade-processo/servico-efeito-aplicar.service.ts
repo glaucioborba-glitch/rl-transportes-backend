@@ -2,6 +2,11 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma, StatusContainer, StatusContainerTarifa, StatusUnidadeProcesso } from '@prisma/client';
 import { ArmazenagemBillingService } from '../armazenagem-faturamento/armazenagem-billing.service';
 import {
+  appendLinhaObservacaoEfeito,
+  appendObservacao,
+  separarObservacaoLivreEEfeitos,
+  linhaObservacaoTransbordo,
+  linhaObservacaoTrocaLacre,
   observacaoLacreRic,
   parseEfeitoConfig,
   parseOrigemLacre,
@@ -41,6 +46,22 @@ export class ServicoEfeitoAplicarService {
     if (efeito === 'NENHUM') return;
 
     if (efeito === 'SUBSTITUIR_LACRE_SAIDA') {
+      const processo = await this.prisma.unidadeProcesso.findUnique({
+        where: { id: processoId },
+        select: {
+          lacreSaida: true,
+          entradaSolicitacaoId: true,
+          saidaSolicitacaoId: true,
+        },
+      });
+      await this.appendObservacaoSolicitacao(
+        processo?.entradaSolicitacaoId,
+        `Desfeito: troca de lacre${payload.lacre ? ` (${payload.lacre})` : ''}.`,
+      );
+      await this.appendObservacaoSolicitacao(
+        processo?.saidaSolicitacaoId,
+        `Desfeito: troca de lacre${payload.lacre ? ` (${payload.lacre})` : ''}.`,
+      );
       await this.prisma.unidadeProcesso.update({
         where: { id: processoId },
         data: { lacreSaida: null, lacreSaidaOrigem: null, lacreSaidaObservacao: null },
@@ -56,6 +77,14 @@ export class ServicoEfeitoAplicarService {
 
     await this.gravarStatusOperacional(origem.id, origem.unidadeIso, 'CHEIO');
     await this.gravarStatusOperacional(destino.id, destino.unidadeIso, 'VAZIO');
+    await this.appendObservacaoSolicitacao(
+      origem.entradaSolicitacaoId,
+      `Desfeito: transbordo para ${payload.isoDestino ?? destino.unidadeIso}.`,
+    );
+    await this.appendObservacaoSolicitacao(
+      destino.entradaSolicitacaoId,
+      `Desfeito: transbordo a partir de ${origem.unidadeIso}.`,
+    );
     await this.prisma.unidadeProcesso.update({
       where: { id: origem.id },
       data: { faturarHandlingComoCheio: false },
@@ -79,7 +108,25 @@ export class ServicoEfeitoAplicarService {
   ) {
     const origem = parseOrigemLacre(input.origemLacre)!;
     const lacre = String(input.lacre ?? '').trim();
-    const observacaoRic = observacaoLacreRic(item.nome, config);
+    const processo = await this.prisma.unidadeProcesso.findUnique({
+      where: { id: processoId },
+      select: {
+        unidadeIso: true,
+        lacreSaida: true,
+        lacreSaidaObservacao: true,
+        entradaSolicitacaoId: true,
+        saidaSolicitacaoId: true,
+      },
+    });
+    const lacreAnterior = await this.lacreAtualDoProcesso(processo);
+    const linha = linhaObservacaoTrocaLacre({
+      servico: item.nome,
+      anterior: lacreAnterior,
+      atual: lacre,
+      origem,
+    });
+    const observacaoRic =
+      appendObservacao(processo?.lacreSaidaObservacao, linha, 255) || observacaoLacreRic(item.nome, config);
     await this.prisma.unidadeProcesso.update({
       where: { id: processoId },
       data: {
@@ -88,6 +135,8 @@ export class ServicoEfeitoAplicarService {
         lacreSaidaObservacao: observacaoRic,
       },
     });
+    await this.appendObservacaoSolicitacao(processo?.entradaSolicitacaoId, linha);
+    await this.appendObservacaoSolicitacao(processo?.saidaSolicitacaoId, linha);
 
     const linhasExtras: Prisma.UnidadeProcessoServicoCreateManyInput[] = [];
     if (origem === 'TERMINAL' && config.servicoLacreTerminalCodigo) {
@@ -167,6 +216,23 @@ export class ServicoEfeitoAplicarService {
     await this.gravarStatusOperacional(destino.id, destino.unidadeIso, 'CHEIO');
 
     const lacre = String(input.lacre ?? '').trim();
+    const linhaOrigem = linhaObservacaoTransbordo({
+      servico: item.nome,
+      isoOrigem: origem.unidadeIso,
+      isoDestino,
+      papel: 'ORIGEM',
+      statusAntes: 'CHEIO',
+      statusDepois: 'VAZIO',
+    });
+    const linhaDestino = linhaObservacaoTransbordo({
+      servico: item.nome,
+      isoOrigem: origem.unidadeIso,
+      isoDestino,
+      papel: 'DESTINO',
+      statusAntes: 'VAZIO',
+      statusDepois: 'CHEIO',
+      lacre,
+    });
     await this.prisma.unidadeProcesso.update({
       where: { id: origem.id },
       data: { faturarHandlingComoCheio: true },
@@ -178,11 +244,15 @@ export class ServicoEfeitoAplicarService {
         ...(lacre
           ? {
               lacreSaida: lacre,
-              lacreSaidaObservacao: `Lacre informado no transbordo a partir de ${origem.unidadeIso}.`,
+              lacreSaidaObservacao: appendObservacao(destino.lacreSaidaObservacao, linhaDestino, 255),
             }
           : {}),
       },
     });
+    await this.appendObservacaoSolicitacao(origem.entradaSolicitacaoId, linhaOrigem);
+    await this.appendObservacaoSolicitacao(origem.saidaSolicitacaoId, linhaOrigem);
+    await this.appendObservacaoSolicitacao(destino.entradaSolicitacaoId, linhaDestino);
+    await this.appendObservacaoSolicitacao(destino.saidaSolicitacaoId, linhaDestino);
 
     await this.billing.persistHandlingCheio(origem.id);
     await this.billing.persistHandlingCheio(destino.id);
@@ -269,5 +339,65 @@ export class ServicoEfeitoAplicarService {
       where: { solicitacaoId, unidade: { equals: iso, mode: 'insensitive' } },
       data: { status: status === 'CHEIO' ? StatusContainer.CHEIO : StatusContainer.VAZIO },
     });
+  }
+
+  private async lacreAtualDoProcesso(processo: {
+    unidadeIso?: string | null;
+    lacreSaida?: string | null;
+    entradaSolicitacaoId?: string | null;
+  } | null): Promise<string | null> {
+    if (!processo) return null;
+    if (processo.lacreSaida?.trim()) return processo.lacreSaida.trim();
+    if (!processo.entradaSolicitacaoId) return null;
+    const iso = stripContainerIsoCanonical(processo.unidadeIso ?? '');
+    const containers = await this.prisma.containerSolicitacao.findMany({
+      where: { solicitacaoId: processo.entradaSolicitacaoId },
+      select: { unidade: true, lacre: true },
+    });
+    const match = iso
+      ? containers.find((c) => stripContainerIsoCanonical(c.unidade) === iso)
+      : containers[0];
+    return match?.lacre?.trim() || null;
+  }
+
+  private async appendObservacaoSolicitacao(solicitacaoId: string | null | undefined, linha: string) {
+    const texto = linha.trim();
+    if (!solicitacaoId || !texto) return;
+    const s = await this.prisma.solicitacao.findUnique({
+      where: { id: solicitacaoId },
+      select: { operacaoFluxoJson: true },
+    });
+    if (!s) return;
+    const json = this.fluxoComoRegistro(s.operacaoFluxoJson);
+    const separado = separarObservacaoLivreEEfeitos(json.observacaoGate, json.observacoesEfeito);
+    const efeitos = appendLinhaObservacaoEfeito(separado.efeitos, texto);
+    const livreIgual = separado.livre === (typeof json.observacaoGate === 'string' ? json.observacaoGate.trim() : '');
+    const efeitosIguais =
+      efeitos.length === separado.efeitos.length && efeitos.every((x, i) => x === separado.efeitos[i]);
+    if (livreIgual && efeitosIguais) return;
+    json.observacaoGate = separado.livre;
+    json.observacoesEfeito = efeitos;
+    await this.prisma.solicitacao.update({
+      where: { id: solicitacaoId },
+      data: { operacaoFluxoJson: json as Prisma.InputJsonValue },
+    });
+  }
+
+  private fluxoComoRegistro(raw: Prisma.JsonValue | null): Record<string, unknown> {
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return { ...(parsed as Record<string, unknown>) };
+        }
+      } catch {
+        return {};
+      }
+      return {};
+    }
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      return { ...(raw as Record<string, unknown>) };
+    }
+    return {};
   }
 }

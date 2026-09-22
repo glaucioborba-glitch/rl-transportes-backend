@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { RefreshCw } from "lucide-react";
 import { SolicitacoesIntentHeader } from "@/components/portal/solicitacoes-intent-header";
 import { SolicitacoesEscopoTabs } from "@/components/portal/solicitacoes-escopo-tabs";
 import { SolicitacaoCompactCard } from "@/components/portal/solicitacao-compact-card";
@@ -122,7 +123,18 @@ export default function SolicitacoesPage() {
         <p className="text-sm text-slate-500">
           Escolha a intenção operacional — o sistema define automaticamente frota FL ou frota do cliente.
         </p>
-        <SolicitacoesIntentHeader onCreated={() => void load()} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={loading}
+            onClick={() => void load()}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Atualizar
+          </Button>
+          <SolicitacoesIntentHeader onCreated={() => void load()} />
+        </div>
       </div>
 
       <div className="mb-6">
@@ -156,9 +168,9 @@ export default function SolicitacoesPage() {
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-xs text-slate-500">Protocolo (contém)</label>
+              <label className="mb-1 block text-xs text-slate-500">Protocolo ou ID</label>
               <Input
-                placeholder="SUFixo ou parte…"
+                placeholder="Nº do protocolo ou ID…"
                 value={protocolo}
                 onChange={(e) => {
                   setProtocolo(e.target.value);

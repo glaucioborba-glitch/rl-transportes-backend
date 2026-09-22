@@ -5,11 +5,12 @@ import { toDecimal } from '../armazenagem-faturamento/armazenagem-billing.util';
 import { AlertService } from '../alert/alert.service';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { BankingBoletoService } from '../fiscal-integracao/banking-boleto.service';
-import { FiscalIpmService } from '../fiscal-integracao/fiscal-ipm.service';
+import { FiscalNfseRouterService } from '../fiscal-integracao/fiscal-nfse-router.service';
 import { FEATURE_FLAG_KEYS } from '../feature-flags/feature-flag.keys';
 import { FeatureFlagService } from '../feature-flags/feature-flag.service';
 import { NotificationEnqueueService } from '../notification/notification-enqueue.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { IntegrationCredentialsService } from '../tenant/integration-credentials.service';
 import { TenantConfigService } from '../tenant/tenant-config.service';
 import { DEFAULT_TENANT_ID } from '../tenant/tenant.constants';
 import { prazoEfetivoCadastro } from '../cadastro-financeiro/cadastro-operacao-inicial';
@@ -33,11 +34,12 @@ export class NfseBoletoOutboxProcessor {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditoria: AuditoriaService,
-    private readonly fiscal: FiscalIpmService,
+    private readonly fiscal: FiscalNfseRouterService,
     private readonly banking: BankingBoletoService,
     private readonly flags: FeatureFlagService,
     private readonly notificationEnqueue: NotificationEnqueueService,
     private readonly tenantConfig: TenantConfigService,
+    private readonly credenciais: IntegrationCredentialsService,
     private readonly config: ConfigService,
     private readonly alerts: AlertService,
   ) {}
@@ -70,6 +72,12 @@ export class NfseBoletoOutboxProcessor {
       this.logger.log(`Fatura ${fatura.id} já em AGUARDANDO_PAGAMENTO`);
       return;
     }
+
+    // Guarda contra emissão em dobro: a chamada à prefeitura e ao banco acontece
+    // antes da transação que grava o resultado. Se já existe nota ou boleto para
+    // esta fatura, o evento é reconciliado em vez de reemitido.
+    const jaEmitido = await this.reconciliarSeJaEmitida(fatura.id, fatura.faturamentoId, outboxId);
+    if (jaEmitido) return;
 
     const fiscalEnabled = await this.flags.isEnabled(FEATURE_FLAG_KEYS.FISCAL_INTEGRATION_ENABLED, {
       cnpj: fatura.cliente.cpfCnpj,
@@ -216,7 +224,12 @@ export class NfseBoletoOutboxProcessor {
           xmlNfe: fiscalResult.xmlResposta,
           statusIpm: nfsePendente ? 'PROCESSANDO' : 'ACEITO',
           municipioIbge: '4211306',
-          provedor: this.fiscal.usesRealIpm() ? 'ipm-atende-navegantes' : 'sandbox',
+          provedor:
+            fiscalResult.provedor === 'nacional'
+              ? 'nfse-nacional'
+              : this.fiscal.usesRealIpm()
+                ? 'ipm-atende-navegantes'
+                : 'sandbox',
           referenciaExterna:
             fiscalResult.mode === 'emitida'
               ? fiscalResult.codVerificador ?? fiscalResult.numeroNfse
@@ -340,11 +353,59 @@ export class NfseBoletoOutboxProcessor {
     return montarParcelasFinanceiras({ emissao, valorTotal, vencimentos });
   }
 
-  /** Valida certificado A1 no tenant ou variável NFSE_IPM_CERT_PATH (staging/produção). */
+  /**
+   * Reconciliação de retry: se a fatura já tem NFS-e (pelo RPS) ou boleto gravados,
+   * o provedor já respondeu antes da falha. Fecha o estado sem emitir de novo.
+   */
+  private async reconciliarSeJaEmitida(
+    faturaId: string,
+    faturamentoId: string | null,
+    outboxId: string,
+  ): Promise<boolean> {
+    const fatura = await this.prisma.fatura.findUnique({ where: { id: faturaId } });
+    if (!fatura || !faturamentoId) return false;
+
+    const nfse = fatura.numeroRps
+      ? await this.prisma.nfsEmitida.findFirst({
+          where: {
+            faturamentoId,
+            rpsNumero: fatura.numeroRps,
+            ...(fatura.serieRps ? { rpsSerie: fatura.serieRps } : {}),
+          },
+        })
+      : null;
+    const boletos = await this.prisma.boleto.count({ where: { faturamentoId } });
+
+    if (!nfse && !boletos) return false;
+
+    const notaAceita = nfse?.statusIpm === 'ACEITO';
+    const destino =
+      notaAceita && (boletos > 0 || fatura.linkBoleto)
+        ? StatusPagamentoFatura.AGUARDANDO_PAGAMENTO
+        : StatusPagamentoFatura.PROCESSANDO;
+
+    await this.prisma.fatura.update({
+      where: { id: fatura.id },
+      data: {
+        statusPagamento: destino,
+        ...(nfse?.linkNfsePdf ? { linkNfse: nfse.linkNfsePdf } : {}),
+        processamentoErro: null,
+      },
+    });
+    this.logger.warn(
+      `Outbox ${outboxId}: fatura ${fatura.id} já tinha ${nfse ? 'NFS-e' : ''}${nfse && boletos ? ' e ' : ''}${boletos ? 'boleto' : ''} — reconciliado como ${destino}, sem reemitir.`,
+    );
+    return true;
+  }
+
+  /**
+   * Valida certificado A1: integração IPM do terminal, ficha fiscal antiga
+   * ou NFSE_IPM_CERT_PATH do servidor (staging/produção).
+   */
   private async assertCertificadoA1(tenantId: string): Promise<boolean> {
+    const ipm = await this.credenciais.resolveIpm(tenantId);
+    if (ipm.certificadoPresente) return true;
     const { parametros } = await this.tenantConfig.getParametros(tenantId);
-    if (parametros.nfse?.certificadoBase64?.trim()) return true;
-    const certPath = this.config.get<string>('nfse.ipm.certPath', { infer: true })?.trim();
-    return Boolean(certPath);
+    return Boolean(parametros.nfse?.certificadoBase64?.trim());
   }
 }

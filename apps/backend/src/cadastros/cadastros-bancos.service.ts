@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CadastrosBancoFormDto } from './dto/cadastros-banco-form.dto';
+import { mensagemCnpjJaCadastrado } from '../common/utils/documento-unico.util';
 
 const DEFAULT_TENANT = 'default';
 
@@ -42,6 +43,7 @@ export class CadastrosBancosService {
   async create(dto: CadastrosBancoFormDto) {
     const codigo = dto.codigo.trim();
     await this.assertCodigoUnico(codigo);
+    await this.assertCnpjUnico(dto.cnpj);
     const row = await this.prisma.cadastroBanco.create({
       data: this.toData(dto, codigo),
     });
@@ -52,12 +54,10 @@ export class CadastrosBancosService {
     await this.getRowOrThrow(id);
     const codigo = dto.codigo.trim();
     await this.assertCodigoUnico(codigo, id);
+    await this.assertCnpjUnico(dto.cnpj, id);
     const row = await this.prisma.cadastroBanco.update({
       where: { id },
-      data: {
-        ...this.toData(dto, codigo),
-        deletedAt: dto.ativo === false ? new Date() : null,
-      },
+      data: this.toData(dto, codigo),
     });
     return this.toShape(row);
   }
@@ -83,6 +83,20 @@ export class CadastrosBancosService {
       },
     });
     if (dup) throw new ConflictException(`Código já cadastrado: ${codigo}.`);
+  }
+
+  private async assertCnpjUnico(cnpjRaw?: string, excludeId?: string) {
+    const cnpj = cnpjRaw?.replace(/\D/g, '') || '';
+    if (cnpj.length !== 14) return;
+    const dup = await this.prisma.cadastroBanco.findFirst({
+      where: {
+        tenantId: DEFAULT_TENANT,
+        cnpj,
+        ...(excludeId ? { NOT: { id: excludeId } } : {}),
+      },
+      select: { nome: true },
+    });
+    if (dup) throw new ConflictException(mensagemCnpjJaCadastrado(dup.nome));
   }
 
   private async getRowOrThrow(id: string) {

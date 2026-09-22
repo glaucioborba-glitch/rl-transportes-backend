@@ -37,6 +37,26 @@ export function valorMedioDiariaEscalonada(
   return { total, diasFaturaveis, valorMedio };
 }
 
+/**
+ * Dias da janela cobrável que não caem em nenhuma faixa cadastrada.
+ * Esses dias eram somados como zero e reduziam a receita sem qualquer aviso.
+ */
+export function diasSemFaixa(
+  diaPrimeiro: number,
+  diaUltimo: number,
+  faixas: FaixaDiaria[],
+): number[] {
+  if (!faixas.length || diaUltimo < diaPrimeiro) return [];
+  const descobertos: number[] = [];
+  for (let d = diaPrimeiro; d <= diaUltimo; d++) {
+    const cobre = faixas.some(
+      (f) => d >= f.diaInicio && (f.diaFim == null || d <= f.diaFim),
+    );
+    if (!cobre) descobertos.push(d);
+  }
+  return descobertos;
+}
+
 /** Faixas padrão quando cadastro não define (8-15 @ 30, 16+ @ 45). */
 export const FAIXAS_DIARIA_PADRAO: FaixaDiaria[] = [
   { diaInicio: 8, diaFim: 15, valorDiaria: 30 },

@@ -24,6 +24,7 @@ import { resolveAgendamentoTurno } from "@/lib/api/tenant-config-client";
 import { usePessoaAutorizadaStore } from "@/stores/pessoaAutorizadaStore";
 import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
 import { intentLabel, intentUsesBookingDeadline, intentUsesEstoqueDoCliente, intentUsesFlFrete, intentUsesPrevisaoRetirada, optionalDateTimeLocalToIso } from "@/lib/solicitacao-intent";
+import { QuitacaoPixSaidaDialog, useQuitacaoPixSaidaDialog } from "@/components/portal/quitacao-pix-saida-dialog";
 import { ContainerEstoqueSearch } from "@/components/portal/container-estoque-search";
 import {
   ContainerIsoInput,
@@ -33,13 +34,15 @@ import {
   ContainerTipoSelect,
   findPortalTipo,
 } from "@/components/portal/container-form-fields";
-import { stripContainerISO, formatContainerISO } from "@/utils/containerFormatter";
+import { stripContainerISO } from "@/utils/containerFormatter";
 import { fieldErrorForContainer, parseUnidadeEstoqueError } from "@/lib/solicitacao-estoque-error";
 import { usePortalTiposContainer } from "@/hooks/use-portal-tipos-container";
 import { usePortalEstoqueCliente } from "@/hooks/use-portal-estoque-cliente";
 import { peekPortalSaidaPrefill, clearPortalSaidaPrefill } from "@/lib/portal-saida-prefill";
 import { formatTamanhoContainerDisplay, normalizeTamanhoContainer } from "@/lib/cadastros/tipo-container-tamanhos";
+import { patchContainerFromEstoquePatio } from "@/lib/portal-estoque-container";
 import { catalogoContainerHint, patchFromCatalogo } from "@/lib/catalogo-container-iso";
+import { NavioAutocompleteInput } from "@/components/catalogo/navio-autocomplete-input";
 import {
   SOLICITACAO_CARD_C as CARD_C,
   SOLICITACAO_CARD_H as CARD_H,
@@ -143,6 +146,7 @@ export function SolicitacaoFormModal({
   const containerCount = isFrotaFL || tipoCaminhao === "LS" ? 1 : 2;
   const { tipos: tiposContainer, loading: loadingTipos } = usePortalTiposContainer(open);
   const estoque = usePortalEstoqueCliente(open && usesEstoqueDoCliente);
+  const pixQuitacao = useQuitacaoPixSaidaDialog();
   const prefillAppliedIso = useRef<string | null>(null);
   const [prefillStockItem, setPrefillStockItem] = useState<PortalPatioSaldoItem | null>(null);
 
@@ -232,21 +236,13 @@ export function SolicitacaoFormModal({
     prefillAppliedIso.current = iso;
     clearPortalSaidaPrefill();
     setPrefillStockItem(item);
-    const tipo = item.tipo?.trim().toUpperCase() ?? "";
     setContainers((prev) => {
       const first = prev[0] ?? emptyContainer(1);
       return [
         {
           ...first,
           ordem: 1,
-          unidade: formatContainerISO(item.unidadeIso),
-          tipo,
-          tamanho: item.tamanho ? normalizeTamanhoContainer(item.tamanho) : "",
-          status: item.statusContainer === "VAZIO" ? "VAZIO" : "CHEIO",
-          booking: item.booking ?? "",
-          processo: item.processo ?? "",
-          navio: item.navio ?? "",
-          refrigerado: item.refrigerado,
+          ...patchContainerFromEstoquePatio(item),
         },
         ...prev.slice(1),
       ];
@@ -273,6 +269,7 @@ export function SolicitacaoFormModal({
   }
 
   function handleClose() {
+    pixQuitacao.dismiss();
     resetForm();
     onClose();
   }
@@ -333,17 +330,7 @@ export function SolicitacaoFormModal({
       updateContainer(idx, { unidade: "" });
       return;
     }
-    const tipo = item.tipo?.trim().toUpperCase() ?? "";
-    updateContainer(idx, {
-      unidade: formatContainerISO(item.unidadeIso),
-      tipo,
-      tamanho: item.tamanho ? normalizeTamanhoContainer(item.tamanho) : "",
-      status: item.statusContainer === "VAZIO" ? "VAZIO" : "CHEIO",
-      booking: item.booking ?? "",
-      processo: item.processo ?? "",
-      navio: item.navio ?? "",
-      refrigerado: item.refrigerado,
-    });
+    updateContainer(idx, patchContainerFromEstoquePatio(item));
     void applyCatalogo(idx, stripContainerISO(item.unidadeIso));
   }
 
@@ -469,13 +456,19 @@ export function SolicitacaoFormModal({
     setSaving(true);
     try {
       const body = buildPayload();
-      const created = files.length
-        ? await criarSolicitacaoV2ComAnexos(body, files)
-        : await criarSolicitacaoV2(body);
-      toast.success(files.length ? "Solicitação registrada com anexos." : "Solicitação registrada.");
-      handleClose();
-      onCreated?.();
-      router.push(`/portal/solicitacoes/${created.id}`);
+      await pixQuitacao.runWithQuitacao({
+        tipoOperacao: intent,
+        unidades: ordens.map((c) => stripContainerISO(c.unidade)),
+        create: async () => {
+          const created = files.length
+            ? await criarSolicitacaoV2ComAnexos(body, files)
+            : await criarSolicitacaoV2(body);
+          toast.success(files.length ? "Solicitação registrada com anexos." : "Solicitação registrada.");
+          handleClose();
+          onCreated?.();
+          router.push(`/portal/solicitacoes/${created.id}`);
+        },
+      });
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : "Falha ao salvar";
       toast.error(msg);
@@ -496,7 +489,9 @@ export function SolicitacaoFormModal({
   if (!open || !intent) return null;
   if (typeof document === "undefined") return null;
 
-  return createPortal(
+  return (
+    <>
+      {createPortal(
     <div
       className={`fixed inset-0 z-[200] overflow-y-auto bg-black/70 backdrop-blur-sm ${layerReady ? "" : "pointer-events-none"}`}
       role="dialog"
@@ -598,15 +593,6 @@ export function SolicitacaoFormModal({
             <CardContent className={`${GRID} ${CARD_C}`}>
               {!isFrotaFL ? (
                 <>
-                  <div className={SPAN2}>
-                    <label className="mb-1 block text-xs text-slate-500">Nome do motorista</label>
-                    <Input
-                      value={nomeMotorista}
-                      onChange={(e) => setNomeMotorista(e.target.value)}
-                      required
-                      className="bg-black/40"
-                    />
-                  </div>
                   <div>
                     <label className="mb-1 block text-xs text-slate-500">CPF (apenas dígitos)</label>
                     <Input
@@ -621,6 +607,15 @@ export function SolicitacaoFormModal({
                     ) : motoristaHint ? (
                       <p className="mt-1 text-[11px] text-slate-400">{motoristaHint}</p>
                     ) : null}
+                  </div>
+                  <div className={SPAN2}>
+                    <label className="mb-1 block text-xs text-slate-500">Nome do motorista</label>
+                    <Input
+                      value={nomeMotorista}
+                      onChange={(e) => setNomeMotorista(e.target.value)}
+                      required
+                      className="bg-black/40"
+                    />
                   </div>
                 </>
               ) : null}
@@ -729,10 +724,10 @@ export function SolicitacaoFormModal({
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-slate-500">Navio (opcional)</label>
-                  <Input
+                  <NavioAutocompleteInput
+                    source="portal"
                     value={c.navio}
-                    onChange={(e) => updateContainer(idx, { navio: e.target.value })}
-                    className="bg-black/40"
+                    onChange={(v) => updateContainer(idx, { navio: v })}
                   />
                 </div>
                 <div>
@@ -909,7 +904,7 @@ export function SolicitacaoFormModal({
             <Button type="button" variant="outline" onClick={handleClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" disabled={saving || pixQuitacao.open}>
               {saving ? "Salvando…" : "Salvar solicitação"}
             </Button>
           </div>
@@ -918,5 +913,14 @@ export function SolicitacaoFormModal({
       </div>
     </div>,
     document.body,
+      )}
+      <QuitacaoPixSaidaDialog
+        open={pixQuitacao.open}
+        quote={pixQuitacao.quote}
+        confirming={pixQuitacao.confirming}
+        onConfirm={() => void pixQuitacao.confirm()}
+        onDismiss={pixQuitacao.dismiss}
+      />
+    </>
   );
 }

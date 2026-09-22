@@ -59,6 +59,41 @@ export function solicitacaoProtocoloDisplay(protocolo?: string | null): string {
   return v.startsWith("#") ? v : `#${v}`;
 }
 
+export function solicitacaoIdOperacional(s: {
+  unidadeProcessoNumero?: number | null;
+  unidadeProcessoLabel?: string | null;
+  unidadeProcessosEntrada?: Array<{ numero: number }> | null;
+  unidadeProcessosSaida?: Array<{ numero: number }> | null;
+}): { numero: number; label: string } | null {
+  const n =
+    s.unidadeProcessoNumero ??
+    s.unidadeProcessosEntrada?.[0]?.numero ??
+    s.unidadeProcessosSaida?.[0]?.numero ??
+    null;
+  if (n == null || !Number.isFinite(n) || n <= 0) return null;
+  const label = s.unidadeProcessoLabel?.trim();
+  return { numero: n, label: label || `ID ${n}` };
+}
+
+/** Depois que o ID nasce, ele é o controle principal; o protocolo fica como referência. */
+export function solicitacaoControleDisplay(s: {
+  protocolo?: string | null;
+  unidadeProcessoNumero?: number | null;
+  unidadeProcessoLabel?: string | null;
+  unidadeProcessosEntrada?: Array<{ numero: number }> | null;
+  unidadeProcessosSaida?: Array<{ numero: number }> | null;
+}): { primario: string; secundario?: string } {
+  const id = solicitacaoIdOperacional(s);
+  const protoRaw = s.protocolo?.trim();
+  if (id) {
+    return {
+      primario: id.label,
+      ...(protoRaw ? { secundario: `Protocolo ${protoRaw}` } : {}),
+    };
+  }
+  return { primario: solicitacaoProtocoloDisplay(protoRaw) };
+}
+
 export function solicitacaoSolicitanteLabel(s: SolicitacaoRow): string {
   return s.solicitanteContato?.nome?.trim() || "—";
 }
