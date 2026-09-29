@@ -15,6 +15,19 @@ import {
 } from 'class-validator';
 import { ColaboradorFamiliarFormDto } from './colaborador-familiar.dto';
 
+export class ColaboradorNrValidadeDto {
+  @ApiProperty()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value))
+  @IsString()
+  @MaxLength(16)
+  codigo!: string;
+
+  @ApiProperty()
+  @Transform(({ value }) => (value === '' || value == null ? undefined : value))
+  @IsDateString()
+  validade!: string;
+}
+
 export class CadastrosColaboradorFormDto {
   @ApiProperty()
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
@@ -186,6 +199,25 @@ export class CadastrosColaboradorFormDto {
   @Transform(({ value }) => (value === '' || value == null ? undefined : value))
   @IsDateString()
   cnhValidade?: string;
+
+  @ApiPropertyOptional({ description: 'Fim do contrato de experiência (agenda RH).' })
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value == null ? undefined : value))
+  @IsDateString()
+  dataFimExperiencia?: string;
+
+  @ApiPropertyOptional({ description: 'Validade do curso de operador de reach stacker.' })
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value == null ? undefined : value))
+  @IsDateString()
+  cursoReachStackerValidade?: string;
+
+  @ApiPropertyOptional({ type: [ColaboradorNrValidadeDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ColaboradorNrValidadeDto)
+  nrs?: ColaboradorNrValidadeDto[];
 
   @ApiPropertyOptional({ default: 'ATIVO' })
   @IsOptional()

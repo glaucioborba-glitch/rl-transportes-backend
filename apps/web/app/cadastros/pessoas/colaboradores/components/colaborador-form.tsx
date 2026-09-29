@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { FamiliaresSection } from "@/components/cadastros/familiares-section";
+import { TreinamentosAgendaSection } from "@/components/cadastros/treinamentos-agenda-section";
 import { PasswordStrengthPanel } from "@/components/portal/password-strength-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -126,6 +127,9 @@ export function ColaboradorForm({ colaboradorId, basePath = "/rh/colaboradores" 
             ...EMPTY_COLABORADOR_FORM,
             ...data,
             jornadaSemanal: Number(data.jornadaSemanal) || 44,
+            nrs: Array.isArray(data.nrs) ? data.nrs : [],
+            dataFimExperiencia: data.dataFimExperiencia ?? "",
+            cursoReachStackerValidade: data.cursoReachStackerValidade ?? "",
           });
           setFamiliares(
             data.familiares?.map((f) => ({
@@ -240,6 +244,9 @@ export function ColaboradorForm({ colaboradorId, basePath = "/rh/colaboradores" 
       ...formData,
       dataNascimento: optionalDate(formData.dataNascimento),
       cnhValidade: optionalDate(formData.cnhValidade),
+      dataFimExperiencia: optionalDate(formData.dataFimExperiencia),
+      cursoReachStackerValidade: optionalDate(formData.cursoReachStackerValidade),
+      nrs: (formData.nrs ?? []).filter((n) => n.codigo.trim() && n.validade.trim()),
       dataDemissao: optionalDate(formData.dataDemissao),
       motivoDemissao: formData.motivoDemissao.trim() || undefined,
       familiares: familiaresPayload,
@@ -469,6 +476,16 @@ export function ColaboradorForm({ colaboradorId, basePath = "/rh/colaboradores" 
               onChange={(e) => setFormData({ ...formData, dataAdmissao: e.target.value })}
             />
           </FormField>
+          <FormField label="Fim do contrato de experiência" size="md">
+            <Input
+              type="date"
+              value={formData.dataFimExperiencia}
+              onChange={(e) => setFormData({ ...formData, dataFimExperiencia: e.target.value })}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Opcional. Se vazio, a Agenda usa 90 dias após a admissão (CLT).
+            </p>
+          </FormField>
           <FormField label="Cargo" className="min-w-[14rem] flex-1">
             <Input
               value={formData.cargo}
@@ -688,6 +705,13 @@ export function ColaboradorForm({ colaboradorId, basePath = "/rh/colaboradores" 
           </FormField>
         </div>
       </FormSection>
+
+      <TreinamentosAgendaSection
+        nrs={formData.nrs ?? []}
+        cursoReachStackerValidade={formData.cursoReachStackerValidade}
+        onCursoChange={(value) => setFormData({ ...formData, cursoReachStackerValidade: value })}
+        onNrsChange={(nrs) => setFormData({ ...formData, nrs })}
+      />
 
       <FormSection title="Status e Observações" icon={Calendar}>
         <div className="mb-4 flex flex-wrap gap-4">

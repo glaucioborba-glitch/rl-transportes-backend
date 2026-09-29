@@ -23,6 +23,7 @@ import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { CadastrosColaboradoresService } from './cadastros-colaboradores.service';
 import { AniversariosService } from './aniversarios.service';
+import { RhAgendaService } from './rh-agenda.service';
 import { CadastrosColaboradorFormDto } from './dto/cadastros-colaborador-form.dto';
 import { CadastrosColaboradorQueryDto } from './dto/cadastros-colaborador-query.dto';
 import { CreateFamiliarDto, UpdateFamiliarDto } from './dto/colaborador-familiar.dto';
@@ -38,12 +39,20 @@ export class CadastrosColaboradoresController {
   constructor(
     private readonly service: CadastrosColaboradoresService,
     private readonly aniversarios: AniversariosService,
+    private readonly agenda: RhAgendaService,
   ) {}
 
   @Get()
   @ApiOperation({ summary: 'Listar colaboradores (cadastros MDM)' })
   list(@Query() query: CadastrosColaboradorQueryDto, @CurrentUser() user: AuthUser) {
     return this.service.list(query, user);
+  }
+
+  @Get('agenda')
+  @ApiOperation({ summary: 'Agenda RH — aniversários, contratos, NR, cursos e CNH' })
+  listAgenda(@Query('dias') dias?: string) {
+    const n = dias ? parseInt(dias, 10) : 90;
+    return this.agenda.listAgenda(Number.isFinite(n) && n > 0 ? n : 90);
   }
 
   @Get('aniversarios/proximos')

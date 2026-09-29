@@ -42,6 +42,44 @@ export type ColaboradorFamiliarForm = {
   parentesco?: string;
 };
 
+export type ColaboradorNrValidade = {
+  codigo: string;
+  validade: string;
+};
+
+export type RhAgendaTipo =
+  | "ANIVERSARIO_COLABORADOR"
+  | "ANIVERSARIO_DEPENDENTE"
+  | "CONTRATO_EXPERIENCIA"
+  | "AVALIACAO_EXPERIENCIA"
+  | "NR"
+  | "CURSO_REACH_STACKER"
+  | "CNH";
+
+export type RhAgendaUrgencia = "vencido" | "hoje" | "proximo" | "atencao" | "agenda";
+
+export type RhAgendaEvento = {
+  id: string;
+  tipo: RhAgendaTipo;
+  data: string;
+  titulo: string;
+  descricao: string;
+  colaboradorId: string;
+  colaboradorNome: string;
+  cargo: string | null;
+  departamento: string | null;
+  dias: number;
+  urgencia: RhAgendaUrgencia;
+};
+
+export type RhAgendaResponse = {
+  geradoEm: string;
+  dias: number;
+  total: number;
+  resumo: { hoje: number; proximos7: number; vencidos: number };
+  eventos: RhAgendaEvento[];
+};
+
 export type CadastrosColaboradorFormData = {
   id?: string;
   nome: string;
@@ -77,6 +115,9 @@ export type CadastrosColaboradorFormData = {
   cnhNumero: string;
   cnhCategoria: string;
   cnhValidade: string;
+  dataFimExperiencia: string;
+  cursoReachStackerValidade: string;
+  nrs: ColaboradorNrValidade[];
   status: string;
   dataDemissao: string;
   motivoDemissao: string;
@@ -157,12 +198,21 @@ export const EMPTY_COLABORADOR_FORM: CadastrosColaboradorFormData = {
   cnhNumero: "",
   cnhCategoria: "",
   cnhValidade: "",
+  dataFimExperiencia: "",
+  cursoReachStackerValidade: "",
+  nrs: [],
   status: "ATIVO",
   dataDemissao: "",
   motivoDemissao: "",
   observacoes: "",
   perfilIntranet: "",
 };
+
+export async function fetchRhAgenda(dias = 90): Promise<RhAgendaResponse> {
+  return staffJson<RhAgendaResponse>(
+    `/v2/cadastros/colaboradores/agenda${qs({ dias })}`,
+  );
+}
 
 export async function listCadastrosColaboradores(params: {
   search?: string;

@@ -497,7 +497,12 @@ export class CadastrosColaboradoresService {
     const { familiares: _familiares, ...rest } = stripped as Record<string, unknown> & {
       familiares?: unknown;
     };
-    return rest as Prisma.InputJsonValue;
+    const nrs = Array.isArray(rest.nrs)
+      ? (rest.nrs as { codigo?: string; validade?: string }[]).filter(
+          (n) => Boolean(n?.codigo?.trim() && n?.validade?.trim()),
+        )
+      : [];
+    return { ...rest, nrs } as Prisma.InputJsonValue;
   }
 
   private async syncIntranetLogin(

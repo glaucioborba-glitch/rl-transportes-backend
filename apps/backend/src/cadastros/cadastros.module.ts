@@ -10,6 +10,7 @@ import { CadastrosClientesService } from './cadastros-clientes.service';
 import { CadastrosColaboradoresController } from './cadastros-colaboradores.controller';
 import { CadastrosColaboradoresService } from './cadastros-colaboradores.service';
 import { AniversariosService } from './aniversarios.service';
+import { RhAgendaService } from './rh-agenda.service';
 import { CadastrosContainerCacheController } from './cadastros-container-cache.controller';
 import { CadastrosContainerCacheService } from './cadastros-container-cache.service';
 import { CadastrosEquipamentosController } from './cadastros-equipamentos.controller';
@@ -89,6 +90,7 @@ import { CadastrosTerceirosService } from './cadastros-terceiros.service';
     CadastrosClientesService,
     CadastrosColaboradoresService,
     AniversariosService,
+    RhAgendaService,
     CadastrosTransportadorasService,
     CadastrosMotoristasService,
     CadastrosTiposContainerService,

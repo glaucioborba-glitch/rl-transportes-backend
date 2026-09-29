@@ -96,8 +96,14 @@ export default function RhDashboardPage() {
       </RhCard>
       <div className="flex flex-wrap gap-3">
         <Link
-          href="/rh/colaboradores"
+          href="/rh/agenda"
           className="rounded-xl bg-gradient-to-r from-cyan-500 to-sky-600 px-4 py-3 text-sm font-bold text-zinc-950"
+        >
+          Abrir agenda
+        </Link>
+        <Link
+          href="/rh/colaboradores"
+          className="rounded-xl border border-cyan-500/40 px-4 py-3 text-sm font-semibold text-cyan-200"
         >
           Abrir cadastro
         </Link>

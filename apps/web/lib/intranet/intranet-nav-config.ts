@@ -17,6 +17,7 @@ import {
   Building2,
   Calculator,
   Calendar,
+  CalendarClock,
   CheckCircle,
   Clock,
   Container,
@@ -358,6 +359,7 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
     { label: "Conciliação", href: "/financeiro/conciliacao", icon: Scale },
   ],
   rh: [
+    { label: "Agenda", href: "/rh/agenda", icon: CalendarClock },
     { label: "Colaboradores", href: "/rh/colaboradores", icon: Users },
     { label: "Competências", href: "/rh/competencias", icon: Award },
     { label: "Equipe e Escalas", href: "/rh/equipe", icon: Calendar },

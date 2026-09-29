@@ -24,7 +24,7 @@ export function FamiliaresSection({
   return (
     <FormSection title="Familiares" icon={Users}>
       <p className="mb-4 text-xs text-muted-foreground">
-        Cadastre familiares para futura agenda de eventos (aniversários, congratulações).
+        Cadastre familiares para a Agenda do RH (aniversários e congratulações).
       </p>
 
       {familiares.length === 0 ? (
