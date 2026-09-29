@@ -153,11 +153,14 @@ export class RhTurnoJornadaService {
     const sabadoHoraInicio =
       regime === 'SEM_SABADO' ? null : dto.sabadoHoraInicio?.slice(0, 5) || '07:00';
     const sabadoHoraFim =
-      regime === 'SEM_SABADO' ? null : dto.sabadoHoraFim?.slice(0, 5) || '17:00';
+      regime === 'SEM_SABADO'
+        ? null
+        : dto.sabadoHoraFim?.slice(0, 5) || (regime === 'TODOS_SABADOS' ? '11:00' : '17:00');
+    // Todo sábado: só 4h contínuas (entrada/saída). Espanhol: dia cheio com intervalo.
     const sabadoIntervaloInicio =
-      regime === 'SEM_SABADO' ? null : dto.sabadoIntervaloInicio?.slice(0, 5) || '12:00';
+      regime === 'ESPANHOL' ? dto.sabadoIntervaloInicio?.slice(0, 5) || '12:00' : null;
     const sabadoIntervaloFim =
-      regime === 'SEM_SABADO' ? null : dto.sabadoIntervaloFim?.slice(0, 5) || '13:00';
+      regime === 'ESPANHOL' ? dto.sabadoIntervaloFim?.slice(0, 5) || '13:00' : null;
     if (regime !== 'SEM_SABADO' && sabadoHoraInicio && sabadoHoraFim) {
       assertBatidasJornada(
         sabadoHoraInicio,

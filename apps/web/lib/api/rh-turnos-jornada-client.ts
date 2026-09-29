@@ -83,9 +83,9 @@ export function emptyRhTurnoJornada(): RhTurnoJornada {
     jornadaSemanalHoras: 44,
     regimeSabado: "SEM_SABADO",
     sabadoHoraInicio: "07:00",
-    sabadoIntervaloInicio: "12:00",
-    sabadoIntervaloFim: "13:00",
-    sabadoHoraFim: "17:00",
+    sabadoIntervaloInicio: null,
+    sabadoIntervaloFim: null,
+    sabadoHoraFim: "11:00",
     sabadoReferencia: "",
     observacoes: "",
     ativo: true,
@@ -102,6 +102,10 @@ export function templateEspanhol(): RhTurnoJornada {
     intervaloInicio: "11:00",
     intervaloFim: "12:00",
     regimeSabado: "ESPANHOL",
+    sabadoHoraInicio: "07:00",
+    sabadoIntervaloInicio: "12:00",
+    sabadoIntervaloFim: "13:00",
+    sabadoHoraFim: "17:00",
     observacoes: "Trabalha um sábado o dia todo e folga no sábado seguinte.",
   };
 }

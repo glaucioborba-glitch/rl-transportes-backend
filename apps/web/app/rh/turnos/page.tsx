@@ -42,9 +42,9 @@ export default function RhTurnosPage() {
         <h1 className="text-2xl font-bold">Turnos da equipe</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
           Jornada dos colaboradores — não confundir com os turnos operacionais do Gate (Parâmetros).
-          Cada pessoa recebe um destes turnos. Informe as quatro batidas (início, intervalo, retorno
-          e saída) nos dias úteis e no sábado, quando houver. O sistema espanhol (um sábado o dia
-          todo, o outro folga) é opcional por turno.
+          Dias úteis usam quatro batidas (início, intervalo, retorno e saída). Quem trabalha todo
+          sábado faz só 4 horas contínuas (entrada e saída). No sistema espanhol o sábado trabalhado
+          é o dia todo, com intervalo.
         </p>
       </div>
 

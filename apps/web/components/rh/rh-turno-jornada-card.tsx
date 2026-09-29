@@ -17,6 +17,8 @@ function timeOr(value: string | null | undefined, fallback = "") {
 }
 
 function toPayload(t: RhTurnoJornada) {
+  const regime = (t.regimeSabado as RegimeSabadoJornada) || "SEM_SABADO";
+  const sabadoCurto = regime === "TODOS_SABADOS";
   return {
     codigo: t.codigo,
     nome: t.nome,
@@ -26,10 +28,10 @@ function toPayload(t: RhTurnoJornada) {
     horaFim: t.horaFim,
     diasSemana: t.diasSemana,
     jornadaSemanalHoras: t.jornadaSemanalHoras ?? undefined,
-    regimeSabado: (t.regimeSabado as RegimeSabadoJornada) || "SEM_SABADO",
+    regimeSabado: regime,
     sabadoHoraInicio: t.sabadoHoraInicio ?? undefined,
-    sabadoIntervaloInicio: t.sabadoIntervaloInicio ?? undefined,
-    sabadoIntervaloFim: t.sabadoIntervaloFim ?? undefined,
+    sabadoIntervaloInicio: sabadoCurto ? undefined : t.sabadoIntervaloInicio ?? undefined,
+    sabadoIntervaloFim: sabadoCurto ? undefined : t.sabadoIntervaloFim ?? undefined,
     sabadoHoraFim: t.sabadoHoraFim ?? undefined,
     sabadoReferencia: t.sabadoReferencia || undefined,
     observacoes: t.observacoes ?? undefined,
@@ -42,6 +44,7 @@ function BatidasRow({
   intervaloInicio,
   intervaloFim,
   saida,
+  somenteEntradaSaida,
   onInicio,
   onIntervaloInicio,
   onIntervaloFim,
@@ -51,16 +54,23 @@ function BatidasRow({
   intervaloInicio: string;
   intervaloFim: string;
   saida: string;
+  somenteEntradaSaida?: boolean;
   onInicio: (v: string) => void;
   onIntervaloInicio: (v: string) => void;
   onIntervaloFim: (v: string) => void;
   onSaida: (v: string) => void;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+    <div
+      className={`grid grid-cols-2 gap-3 ${somenteEntradaSaida ? "md:grid-cols-2" : "md:grid-cols-4"}`}
+    >
       <TimeField label="Início" value={inicio} onChange={onInicio} />
-      <TimeField label="Início intervalo" value={intervaloInicio} onChange={onIntervaloInicio} />
-      <TimeField label="Retorno intervalo" value={intervaloFim} onChange={onIntervaloFim} />
+      {somenteEntradaSaida ? null : (
+        <>
+          <TimeField label="Início intervalo" value={intervaloInicio} onChange={onIntervaloInicio} />
+          <TimeField label="Retorno intervalo" value={intervaloFim} onChange={onIntervaloFim} />
+        </>
+      )}
       <TimeField label="Saída" value={saida} onChange={onSaida} />
     </div>
   );
@@ -95,6 +105,7 @@ export function RhTurnoJornadaCard({ turno, onChange, onSave, onRemove, saving }
   const [localSaving, setLocalSaving] = useState(false);
   const busy = saving || localSaving;
   const espanhol = turno.regimeSabado === "ESPANHOL";
+  const sabadoCurto = turno.regimeSabado === "TODOS_SABADOS";
   const temSabado = turno.regimeSabado !== "SEM_SABADO";
 
   const patch = (partial: Partial<RhTurnoJornada>) => onChange({ ...turno, ...partial });
@@ -173,22 +184,34 @@ export function RhTurnoJornadaCard({ turno, onChange, onSave, onRemove, saving }
             value={turno.regimeSabado}
             onChange={(e) => {
               const regime = e.target.value as RegimeSabadoJornada;
-              patch({
-                regimeSabado: regime,
-                ...(regime !== "SEM_SABADO"
-                  ? {
-                      sabadoHoraInicio: turno.sabadoHoraInicio || "07:00",
-                      sabadoIntervaloInicio: turno.sabadoIntervaloInicio || "12:00",
-                      sabadoIntervaloFim: turno.sabadoIntervaloFim || "13:00",
-                      sabadoHoraFim: turno.sabadoHoraFim || "17:00",
-                    }
-                  : {}),
-              });
+              if (regime === "TODOS_SABADOS") {
+                patch({
+                  regimeSabado: regime,
+                  sabadoHoraInicio: "07:00",
+                  sabadoIntervaloInicio: null,
+                  sabadoIntervaloFim: null,
+                  sabadoHoraFim: "11:00",
+                });
+                return;
+              }
+              if (regime === "ESPANHOL") {
+                patch({
+                  regimeSabado: regime,
+                  sabadoHoraInicio: turno.sabadoHoraInicio || "07:00",
+                  sabadoIntervaloInicio: turno.sabadoIntervaloInicio || "12:00",
+                  sabadoIntervaloFim: turno.sabadoIntervaloFim || "13:00",
+                  sabadoHoraFim: turno.sabadoHoraFim && turno.sabadoHoraFim !== "11:00"
+                    ? turno.sabadoHoraFim
+                    : "17:00",
+                });
+                return;
+              }
+              patch({ regimeSabado: regime });
             }}
             className={SELECT_CLASS}
           >
             <option value="SEM_SABADO">Folga todo sábado</option>
-            <option value="TODOS_SABADOS">Trabalha todo sábado</option>
+            <option value="TODOS_SABADOS">Trabalha todo sábado (4 horas)</option>
             <option value="ESPANHOL">Sistema espanhol (um sim, um não)</option>
           </select>
         </div>
@@ -197,13 +220,16 @@ export function RhTurnoJornadaCard({ turno, onChange, onSave, onRemove, saving }
       {temSabado ? (
         <div>
           <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-zinc-500">
-            Sábado (quando trabalha) — quatro batidas
+            {sabadoCurto
+              ? "Sábado — 4 horas, só entrada e saída"
+              : "Sábado (quando trabalha) — quatro batidas"}
           </p>
           <BatidasRow
             inicio={timeOr(turno.sabadoHoraInicio, "07:00")}
-            intervaloInicio={timeOr(turno.sabadoIntervaloInicio, "12:00")}
-            intervaloFim={timeOr(turno.sabadoIntervaloFim, "13:00")}
-            saida={timeOr(turno.sabadoHoraFim, "17:00")}
+            intervaloInicio={timeOr(turno.sabadoIntervaloInicio, sabadoCurto ? "" : "12:00")}
+            intervaloFim={timeOr(turno.sabadoIntervaloFim, sabadoCurto ? "" : "13:00")}
+            saida={timeOr(turno.sabadoHoraFim, sabadoCurto ? "11:00" : "17:00")}
+            somenteEntradaSaida={sabadoCurto}
             onInicio={(v) => patch({ sabadoHoraInicio: v })}
             onIntervaloInicio={(v) => patch({ sabadoIntervaloInicio: v || null })}
             onIntervaloFim={(v) => patch({ sabadoIntervaloFim: v || null })}
