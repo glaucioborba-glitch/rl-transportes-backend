@@ -1,46 +1,25 @@
 "use client";
 
-import { Shield, UserPlus } from "lucide-react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { Shield, UserPlus, Users } from "lucide-react";
 import { AccessDenied } from "@/components/ui/access-denied";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   canDo,
   listStoredCadastrosDelegations,
+  removeCadastrosDelegation,
   type CadastroBlock,
   type CadastrosUserContext,
 } from "@/lib/cadastros/permission-matrix";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 
-type MockUser = CadastrosUserContext & {
+type ListedUser = CadastrosUserContext & {
   id: string;
   name: string;
   email: string;
 };
-
-const MOCK_USERS: MockUser[] = [
-  {
-    id: "mock-gerente",
-    name: "Ana Gerente",
-    email: "gerente@rlterminal.com.br",
-    role: "GERENTE",
-    permissions: [],
-  },
-  {
-    id: "mock-financeiro",
-    name: "Carlos Financeiro",
-    email: "financeiro@rlterminal.com.br",
-    role: "FINANCEIRO",
-    permissions: ["cadastros:enabled"],
-  },
-  {
-    id: "mock-rh",
-    name: "Beatriz RH",
-    email: "rh@rlterminal.com.br",
-    role: "RH",
-    permissions: ["cadastros:enabled"],
-  },
-];
 
 const BLOCKS: { key: CadastroBlock; label: string }[] = [
   { key: "pessoas", label: "Pessoas" },
@@ -63,7 +42,13 @@ function PermissionDot({ block, user }: { block: CadastroBlock; user: CadastrosU
   return <span className="inline-block h-3 w-3 rounded-full bg-zinc-600" title="Sem acesso" />;
 }
 
-function UserPermissionRow({ user }: { user: MockUser }) {
+function UserPermissionRow({
+  user,
+  onRemove,
+}: {
+  user: ListedUser;
+  onRemove: (id: string) => void;
+}) {
   return (
     <div className="grid grid-cols-12 items-center gap-4 border-b border-border/50 p-4">
       <div className="col-span-3">
@@ -83,6 +68,9 @@ function UserPermissionRow({ user }: { user: MockUser }) {
           <Shield className="mr-1 h-3.5 w-3.5" />
           Editar poderes
         </Button>
+        <Button variant="ghost" size="sm" onClick={() => onRemove(user.id)}>
+          Remover
+        </Button>
       </div>
     </div>
   );
@@ -91,6 +79,18 @@ function UserPermissionRow({ user }: { user: MockUser }) {
 export default function PermissoesPage() {
   const staffUser = useStaffAuthStore((s) => s.user);
   const isAdmin = staffUser?.role === "ADMIN" || staffUser?.role === "SUPER_ADMIN";
+  const [delegationTick, setDelegationTick] = useState(0);
+
+  const users: ListedUser[] = useMemo(() => {
+    return listStoredCadastrosDelegations().map((d) => ({
+      id: d.userId,
+      name: d.userName,
+      email: d.userEmail,
+      role: d.userRole,
+      permissions: d.permissions.flatMap((p) => p.actions.map((a) => `${p.block}:${a.toLowerCase()}`)),
+      cadastrosDelegation: d,
+    }));
+  }, [delegationTick]);
 
   if (!isAdmin) {
     return (
@@ -101,18 +101,10 @@ export default function PermissoesPage() {
     );
   }
 
-  const storedDelegations = listStoredCadastrosDelegations();
-  const users: MockUser[] = [
-    ...MOCK_USERS,
-    ...storedDelegations.map((d) => ({
-      id: d.userId,
-      name: d.userName,
-      email: d.userEmail,
-      role: d.userRole,
-      permissions: d.permissions.flatMap((p) => p.actions.map((a) => `${p.block}:${a.toLowerCase()}`)),
-      cadastrosDelegation: d,
-    })),
-  ];
+  function handleRemove(userId: string) {
+    removeCadastrosDelegation(userId);
+    setDelegationTick((n) => n + 1);
+  }
 
   return (
     <div className="space-y-6">
@@ -124,42 +116,63 @@ export default function PermissoesPage() {
         </p>
       </div>
 
-      <div className="rounded-lg border border-border bg-card">
-        <div className="grid grid-cols-12 gap-4 border-b border-border p-4 text-xs uppercase tracking-wider text-muted-foreground">
-          <div className="col-span-3">Usuário</div>
-          <div className="col-span-2">Perfil</div>
-          {BLOCKS.map((block) => (
-            <div key={block.key} className="col-span-1 text-center">
-              {block.label}
-            </div>
-          ))}
-          <div className="col-span-2 text-center">Ações</div>
+      {users.length === 0 ? (
+        <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 rounded-lg border border-border bg-card px-6 py-16">
+          <Users className="h-12 w-12 text-muted-foreground/30" />
+          <p className="text-lg text-muted-foreground">Nenhum usuário na lista.</p>
+          <p className="max-w-md text-center text-sm text-muted-foreground/70">
+            Cadastros → Pessoas saíram da tela. Cadastre a equipe real em RH → Colaboradores.
+          </p>
+          <Button asChild variant="default" className="mt-2">
+            <Link href="/rh/colaboradores/novo">
+              <UserPlus className="mr-2 h-4 w-4" />
+              Cadastrar colaborador
+            </Link>
+          </Button>
         </div>
+      ) : (
+        <div className="rounded-lg border border-border bg-card">
+          <div className="grid grid-cols-12 gap-4 border-b border-border p-4 text-xs uppercase tracking-wider text-muted-foreground">
+            <div className="col-span-3">Usuário</div>
+            <div className="col-span-2">Perfil</div>
+            {BLOCKS.map((block) => (
+              <div key={block.key} className="col-span-1 text-center">
+                {block.label}
+              </div>
+            ))}
+            <div className="col-span-2 text-center">Ações</div>
+          </div>
 
-        {users.map((user) => (
-          <UserPermissionRow key={user.id} user={user} />
-        ))}
-      </div>
+          {users.map((user) => (
+            <UserPermissionRow key={user.id} user={user} onRemove={handleRemove} />
+          ))}
+        </div>
+      )}
 
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-full bg-green-500" />
-          Pode editar
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-full bg-blue-500" />
-          Só visualiza
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-full bg-zinc-600" />
-          Sem acesso
-        </span>
-      </div>
-
-      <Button variant="default" disabled>
-        <UserPlus className="mr-2 h-4 w-4" />
-        Delegar poderes a novo usuário
-      </Button>
+      {users.length > 0 ? (
+        <>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded-full bg-green-500" />
+              Pode editar
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded-full bg-blue-500" />
+              Só visualiza
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded-full bg-zinc-600" />
+              Sem acesso
+            </span>
+          </div>
+          <Button asChild variant="default">
+            <Link href="/rh/colaboradores/novo">
+              <UserPlus className="mr-2 h-4 w-4" />
+              Cadastrar colaborador
+            </Link>
+          </Button>
+        </>
+      ) : null}
     </div>
   );
 }

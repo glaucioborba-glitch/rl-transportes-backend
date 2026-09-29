@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Briefcase,
   Building2,
   Calendar,
   FileText,
+  KeyRound,
   Loader2,
   Save,
   User,
@@ -15,6 +17,7 @@ import {
 } from "lucide-react";
 import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { FamiliaresSection } from "@/components/cadastros/familiares-section";
+import { PasswordStrengthPanel } from "@/components/portal/password-strength-panel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MoneyInput } from "@/components/ui/money-input";
@@ -33,6 +36,7 @@ import {
   type CentroCustoRef,
   type GestorRef,
 } from "@/lib/api/cadastros-colaboradores-client";
+import { fetchParametrosGerais, type TenantTurnoOperacionalConfig } from "@/lib/api/tenant-config-client";
 import {
   formatCEP,
   formatCPF,
@@ -41,6 +45,8 @@ import {
   isValidCPF,
   isValidPIS,
 } from "@/lib/cadastros/formatters";
+import { COLABORADOR_INTRANET_PERFIS } from "@/lib/rh/colaborador-intranet-perfis";
+import { evaluatePassword } from "@/lib/security/password-validator";
 import { toast } from "@/lib/toast";
 
 const SELECT_CLASS =
@@ -48,17 +54,21 @@ const SELECT_CLASS =
 
 type Props = {
   colaboradorId?: string;
+  basePath?: string;
 };
 
-export function ColaboradorForm({ colaboradorId }: Props) {
+export function ColaboradorForm({ colaboradorId, basePath = "/rh/colaboradores" }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(Boolean(colaboradorId));
   const [validatingCpf, setValidatingCpf] = useState(false);
   const [gestores, setGestores] = useState<GestorRef[]>([]);
   const [centrosCusto, setCentrosCusto] = useState<CentroCustoRef[]>([]);
+  const [turnos, setTurnos] = useState<TenantTurnoOperacionalConfig[]>([]);
   const [formData, setFormData] = useState<CadastrosColaboradorFormData>(EMPTY_COLABORADOR_FORM);
   const [familiares, setFamiliares] = useState<ColaboradorFamiliarForm[]>([]);
+  const [senha, setSenha] = useState("");
+  const [senhaConfirmacao, setSenhaConfirmacao] = useState("");
 
   const addFamiliar = () => {
     if (familiares.length >= 10) return;
@@ -87,14 +97,23 @@ export function ColaboradorForm({ colaboradorId }: Props) {
   useEffect(() => {
     void (async () => {
       try {
-        const [g, c] = await Promise.all([fetchCadastrosGestores(), fetchCadastrosCentrosCusto()]);
+        const [g, c, params] = await Promise.all([
+          fetchCadastrosGestores(),
+          fetchCadastrosCentrosCusto(),
+          fetchParametrosGerais().catch(() => null),
+        ]);
         setGestores(g);
         setCentrosCusto(c);
+        const ativos = (params?.operacional?.turnos ?? []).filter((t) => t.ativo !== false);
+        setTurnos(ativos);
+        if (!colaboradorId && ativos[0]) {
+          setFormData((prev) => ({ ...prev, turno: prev.turno || ativos[0].codigo || ativos[0].id }));
+        }
       } catch {
         /* aux endpoints opcionais */
       }
     })();
-  }, []);
+  }, [colaboradorId]);
 
   useEffect(() => {
     if (!colaboradorId) return;
@@ -171,6 +190,30 @@ export function ColaboradorForm({ colaboradorId }: Props) {
       toast.error("Data de admissão é obrigatória.");
       return;
     }
+    if (!formData.perfilIntranet) {
+      toast.error("Informe o perfil de acesso à intranet.");
+      return;
+    }
+    if (!formData.email.trim()) {
+      toast.error("E-mail é obrigatório para o login da intranet.");
+      return;
+    }
+    const senhaTrim = senha.trim();
+    const confirmTrim = senhaConfirmacao.trim();
+    if (!colaboradorId || senhaTrim || confirmTrim) {
+      if (!senhaTrim) {
+        toast.error("Informe a senha de acesso e a confirmação.");
+        return;
+      }
+      if (senhaTrim !== confirmTrim) {
+        toast.error("A senha e a confirmação não conferem.");
+        return;
+      }
+      if (!evaluatePassword(senhaTrim).valid) {
+        toast.error("A senha não atende aos requisitos mínimos de segurança.");
+        return;
+      }
+    }
 
     const familiaresPayload = familiares
       .filter((f) => f.nome.trim().length > 0)
@@ -200,6 +243,9 @@ export function ColaboradorForm({ colaboradorId }: Props) {
       dataDemissao: optionalDate(formData.dataDemissao),
       motivoDemissao: formData.motivoDemissao.trim() || undefined,
       familiares: familiaresPayload,
+      ...(senhaTrim
+        ? { senha: senhaTrim, senhaConfirmacao: confirmTrim }
+        : {}),
     };
 
     setSaving(true);
@@ -211,7 +257,7 @@ export function ColaboradorForm({ colaboradorId }: Props) {
         await createCadastrosColaborador(payload);
         toast.success("Colaborador cadastrado com sucesso!");
       }
-      router.push("/cadastros/pessoas/colaboradores");
+      router.push(basePath);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Erro ao salvar colaborador.");
     } finally {
@@ -377,7 +423,7 @@ export function ColaboradorForm({ colaboradorId }: Props) {
 
       <FormSection title="Contato" icon={User}>
         <div className="flex flex-wrap gap-4">
-          <FormField label="E-mail" className="min-w-[16rem] flex-[2]">
+          <FormField label="E-mail" required className="min-w-[16rem] flex-[2]">
             <Input
               type="email"
               value={formData.email}
@@ -510,13 +556,69 @@ export function ColaboradorForm({ colaboradorId }: Props) {
               onChange={(e) => setFormData({ ...formData, turno: e.target.value })}
               className={SELECT_CLASS}
             >
-              <option value="T1">T1 (06:00 - 14:00)</option>
-              <option value="T2">T2 (14:00 - 22:00)</option>
-              <option value="T3">T3 (22:00 - 06:00)</option>
-              <option value="MISTA">Misto</option>
+              <option value="">Selecione o turno</option>
+              {turnos.map((t) => (
+                <option key={t.id || t.codigo} value={t.codigo || t.id}>
+                  {t.nome} ({t.horaInicio} – {t.horaFim})
+                </option>
+              ))}
             </select>
+            {turnos.length === 0 ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Nenhum turno cadastrado. Defina em{" "}
+                <Link href="/rh/jornada/turnos" className="text-[var(--accent)] hover:underline">
+                  RH → Turnos
+                </Link>
+                .
+              </p>
+            ) : null}
           </FormField>
         </div>
+      </FormSection>
+
+      <FormSection title="Acesso à intranet" icon={KeyRound}>
+        <p className="mb-4 text-sm text-muted-foreground">
+          O RH define o perfil e a senha. O colaborador entra em /login/staff com o CPF.
+        </p>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Perfil" required className="min-w-[14rem] flex-1">
+            <select
+              value={formData.perfilIntranet}
+              onChange={(e) => setFormData({ ...formData, perfilIntranet: e.target.value })}
+              className={SELECT_CLASS}
+            >
+              <option value="">Selecione...</option>
+              {COLABORADOR_INTRANET_PERFIS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label={colaboradorId ? "Nova senha" : "Senha"} required={!colaboradorId} className="min-w-[14rem] flex-1">
+            <Input
+              type="password"
+              autoComplete="new-password"
+              value={senha}
+              onChange={(e) => setSenha(e.target.value)}
+              placeholder={colaboradorId ? "Deixe em branco para manter" : "Senha de acesso"}
+            />
+          </FormField>
+          <FormField
+            label="Confirmar senha"
+            required={!colaboradorId || Boolean(senha)}
+            className="min-w-[14rem] flex-1"
+          >
+            <Input
+              type="password"
+              autoComplete="new-password"
+              value={senhaConfirmacao}
+              onChange={(e) => setSenhaConfirmacao(e.target.value)}
+              placeholder="Repita a senha"
+            />
+          </FormField>
+        </div>
+        {senha ? <PasswordStrengthPanel password={senha} className="mt-4" /> : null}
       </FormSection>
 
       <FormSection title="Dados Financeiros" icon={Wallet}>

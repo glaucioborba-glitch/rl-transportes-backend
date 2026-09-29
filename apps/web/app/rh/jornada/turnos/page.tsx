@@ -1,85 +1,127 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { staffJson } from "@/lib/api/staff-client";
-import { fetchRhDirectoryMerged } from "@/lib/rh/merge-directory";
-import type { RhColaboradorDirectoryItem } from "@/lib/rh/types";
-import { mockWeeklyHours } from "@/lib/rh/fatigue";
-import { ShiftBar } from "@/components/rh/shift-bar";
-import { WorkloadHeatmap } from "@/components/rh/workload-heatmap";
-import { RhCard } from "@/components/rh/rh-card";
+import Link from "next/link";
+import { Loader2, Plus, Save } from "lucide-react";
+import { TurnoRow } from "@/app/cadastros/parametros/operacional/turno-row";
+import { Button } from "@/components/ui/button";
+import { useParametrosGerais } from "@/hooks/use-parametros-gerais";
 import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
+import { toast } from "@/lib/toast";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
+import type { TenantTurnoOperacionalConfig } from "@/lib/api/tenant-config-client";
+
+function newTurno(): TenantTurnoOperacionalConfig {
+  return {
+    id: `t-${Date.now()}`,
+    codigo: "T5",
+    slot: "MANHA",
+    nome: "Novo turno",
+    horaInicio: "07:00",
+    horaFim: "14:00",
+    capacidadeMaxima: 10,
+    diasSemana: ["SEG", "TER", "QUA", "QUI", "SEX"],
+    ativo: true,
+  };
+}
 
 export default function RhJornadaTurnosPage() {
   const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
-  const [rows, setRows] = useState<RhColaboradorDirectoryItem[]>([]);
-  const [heatmap, setHeatmap] = useState<number[][]>([]);
+  const { data, loading, error, update } = useParametrosGerais();
+  const [turnos, setTurnos] = useState<TenantTurnoOperacionalConfig[]>([]);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    void fetchRhDirectoryMerged().then((r) => {
-      setRows(r);
-      const cells: number[][] = [];
-      for (let i = 0; i < 4; i++) {
-        const row: number[] = [];
-        for (let j = 0; j < 24; j++) {
-          const base = r[j % Math.max(1, r.length)]?.operacoes24h ?? 1;
-          row.push(base * (0.5 + ((i + j) % 5) * 0.15));
-        }
-        cells.push(row);
-      }
-      setHeatmap(cells);
-    });
-    const ini = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
-    const today = new Date().toISOString().slice(0, 10);
-    void staffJson(`/relatorios/operacional/solicitacoes?dataInicio=${ini}&dataFim=${today}&page=1&limit=1`).catch(() => null);
-  }, []);
+    if (data?.operacional?.turnos) setTurnos(data.operacional.turnos);
+  }, [data]);
 
   if (!allowed) return <p className="text-amber-400">Acesso restrito.</p>;
+
+  const updateTurno = (index: number, field: keyof TenantTurnoOperacionalConfig, value: unknown) => {
+    const next = [...turnos];
+    next[index] = { ...next[index], [field]: value };
+    setTurnos(next);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await update({
+        operacional: {
+          turnos: turnos.map((t) => ({
+            id: t.id,
+            slot: t.slot ?? "MANHA",
+            codigo: t.codigo.trim().slice(0, 32),
+            nome: t.nome.trim(),
+            horaInicio: t.horaInicio.slice(0, 5),
+            horaFim: t.horaFim.slice(0, 5),
+            capacidadeMaxima: Math.max(1, Number(t.capacidadeMaxima) || 1),
+            diasSemana: t.diasSemana?.length ? t.diasSemana : ["SEG", "TER", "QUA", "QUI", "SEX"],
+            ativo: t.ativo !== false,
+          })),
+        },
+      });
+      toast.success("Turnos salvos. O cadastro de colaboradores e o Gate usam esta lista.");
+    } catch {
+      toast.error("Não foi possível salvar os turnos.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Turnos 24h</h1>
-        <p className="text-sm text-zinc-500">
-          Cruzamento entre solicitações recentes (contexto) e horas trabalhadas estimadas no front.
+        <div className="mb-1 flex items-center gap-2 text-sm text-muted-foreground">
+          <Link href="/rh" className="hover:text-white">
+            RH
+          </Link>
+          <span>/</span>
+          <span>Turnos</span>
+        </div>
+        <h1 className="text-2xl font-bold">Turnos</h1>
+        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+          Cadastro da equipe. Os mesmos turnos alimentam o colaborador e o agendamento do Gate
+          (fonte: parâmetros operacionais do terminal).
         </p>
       </div>
-      <RhCard title="Distribuição 24h (modelo)" subtitle="Barras por turno lógico">
-        <ShiftBar
-          segments={[
-            { start: 6, end: 14, label: "Manhã", tone: "ok" },
-            { start: 14, end: 22, label: "Tarde", tone: "warn" },
-            { start: 22, end: 24, label: "Noite", tone: "crit" },
-            { start: 0, end: 6, label: "Noite", tone: "crit" },
-          ]}
-        />
-      </RhCard>
-      <RhCard title="Heatmap carga × hora" subtitle="4 fatias (equipes)">
-        {heatmap.length === 0 ? <p className="text-sm text-zinc-500">Carregando…</p> : <WorkloadHeatmap cells={heatmap} />}
-      </RhCard>
-      <RhCard title="Operações vs horas (proxy)">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[520px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-white/10 text-xs text-zinc-500">
-                <th className="py-2">Colaborador</th>
-                <th className="py-2">Ops 24h</th>
-                <th className="py-2">Horas semana (front)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.slice(0, 12).map((r) => (
-                <tr key={r.id} className="border-b border-white/5">
-                  <td className="py-2 text-zinc-200">{r.nome}</td>
-                  <td className="py-2 font-mono text-cyan-300">{r.operacoes24h ?? "—"}</td>
-                  <td className="py-2 font-mono text-amber-200">{mockWeeklyHours(r.id)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Carregando turnos…
         </div>
-      </RhCard>
+      ) : null}
+      {error ? <p className="text-sm text-red-400">{error}</p> : null}
+
+      {!loading && !error ? (
+        <div className="space-y-3">
+          {turnos.map((turno, index) => (
+            <TurnoRow
+              key={turno.id || index}
+              turno={turno}
+              index={index}
+              onChange={updateTurno}
+              onRemove={(i) => setTurnos(turnos.filter((_, idx) => idx !== i))}
+            />
+          ))}
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full border-dashed"
+            onClick={() => setTurnos([...turnos, newTurno()])}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Adicionar turno
+          </Button>
+          <div className="flex justify-end">
+            <Button type="button" onClick={() => void handleSave()} disabled={saving}>
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Salvar turnos
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

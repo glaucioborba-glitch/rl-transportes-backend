@@ -19,6 +19,14 @@ import {
   CreateFamiliarDto,
   UpdateFamiliarDto,
 } from './dto/colaborador-familiar.dto';
+import { PasswordPolicyService } from '../common/security/password-policy.service';
+import { DEFAULT_TENANT_ID } from '../tenant/tenant.constants';
+import {
+  assertSenhasIguais,
+  parsePerfilIntranet,
+  stripColaboradorLoginSecrets,
+  upsertColaboradorIntranetUser,
+} from './colaborador-intranet-login.util';
 
 const PAGE_SIZE = 10;
 const MAX_FAMILIARES = 10;
@@ -64,6 +72,7 @@ export class CadastrosColaboradoresService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditoriaService: AuditoriaService,
+    private readonly passwordPolicy: PasswordPolicyService,
   ) {}
 
   async list(query: CadastrosColaboradorQueryDto, _actor: AuthUser) {
@@ -123,7 +132,7 @@ export class CadastrosColaboradoresService {
 
   async findOne(id: string) {
     const row = await this.getRowOrThrow(id);
-    return this.toFormShape(row);
+    return this.toFormShapeWithLogin(row);
   }
 
   async checkCpf(cpf: string, excludeId?: string) {
@@ -172,6 +181,7 @@ export class CadastrosColaboradoresService {
 
     const created = await this.prisma.$transaction(async (tx) => {
       const row = await tx.cadastroColaborador.create({ data });
+      await this.syncIntranetLogin(tx, row.tenantId, dto, { requireLogin: true });
       await this.auditoriaService.registrar(
         {
           tabela: 'cadastros_colaboradores',
@@ -190,7 +200,7 @@ export class CadastrosColaboradoresService {
       return row;
     });
 
-    return this.toFormShape(await this.getRowOrThrow(created.id));
+    return this.toFormShapeWithLogin(await this.getRowOrThrow(created.id));
   }
 
   async update(
@@ -220,6 +230,7 @@ export class CadastrosColaboradoresService {
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const row = await tx.cadastroColaborador.update({ where: { id }, data });
+      await this.syncIntranetLogin(tx, row.tenantId, dto, { requireLogin: false });
       await this.auditoriaService.registrar(
         {
           tabela: 'cadastros_colaboradores',
@@ -239,7 +250,7 @@ export class CadastrosColaboradoresService {
       return row;
     });
 
-    return this.toFormShape(await this.getRowOrThrow(updated.id));
+    return this.toFormShapeWithLogin(await this.getRowOrThrow(updated.id));
   }
 
   async inativar(id: string, usuarioId: string, ip: string, userAgent: string) {
@@ -482,8 +493,38 @@ export class CadastrosColaboradoresService {
   }
 
   private dtoToDadosJson(dto: CadastrosColaboradorFormDto): Prisma.InputJsonValue {
-    const { familiares: _familiares, ...rest } = dto;
-    return rest as unknown as Prisma.InputJsonValue;
+    const stripped = stripColaboradorLoginSecrets({ ...dto } as unknown as Record<string, unknown>);
+    const { familiares: _familiares, ...rest } = stripped as Record<string, unknown> & {
+      familiares?: unknown;
+    };
+    return rest as Prisma.InputJsonValue;
+  }
+
+  private async syncIntranetLogin(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    dto: CadastrosColaboradorFormDto,
+    opts: { requireLogin: boolean },
+  ) {
+    const role = parsePerfilIntranet(dto.perfilIntranet);
+    const senha = dto.senha?.trim() ?? '';
+    const confirmacao = dto.senhaConfirmacao?.trim() ?? '';
+
+    if (opts.requireLogin && !role) {
+      throw new BadRequestException('Informe o perfil de acesso à intranet (Gate CPO, Portaria, Pátio, Gerencial ou Administrativo).');
+    }
+    if (!role) return;
+
+    assertSenhasIguais(senha || null, confirmacao || null);
+    if (senha) this.passwordPolicy.assertStrong(senha, tenantId || DEFAULT_TENANT_ID);
+
+    await upsertColaboradorIntranetUser(tx, {
+      tenantId: tenantId || DEFAULT_TENANT_ID,
+      cpf: dto.cpf,
+      email: dto.email ?? '',
+      role,
+      passwordPlain: senha || null,
+    });
   }
 
   private normalizeFamiliaresInput(
@@ -678,8 +719,9 @@ export class CadastrosColaboradoresService {
     };
   }
 
-  private toFormShape(row: ColaboradorRow) {
+  private toFormShape(row: ColaboradorRow, perfilIntranet?: string) {
     const dados = (row.dados ?? {}) as Record<string, unknown>;
+    const { senha: _s, senhaConfirmacao: _c, ...safeDados } = dados;
     const centroCustoId = row.centroCustoCodigo
       ? row.centroCustoNome
         ? `${row.centroCustoCodigo}|${row.centroCustoNome}`
@@ -702,10 +744,22 @@ export class CadastrosColaboradoresService {
       centroCusto: row.centroCustoCodigo
         ? { codigo: row.centroCustoCodigo, nome: row.centroCustoNome ?? '' }
         : null,
-      ...dados,
+      ...safeDados,
+      perfilIntranet:
+        perfilIntranet ||
+        (typeof safeDados.perfilIntranet === 'string' ? safeDados.perfilIntranet : ''),
       familiares: this.mapFamiliares(row),
       ativo: row.deletedAt == null && row.status !== 'INATIVO',
     };
+  }
+
+  private async toFormShapeWithLogin(row: ColaboradorRow) {
+    const cpfCnpj = row.cpf.replace(/\D/g, '').padStart(14, '0');
+    const login = await this.prisma.user.findFirst({
+      where: { tenantId: row.tenantId, cpfCnpj },
+      select: { role: true },
+    });
+    return this.toFormShape(row, login?.role);
   }
 
   private mapAuditAction(acao: AcaoAuditoria): 'CREATE' | 'UPDATE' | 'DELETE' | 'READ' {

@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 
 export const PESSOAS_TABS = [
   { label: "Clientes", href: "/cadastros/pessoas/clientes" },
-  { label: "Colaboradores", href: "/cadastros/pessoas/colaboradores" },
   { label: "Transportadoras", href: "/cadastros/pessoas/transportadoras" },
   { label: "Motoristas Internos", href: "/cadastros/pessoas/motoristas" },
   { label: "Motoristas externos", href: "/cadastros/pessoas/motoristas-externos" },

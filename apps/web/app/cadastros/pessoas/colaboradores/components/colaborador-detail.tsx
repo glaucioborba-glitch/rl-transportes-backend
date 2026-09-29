@@ -21,9 +21,10 @@ type Props = {
     centroCusto?: { codigo: string; nome: string } | null;
   };
   colaboradorId: string;
+  basePath?: string;
 };
 
-export function ColaboradorDetail({ colaborador, colaboradorId }: Props) {
+export function ColaboradorDetail({ colaborador, colaboradorId, basePath = "/rh/colaboradores" }: Props) {
   return (
     <div className="rounded-lg border border-border bg-card p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -46,7 +47,7 @@ export function ColaboradorDetail({ colaborador, colaboradorId }: Props) {
             {colaborador.status}
           </Badge>
           <Button variant="outline" size="sm" asChild>
-            <Link href={`/cadastros/pessoas/colaboradores/${colaboradorId}/auditoria`}>
+            <Link href={`${basePath}/${colaboradorId}/auditoria`}>
               <History className="mr-1.5 h-3.5 w-3.5" />
               Auditoria
             </Link>

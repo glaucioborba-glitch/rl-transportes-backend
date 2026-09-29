@@ -82,10 +82,13 @@ export type CadastrosColaboradorFormData = {
   motivoDemissao: string;
   observacoes: string;
   familiares?: ColaboradorFamiliarForm[];
+  perfilIntranet: string;
 };
 
 export type CadastrosColaboradorPayload = CadastrosColaboradorFormData & {
   familiares?: ColaboradorFamiliarForm[];
+  senha?: string;
+  senhaConfirmacao?: string;
 };
 
 export type CadastrosColaboradorListResponse = {
@@ -147,7 +150,7 @@ export const EMPTY_COLABORADOR_FORM: CadastrosColaboradorFormData = {
   vinculo: "CLT",
   regimeTrabalho: "CLT_44",
   jornadaSemanal: 44,
-  turno: "T1",
+  turno: "",
   centroCustoId: "",
   salario: "",
   contaBancaria: "",
@@ -158,6 +161,7 @@ export const EMPTY_COLABORADOR_FORM: CadastrosColaboradorFormData = {
   dataDemissao: "",
   motivoDemissao: "",
   observacoes: "",
+  perfilIntranet: "",
 };
 
 export async function listCadastrosColaboradores(params: {

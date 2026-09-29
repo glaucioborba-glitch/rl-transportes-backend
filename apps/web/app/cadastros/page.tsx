@@ -38,7 +38,7 @@ const BLOCOS: BlocoCardDef[] = [
     title: "Pessoas & Entidades",
     href: "/cadastros/pessoas",
     icon: Users,
-    desc: "Clientes, Colaboradores, Motoristas Internos, Motoristas externos, Transportadoras, Terceiros",
+    desc: "Clientes, Motoristas Internos, Motoristas externos, Transportadoras, Terceiros",
   },
   {
     id: "operacional",

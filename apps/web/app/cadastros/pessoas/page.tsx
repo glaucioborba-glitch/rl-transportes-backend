@@ -10,8 +10,8 @@ export default function PessoasPage() {
       <div>
         <h1 className="text-2xl font-bold">Pessoas & Entidades</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Clientes, Colaboradores, Motoristas Internos, Motoristas externos, Transportadoras, Terceiros,
-          Fornecedores, Visitantes
+          Clientes, Motoristas Internos, Motoristas externos, Transportadoras, Terceiros,
+          Fornecedores, Visitantes. Colaboradores ficam em RH.
         </p>
       </div>
 
@@ -25,11 +25,8 @@ export default function PessoasPage() {
             Clientes
           </Link>
           {", "}
-          <Link
-            href="/cadastros/pessoas/colaboradores"
-            className="text-[var(--accent)] hover:underline"
-          >
-            Colaboradores
+          <Link href="/rh/colaboradores" className="text-[var(--accent)] hover:underline">
+            Colaboradores (RH)
           </Link>
           {", "}
           <Link

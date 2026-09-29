@@ -214,4 +214,21 @@ export class CadastrosColaboradorFormDto {
   @ValidateNested({ each: true })
   @Type(() => ColaboradorFamiliarFormDto)
   familiares?: ColaboradorFamiliarFormDto[];
+
+  @ApiPropertyOptional({
+    description: 'Perfil de acesso à intranet (Gate CPO, Portaria, Pátio, Gerencial, Administrativo).',
+  })
+  @IsOptional()
+  @IsString()
+  perfilIntranet?: string;
+
+  @ApiPropertyOptional({ description: 'Senha do login da intranet — nunca persistida no cadastro MDM.' })
+  @IsOptional()
+  @IsString()
+  senha?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  senhaConfirmacao?: string;
 }

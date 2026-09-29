@@ -93,6 +93,13 @@ export function listStoredCadastrosDelegations(): UserCadastrosPermission[] {
   return Object.values(readDelegationsMap());
 }
 
+export function removeCadastrosDelegation(userId: string): void {
+  if (typeof window === "undefined") return;
+  const map = readDelegationsMap();
+  delete map[userId];
+  localStorage.setItem(DELEGATIONS_STORAGE_KEY, JSON.stringify(map));
+}
+
 export function hasCadastrosModuleAccess(user: CadastrosUserContext): boolean {
   if (user.role === "ADMIN" || user.role === "SUPER_ADMIN") return true;
   if (!CADASTROS_MODULE_ROLES.includes(user.role as (typeof CADASTROS_MODULE_ROLES)[number])) {

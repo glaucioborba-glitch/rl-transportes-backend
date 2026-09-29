@@ -27,7 +27,7 @@ import { CadastrosColaboradorFormDto } from './dto/cadastros-colaborador-form.dt
 import { CadastrosColaboradorQueryDto } from './dto/cadastros-colaborador-query.dto';
 import { CreateFamiliarDto, UpdateFamiliarDto } from './dto/colaborador-familiar.dto';
 
-const CADASTROS_ROLES = [Role.ADMIN, Role.GERENTE] as const;
+const CADASTROS_ROLES = [Role.ADMIN, Role.GERENTE, Role.SUPER_ADMIN] as const;
 
 @ApiTags('cadastros')
 @ApiBearerAuth('access-token')
