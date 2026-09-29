@@ -24,6 +24,8 @@ const INTRANET_HUBS = new Set([
 const BACK_HREF_OVERRIDES: Array<[RegExp, string]> = [
   [/^\/financeiro\/areceber\/boletos\/[^/]+$/, "/financeiro/areceber"],
   [/^\/financeiro\/conta-corrente\/[^/]+$/, "/financeiro/conta-corrente"],
+  [/^\/financeiro\/faturas\/pacote\/[^/]+$/, "/financeiro/faturas"],
+  [/^\/financeiro\/faturas\/[^/]+$/, "/financeiro/faturas"],
   [/^\/admin\/config\/regua-cobranca$/, "/admin"],
   [/^\/operador\/gate\/alugueis$/, "/operador/gate/controle-entrada-saida"],
 ];

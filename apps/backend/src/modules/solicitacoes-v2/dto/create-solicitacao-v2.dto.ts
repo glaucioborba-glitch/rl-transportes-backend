@@ -17,6 +17,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
   ValidateIf,
@@ -130,6 +131,16 @@ export class AgendamentoFormDto {
   @ApiProperty({ enum: TurnoAgendamento })
   @IsEnum(TurnoAgendamento)
   turno!: TurnoAgendamento;
+
+  @ApiPropertyOptional({ example: '08:00', description: 'Início da janela (HH:mm)' })
+  @IsOptional()
+  @Matches(/^\d{2}:\d{2}$/)
+  horaInicio?: string;
+
+  @ApiPropertyOptional({ example: '12:00', description: 'Fim da janela (HH:mm)' })
+  @IsOptional()
+  @Matches(/^\d{2}:\d{2}$/)
+  horaFim?: string;
 }
 
 export class SolicitanteDto {

@@ -3,7 +3,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request = require('supertest');
 import * as bcrypt from 'bcrypt';
 import {
-  OutboxEventStatus,
   Role,
   StatusContainer,
   StatusPagamentoFatura,
@@ -184,7 +183,7 @@ describe('Billing Engine E2E (e2e)', () => {
     expect(calculateReeferSurcharge(5, -18, 45)).toBe(337.5);
   });
 
-  it('gate-out → pré-fatura CONSOLIDADA + fatura PROCESSANDO + outbox EMITIR_NFSE_BOLETO', async () => {
+  it('gate-out → pré-fatura CONSOLIDADA + fatura PENDENTE na fila (sem NFS-e)', async () => {
     const checkInReq = request(app.getHttpServer())
       .post(`/v2/gate/solicitacoes/${solicitacaoId}/check-in`)
       .set('Authorization', `Bearer ${tokenOp}`)
@@ -218,12 +217,13 @@ describe('Billing Engine E2E (e2e)', () => {
     expect(pfConsolidada).toBeTruthy();
 
     const fatura = await prisma.fatura.findFirst({ where: { preFaturaId: pfConsolidada!.id } });
-    expect(fatura?.statusPagamento).toBe(StatusPagamentoFatura.PROCESSANDO);
+    expect(fatura?.statusPagamento).toBe(StatusPagamentoFatura.PENDENTE);
+    expect(fatura?.faturaPacoteId).toBeNull();
 
     const outbox = await prisma.outboxEvent.findFirst({
       where: { eventType: 'EMITIR_NFSE_BOLETO', aggregateId: fatura!.id },
     });
-    expect(outbox?.status).toBe(OutboxEventStatus.PENDING);
+    expect(outbox).toBeNull();
   });
 
   it('double-consolidation guard — segunda consolidação lança ConflictException', async () => {

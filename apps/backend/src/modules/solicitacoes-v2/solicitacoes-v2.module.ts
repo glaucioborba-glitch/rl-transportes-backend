@@ -17,6 +17,7 @@ import { TenantModule } from '../../tenant/tenant.module';
 import { ContaCorrenteModule } from '../../conta-corrente/conta-corrente.module';
 import { ArmazenagemFaturamentoModule } from '../../armazenagem-faturamento/armazenagem-faturamento.module';
 import { PixQuitacaoSaidaService } from './pix-quitacao-saida.service';
+import { CadastrosModule } from '../../cadastros/cadastros.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { PixQuitacaoSaidaService } from './pix-quitacao-saida.service';
     TenantModule,
     ContaCorrenteModule,
     ArmazenagemFaturamentoModule,
+    CadastrosModule,
   ],
   controllers: [SolicitacoesV2Controller],
   providers: [SolicitacoesV2Service, SolicitacaoAnexoStorageService, PixQuitacaoSaidaService],

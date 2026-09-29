@@ -108,6 +108,21 @@ export function evaluateAluguelCycle(input: {
     result.valorTotal = roundMoney(result.valorTotal + valorUnitario);
   }
 
+  if (input.fase === 'INICIO') {
+    const diarias = result.items.filter(
+      (i) => i.eventoGatilho === EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
+    );
+    if (diarias.length) {
+      result.items = result.items.filter(
+        (i) => i.eventoGatilho !== EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
+      );
+      result.valorTotal = roundMoney(
+        result.valorTotal - diarias.reduce((acc, i) => acc + i.valorTotal, 0),
+      );
+      result.diasFaturaveis = 0;
+    }
+  }
+
   const extras: ItemFaturaCalculado[] = [];
   if (input.fase === 'INICIO' && Number(input.item.valorHandling) > 0) {
     const valor = roundMoney(Number(input.item.valorHandling));

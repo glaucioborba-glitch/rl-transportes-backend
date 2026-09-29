@@ -22,6 +22,7 @@ import { CatalogoMotoristasExternosService } from '../../catalogo-motoristas-ext
 import { CatalogoNaviosService } from '../../catalogo-navios/catalogo-navios.service';
 import { TenantConfigService } from '../../tenant/tenant-config.service';
 import { PixQuitacaoSaidaService } from './pix-quitacao-saida.service';
+import { CadastrosLocaisTransporteService } from '../../cadastros/cadastros-locais-transporte.service';
 import type { CreateSolicitacaoV2Dto } from './dto/create-solicitacao-v2.dto';
 import type { CxPortalRequestUser } from '../../cx-portais/types/cx-portal.types';
 import { TipoOperacaoSolicitacaoIntent } from '@prisma/client';
@@ -189,6 +190,17 @@ describe('SolicitacoesV2Service', () => {
               ids: [],
             }),
             debitarNaTransacao: jest.fn().mockResolvedValue({ exigido: false }),
+          },
+        },
+        {
+          provide: CadastrosLocaisTransporteService,
+          useValue: {
+            resolveDestinoCadastrado: jest.fn().mockResolvedValue({
+              id: 'local-1',
+              codigo: 'PORTONAVE',
+              nome: 'Portonave',
+            }),
+            labelDestino: (l: { nome: string; codigo: string }) => `${l.nome} (${l.codigo})`,
           },
         },
       ],

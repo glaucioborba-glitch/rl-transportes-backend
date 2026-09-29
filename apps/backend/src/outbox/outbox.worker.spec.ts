@@ -16,7 +16,7 @@ describe('OutboxWorker', () => {
     markProcessed: jest.fn(),
     markFailed: jest.fn(),
   };
-  const nfseBoleto = { processEmitirNfseBoleto: jest.fn() };
+  const nfseBoleto = { processEmitirNfseBoleto: jest.fn(), processEmitirFaturaPacote: jest.fn() };
   const whatsappNotify = { processWhatsappNotify: jest.fn() };
   const realtime = { emitDispatchUpdated: jest.fn() };
   const cls = {
@@ -62,6 +62,23 @@ describe('OutboxWorker', () => {
     expect(realtime.emitDispatchUpdated).toHaveBeenCalledWith(
       expect.objectContaining({ status: OutboxEventStatus.PROCESSED }),
     );
+  });
+
+  it('roteia EMITIR_FATURA_PACOTE para o processor do envelope FAT', async () => {
+    outbox.claimPending.mockResolvedValue([
+      {
+        id: 'e3',
+        eventType: 'EMITIR_FATURA_PACOTE',
+        payload: { faturaPacoteId: 'p1' },
+        aggregateId: 'p1',
+      },
+    ]);
+    outbox.markProcessed.mockResolvedValue(undefined);
+
+    await worker.tick();
+
+    expect(nfseBoleto.processEmitirFaturaPacote).toHaveBeenCalledWith('e3', { faturaPacoteId: 'p1' });
+    expect(outbox.markProcessed).toHaveBeenCalledWith('e3');
   });
 
   it('marca FAILED em tipo desconhecido', async () => {

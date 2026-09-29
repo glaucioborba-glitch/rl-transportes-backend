@@ -138,8 +138,22 @@ function formatBRL(valor: number): string {
 }
 
 /**
- * Ex.: "08 diárias de R$ 30,00 e 01 de R$ 45,00"
- * O substantivo só aparece no primeiro trecho (padrão de fatura).
+ * Ex.: "08 diárias excedentes de R$ 30,00 cada + 01 diária excedente de R$ 45,00 cada"
+ */
+export function formatarDiariasExcedentes(grupos: FaixaCobrancaGrupo[]): string {
+  if (!grupos.length) return '';
+  return grupos
+    .map((g) => {
+      const qtd = String(g.quantidade).padStart(2, '0');
+      const nome = g.quantidade === 1 ? 'diária excedente' : 'diárias excedentes';
+      return `${qtd} ${nome} de ${formatBRL(g.valorUnitario)} cada`;
+    })
+    .join(' + ');
+}
+
+/**
+ * Ex.: "08 dias de R$ 30,00 e 01 de R$ 45,00"
+ * O substantivo só aparece no primeiro trecho (energia e demais).
  */
 export function formatarFaixasCobranca(
   grupos: FaixaCobrancaGrupo[],

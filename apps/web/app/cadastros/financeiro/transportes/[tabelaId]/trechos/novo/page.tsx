@@ -1,8 +1,8 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { TarifaTransporteForm } from "../../components/tarifa-transporte-form";
-import { FinanceiroBreadcrumb, FinanceiroTabs } from "../../../components/financeiro-tabs";
+import { TarifaTransporteForm } from "../../../components/tarifa-transporte-form";
+import { FinanceiroBreadcrumb, FinanceiroTabs } from "../../../../components/financeiro-tabs";
 
 type Props = { params: { tabelaId: string } };
 

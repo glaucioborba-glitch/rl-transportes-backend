@@ -24,7 +24,7 @@ describe('Billing Sprint 1 — Diárias Corridas + Free Time Dinâmico', () => {
   it('PR-02: contêiner sexta→segunda = 3 diárias cobráveis (free time 0)', () => {
     const gateIn = new Date('2026-07-03T10:00:00.000Z');
     const gateOut = new Date('2026-07-06T10:00:00.000Z');
-    expect(diffDiasCalendario(gateIn, gateOut)).toBe(3);
+    expect(diffDiasCalendario(gateIn, gateOut)).toBe(4);
 
     const result = evaluateBillingRules({
       gateInAt: gateIn,
@@ -36,9 +36,9 @@ describe('Billing Sprint 1 — Diárias Corridas + Free Time Dinâmico', () => {
       pricingOverrides: { diasFreeTime: 0, valorDiaria: 15 },
     });
 
-    expect(result.diasNoPatio).toBe(3);
-    expect(result.diasFaturaveis).toBe(3);
-    expect(result.valorTotal).toBe(45);
+    expect(result.diasNoPatio).toBe(4);
+    expect(result.diasFaturaveis).toBe(4);
+    expect(result.valorTotal).toBe(60);
   });
 
   it('PR-03: hierarquia específica CHEIO vence AMBOS', () => {
@@ -85,8 +85,8 @@ describe('Billing Sprint 1 — Diárias Corridas + Free Time Dinâmico', () => {
       incluirGateIn: false,
       incluirGateOut: false,
     });
-    expect(result.diasFaturaveis).toBe(2);
-    expect(result.valorTotal).toBe(40);
+    expect(result.diasFaturaveis).toBe(3);
+    expect(result.valorTotal).toBe(60);
   });
 
   it('faixas escalonadas: 7 free + 18 dias = R$ 375 + handling no gate-out', () => {
@@ -136,12 +136,12 @@ describe('Billing Sprint 1 — Diárias Corridas + Free Time Dinâmico', () => {
       incluirGateOut: true,
       pricingOverrides: { diasFreeTime: 7, faixasDiaria: FAIXAS_DIARIA_PADRAO },
     });
-    expect(diffDiasCalendario(gateIn, gateOut)).toBe(18);
-    expect(result.diasFaturaveis).toBe(11);
+    expect(diffDiasCalendario(gateIn, gateOut)).toBe(19);
+    expect(result.diasFaturaveis).toBe(12);
     const handling = result.items.find((i) => i.eventoGatilho === EventoGatilhoTarifa.HANDLING);
     const diaria = result.items.find((i) => i.eventoGatilho === EventoGatilhoTarifa.DIARIA_ARMAZENAGEM);
     expect(handling?.valorTotal).toBe(150);
-    expect(diaria?.valorTotal).toBe(375);
-    expect(result.valorTotal).toBe(525);
+    expect(diaria?.valorTotal).toBe(420);
+    expect(result.valorTotal).toBe(570);
   });
 });

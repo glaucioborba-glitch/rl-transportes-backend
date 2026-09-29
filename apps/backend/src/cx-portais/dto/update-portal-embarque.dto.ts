@@ -19,9 +19,9 @@ export class UpdatePortalEmbarqueDto {
   @IsIn([...CAMPOS_EMBARQUE])
   campo!: (typeof CAMPOS_EMBARQUE)[number];
 
-  @ApiProperty({ description: 'Novo valor (vazio limpa o campo)' })
+  @ApiProperty({ description: 'Novo valor (vazio limpa o campo). Hora: HH:mm-HH:mm.' })
   @IsString()
-  @MaxLength(120)
+  @MaxLength(255)
   valor!: string;
 
   @ApiPropertyOptional({

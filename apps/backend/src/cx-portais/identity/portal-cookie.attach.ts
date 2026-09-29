@@ -5,10 +5,18 @@ const DEFAULT_ACCESS_MS = 60 * 60 * 1000;
 const DEFAULT_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 
 function cookieFlags() {
+  if (
+    process.env.AUTH_COOKIE_SECURE === '0' ||
+    process.env.AUTH_COOKIE_SECURE === 'false' ||
+    process.env.PORTAL_COOKIE_SECURE === '0' ||
+    process.env.PORTAL_COOKIE_SECURE === 'false'
+  ) {
+    return { secure: false, sameSite: 'lax' as const };
+  }
   const secure =
-    process.env.NODE_ENV === 'production' ||
     process.env.PORTAL_COOKIE_SECURE === '1' ||
-    process.env.AUTH_COOKIE_SECURE === '1';
+    process.env.AUTH_COOKIE_SECURE === '1' ||
+    process.env.NODE_ENV === 'production';
   return { secure, sameSite: 'lax' as const };
 }
 

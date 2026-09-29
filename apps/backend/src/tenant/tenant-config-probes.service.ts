@@ -234,15 +234,51 @@ export class TenantConfigProbesService {
       return { connected: false, message: 'Google Maps API key não configurada' };
     }
     try {
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=Brasil&key=${encodeURIComponent(maps.apiKey)}`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-      const json = (await res.json()) as { status?: string; error_message?: string };
-      const ok = json.status === 'OK' || json.status === 'ZERO_RESULTS';
+      const jsUrl = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(maps.apiKey)}&v=weekly`;
+      const jsRes = await fetch(jsUrl, { signal: AbortSignal.timeout(10_000) });
+      const jsText = await jsRes.text();
+      if (/InvalidKeyMapError|API key not valid|The provided API key is invalid/i.test(jsText)) {
+        return { connected: false, message: 'API key inválida.', latencyMs: Date.now() - start };
+      }
+      if (/RefererNotAllowedMapError/i.test(jsText)) {
+        return {
+          connected: true,
+          message:
+            'Chave válida (restrita a HTTP referrer). Abra Localização na intranet para ver o mapa.',
+          latencyMs: Date.now() - start,
+        };
+      }
+      if (/ApiNotActivatedMapError/i.test(jsText)) {
+        return {
+          connected: false,
+          message:
+            'Ative a Maps JavaScript API no projeto Google Cloud desta chave (APIs e serviços → Biblioteca). Sem isso o mapa não abre na apresentação.',
+          latencyMs: Date.now() - start,
+        };
+      }
+
+      // Geocoding é outra API. "This API is not activated" aqui = chave válida, mapa usa JS.
+      const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=Brasil&key=${encodeURIComponent(maps.apiKey)}`;
+      const geoRes = await fetch(geoUrl, { signal: AbortSignal.timeout(10_000) });
+      const geo = (await geoRes.json()) as { status?: string; error_message?: string };
+      const geoOk = geo.status === 'OK' || geo.status === 'ZERO_RESULTS';
+      const keyOkOtherApi =
+        geo.status === 'REQUEST_DENIED' &&
+        /not activated|not authorized to use this API|this API project is not authorized/i.test(
+          geo.error_message ?? '',
+        );
+      if (geoOk || keyOkOtherApi || (jsRes.ok && /google/i.test(jsText))) {
+        return {
+          connected: true,
+          message: geoOk
+            ? 'Maps JavaScript / Geocoding acessível'
+            : 'Chave reconhecida. O mapa da intranet usa Maps JavaScript API (não Geocoding). Abra Localização para apresentar.',
+          latencyMs: Date.now() - start,
+        };
+      }
       return {
-        connected: ok,
-        message: ok
-          ? 'Google Maps JavaScript / Geocoding acessível'
-          : json.error_message || json.status || `HTTP ${res.status}`,
+        connected: false,
+        message: geo.error_message || geo.status || this.mapsJsErrorMessage(jsText) || `HTTP ${jsRes.status}`,
         latencyMs: Date.now() - start,
       };
     } catch (err) {
@@ -252,6 +288,21 @@ export class TenantConfigProbesService {
         latencyMs: Date.now() - start,
       };
     }
+  }
+
+  private mapsJsErrorMessage(script: string): string | null {
+    if (/ApiNotActivatedMapError/i.test(script)) {
+      return 'Ative a Maps JavaScript API no projeto Google Cloud desta chave (APIs e serviços → Biblioteca).';
+    }
+    if (/InvalidKeyMapError/i.test(script)) {
+      return 'API key inválida.';
+    }
+    if (/DeletedApiProjectMapError/i.test(script)) {
+      return 'Projeto Google Cloud desta chave foi excluído.';
+    }
+    const billing = script.match(/You must enable Billing[\s\S]{0,80}/i);
+    if (billing) return billing[0].replace(/\s+/g, ' ').trim();
+    return null;
   }
 
   async testGoogleRoutesConnection(): Promise<IntegrationTestResult> {

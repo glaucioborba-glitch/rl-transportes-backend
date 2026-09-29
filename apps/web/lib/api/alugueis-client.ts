@@ -51,6 +51,7 @@ export function iniciarAluguel(data: {
   clienteId: string;
   tabelaAluguelId?: string;
   observacao?: string;
+  solicitacaoAluguelId?: string;
 }) {
   return staffJson<{ id: string; numero: number; unidadeProcessoId: string; unidadeIso: string }>(
     "/v2/alugueis",
@@ -67,4 +68,65 @@ export function devolverAluguel(id: string) {
     `/v2/alugueis/${encodeURIComponent(id)}/devolver`,
     { method: "POST" },
   );
+}
+
+export type StaffSolicitacaoAluguel = {
+  id: string;
+  protocolo: string;
+  clienteId: string;
+  empresa: string | null;
+  quantidade: number;
+  finalidade: "RETIRADA_USO_EXTERNO" | "UTILIZACAO_PATIO_FL";
+  dataColeta: string | null;
+  dataPrevistaDevolucao: string | null;
+  status: "PENDENTE" | "APROVADO" | "REJEITADO" | "INICIADO" | "ENCERRADO";
+  motivoRejeicao: string | null;
+  createdAt: string;
+  updatedAt: string;
+  autorizadoEm: string | null;
+  iniciados?: number;
+  contrato?: {
+    unidadeIso: string | null;
+    numero: number | null;
+    idLabel: string | null;
+    status: "ATIVO" | "ENCERRADO";
+  } | null;
+};
+
+export type MotivoRejeicaoAluguel = {
+  id: string;
+  codigo: string;
+  descricao: string;
+  exigeObservacao: boolean;
+};
+
+export function staffListarMotivosRejeicaoAluguel() {
+  return staffJson<{ items: MotivoRejeicaoAluguel[]; total: number }>("/v2/alugueis/motivos-rejeicao");
+}
+
+export function staffListarReservasAluguel() {
+  return staffJson<{ items: StaffSolicitacaoAluguel[]; total: number }>("/v2/alugueis/reservas");
+}
+
+export function staffListarSolicitacoesAluguel(status?: string) {
+  const q = status ? `?status=${encodeURIComponent(status)}` : "";
+  return staffJson<{ items: StaffSolicitacaoAluguel[]; total: number }>(`/v2/alugueis/solicitacoes${q}`);
+}
+
+export function staffObterSolicitacaoAluguel(id: string) {
+  return staffJson<StaffSolicitacaoAluguel>(`/v2/alugueis/solicitacoes/${encodeURIComponent(id)}`);
+}
+
+export function staffAprovarSolicitacaoAluguel(id: string) {
+  return staffJson<StaffSolicitacaoAluguel>(`/v2/alugueis/solicitacoes/${encodeURIComponent(id)}/aprovar`, {
+    method: "POST",
+  });
+}
+
+export function staffRejeitarSolicitacaoAluguel(id: string, motivo: string) {
+  return staffJson<StaffSolicitacaoAluguel>(`/v2/alugueis/solicitacoes/${encodeURIComponent(id)}/rejeitar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ motivo }),
+  });
 }

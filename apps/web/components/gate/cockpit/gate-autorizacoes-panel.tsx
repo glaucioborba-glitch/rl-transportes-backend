@@ -11,6 +11,14 @@ import {
   staffListarSolicitacoesV2,
   staffRejeitarSolicitacaoV2,
 } from "@/lib/api/staff-client";
+import {
+  staffAprovarSolicitacaoAluguel,
+  staffListarMotivosRejeicaoAluguel,
+  staffListarSolicitacoesAluguel,
+  staffRejeitarSolicitacaoAluguel,
+  type MotivoRejeicaoAluguel,
+} from "@/lib/api/alugueis-client";
+import { formatYmdBr, rotuloFinalidadeAluguel } from "@/lib/aluguel-solicitacao";
 import { collectSolicitacaoContainerISOs } from "@/lib/container-display";
 import { podeAprovarOs } from "@/lib/gate/gate-cockpit-permissions";
 import type { GateContainerSituacao } from "@/lib/gate/gate-cockpit-types";
@@ -44,6 +52,7 @@ type ContainerRow = {
 };
 
 type AutorizacaoItem = {
+  kind: "gate" | "aluguel";
   id: string;
   protocolo: string;
   empresa: string;
@@ -54,6 +63,10 @@ type AutorizacaoItem = {
   status: string;
   tipoOperacao: string | null;
   criadoEm: string;
+  quantidade?: number;
+  finalidade?: string | null;
+  dataColeta?: string | null;
+  dataPrevistaDevolucao?: string | null;
 };
 
 function SituacaoBadge({ situacao }: { situacao: GateContainerSituacao }) {
@@ -86,6 +99,7 @@ function mapItem(
   const comTomada = containers.find((c) => rotuloTomadaPedido({ tipo: c.tipo, tipos }));
 
   return {
+    kind: "gate",
     id: String(row.id),
     protocolo: String(row.protocolo ?? ""),
     empresa: cliente?.razaoSocial ?? "—",
@@ -110,22 +124,46 @@ export function GateAutorizacoesPanel() {
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<AutorizacaoItem[]>([]);
   const [rejeitarId, setRejeitarId] = useState<string | null>(null);
+  const [rejeitarKind, setRejeitarKind] = useState<"gate" | "aluguel">("gate");
   const [motivo, setMotivo] = useState("");
+  const [motivosAluguel, setMotivosAluguel] = useState<MotivoRejeicaoAluguel[]>([]);
+  const [motivoAluguelId, setMotivoAluguelId] = useState("");
+  const [observacaoAluguel, setObservacaoAluguel] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
     try {
-      const [pendente, analise, catalogo] = await Promise.all([
+      const [pendente, analise, aluguel, catalogo] = await Promise.all([
         staffListarSolicitacoesV2({ status: "PENDENTE", limit: 100, page: 1 }),
         staffListarSolicitacoesV2({ status: "EM_ANALISE", limit: 100, page: 1 }),
+        staffListarSolicitacoesAluguel("PENDENTE").catch(() => ({ items: [] })),
         listCadastrosTiposContainer().catch(() => ({ items: [] as Array<{ codigo: string; tomadaReefer: boolean }> })),
       ]);
       const tiposNext = catalogo.items ?? [];
       const merged = new Map<string, AutorizacaoItem>();
       for (const row of [...pendente.items, ...analise.items]) {
         const mapped = mapItem(row as Record<string, unknown>, tiposNext);
-        merged.set(mapped.id, mapped);
+        merged.set(`gate:${mapped.id}`, mapped);
+      }
+      for (const row of aluguel.items) {
+        merged.set(`aluguel:${row.id}`, {
+          kind: "aluguel",
+          id: row.id,
+          protocolo: row.protocolo,
+          empresa: row.empresa ?? "—",
+          containers: [],
+          tipoTamanho: null,
+          situacao: null,
+          tomadaLabel: null,
+          status: row.status,
+          tipoOperacao: null,
+          criadoEm: row.createdAt,
+          quantidade: row.quantidade,
+          finalidade: row.finalidade,
+          dataColeta: row.dataColeta,
+          dataPrevistaDevolucao: row.dataPrevistaDevolucao,
+        });
       }
       const list = Array.from(merged.values()).sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
       setItems(list);
@@ -142,11 +180,37 @@ export function GateAutorizacoesPanel() {
     return () => window.clearInterval(t);
   }, [load]);
 
-  async function aprovar(id: string) {
+  useEffect(() => {
+    if (!rejeitarId || rejeitarKind !== "aluguel") return;
+    let on = true;
+    void (async () => {
+      try {
+        const res = await staffListarMotivosRejeicaoAluguel();
+        if (on) setMotivosAluguel(res.items);
+      } catch {
+        if (on) {
+          setMotivosAluguel([]);
+          toast.error("Não foi possível carregar os motivos de rejeição de aluguel.");
+        }
+      }
+    })();
+    return () => {
+      on = false;
+    };
+  }, [rejeitarId, rejeitarKind]);
+
+  const motivoAluguelSelecionado = motivosAluguel.find((m) => m.id === motivoAluguelId) ?? null;
+
+  async function aprovar(item: AutorizacaoItem) {
     setBusy(true);
     try {
-      await staffAprovarSolicitacaoV2(id);
-      toast.success("Solicitação aprovada");
+      if (item.kind === "aluguel") {
+        await staffAprovarSolicitacaoAluguel(item.id);
+        toast.success("Pedido de aluguel autorizado");
+      } else {
+        await staffAprovarSolicitacaoV2(item.id);
+        toast.success("Solicitação aprovada");
+      }
       await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Falha ao aprovar");
@@ -156,13 +220,35 @@ export function GateAutorizacoesPanel() {
   }
 
   async function rejeitar() {
-    if (!rejeitarId || !motivo.trim()) return;
+    if (!rejeitarId) return;
+    let texto = motivo.trim();
+    if (rejeitarKind === "aluguel") {
+      if (!motivoAluguelSelecionado) {
+        toast.error("Selecione o motivo da rejeição.");
+        return;
+      }
+      if (motivoAluguelSelecionado.exigeObservacao && !observacaoAluguel.trim()) {
+        toast.error("Este motivo exige observação.");
+        return;
+      }
+      texto = observacaoAluguel.trim()
+        ? `${motivoAluguelSelecionado.descricao}: ${observacaoAluguel.trim()}`
+        : motivoAluguelSelecionado.descricao;
+    } else if (!texto) {
+      return;
+    }
     setBusy(true);
     try {
-      await staffRejeitarSolicitacaoV2(rejeitarId, motivo.trim());
+      if (rejeitarKind === "aluguel") {
+        await staffRejeitarSolicitacaoAluguel(rejeitarId, texto);
+      } else {
+        await staffRejeitarSolicitacaoV2(rejeitarId, texto);
+      }
       toast.success("Solicitação rejeitada");
       setRejeitarId(null);
       setMotivo("");
+      setMotivoAluguelId("");
+      setObservacaoAluguel("");
       await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Falha ao rejeitar");
@@ -177,7 +263,7 @@ export function GateAutorizacoesPanel() {
         <div>
           <h1 className="text-2xl font-bold">Autorizações</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Aprovar solicitações antes da portaria.
+            Aprovar solicitações de gate e pedidos de aluguel.
           </p>
         </div>
         <Skeleton className="h-96 w-full" />
@@ -191,7 +277,7 @@ export function GateAutorizacoesPanel() {
         <div>
           <h1 className="text-2xl font-bold">Autorizações</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Aprovar solicitações antes da portaria.
+            Aprovar solicitações de gate e pedidos de aluguel.
           </p>
         </div>
         <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => void load()}>
@@ -209,33 +295,50 @@ export function GateAutorizacoesPanel() {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {items.map((item) => (
             <div
-              key={item.id}
+              key={`${item.kind}:${item.id}`}
               className="flex w-full flex-col rounded-lg border border-white/10 bg-[#0b1018]/90 p-5"
             >
-              <div className="mb-1 space-y-1">
-                {item.containers.map((iso, idx) => (
-                  <div key={`${item.id}-${iso}-${idx}`} className="flex flex-wrap items-center gap-2">
-                    <ContainerNumber value={iso} />
-                    {item.containers.length > 1 ? (
-                      <span className="text-xs text-muted-foreground">Unidade #{idx + 1}</span>
-                    ) : null}
+              {item.kind === "aluguel" ? (
+                <div className="mb-1 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="neutral" className="text-xs">
+                      Aluguel
+                    </Badge>
+                    <span className="text-sm text-white">1 unidade</span>
                   </div>
-                ))}
-              </div>
-
-              {item.tipoTamanho || item.situacao || item.tomadaLabel ? (
-                <div className="mb-1 flex flex-wrap items-center gap-2">
-                  {item.tipoTamanho ? (
-                    <span className="text-sm text-muted-foreground">{item.tipoTamanho}</span>
-                  ) : null}
-                  {item.situacao ? <SituacaoBadge situacao={item.situacao} /> : null}
-                  <TomadaPedidoBadge label={item.tomadaLabel} />
+                  <p className="text-sm text-muted-foreground">{rotuloFinalidadeAluguel(item.finalidade)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Coleta prevista {formatYmdBr(item.dataColeta)} · Previsão de devolução{" "}
+                    {formatYmdBr(item.dataPrevistaDevolucao)}
+                  </p>
                 </div>
-              ) : null}
+              ) : (
+                <>
+                  <div className="mb-1 space-y-1">
+                    {item.containers.map((iso, idx) => (
+                      <div key={`${item.id}-${iso}-${idx}`} className="flex flex-wrap items-center gap-2">
+                        <ContainerNumber value={iso} />
+                        {item.containers.length > 1 ? (
+                          <span className="text-xs text-muted-foreground">Unidade #{idx + 1}</span>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                  {item.tipoTamanho || item.situacao || item.tomadaLabel ? (
+                    <div className="mb-1 flex flex-wrap items-center gap-2">
+                      {item.tipoTamanho ? (
+                        <span className="text-sm text-muted-foreground">{item.tipoTamanho}</span>
+                      ) : null}
+                      {item.situacao ? <SituacaoBadge situacao={item.situacao} /> : null}
+                      <TomadaPedidoBadge label={item.tomadaLabel} />
+                    </div>
+                  ) : null}
+                </>
+              )}
 
               <p className="text-base text-white">{item.empresa}</p>
               <div className="mt-1 flex flex-wrap items-center gap-2">
-                <SolicitacaoDirecaoBadge intent={item.tipoOperacao} />
+                {item.kind === "gate" ? <SolicitacaoDirecaoBadge intent={item.tipoOperacao} /> : null}
                 <p className="text-sm text-muted-foreground">
                   {item.protocolo} · {item.status.replace("_", " ")}
                 </p>
@@ -250,7 +353,7 @@ export function GateAutorizacoesPanel() {
                       size="sm"
                       className="h-7 border-green-500/30 text-xs text-green-400 hover:bg-green-500/10"
                       disabled={busy}
-                      onClick={() => void aprovar(item.id)}
+                      onClick={() => void aprovar(item)}
                     >
                       <Check className="mr-1 h-3.5 w-3.5" />
                       Aprovar
@@ -261,7 +364,13 @@ export function GateAutorizacoesPanel() {
                       size="sm"
                       className="h-7 border-red-500/30 text-xs text-red-400 hover:bg-red-500/10"
                       disabled={busy}
-                      onClick={() => setRejeitarId(item.id)}
+                      onClick={() => {
+                        setRejeitarKind(item.kind);
+                        setMotivo("");
+                        setMotivoAluguelId("");
+                        setObservacaoAluguel("");
+                        setRejeitarId(item.id);
+                      }}
                     >
                       <X className="mr-1 h-3.5 w-3.5" />
                       Rejeitar
@@ -274,7 +383,15 @@ export function GateAutorizacoesPanel() {
                   className="h-7 p-0 text-xs text-[var(--accent)] lg:ml-auto"
                   asChild
                 >
-                  <Link href={`/operador/gate/autorizacoes/${item.id}`}>Ver detalhes →</Link>
+                  <Link
+                    href={
+                      item.kind === "aluguel"
+                        ? `/operador/gate/autorizacoes/aluguel/${item.id}`
+                        : `/operador/gate/autorizacoes/${item.id}`
+                    }
+                  >
+                    Ver detalhes →
+                  </Link>
                 </Button>
               </div>
             </div>
@@ -287,17 +404,58 @@ export function GateAutorizacoesPanel() {
           <DialogHeader>
             <DialogTitle>Rejeitar autorização</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="motivo-auth-full" className="text-sm text-muted-foreground">
-              Motivo
-            </Label>
-            <Input
-              id="motivo-auth-full"
-              className="border-white/15 bg-black/40 text-base"
-              value={motivo}
-              onChange={(e) => setMotivo(e.target.value)}
-            />
-          </div>
+          {rejeitarKind === "aluguel" ? (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="motivo-auth-aluguel" className="text-sm text-muted-foreground">
+                  Motivo
+                </Label>
+                <select
+                  id="motivo-auth-aluguel"
+                  className="h-10 w-full rounded-md border border-white/15 bg-black/40 px-3 text-sm"
+                  value={motivoAluguelId}
+                  onChange={(e) => setMotivoAluguelId(e.target.value)}
+                >
+                  <option value="">Selecione</option>
+                  {motivosAluguel.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.descricao}
+                    </option>
+                  ))}
+                </select>
+                {motivosAluguel.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Cadastre motivos em Operacional → Motivos de Rejeição (tipo Rejeição Aluguel).
+                  </p>
+                ) : null}
+              </div>
+              {motivoAluguelSelecionado?.exigeObservacao ? (
+                <div className="space-y-2">
+                  <Label htmlFor="obs-auth-aluguel" className="text-sm text-muted-foreground">
+                    Observação
+                  </Label>
+                  <Input
+                    id="obs-auth-aluguel"
+                    className="border-white/15 bg-black/40 text-base"
+                    value={observacaoAluguel}
+                    onChange={(e) => setObservacaoAluguel(e.target.value)}
+                  />
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="motivo-auth-full" className="text-sm text-muted-foreground">
+                Motivo
+              </Label>
+              <Input
+                id="motivo-auth-full"
+                className="border-white/15 bg-black/40 text-base"
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+              />
+            </div>
+          )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setRejeitarId(null)}>
               Cancelar
@@ -305,7 +463,13 @@ export function GateAutorizacoesPanel() {
             <Button
               type="button"
               className="bg-rose-700 hover:bg-rose-600"
-              disabled={busy || !motivo.trim()}
+              disabled={
+                busy ||
+                (rejeitarKind === "aluguel"
+                  ? !motivoAluguelSelecionado ||
+                    (motivoAluguelSelecionado.exigeObservacao && !observacaoAluguel.trim())
+                  : !motivo.trim())
+              }
               onClick={() => void rejeitar()}
             >
               Rejeitar

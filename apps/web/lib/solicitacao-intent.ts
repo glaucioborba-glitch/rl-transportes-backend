@@ -67,9 +67,27 @@ export function intentUsesPrevisaoRetirada(intent: TipoOperacaoSolicitacaoIntent
   return intent === "SOLICITAR_IMPORTACAO_COLETA_DEPOT";
 }
 
-/** Export/entrega depot — deadline navio/booking. */
+/** Export/entrega depot — data e janela de horário do agendamento. */
 export function intentUsesBookingDeadline(intent: TipoOperacaoSolicitacaoIntent | null): boolean {
   return intent === "SOLICITAR_EXPORTACAO_ENTREGA_DEPOT";
+}
+
+export function todayDateInputValue(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function horariosAgendamentoSlots(stepMin = 30): string[] {
+  const out: string[] = [];
+  for (let m = 0; m < 24 * 60; m += stepMin) {
+    const hh = String(Math.floor(m / 60)).padStart(2, "0");
+    const mm = String(m % 60).padStart(2, "0");
+    out.push(`${hh}:${mm}`);
+  }
+  return out;
 }
 
 export function optionalDateTimeLocalToIso(value: string): string | undefined {

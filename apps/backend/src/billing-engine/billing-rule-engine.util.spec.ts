@@ -90,7 +90,7 @@ describe('billing-rule-engine.util', () => {
   it('PR-02: diffDiasCalendario conta fim de semana (sexta→segunda = 3 dias)', () => {
     const sexta = new Date('2026-07-03T10:00:00.000Z'); // sexta
     const segunda = new Date('2026-07-06T10:00:00.000Z'); // segunda
-    expect(diffDiasCalendario(sexta, segunda)).toBe(3);
+    expect(diffDiasCalendario(sexta, segunda)).toBe(4);
   });
 
   it('PR-03: pickRegra prefere status CHEIO sobre AMBOS', () => {
@@ -179,11 +179,11 @@ describe('billing-rule-engine.util', () => {
       incluirGateOut: false,
       pricingOverrides: { diasFreeTime: 0, valorDiaria: 15 },
     });
-    expect(result.diasNoPatio).toBe(9);
-    expect(result.diasFaturaveis).toBe(9);
+    expect(result.diasNoPatio).toBe(10);
+    expect(result.diasFaturaveis).toBe(10);
     const diaria = result.items.find((i) => i.eventoGatilho === EventoGatilhoTarifa.DIARIA_ARMAZENAGEM);
     expect(diaria?.valorUnitario).toBe(15);
-    expect(diaria?.valorTotal).toBe(135);
+    expect(diaria?.valorTotal).toBe(150);
   });
 
   it('cobra diária só com override, sem regra de pátio', () => {
@@ -199,7 +199,7 @@ describe('billing-rule-engine.util', () => {
     });
     const diaria = result.items.find((i) => i.eventoGatilho === EventoGatilhoTarifa.DIARIA_ARMAZENAGEM);
     expect(diaria?.descricao).toMatch(/aluguel/i);
-    expect(diaria?.valorTotal).toBe(240);
+    expect(diaria?.valorTotal).toBe(320);
     expect(diaria?.regraTarifariaId).toBeNull();
   });
 
@@ -213,7 +213,7 @@ describe('billing-rule-engine.util', () => {
       incluirGateIn: true,
       incluirGateOut: false,
     });
-    expect(result.diasNoPatio).toBe(4);
+    expect(result.diasNoPatio).toBe(5);
     expect(result.diasFaturaveis).toBe(0);
     expect(result.items.some((i) => i.eventoGatilho === EventoGatilhoTarifa.DIARIA_ARMAZENAGEM)).toBe(
       false,
@@ -231,11 +231,11 @@ describe('billing-rule-engine.util', () => {
       incluirGateIn: true,
       incluirGateOut: true,
     });
-    expect(result.diasFaturaveis).toBe(4);
+    expect(result.diasFaturaveis).toBe(5);
     const diaria = result.items.find((i) => i.eventoGatilho === EventoGatilhoTarifa.DIARIA_ARMAZENAGEM);
-    expect(diaria?.quantidade).toBe(4);
-    expect(diaria?.valorTotal).toBe(340);
-    expect(result.valorTotal).toBe(610);
+    expect(diaria?.quantidade).toBe(5);
+    expect(diaria?.valorTotal).toBe(425);
+    expect(result.valorTotal).toBe(695);
   });
 
   it('calculateReeferSurcharge aplica fator por set point', () => {
@@ -338,7 +338,9 @@ describe('billing-rule-engine.util', () => {
     expect(result.diasFreeTime).toBe(7);
     expect(handling?.valorTotal).toBe(300);
     expect(diaria?.valorTotal).toBe(285);
-    expect(diaria?.detalheCobranca).toBe('08 diárias de R$ 30,00 e 01 de R$ 45,00');
+    expect(diaria?.detalheCobranca).toBe(
+      '08 diárias excedentes de R$ 30,00 cada + 01 diária excedente de R$ 45,00 cada',
+    );
     expect(energia?.valorUnitario).toBe(220);
     expect(energia?.quantidade).toBe(16);
     expect(energia?.valorTotal).toBe(3520);

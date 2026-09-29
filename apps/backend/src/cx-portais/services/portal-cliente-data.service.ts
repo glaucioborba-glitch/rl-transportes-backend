@@ -20,6 +20,7 @@ import {
   isAlcanceEmbarque,
   isCampoEmbarque,
   normalizeValorEmbarque,
+  valorCampoEmbarque,
   valoresBatemAlcance,
 } from '../embarque-campo.util';
 import { DashboardPortalService } from '../dashboard/dashboard-portal.service';
@@ -973,6 +974,10 @@ export class PortalClienteDataService {
                 booking: true,
                 processo: true,
                 navio: true,
+                localDestino: true,
+                dataAgendamento: true,
+                horaInicio: true,
+                horaFim: true,
                 tamanho: true,
                 tipo: true,
                 status: true,
@@ -1016,11 +1021,18 @@ export class PortalClienteDataService {
    */
   async atualizarEmbarquePatio(cx: CxPortalRequestUser, dto: UpdatePortalEmbarqueDto) {
     if (!isCampoEmbarque(dto.campo)) {
-      throw new BadRequestException('Campo inválido. Use booking, processo ou navio.');
+      throw new BadRequestException(
+        'Campo inválido. Use booking, processo, navio, localDestino, dataAgendamento ou horaJanela.',
+      );
     }
     const alcance = isAlcanceEmbarque(dto.alcance) ? dto.alcance : 'unidade';
     const campo = dto.campo;
-    const valor = normalizeValorEmbarque(campo, dto.valor);
+    let valor: string;
+    try {
+      valor = normalizeValorEmbarque(campo, dto.valor);
+    } catch (e) {
+      throw new BadRequestException(e instanceof Error ? e.message : 'Valor inválido.');
+    }
     const clienteId = await this.clientScope(cx);
     const iso = stripContainerIsoCanonical(dto.unidadeIso);
     if (!iso) throw new BadRequestException('Unidade inválida.');
@@ -1097,7 +1109,7 @@ export class PortalClienteDataService {
     let atualizadas = 0;
     await this.prisma.$transaction(async (tx) => {
       for (const alvo of alvos) {
-        const antes = String(alvo.container[campo] ?? '').trim();
+        const antes = valorCampoEmbarque(alvo.container, campo);
         const antesNorm = campo === 'navio' ? antes.toUpperCase() : antes;
         if (antesNorm === valor) continue;
         await tx.containerSolicitacao.update({
@@ -1155,6 +1167,10 @@ export class PortalClienteDataService {
       booking: campo === 'booking' ? valor : containerOrigem.booking,
       processo: campo === 'processo' ? valor : containerOrigem.processo,
       navio: campo === 'navio' ? valor : containerOrigem.navio,
+      localDestino: campo === 'localDestino' ? valor || null : containerOrigem.localDestino ?? null,
+      dataAgendamento:
+        campo === 'dataAgendamento' ? valor || null : valorCampoEmbarque(containerOrigem, 'dataAgendamento') || null,
+      horaJanela: campo === 'horaJanela' ? valor || null : valorCampoEmbarque(containerOrigem, 'horaJanela') || null,
     };
   }
 
@@ -1205,6 +1221,10 @@ type SaldoPatioContainerRef = {
   booking: string;
   processo: string;
   navio?: string;
+  localDestino?: string | null;
+  dataAgendamento?: Date | string | null;
+  horaInicio?: string | null;
+  horaFim?: string | null;
   tamanho: string;
   tipo: string;
   status: string;
@@ -1250,6 +1270,10 @@ function mapSaldoPatioItem(input: {
     booking: c?.booking?.trim() || null,
     processo: c?.processo?.trim() || null,
     navio: c?.navio?.trim() || null,
+    localDestino: c?.localDestino?.trim() || null,
+    dataAgendamento: c ? valorCampoEmbarque(c, 'dataAgendamento') || null : null,
+    horaInicio: c?.horaInicio?.trim() || null,
+    horaFim: c?.horaFim?.trim() || null,
     lacre,
     setPoint: c?.setPoint ?? null,
     unidadeProcessoNumero: input.unidadeProcessoNumero ?? null,

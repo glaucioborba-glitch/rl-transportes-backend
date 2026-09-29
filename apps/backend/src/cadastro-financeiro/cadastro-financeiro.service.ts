@@ -236,6 +236,8 @@ export class CadastroFinanceiroService {
         cadastroTabelaTransporteId: true,
         cadastroTabelaServicoId: true,
         cadastroTabelaAluguelId: true,
+        faturamentoModo: true,
+        faturamentoHora: true,
       },
     });
     return rows.map((row) => ({
@@ -253,6 +255,8 @@ export class CadastroFinanceiroService {
       cadastroTabelaTransporteId?: string;
       cadastroTabelaServicoId?: string;
       cadastroTabelaAluguelId?: string;
+      faturamentoModo?: 'MANUAL' | 'AUTOMATICO';
+      faturamentoHora?: string;
     },
     analistaId: string,
   ) {
@@ -287,11 +291,19 @@ export class CadastroFinanceiroService {
 
     const mudouPagamento =
       cliente.condicaoPagamento !== condicaoPagamento || cliente.prazoPagamento !== dto.prazoPagamento;
+    const modo = dto.faturamentoModo ?? cliente.faturamentoModo;
+    const horaRaw = (dto.faturamentoHora ?? cliente.faturamentoHora ?? '').trim();
+    if (horaRaw && !/^([01]\d|2[0-3]):[0-5]\d$/.test(horaRaw)) {
+      throw new BadRequestException('Informe a hora no formato HH:mm (ex.: 18:00).');
+    }
+    const hora = modo === 'AUTOMATICO' ? horaRaw || '18:00' : null;
     const atualizado = await this.prisma.cliente.update({
       where: { id: clienteId },
       data: {
         condicaoPagamento,
         prazoPagamento: dto.prazoPagamento,
+        faturamentoModo: modo,
+        faturamentoHora: hora,
         analisadoPor: analistaId,
         analisadoEm: new Date(),
         ...(billingTabelaPrecoId
@@ -317,6 +329,8 @@ export class CadastroFinanceiroService {
         cadastroTabelaTransporteId: true,
         cadastroTabelaServicoId: true,
         cadastroTabelaAluguelId: true,
+        faturamentoModo: true,
+        faturamentoHora: true,
       },
     });
     if (mudouPagamento) {

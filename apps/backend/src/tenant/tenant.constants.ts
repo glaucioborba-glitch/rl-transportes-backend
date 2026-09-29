@@ -6,6 +6,7 @@ export const TENANT_SCOPED_MODELS = new Set([
   'Funcionario',
   'AuditLog',
   'Fatura',
+  'FaturaPacote',
   'Faturamento',
   'ClienteContaCorrenteLancamento',
   'ClientePixCreditoComprovante',
@@ -27,6 +28,7 @@ export const TENANT_SCOPED_MODELS = new Set([
   // encontrado só pelo ISO (dois terminais com o mesmo contêiner colidiam).
   'CadastroTabelaPreco',
   'UnidadeProcesso',
+  'SolicitacaoAluguel',
 ]);
 
 export const DEFAULT_TENANT_ID = 'default';

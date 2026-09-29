@@ -18,10 +18,13 @@ export function resolveCookieSecurityFlags(): {
   secure: boolean;
   sameSite: 'lax';
 } {
+  if (process.env.AUTH_COOKIE_SECURE === '0' || process.env.AUTH_COOKIE_SECURE === 'false') {
+    return { sameSite: 'lax', secure: false };
+  }
   const secure =
-    process.env.NODE_ENV === 'production' ||
     process.env.AUTH_COOKIE_SECURE === '1' ||
-    process.env.AUTH_COOKIE_SECURE === 'true';
+    process.env.AUTH_COOKIE_SECURE === 'true' ||
+    process.env.NODE_ENV === 'production';
   return { sameSite: 'lax', secure };
 }
 

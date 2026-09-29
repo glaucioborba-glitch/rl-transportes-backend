@@ -71,6 +71,8 @@ export class OutboxWorker implements OnModuleInit, OnModuleDestroy {
     try {
       if (eventType === 'EMITIR_NFSE_BOLETO') {
         await this.nfseBoleto.processEmitirNfseBoleto(id, payload);
+      } else if (eventType === 'EMITIR_FATURA_PACOTE') {
+        await this.nfseBoleto.processEmitirFaturaPacote(id, payload);
       } else if (eventType === OUTBOX_WHATSAPP_NOTIFY) {
         await this.whatsappNotify.processWhatsappNotify(id, payload);
       } else if (

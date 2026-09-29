@@ -112,6 +112,11 @@ import { CadastrosTerceirosService } from './cadastros-terceiros.service';
     CadastrosTerceirosDocumentosService,
     OperacionalVinculoService,
   ],
-  exports: [CadastrosContainerCacheService, CadastrosTiposContainerService, CadastrosTabelasServicosService],
+  exports: [
+    CadastrosContainerCacheService,
+    CadastrosTiposContainerService,
+    CadastrosTabelasServicosService,
+    CadastrosLocaisTransporteService,
+  ],
 })
 export class CadastrosModule {}

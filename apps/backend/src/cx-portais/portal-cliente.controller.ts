@@ -55,6 +55,7 @@ import { AgendamentosService } from '../agendamentos/agendamentos.service';
 import { PortalCreateAgendamentoDto } from '../agendamentos/dto/portal-create-agendamento.dto';
 import { YardSnapshotService } from '../yard-read/yard-snapshot.service';
 import { CadastrosTiposContainerService } from '../cadastros/cadastros-tipos-container.service';
+import { CadastrosLocaisTransporteService } from '../cadastros/cadastros-locais-transporte.service';
 import { PatioV2Service } from '../patio-v2/patio.service';
 import { PortalSolicitarTomadaDto } from '../patio-v2/dto/tomada.dto';
 import { TenantConfigService } from '../tenant/tenant-config.service';
@@ -107,6 +108,7 @@ export class PortalClienteController {
     private readonly agendamentosService: AgendamentosService,
     private readonly yardSnapshot: YardSnapshotService,
     private readonly tiposContainer: CadastrosTiposContainerService,
+    private readonly locaisTransporte: CadastrosLocaisTransporteService,
     private readonly patio: PatioV2Service,
     private readonly tenantConfig: TenantConfigService,
     private readonly catalogoContainers: CatalogoContainersService,
@@ -168,6 +170,18 @@ export class PortalClienteController {
     const u = this.cx(req);
     await this.audPortal(u, 'GET /cliente/portal/catalogo/tipos-container');
     return this.tiposContainer.listAtivosForPortal();
+  }
+
+  @Get('catalogo/origens-destinos')
+  @ApiOperation({
+    summary: 'Locais ativos de Origens e destinos para o formulário de exportação',
+    description:
+      'Retorna `{ items: [{ id, codigo, nome, tipo, cidade, uf }], total }` — cadastro MDM do terminal.',
+  })
+  async catalogoOrigensDestinos(@Req() req: Request & { cxUser?: CxPortalRequestUser }) {
+    const u = this.cx(req);
+    await this.audPortal(u, 'GET /cliente/portal/catalogo/origens-destinos');
+    return this.locaisTransporte.listAtivosForPortal();
   }
 
   @Get('containers/:iso/tomada')

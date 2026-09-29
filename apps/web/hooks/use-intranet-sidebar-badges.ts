@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, staffListarSolicitacoesV2, staffPatioInventario } from "@/lib/api/staff-client";
+import { staffListarSolicitacoesAluguel } from "@/lib/api/alugueis-client";
 import { contarPendenciasContaCorrente } from "@/lib/api/conta-corrente-client";
 import {
   fetchControleEntradaSaidaCount,
@@ -19,16 +20,17 @@ export function useIntranetSidebarBadges(moduleId: IntranetModuleId) {
   const refreshGate = useCallback(async () => {
     if (moduleId !== "gate") return;
     try {
-      const [patio, pendente, analise, controle, notificacoes] = await Promise.all([
+      const [patio, pendente, analise, aluguel, controle, notificacoes] = await Promise.all([
         staffPatioInventario().catch(() => ({ lotacaoTotal: 0 })),
         staffListarSolicitacoesV2({ status: "PENDENTE", limit: 1, page: 1 }).catch(() => ({ total: 0 })),
         staffListarSolicitacoesV2({ status: "EM_ANALISE", limit: 1, page: 1 }).catch(() => ({ total: 0 })),
+        staffListarSolicitacoesAluguel("PENDENTE").catch(() => ({ total: 0 })),
         fetchControleEntradaSaidaCount().catch(() => ({ count: 0 })),
         fetchGateNotificacoesNaoLidas().catch(() => ({ count: 0 })),
       ]);
       setGateBadges({
         "gate.patio": patio.lotacaoTotal,
-        "gate.autorizacoes": (pendente.total ?? 0) + (analise.total ?? 0),
+        "gate.autorizacoes": (pendente.total ?? 0) + (analise.total ?? 0) + (aluguel.total ?? 0),
         "gate.controle": controle.count,
         "gate.notificacoes": notificacoes.count,
       });

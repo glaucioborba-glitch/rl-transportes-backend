@@ -484,6 +484,7 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
     { codigo: 'AVARIA_CRITICA', descricao: 'Avaria crítica impede operação', tipo: 'RETORNO_PATIO', exigeObservacao: true, notificaCliente: true, ativo: true },
     { codigo: 'CANCELAMENTO_SOLICITANTE', descricao: 'Cancelamento solicitado pelo cliente', tipo: 'CANCELAMENTO_CLIENTE', exigeObservacao: true, notificaCliente: false, ativo: true },
     { codigo: 'FORA_HORARIO', descricao: 'Chegada fora do horário agendado', tipo: 'REJEICAO_GATE', exigeObservacao: false, notificaCliente: false, ativo: true },
+    { codigo: 'REJEICAO_ALUGUEL', descricao: 'Rejeição Aluguel', tipo: 'REJEICAO_ALUGUEL', exigeObservacao: true, notificaCliente: true, ativo: true },
   ];
   for (const m of motivos) {
     await prisma.cadastroMotivoRejeicao.upsert({
@@ -495,7 +496,7 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
 
   // ========== LOCAIS DE TRANSPORTE (origens/destinos) ==========
   const locaisTransporte = [
-    { codigo: 'FL', nome: 'FL', tipo: 'TERMINAL', cidade: 'Navegantes', uf: 'SC', lat: -26.8948, lng: -48.6545, ativo: true },
+    { codigo: 'FL', nome: 'FL', tipo: 'TERMINAL', cidade: 'Navegantes', uf: 'SC', lat: -26.8948, lng: -48.6545, ativo: true, padrao: true },
     { codigo: 'PORTONAVE', nome: 'Portonave', tipo: 'PORTO', cidade: 'Navegantes', uf: 'SC', lat: -26.8915, lng: -48.6578, ativo: true },
     { codigo: 'ITAPOA', nome: 'Itapoá', tipo: 'PORTO', cidade: 'Itapoá', uf: 'SC', lat: -26.1175, lng: -48.6085, ativo: true },
     { codigo: 'TECON', nome: 'Tecon Santa Catarina', tipo: 'PORTO', cidade: 'Itajaí', uf: 'SC', lat: -26.9053, lng: -48.6548, ativo: true },

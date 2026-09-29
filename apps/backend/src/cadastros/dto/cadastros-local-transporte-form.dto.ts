@@ -78,4 +78,9 @@ export class CadastrosLocalTransporteFormDto {
   @IsOptional()
   @IsBoolean()
   ativo?: boolean;
+
+  @ApiPropertyOptional({ default: false, description: 'Origem/Destino Padrão (um por terminal)' })
+  @IsOptional()
+  @IsBoolean()
+  padrao?: boolean;
 }

@@ -1,3 +1,5 @@
+"use client";
+
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
@@ -203,14 +205,7 @@ export const MODULE_META: Record<
 };
 
 export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
-  portaria: [
-    {
-      label: "Localização",
-      href: "/operador/localizacao-motoristas",
-      icon: MapPin,
-      description: "GPS dos motoristas internos e terceiros da RL",
-    },
-  ],
+  portaria: [],
   gate: [
     {
       label: "Criar agendamento",
@@ -269,12 +264,6 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
       href: "/operador/gate/previsao-navios",
       icon: Ship,
       description: "Line-up ZP21 (Itajaí/Navegantes) — atualização automática",
-    },
-    {
-      label: "Localização",
-      href: "/operador/localizacao-motoristas",
-      icon: MapPin,
-      description: "GPS dos motoristas internos e terceiros da RL",
     },
   ],
   cadastros: [
@@ -337,6 +326,12 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
       label: "Forma e prazo",
       href: "/financeiro/condicoes-clientes",
       icon: CreditCard,
+    },
+    {
+      label: "Faturas",
+      href: "/financeiro/faturas",
+      icon: FileCheck,
+      description: "Pacote FAT: IDs encerrados, uma NFS-e e boleto ou PIX",
     },
     { label: "Contas a Pagar", href: "/financeiro/apagar", icon: ArrowDownCircle },
     {
@@ -453,21 +448,9 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
   ],
   patio: [
     { label: "Visão Geral", href: "/operador/patio", icon: Grid3x3 },
-    {
-      label: "Localização",
-      href: "/operador/localizacao-motoristas",
-      icon: MapPin,
-      description: "GPS dos motoristas internos e terceiros da RL",
-    },
   ],
   dashboard: [
     { label: "Dashboard Geral", href: "/operador/dashboard", icon: LayoutDashboard },
-    {
-      label: "Localização",
-      href: "/operador/localizacao-motoristas",
-      icon: MapPin,
-      description: "GPS dos motoristas internos e terceiros da RL",
-    },
   ],
 };
 

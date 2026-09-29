@@ -58,6 +58,7 @@ import { nextProtocoloSolicitacao, SOLICITACAO_CONTROLE_INCLUDE } from '../../so
 import { CatalogoMotoristasExternosService } from '../../catalogo-motoristas-externos/catalogo-motoristas-externos.service';
 import { CatalogoNaviosService } from '../../catalogo-navios/catalogo-navios.service';
 import { PixQuitacaoSaidaService } from './pix-quitacao-saida.service';
+import { CadastrosLocaisTransporteService } from '../../cadastros/cadastros-locais-transporte.service';
 import { conflictSaldoInsuficiente } from './pix-quitacao-saida.util';
 import { isCpfFrotaPlaceholder } from '../../catalogo-motoristas-externos/catalogo-motoristas-externos.util';
 import { freteUncheckedCreateFromAgendamento } from '../../fretes/frete-from-agendamento';
@@ -91,6 +92,7 @@ export class SolicitacoesV2Service {
     private readonly catalogoNavios: CatalogoNaviosService,
     private readonly tenantConfig: TenantConfigService,
     private readonly pixQuitacao: PixQuitacaoSaidaService,
+    private readonly locaisTransporte: CadastrosLocaisTransporteService,
   ) {}
 
   /** Rótulo para PDF/relatório sem mudar o enum PostgreSQL (`APROVADO` → `APROVADA`). */
@@ -129,8 +131,18 @@ export class SolicitacoesV2Service {
     if (resolved.exigeLocalOrigem && !dto.localOrigem?.trim()) {
       throw new BadRequestException('Local de origem é obrigatório para importação/coleta depot.');
     }
-    if (resolved.exigeLocalDestino && !dto.localDestino?.trim()) {
-      throw new BadRequestException('Local de destino é obrigatório para exportação/entrega depot.');
+    if (resolved.exigeLocalDestino) {
+      const raw = dto.localDestino?.trim() ?? '';
+      if (!raw) {
+        throw new BadRequestException('Local de destino é obrigatório para exportação/entrega depot.');
+      }
+      const cadastrado = await this.locaisTransporte.resolveDestinoCadastrado(raw);
+      if (!cadastrado) {
+        throw new BadRequestException(
+          'Selecione um destino cadastrado em Origens e destinos. Digitação livre não é permitida.',
+        );
+      }
+      dto.localDestino = this.locaisTransporte.labelDestino(cadastrado);
     }
 
     if (resolved.exigeTransporteCliente) {
@@ -627,6 +639,8 @@ export class SolicitacoesV2Service {
                 solicitacaoId: sol.id,
                 dataRef,
                 turno: dto.agendamento.turno,
+                horaInicio: dto.agendamento.horaInicio?.trim() || null,
+                horaFim: dto.agendamento.horaFim?.trim() || null,
               },
             });
 

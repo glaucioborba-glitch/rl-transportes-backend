@@ -19,10 +19,22 @@ export type CadastroLocalTransporte = {
   lat: number | null;
   lng: number | null;
   ativo: boolean;
+  padrao: boolean;
 };
 
 export function labelTipoLocalTransporte(tipo: string) {
   return TIPOS_LOCAL_TRANSPORTE.find((t) => t.value === tipo)?.label ?? tipo;
+}
+
+export function labelCadastroLocalTransporte(local: {
+  nome: string;
+  codigo: string;
+  cidade?: string | null;
+  uf?: string | null;
+}) {
+  const cidade = [local.cidade, local.uf].filter(Boolean).join("/");
+  const base = `${local.nome} (${local.codigo})`;
+  return cidade ? `${base} · ${cidade}` : base;
 }
 
 export async function listCadastrosLocaisTransporte(search?: string) {

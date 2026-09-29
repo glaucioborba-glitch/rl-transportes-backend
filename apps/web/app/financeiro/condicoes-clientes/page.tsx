@@ -40,6 +40,8 @@ type Draft = {
   cadastroTabelaTransporteId: string;
   cadastroTabelaServicoId: string;
   cadastroTabelaAluguelId: string;
+  faturamentoModo: "MANUAL" | "AUTOMATICO";
+  faturamentoHora: string;
 };
 
 const SELECT_CLASS =
@@ -102,6 +104,8 @@ function savedValues(
     cadastroTabelaTransporteId: row.cadastroTabelaTransporteId || tabelaPadraoId(tabelasTransporte),
     cadastroTabelaServicoId: row.cadastroTabelaServicoId || tabelaPadraoId(tabelasServico),
     cadastroTabelaAluguelId: row.cadastroTabelaAluguelId || tabelaPadraoId(tabelasAluguel),
+    faturamentoModo: row.faturamentoModo === "AUTOMATICO" ? "AUTOMATICO" : "MANUAL",
+    faturamentoHora: row.faturamentoHora || "18:00",
   };
 }
 
@@ -211,7 +215,9 @@ export default function CondicoesClientesPage() {
         edit.cadastroTabelaPrecoId !== saved.cadastroTabelaPrecoId ||
         edit.cadastroTabelaTransporteId !== saved.cadastroTabelaTransporteId ||
         edit.cadastroTabelaServicoId !== saved.cadastroTabelaServicoId ||
-        edit.cadastroTabelaAluguelId !== saved.cadastroTabelaAluguelId
+        edit.cadastroTabelaAluguelId !== saved.cadastroTabelaAluguelId ||
+        edit.faturamentoModo !== saved.faturamentoModo ||
+        (edit.faturamentoModo === "AUTOMATICO" && edit.faturamentoHora !== saved.faturamentoHora)
       ) {
         ids.add(row.id);
       }
@@ -236,6 +242,8 @@ export default function CondicoesClientesPage() {
         cadastroTabelaTransporteId: draft.cadastroTabelaTransporteId || undefined,
         cadastroTabelaServicoId: draft.cadastroTabelaServicoId || undefined,
         cadastroTabelaAluguelId: draft.cadastroTabelaAluguelId || undefined,
+        faturamentoModo: draft.faturamentoModo,
+        faturamentoHora: draft.faturamentoModo === "AUTOMATICO" ? draft.faturamentoHora : "",
       });
       toast.success(`Condição de ${row.razaoSocial} atualizada.`);
       setEdits((prev) => {
@@ -264,8 +272,9 @@ export default function CondicoesClientesPage() {
       <div>
         <h1 className="text-2xl font-semibold text-white">Forma e prazo</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Os valores exibidos são os gravados de cada cliente. Altere e clique em Salvar só o que for mudar. Novos
-          cadastros entram nas tabelas padrão. Catálogos em{" "}
+          Os valores exibidos são os gravados de cada cliente. Altere e clique em Salvar só o que for mudar.
+          Manual: o financeiro escolhe os IDs na tela de Faturas. Automático: na hora informada (São Paulo)
+          fecha a fila do dia. Novos cadastros entram em Manual e nas tabelas padrão. Catálogos em{" "}
           <a href="/cadastros/financeiro/servicos" className="text-sky-400 underline-offset-2 hover:underline">
             Cadastros → Serviços
           </a>{" "}
@@ -418,6 +427,35 @@ export default function CondicoesClientesPage() {
                       ariaLabel={`Tabela de aluguel de ${row.razaoSocial}`}
                       onChange={(cadastroTabelaAluguelId) => patchDraft(row, { cadastroTabelaAluguelId })}
                     />
+                  </div>
+                  <div className="col-span-6 sm:col-span-3">
+                    <Field label="Fatura">
+                      <select
+                        className={SELECT_CLASS}
+                        value={draft.faturamentoModo}
+                        onChange={(e) =>
+                          patchDraft(row, {
+                            faturamentoModo: e.target.value === "AUTOMATICO" ? "AUTOMATICO" : "MANUAL",
+                          })
+                        }
+                        aria-label={`Modo de Fatura de ${row.razaoSocial}`}
+                      >
+                        <option value="MANUAL">Manual</option>
+                        <option value="AUTOMATICO">Automático</option>
+                      </select>
+                    </Field>
+                  </div>
+                  <div className="col-span-6 sm:col-span-3">
+                    <Field label="Hora (SP)">
+                      <input
+                        type="time"
+                        className={SELECT_CLASS}
+                        value={draft.faturamentoHora}
+                        disabled={draft.faturamentoModo !== "AUTOMATICO"}
+                        onChange={(e) => patchDraft(row, { faturamentoHora: e.target.value })}
+                        aria-label={`Hora automática de ${row.razaoSocial}`}
+                      />
+                    </Field>
                   </div>
                 </article>
               );

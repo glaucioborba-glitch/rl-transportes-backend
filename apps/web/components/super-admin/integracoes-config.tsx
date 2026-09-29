@@ -248,7 +248,7 @@ export function IntegracoesConfig({ data: i, saving, testing, onSave, onTest }: 
         id="google-maps"
         icon={MapPinned}
         title="Google Maps JavaScript"
-        description="Chave do mapa na intranet (Maps JavaScript API)."
+        description="Chave do mapa na intranet. Testar valida a Maps JavaScript API (não a Geocoding). No Google Cloud, ative «Maps JavaScript API» neste projeto."
         status={i.googleMaps}
         saving={saving}
         testing={testing}

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AcaoAuditoria, StatusCadastroCliente, StatusPagamentoFatura } from '@prisma/client';
+import { AcaoAuditoria, StatusCadastroCliente, StatusFaturaPacote, StatusPagamentoFatura } from '@prisma/client';
 import { toDecimal } from '../armazenagem-faturamento/armazenagem-billing.util';
 import { AlertService } from '../alert/alert.service';
 import { AuditoriaService } from '../auditoria/auditoria.service';
@@ -407,5 +407,171 @@ export class NfseBoletoOutboxProcessor {
     if (ipm.certificadoPresente) return true;
     const { parametros } = await this.tenantConfig.getParametros(tenantId);
     return Boolean(parametros.nfse?.certificadoBase64?.trim());
+  }
+
+  async processEmitirFaturaPacote(outboxId: string, raw: unknown): Promise<void> {
+    const faturaPacoteId = (raw as { faturaPacoteId?: string })?.faturaPacoteId;
+    if (!faturaPacoteId) throw new Error('Payload EMITIR_FATURA_PACOTE inválido');
+
+    const pacote = await this.prisma.faturaPacote.findUnique({
+      where: { id: faturaPacoteId },
+      include: {
+        cliente: true,
+        faturas: { include: { preFatura: true }, orderBy: { dataEmissao: 'asc' } },
+      },
+    });
+    if (!pacote) throw new Error(`Fatura ${faturaPacoteId} não encontrada`);
+    if (pacote.status === StatusFaturaPacote.ENVIADA) return;
+    const lead = pacote.faturas[0];
+    if (!lead) throw new Error(`Fatura ${pacote.numero} sem IDs`);
+
+    const valorTotal = Number(pacote.valorTotal);
+    const leadFiscal = {
+      ...lead,
+      valorTotal: toDecimal(valorTotal),
+      cliente: pacote.cliente,
+    };
+    const ctx = {
+      containerIso: pacote.numero,
+      diasCobrados: pacote.faturas.length,
+      gateOutAt: new Date(),
+      outboxId,
+    };
+
+    let fiscalResult;
+    let boletoResults;
+    try {
+      const [emissaoFiscal, parcelas] = await Promise.all([
+        this.fiscal.emitirParaFatura(leadFiscal, pacote.cliente, ctx),
+        this.obterParcelasCliente(pacote.cliente, ctx.gateOutAt, valorTotal),
+      ]);
+      fiscalResult = emissaoFiscal;
+      boletoResults = [];
+      if (parcelas.length) {
+        for (const parcela of parcelas) {
+          const registrado = await this.banking.registrarBoleto(leadFiscal, pacote.cliente, {
+            ...ctx,
+            diasVencimento: parcela.dias,
+            vencimento: parcela.vencimento,
+            valor: parcela.valor,
+            parcela: { indice: parcela.indice, total: parcela.totalParcelas },
+          });
+          boletoResults.push({ ...registrado, valor: parcela.valor });
+        }
+      } else {
+        const registrado = await this.banking.registrarBoleto(leadFiscal, pacote.cliente, ctx);
+        boletoResults.push({ ...registrado, valor: valorTotal });
+      }
+    } catch (e) {
+      await this.prisma.faturaPacote.update({
+        where: { id: pacote.id },
+        data: {
+          status: StatusFaturaPacote.RASCUNHO,
+          processamentoErro: (e as Error).message?.slice(0, 2000) ?? 'Erro fiscal/bancário',
+        },
+      });
+      throw e;
+    }
+
+    const nfsePendente = fiscalResult.mode === 'pendente';
+    const linkNfse = fiscalResult.mode === 'emitida' ? fiscalResult.linkNfse : undefined;
+    const statusFilho = nfsePendente
+      ? StatusPagamentoFatura.PROCESSANDO
+      : StatusPagamentoFatura.AGUARDANDO_PAGAMENTO;
+    const periodo = `${ctx.gateOutAt.getFullYear()}-${String(ctx.gateOutAt.getMonth() + 1).padStart(2, '0')}`;
+    const primeiro = boletoResults[0]!;
+
+    await this.prisma.$transaction(async (tx) => {
+      let faturamento = await tx.faturamento.findUnique({
+        where: { clienteId_periodo: { clienteId: pacote.clienteId, periodo } },
+      });
+      const descricao = `Fatura ${pacote.numero} — ${pacote.faturas.length} ID(s)`;
+      if (faturamento) {
+        faturamento = await tx.faturamento.update({
+          where: { id: faturamento.id },
+          data: {
+            valorTotal: faturamento.valorTotal.add(toDecimal(valorTotal)),
+            statusNfe: nfsePendente ? 'processando' : 'emitida',
+            statusBoleto: 'pendente',
+            itens: { create: { descricao, valor: toDecimal(valorTotal) } },
+          },
+        });
+      } else {
+        faturamento = await tx.faturamento.create({
+          data: {
+            tenantId: pacote.tenantId,
+            clienteId: pacote.clienteId,
+            periodo,
+            valorTotal: toDecimal(valorTotal),
+            statusNfe: nfsePendente ? 'processando' : 'emitida',
+            statusBoleto: 'pendente',
+            itens: { create: { descricao, valor: toDecimal(valorTotal) } },
+          },
+        });
+      }
+      const numeroNfe =
+        fiscalResult.mode === 'emitida'
+          ? fiscalResult.numeroNfse
+          : `RPS-${fiscalResult.rpsNumero}-${Date.now()}`;
+      await tx.nfsEmitida.create({
+        data: {
+          faturamentoId: faturamento.id,
+          numeroNfe,
+          xmlNfe: fiscalResult.xmlResposta,
+          statusIpm: nfsePendente ? 'PROCESSANDO' : 'ACEITO',
+          municipioIbge: '4211306',
+          provedor: this.fiscal.usesRealIpm() ? 'ipm-atende-navegantes' : 'sandbox',
+          referenciaExterna:
+            fiscalResult.mode === 'emitida'
+              ? fiscalResult.codVerificador ?? fiscalResult.numeroNfse
+              : fiscalResult.codVerificador ?? `RPS-${fiscalResult.rpsNumero}`,
+          linkNfsePdf: linkNfse ?? null,
+          rpsNumero: fiscalResult.rpsNumero,
+          rpsSerie: fiscalResult.rpsSerie,
+        },
+      });
+      for (const boleto of boletoResults) {
+        await tx.boleto.create({
+          data: {
+            faturamentoId: faturamento.id,
+            numeroBoleto: boleto.numeroBoleto,
+            dataVencimento: boleto.dataVencimento,
+            valorBoleto: toDecimal(boleto.valor),
+            valorAtualizado: toDecimal(boleto.valor),
+            statusPagamento: 'pendente',
+            linkPdf: boleto.linkPdf,
+            pixCopiaCola: boleto.pixCopiaCola,
+            pixQrCodeUrl: boleto.pixQrCodeUrl,
+            provedor: boleto.provedor,
+            referenciaExterna: boleto.referenciaExterna,
+          },
+        });
+      }
+      await tx.faturaPacote.update({
+        where: { id: pacote.id },
+        data: {
+          status: nfsePendente ? StatusFaturaPacote.EMITINDO : StatusFaturaPacote.ENVIADA,
+          dataEmissao: ctx.gateOutAt,
+          dataVencimento: primeiro.dataVencimento,
+          linkNfse: linkNfse ?? null,
+          linkBoleto: primeiro.linkPdf,
+          linkPix: primeiro.pixQrCodeUrl || primeiro.pixCopiaCola,
+          processamentoErro: null,
+        },
+      });
+      await tx.fatura.updateMany({
+        where: { faturaPacoteId: pacote.id },
+        data: {
+          faturamentoId: faturamento.id,
+          dataVencimento: primeiro.dataVencimento,
+          linkNfse: linkNfse ?? null,
+          linkBoleto: primeiro.linkPdf,
+          linkPix: primeiro.pixQrCodeUrl || primeiro.pixCopiaCola,
+          statusPagamento: statusFilho,
+          processamentoErro: null,
+        },
+      });
+    });
+    this.logger.log(`EMITIR_FATURA_PACOTE ${outboxId}: ${pacote.numero} → ${valorTotal}`);
   }
 }

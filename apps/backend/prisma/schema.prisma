@@ -133,6 +133,20 @@ enum StatusAluguel {
   CANCELADO
 }
 
+/// Pedido de aluguel pelo portal do cliente, antes da alocação das unidades.
+enum StatusSolicitacaoAluguel {
+  PENDENTE
+  APROVADO
+  REJEITADO
+  INICIADO
+  ENCERRADO
+}
+
+enum FinalidadeAluguelSolicitacao {
+  RETIRADA_USO_EXTERNO
+  UTILIZACAO_PATIO_FL
+}
+
 enum MovTipo {
   LIFT_ON
   LIFT_OFF
@@ -459,9 +473,11 @@ model Tenant {
   cadastrosUnidadesAluguel CadastroUnidadeAluguel[]
   cadastrosTabelasAluguel CadastroTabelaAluguel[]
   alugueis Aluguel[]
+  solicitacoesAluguel SolicitacaoAluguel[]
   fretes Frete[]
   contaCorrenteLancamentos ClienteContaCorrenteLancamento[]
   pixCreditoComprovantes ClientePixCreditoComprovante[]
+  faturasPacote    FaturaPacote[]
   motoristaBiometrias MotoristaBiometria[]
   gateUnidadeNotificacoes GateUnidadeNotificacao[]
 
@@ -577,6 +593,12 @@ model Cliente {
   condicaoPagamento String? @map("condicao_pagamento") @db.VarChar(64)
   /// Prazo comercial (ex.: A_VISTA, 30_DIAS). Independente da forma de pagamento.
   prazoPagamento   String? @map("prazo_pagamento") @db.VarChar(64)
+  /// Manual = financeiro escolhe IDs; automático = na horaX fecha a fila do dia.
+  faturamentoModo           ModoFaturamentoCliente @default(MANUAL) @map("faturamento_modo")
+  /// Hora local America/Sao_Paulo (HH:mm). Só vale no automático.
+  faturamentoHora           String?                @map("faturamento_hora") @db.VarChar(5)
+  /// Última corrida automática (idempotência: um pacote por dia).
+  faturamentoAutoRodouEm    DateTime?              @map("faturamento_auto_rodou_em")
   /// Relação comercial no terminal: CLIENTE e/ou TRANSPORTADOR (pode ser ambos).
   papeis           String[] @default(["CLIENTE"])
   analisadoPor     String? @map("analisado_por") @db.VarChar(64)
@@ -601,6 +623,7 @@ model Cliente {
   preFaturas       PreFatura[]
   unidadeProcessos UnidadeProcesso[]
   faturasArmazenagem Fatura[]
+  faturasPacote      FaturaPacote[]
   usuarioPortal    User?
   agendamentos     AgendamentoTerminal[]
   pessoasAutorizadas PessoaAutorizada[]
@@ -612,6 +635,7 @@ model Cliente {
   cessoesDestino        CessaoTitularidade[] @relation("CessaoPara")
   fretes                Frete[]
   alugueis              Aluguel[]
+  solicitacoesAluguel   SolicitacaoAluguel[]
   contaCorrenteLancamentos ClienteContaCorrenteLancamento[]
   pixCreditoComprovantes ClientePixCreditoComprovante[]
 
@@ -866,6 +890,11 @@ model ContainerSolicitacao {
   booking       String              @db.VarChar(120)
   processo      String              @db.VarChar(120)
   navio         String              @default("") @db.VarChar(120)
+  /// Destino e janela informados no organizador de embarque (pátio).
+  localDestino     String?   @map("local_destino") @db.VarChar(255)
+  dataAgendamento  DateTime? @map("data_agendamento") @db.Date
+  horaInicio       String?   @map("hora_inicio") @db.VarChar(5)
+  horaFim          String?   @map("hora_fim") @db.VarChar(5)
   tamanho       String              @db.VarChar(32)
   tipo          String              @db.VarChar(64)
   status        StatusContainer @map("status_container")
@@ -888,6 +917,9 @@ model AgendamentoSolicitacao {
   solicitacao             Solicitacao       @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
   dataRef                 DateTime          @map("data_ref") @db.Date
   turno                   TurnoAgendamento
+  /// HH:mm — janela livre informada no portal (exportação).
+  horaInicio              String?           @map("hora_inicio") @db.VarChar(5)
+  horaFim                 String?           @map("hora_fim") @db.VarChar(5)
   createdAt               DateTime          @default(now())
   updatedAt               DateTime          @updatedAt
 
@@ -1491,6 +1523,18 @@ enum StatusPagamentoFatura {
   CANCELADO
 }
 
+enum ModoFaturamentoCliente {
+  MANUAL
+  AUTOMATICO
+}
+
+enum StatusFaturaPacote {
+  RASCUNHO
+  EMITINDO
+  ENVIADA
+  CANCELADA
+}
+
 /// Estágio da régua de cobrança (dunning) — evita notificações duplicadas.
 enum EstagioCobranca {
   NENHUM
@@ -1576,16 +1620,49 @@ model Fatura {
   estagioCobranca   EstagioCobranca       @default(NENHUM) @map("estagio_cobranca")
   faturamentoId     String?               @map("faturamento_id")
   faturamento       Faturamento?          @relation(fields: [faturamentoId], references: [id], onDelete: SetNull)
+  faturaPacoteId    String?               @map("fatura_pacote_id")
+  faturaPacote      FaturaPacote?         @relation(fields: [faturaPacoteId], references: [id], onDelete: SetNull)
   createdAt         DateTime              @default(now()) @map("created_at")
   updatedAt         DateTime              @updatedAt @map("updated_at")
 
   @@index([clienteId])
   @@index([faturamentoId])
+  @@index([faturaPacoteId])
   @@index([statusPagamento])
   @@index([estagioCobranca])
   @@index([nossoNumero])
   @@index([tenantId])
   @@map("faturas_armazenagem")
+}
+
+/// Envelope FAT do produto: um cliente, vários IDs, uma NFS-e e boleto ou PIX.
+model FaturaPacote {
+  id             String                @id @default(uuid())
+  tenantId       String                @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant         Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  clienteId      String                @map("cliente_id")
+  cliente        Cliente               @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  numero         String                @db.VarChar(32)
+  modo           ModoFaturamentoCliente
+  status         StatusFaturaPacote    @default(RASCUNHO)
+  valorTotal     Decimal               @map("valor_total") @db.Decimal(12, 2)
+  dataEmissao    DateTime?             @map("data_emissao")
+  dataVencimento DateTime?             @map("data_vencimento")
+  linkNfse       String?               @map("link_nfse") @db.VarChar(500)
+  linkBoleto     String?               @map("link_boleto") @db.VarChar(500)
+  linkPix        String?               @map("link_pix") @db.VarChar(500)
+  processamentoErro String?            @map("processamento_erro") @db.Text
+  /// Emissão manual agendada (cron dispara quando chegar).
+  agendadoPara   DateTime?             @map("agendado_para")
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+  faturas        Fatura[]
+
+  @@unique([tenantId, numero])
+  @@index([clienteId, status])
+  @@index([tenantId, createdAt])
+  @@index([status, agendadoPara])
+  @@map("faturas_pacote")
 }
 
 /// Histórico de arquivos CNAB (remessa/retorno) processados pela tesouraria.
@@ -2497,6 +2574,8 @@ model CadastroLocalTransporte {
   lat       Float?
   lng       Float?
   ativo     Boolean  @default(true)
+  /// Origem/destino padrão do terminal (um por tenant).
+  padrao    Boolean  @default(false)
 
   trechosComoA CadastroTarifaTransporte[] @relation("TarifaLocalA")
   trechosComoB CadastroTarifaTransporte[] @relation("TarifaLocalB")
@@ -2507,6 +2586,7 @@ model CadastroLocalTransporte {
 
   @@unique([tenantId, codigo])
   @@index([tenantId, ativo])
+  @@index([tenantId, padrao])
   @@map("cadastros_locais_transporte")
 }
 
@@ -2827,14 +2907,45 @@ model Aluguel {
   status            StatusAluguel @default(ATIVO)
   iniciadoEm        DateTime      @map("iniciado_em")
   encerradoEm       DateTime?     @map("encerrado_em")
-  observacao        String?       @db.VarChar(500)
-  createdAt         DateTime      @default(now()) @map("created_at")
-  updatedAt         DateTime      @updatedAt @map("updated_at")
+  observacao           String?       @db.VarChar(500)
+  solicitacaoAluguelId String?       @map("solicitacao_aluguel_id")
+  solicitacaoAluguel   SolicitacaoAluguel? @relation(fields: [solicitacaoAluguelId], references: [id], onDelete: Restrict)
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
 
   @@index([tenantId, status])
   @@index([clienteId, status])
   @@index([unidadeAluguelId, status])
+  @@index([solicitacaoAluguelId])
   @@map("alugueis")
+}
+
+/// Pedido de aluguel do portal: quantidade e datas, sem ISO. Vai para Autorizações.
+model SolicitacaoAluguel {
+  id                     String                      @id @default(uuid())
+  tenantId               String                      @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant                 Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  protocolo              String                      @unique @db.VarChar(32)
+  clienteId              String                      @map("cliente_id")
+  cliente                Cliente                     @relation(fields: [clienteId], references: [id], onDelete: Restrict)
+  quantidade             Int
+  finalidade             FinalidadeAluguelSolicitacao
+  /// Coleta prevista — opcional, só para a operação interna.
+  dataColeta             DateTime?                   @map("data_coleta")
+  /// Previsão de devolução — opcional.
+  dataPrevistaDevolucao  DateTime?                   @map("data_prevista_devolucao")
+  status                 StatusSolicitacaoAluguel    @default(PENDENTE)
+  motivoRejeicao         String?                     @map("motivo_rejeicao") @db.VarChar(500)
+  createdBySub           String?                     @map("created_by_sub") @db.VarChar(120)
+  autorizadoPorUserId    String?                     @map("autorizado_por_user_id")
+  autorizadoEm           DateTime?                   @map("autorizado_em")
+  createdAt              DateTime                    @default(now()) @map("created_at")
+  updatedAt              DateTime                    @updatedAt @map("updated_at")
+  alugueis               Aluguel[]
+
+  @@index([tenantId, status, createdAt])
+  @@index([clienteId, status])
+  @@map("solicitacoes_aluguel")
 }
 
 /// Tarifa de transporte entre dois locais. O par é canônico (localAId < localBId): FL×Portonave = Portonave×FL.

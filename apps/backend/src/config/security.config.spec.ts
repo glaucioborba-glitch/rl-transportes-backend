@@ -42,6 +42,10 @@ describe('security.config — CORS portal auth', () => {
   it('/auth/health isento de CSRF (heartbeat staff)', () => {
     expect(isCsrfExemptPath('/auth/health')).toBe(true);
   });
+
+  it('/auth/super-admin/login isento de CSRF (bootstrap do dono)', () => {
+    expect(isCsrfExemptPath('/auth/super-admin/login')).toBe(true);
+  });
 });
 
 describe('security.config — rate limit tiers', () => {

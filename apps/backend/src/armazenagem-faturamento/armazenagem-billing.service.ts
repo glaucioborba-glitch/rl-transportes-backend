@@ -11,7 +11,6 @@ import { AlertService } from '../alert/alert.service';
 import { BillingRuleEngineService } from '../billing-engine/billing-rule-engine.service';
 import { assertTabelaPrecoConfigurada, inferTipoContainer } from '../billing-engine/billing-rule-engine.util';
 import { normalizeContainerIso } from '../common/utils/data-sanitize';
-import { OutboxService } from '../outbox/outbox.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   containerContextFromAluguel,
@@ -50,7 +49,6 @@ export class ArmazenagemBillingService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly outbox: OutboxService,
     private readonly ruleEngine: BillingRuleEngineService,
     private readonly alerts: AlertService,
   ) {}
@@ -383,31 +381,14 @@ export class ArmazenagemBillingService {
 
       const atual = await tx.preFatura.findUnique({ where: { id: pf.id } });
       const valorTotal = Number(atual?.valorAcumulado ?? 0);
-      const fatura = await tx.fatura.create({
+      await tx.fatura.create({
         data: {
           tenantId: input.tenantId,
           preFaturaId: pf.id,
           clienteId: input.clienteId,
           valorTotal: toDecimal(valorTotal),
           dataEmissao: input.encerradoEm,
-          statusPagamento: StatusPagamentoFatura.PROCESSANDO,
-        },
-      });
-      await this.outbox.enqueue(tx, {
-        aggregateType: 'FaturaArmazenagem',
-        aggregateId: fatura.id,
-        eventType: 'EMITIR_NFSE_BOLETO',
-        payload: {
-          faturaId: fatura.id,
-          preFaturaId: pf.id,
-          clienteId: input.clienteId,
-          containerIso: pf.containerIso,
-          valorTotal,
-          gateInAt: input.iniciadoEm.toISOString(),
-          gateOutAt: input.encerradoEm.toISOString(),
-          diasCobrados: evaluation.diasFaturaveis,
-          unidadeProcessoId: input.unidadeProcessoId,
-          modalidade: 'ALUGUEL',
+          statusPagamento: StatusPagamentoFatura.PENDENTE,
         },
       });
     }
@@ -763,11 +744,6 @@ export class ArmazenagemBillingService {
 
       let valorTotal = Number(pf.valorAcumulado);
       let diasCobrados = pf.diasCobrados;
-      let itensPayload: Prisma.InputJsonValue = pf.itens.map((i) => ({
-        eventoGatilho: i.eventoGatilho,
-        descricao: i.descricao,
-        valorTotal: Number(i.valorTotal),
-      }));
 
       if (pf.status === StatusPreFatura.ABERTA) {
         const pricing = await this.ruleEngine.resolvePricingForCliente(pf.clienteId);
@@ -798,12 +774,6 @@ export class ArmazenagemBillingService {
           containerIso: pf.containerIso,
         });
         diasCobrados = evaluation.diasFaturaveis;
-        const itensDb = await tx.itemFaturaArmazenagem.findMany({ where: { preFaturaId: pf.id } });
-        itensPayload = itensDb.map((i) => ({
-          eventoGatilho: i.eventoGatilho,
-          descricao: i.descricao,
-          valorTotal: Number(i.valorTotal),
-        })) as Prisma.InputJsonValue;
 
         await tx.preFatura.update({
           where: { id: pf.id },
@@ -823,25 +793,7 @@ export class ArmazenagemBillingService {
           clienteId: pf.clienteId,
           valorTotal: toDecimal(valorTotal),
           dataEmissao: saidaEm,
-          statusPagamento: StatusPagamentoFatura.PROCESSANDO,
-        },
-      });
-
-      await this.outbox.enqueue(tx, {
-        aggregateType: 'FaturaArmazenagem',
-        aggregateId: fatura.id,
-        eventType: 'EMITIR_NFSE_BOLETO',
-        payload: {
-          faturaId: fatura.id,
-          preFaturaId: pf.id,
-          clienteId: pf.clienteId,
-          containerIso: pf.containerIso,
-          valorTotal,
-          gateInAt: entradaEm.toISOString(),
-          gateOutAt: saidaEm.toISOString(),
-          diasCobrados,
-          itens: itensPayload,
-          unidadeProcessoId,
+          statusPagamento: StatusPagamentoFatura.PENDENTE,
         },
       });
 
@@ -911,7 +863,7 @@ export class ArmazenagemBillingService {
     };
   }
 
-  /** Gate-Out: congela pré-faturas, emite fatura (PROCESSANDO) + outbox NFS-e/boleto. */
+  /** Gate-Out: congela pré-faturas e coloca o ID na fila da Fatura (sem emitir NFS-e). */
   async consolidateOnGateOut(gateInId: string, gateOutAt: Date, tx: Prisma.TransactionClient) {
     const existingFatura = await tx.fatura.findFirst({
       where: { preFatura: { gateInId } },
@@ -978,23 +930,7 @@ export class ArmazenagemBillingService {
           clienteId: pf.clienteId,
           valorTotal: toDecimal(totalGate),
           dataEmissao: gateOutAt,
-          statusPagamento: StatusPagamentoFatura.PROCESSANDO,
-        },
-      });
-
-      await this.outbox.enqueue(tx, {
-        aggregateType: 'FaturaArmazenagem',
-        aggregateId: fatura.id,
-        eventType: 'EMITIR_NFSE_BOLETO',
-        payload: {
-          faturaId: fatura.id,
-          preFaturaId: consolidated.id,
-          clienteId: pf.clienteId,
-          containerIso: pf.containerIso,
-          valorTotal: totalGate,
-          gateInAt: (pf.gateIn?.dataHora ?? pf.gateInAt).toISOString(),
-          gateOutAt: gateOutAt.toISOString(),
-          diasCobrados: evaluation.diasFaturaveis,
+          statusPagamento: StatusPagamentoFatura.PENDENTE,
         },
       });
 
@@ -1097,22 +1033,7 @@ export class ArmazenagemBillingService {
         preFaturaId: destino.id,
         clienteId: paraClienteId,
         valorTotal: origem.valorAcumulado,
-        statusPagamento: StatusPagamentoFatura.PROCESSANDO,
-      },
-    });
-    await this.outbox.enqueue(tx, {
-      aggregateType: 'FaturaArmazenagem',
-      aggregateId: fatura.id,
-      eventType: 'EMITIR_NFSE_BOLETO',
-      payload: {
-        faturaId: fatura.id,
-        preFaturaId: destino.id,
-        clienteId: paraClienteId,
-        containerIso: origem.containerIso,
-        valorTotal: valor,
-        unidadeProcessoId: origem.unidadeProcessoId,
-        cessaoId,
-        reemissao: true,
+        statusPagamento: StatusPagamentoFatura.PENDENTE,
       },
     });
     return { destinoId: destino.id, faturaId: fatura.id, valor };

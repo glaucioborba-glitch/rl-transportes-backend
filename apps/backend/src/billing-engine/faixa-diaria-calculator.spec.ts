@@ -3,11 +3,11 @@ import {
   calcularArmazenagemEscalonada,
   calcularEnergiaEscalonada,
   FAIXAS_DIARIA_PADRAO,
+  formatarDiariasExcedentes,
   formatarFaixasCobranca,
   resolveFaixasEnergiaFromCadastroItem,
   resolveFaixasFromCadastroItem,
   SUBSTANTIVO_DIA_ENERGIA,
-  SUBSTANTIVO_DIARIA,
 } from './faixa-diaria-calculator';
 
 describe('FaixaDiariaCalculator', () => {
@@ -58,8 +58,11 @@ describe('FaixaDiariaCalculator', () => {
       { quantidade: 8, valorUnitario: 30 },
       { quantidade: 1, valorUnitario: 45 },
     ]);
-    expect(formatarFaixasCobranca(grupos, SUBSTANTIVO_DIARIA)).toBe(
-      '08 diárias de R$ 30,00 e 01 de R$ 45,00',
+    expect(formatarDiariasExcedentes(grupos)).toBe(
+      '08 diárias excedentes de R$ 30,00 cada + 01 diária excedente de R$ 45,00 cada',
+    );
+    expect(formatarDiariasExcedentes([{ quantidade: 4, valorUnitario: 30 }])).toBe(
+      '04 diárias excedentes de R$ 30,00 cada',
     );
   });
 

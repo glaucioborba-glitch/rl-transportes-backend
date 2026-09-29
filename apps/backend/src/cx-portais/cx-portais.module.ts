@@ -66,6 +66,8 @@ import { PortalNotificacoesModule } from '../portal-notificacoes/portal-notifica
 import { PortalNotificacaoController } from './portal-notificacao.controller';
 import { PortalSimulacaoValoresController } from './portal-simulacao-valores.controller';
 import { PortalSimulacaoValoresService } from './services/portal-simulacao-valores.service';
+import { AluguelModule } from '../aluguel/aluguel.module';
+import { PortalSolicitacaoAluguelController } from './portal-solicitacao-aluguel.controller';
 import { CatalogoContainersModule } from '../catalogo-containers/catalogo-containers.module';
 import { CatalogoNaviosModule } from '../catalogo-navios/catalogo-navios.module';
 import { CatalogoMotoristasExternosModule } from '../catalogo-motoristas-externos/catalogo-motoristas-externos.module';
@@ -109,6 +111,7 @@ import { GateUnidadeNotificacaoModule } from '../gate-v2/gate-unidade-notificaca
     CatalogoMotoristasExternosModule,
     GateUnidadeNotificacaoModule,
     PlataformaCoreModule,
+    AluguelModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -134,6 +137,7 @@ import { GateUnidadeNotificacaoModule } from '../gate-v2/gate-unidade-notificaca
     VistoriaPortalController,
     PortalNotificacaoController,
     PortalSimulacaoValoresController,
+    PortalSolicitacaoAluguelController,
   ],
   providers: [
     PortalJwtService,

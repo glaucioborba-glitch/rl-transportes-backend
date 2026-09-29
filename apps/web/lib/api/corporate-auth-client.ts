@@ -46,7 +46,20 @@ export function toCorporateAuthFailure(error: unknown): CorporateAuthFailure {
 }
 
 export function getApiBase(): string {
-  return process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://localhost:3001";
+  const baked = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://localhost:3001";
+  if (typeof window !== "undefined") {
+    try {
+      const u = new URL(baked);
+      const pagePort = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
+      if (u.hostname === window.location.hostname && (u.port === "3000" || u.port === pagePort)) {
+        u.port = "3001";
+        return u.origin;
+      }
+    } catch {
+      /* URL inválida — usa o valor compilado */
+    }
+  }
+  return baked;
 }
 
 export function defaultApiCredentials(): RequestCredentials {

@@ -9,7 +9,8 @@ export function resolveIntranetModule(pathname: string): IntranetModuleId {
   if (
     pathname.startsWith("/operador/transportes") ||
     pathname.startsWith("/operador/fretes") ||
-    pathname.startsWith("/operador/dispatch")
+    pathname.startsWith("/operador/dispatch") ||
+    pathname.startsWith("/operador/localizacao-motoristas")
   ) {
     return "dispatch";
   }

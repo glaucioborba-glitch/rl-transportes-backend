@@ -1,0 +1,1 @@
+ALTER TYPE "StatusSolicitacaoAluguel" ADD VALUE IF NOT EXISTS 'ENCERRADO';

@@ -99,6 +99,7 @@ export default function OrigensDestinosListPage() {
                     <div className="flex items-center gap-2">
                       <MapPin className="h-4 w-4 text-muted-foreground" />
                       <span className="font-medium">{local.nome}</span>
+                      {local.padrao ? <Badge>Padrão</Badge> : null}
                     </div>
                   </td>
                   <td className="p-4 text-sm text-muted-foreground">

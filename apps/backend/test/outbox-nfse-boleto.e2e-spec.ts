@@ -31,7 +31,7 @@ const CONTAINER_ISO = 'MSKU7654321';
 const PESSOA_CPF = '39053344705';
 
 /**
- * H9 — E2E: Gate-Out → outbox EMITIR_NFSE_BOLETO → sandbox NFS-e/boleto → AGUARDANDO_PAGAMENTO
+ * H9 — E2E: Gate-Out → fila PENDENTE → emitir Fatura FAT → sandbox NFS-e/boleto
  * + exposição no portal GET /cliente/portal/financeiro/faturas-armazenagem
  */
 describe('Outbox NFS-e + boleto (e2e)', () => {
@@ -181,11 +181,15 @@ describe('Outbox NFS-e + boleto (e2e)', () => {
       await prisma.auditoria.deleteMany({
         where: { tabela: 'faturas_armazenagem' },
       });
-      await prisma.outboxEvent.deleteMany({ where: { aggregateType: 'FaturaArmazenagem' } });
+      await prisma.outboxEvent.deleteMany({
+        where: { OR: [{ aggregateType: 'FaturaArmazenagem' }, { eventType: 'EMITIR_FATURA_PACOTE' }] },
+      });
       await prisma.boleto.deleteMany({ where: { faturamento: { clienteId } } });
       await prisma.nfsEmitida.deleteMany({ where: { faturamento: { clienteId } } });
       await prisma.faturamento.deleteMany({ where: { clienteId } });
+      await prisma.fatura.updateMany({ where: { clienteId }, data: { faturaPacoteId: null } });
       await prisma.fatura.deleteMany({ where: { clienteId } });
+      await prisma.faturaPacote.deleteMany({ where: { clienteId } });
       await prisma.preFatura.deleteMany({ where: { clienteId } });
       if (pessoaId) {
         await prisma.permissaoPessoaAutorizada.deleteMany({ where: { pessoaId } });
@@ -246,19 +250,31 @@ describe('Outbox NFS-e + boleto (e2e)', () => {
     return fatura!.id;
   }
 
-  it('gate-out enfileira EMITIR_NFSE_BOLETO', async () => {
+  it('gate-out deixa ID PENDENTE na fila (sem NFS-e)', async () => {
     const faturaId = await gateOutCompleto();
+    const fatura = await prisma.fatura.findUnique({ where: { id: faturaId } });
+    expect(fatura?.statusPagamento).toBe(StatusPagamentoFatura.PENDENTE);
+    expect(fatura?.faturaPacoteId).toBeNull();
     const evt = await prisma.outboxEvent.findFirst({
       where: { aggregateId: faturaId, eventType: 'EMITIR_NFSE_BOLETO' },
     });
-    expect(evt).toBeTruthy();
-    expect(evt!.status).toBe(OutboxEventStatus.PENDING);
+    expect(evt).toBeNull();
   }, 120_000);
 
-  it('worker processa outbox sandbox → AGUARDANDO_PAGAMENTO + links', async () => {
+  it('emitir Fatura + worker sandbox → AGUARDANDO_PAGAMENTO + links', async () => {
     const faturas = await prisma.fatura.findMany({ where: { clienteId } });
     expect(faturas.length).toBeGreaterThanOrEqual(1);
     const faturaId = faturas[0]!.id;
+    const adm = await prisma.user.findUnique({ where: { id: adminId } });
+    const adminToken = auth.issueTokens(adm!).accessToken;
+
+    const emit = await request(app.getHttpServer())
+      .post(`/financeiro/faturas/clientes/${clienteId}/emitir`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ faturaIds: [faturaId] })
+      .expect(201);
+
+    expect(emit.body.numero).toMatch(/^FAT-\d{6}-\d{4}$/);
 
     await worker.tick();
 
@@ -269,7 +285,7 @@ describe('Outbox NFS-e + boleto (e2e)', () => {
     expect(fatura?.linkPix).toBeTruthy();
 
     const evt = await prisma.outboxEvent.findFirst({
-      where: { aggregateId: faturaId, eventType: 'EMITIR_NFSE_BOLETO' },
+      where: { eventType: 'EMITIR_FATURA_PACOTE', aggregateId: emit.body.id },
     });
     expect(evt?.status).toBe(OutboxEventStatus.PROCESSED);
   }, 120_000);

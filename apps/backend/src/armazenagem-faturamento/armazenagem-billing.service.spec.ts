@@ -4,7 +4,6 @@ import { StatusPreFatura } from '@prisma/client';
 import { AlertService } from '../alert/alert.service';
 import { BillingRuleEngineService } from '../billing-engine/billing-rule-engine.service';
 import { ArmazenagemBillingService } from './armazenagem-billing.service';
-import { OutboxService } from '../outbox/outbox.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 describe('ArmazenagemBillingService', () => {
@@ -17,7 +16,6 @@ describe('ArmazenagemBillingService', () => {
     unidadeProcessoServico: { findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn(),
   };
-  const outbox = { enqueue: jest.fn() };
   const alerts = { fiscalIpmDown: jest.fn(), faturamentoReconcileFailed: jest.fn() };
   const ruleEngine = {
     resolvePricingForCliente: jest.fn(),
@@ -56,7 +54,6 @@ describe('ArmazenagemBillingService', () => {
       providers: [
         ArmazenagemBillingService,
         { provide: PrismaService, useValue: prisma },
-        { provide: OutboxService, useValue: outbox },
         { provide: BillingRuleEngineService, useValue: ruleEngine },
         { provide: AlertService, useValue: alerts },
       ],
@@ -97,7 +94,7 @@ describe('ArmazenagemBillingService', () => {
     );
   });
 
-  it('consolidateOnGateOut cria fatura PROCESSANDO e enfileira EMITIR_NFSE_BOLETO', async () => {
+  it('consolidateOnGateOut cria fatura PENDENTE na fila da Fatura (sem emitir NFS-e)', async () => {
     const gateOutAt = new Date('2026-06-10T12:00:00.000Z');
     const gateInAt = new Date('2026-06-01T10:00:00.000Z');
     const preFatura = {
@@ -139,12 +136,8 @@ describe('ArmazenagemBillingService', () => {
 
     expect(tx.fatura.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ statusPagamento: 'PROCESSANDO' }),
+        data: expect.objectContaining({ statusPagamento: 'PENDENTE' }),
       }),
-    );
-    expect(outbox.enqueue).toHaveBeenCalledWith(
-      tx,
-      expect.objectContaining({ eventType: 'EMITIR_NFSE_BOLETO' }),
     );
   });
 

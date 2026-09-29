@@ -20,6 +20,7 @@ const SELECT_CLASS =
 
 const TIPOS = [
   { value: "REJEICAO_GATE", label: "Rejeição no Gate" },
+  { value: "REJEICAO_ALUGUEL", label: "Rejeição Aluguel" },
   { value: "RETORNO_PATIO", label: "Retorno ao Pátio" },
   { value: "CANCELAMENTO_CLIENTE", label: "Cancelamento do Cliente" },
 ] as const;

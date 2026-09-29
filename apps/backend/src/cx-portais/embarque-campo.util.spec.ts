@@ -7,10 +7,13 @@ import {
 } from './embarque-campo.util';
 
 describe('embarque-campo.util', () => {
-  it('aceita booking, processo e navio', () => {
+  it('aceita booking, processo, navio, destino, data e hora', () => {
     expect(isCampoEmbarque('booking')).toBe(true);
     expect(isCampoEmbarque('processo')).toBe(true);
     expect(isCampoEmbarque('navio')).toBe(true);
+    expect(isCampoEmbarque('localDestino')).toBe(true);
+    expect(isCampoEmbarque('dataAgendamento')).toBe(true);
+    expect(isCampoEmbarque('horaJanela')).toBe(true);
     expect(isCampoEmbarque('tipo')).toBe(false);
   });
 
@@ -33,6 +36,13 @@ describe('embarque-campo.util', () => {
 
   it('permite limpar o campo', () => {
     expect(normalizeValorEmbarque('processo', '   ')).toBe('');
+    expect(normalizeValorEmbarque('horaJanela', '')).toBe('');
+    expect(normalizeValorEmbarque('dataAgendamento', '')).toBe('');
+  });
+
+  it('normaliza janela de hora e rejeita fim antes do início', () => {
+    expect(normalizeValorEmbarque('horaJanela', '08:00 – 12:00')).toBe('08:00-12:00');
+    expect(() => normalizeValorEmbarque('horaJanela', '12:00-08:00')).toThrow(/depois do início/);
   });
 
   it('agrupa por processo/booking/navio ignorando caixa e espaços no navio', () => {

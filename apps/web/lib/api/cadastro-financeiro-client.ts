@@ -101,6 +101,8 @@ export type ClienteCondicaoRow = {
   cadastroTabelaTransporteId: string | null;
   cadastroTabelaServicoId: string | null;
   cadastroTabelaAluguelId: string | null;
+  faturamentoModo: "MANUAL" | "AUTOMATICO";
+  faturamentoHora: string | null;
 };
 
 export type TabelaPrecoAtribuicao = {
@@ -158,6 +160,8 @@ export async function atualizarClienteCondicao(
     cadastroTabelaTransporteId?: string;
     cadastroTabelaServicoId?: string;
     cadastroTabelaAluguelId?: string;
+    faturamentoModo?: "MANUAL" | "AUTOMATICO";
+    faturamentoHora?: string;
   },
 ) {
   return staffJson(`/financeiro/clientes-condicoes/${encodeURIComponent(id)}`, {

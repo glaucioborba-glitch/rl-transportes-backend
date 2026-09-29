@@ -18,16 +18,29 @@ export function diffCalendarDays(from: Date, to: Date): number {
   return Math.max(0, Math.floor((end - start) / 86_400_000));
 }
 
+function ymdSaoPaulo(d: Date): { y: number; m: number; day: number } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d);
+  const get = (t: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((p) => p.type === t)?.value ?? 0);
+  return { y: get('year'), m: get('month'), day: get('day') };
+}
+
 /**
- * PR-02: Dias corridos reais — não pula fins de semana nem feriados.
- * Alias semântico para uso no billing engine.
+ * Dias corridos no pátio, calendário de Brasília, inclusive o dia da chegada.
+ * Chegou e saiu no mesmo dia = 1. Free time 7 = datas 1..7 isentas (faixa começa no dia 8).
  */
 export function diffDiasCalendario(inicio: Date, fim: Date): number {
-  if (inicio >= fim) return 0;
-  const ms = fim.getTime() - inicio.getTime();
-  const dias = Math.floor(ms / 86_400_000);
-  const restoHoras = (ms % 86_400_000) / 3_600_000;
-  return Math.max(restoHoras > 0 ? dias + 1 : dias, 0);
+  if (fim < inicio) return 0;
+  const a = ymdSaoPaulo(inicio);
+  const b = ymdSaoPaulo(fim);
+  const start = Date.UTC(a.y, a.m - 1, a.day);
+  const end = Date.UTC(b.y, b.m - 1, b.day);
+  return Math.floor((end - start) / 86_400_000) + 1;
 }
 
 export function addCalendarDays(date: Date, days: number): Date {

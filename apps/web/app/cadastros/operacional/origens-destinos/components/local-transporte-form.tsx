@@ -29,6 +29,7 @@ const EMPTY: Omit<CadastroLocalTransporte, "id"> = {
   lat: null,
   lng: null,
   ativo: true,
+  padrao: false,
 };
 
 type Props = { localId?: string };
@@ -55,6 +56,7 @@ export function LocalTransporteForm({ localId }: Props) {
             lat: data.lat,
             lng: data.lng,
             ativo: data.ativo,
+            padrao: data.padrao ?? false,
           });
         }
       } catch {
@@ -208,17 +210,30 @@ export function LocalTransporteForm({ localId }: Props) {
           </div>
         </div>
 
-        <FormField label="Status" className="mt-4">
-          <label className="flex cursor-pointer items-center gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-6">
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
             <input
               type="checkbox"
               checked={formData.ativo}
               onChange={(e) => setFormData({ ...formData, ativo: e.target.checked })}
               className="h-4 w-4 rounded border-border"
             />
-            <span className="text-sm">Ativo (disponível para tarifas de transporte)</span>
+            Ativo (disponível para tarifas de transporte)
           </label>
-        </FormField>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={formData.padrao}
+              onChange={(e) => setFormData({ ...formData, padrao: e.target.checked })}
+              className="h-4 w-4 rounded border-border"
+            />
+            Origem/Destino Padrão
+          </label>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Só um local fica padrão no terminal. Ao marcar este, o anterior deixa de ser padrão. Os
+          transportes vão usar esse ponto como origem/destino padrão.
+        </p>
       </FormSection>
 
       <div className="flex gap-3">

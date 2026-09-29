@@ -4,10 +4,11 @@ import { CronAlertModule } from '../common/cron/cron-alert.module';
 import { ArmazenagemFaturamentoModule } from './armazenagem-faturamento.module';
 import { FaturamentoCronService } from './faturamento-cron.service';
 import { HoldReleaseModule } from '../hold-release/hold-release.module';
+import { FaturaPacoteModule } from '../fatura-pacote/fatura-pacote.module';
 
 /** CRON noturno de armazenagem — candidato a lazy-load (H4). */
 @Module({
-  imports: [ScheduleModule, CronAlertModule, ArmazenagemFaturamentoModule, HoldReleaseModule],
+  imports: [ScheduleModule, CronAlertModule, ArmazenagemFaturamentoModule, HoldReleaseModule, FaturaPacoteModule],
   providers: [FaturamentoCronService],
 })
 export class ArmazenagemFaturamentoCronModule {}

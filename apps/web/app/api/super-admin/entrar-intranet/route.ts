@@ -4,6 +4,7 @@ import { getServerApiBase } from "@/lib/server-api-base";
 import {
   SA_ACTING_TENANT_COOKIE,
   SA_ACTING_TENANT_LABEL_COOKIE,
+  actingCookieSecure,
 } from "@/lib/super-admin-acting-cookie";
 
 const TIMEOUT_MS = 15_000;
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
     try {
       const parsed = JSON.parse(text) as { tenantId?: string; nome?: string };
       if (parsed.tenantId) {
-        const secure = process.env.NODE_ENV === "production";
+        const secure = actingCookieSecure();
         res.cookies.set(SA_ACTING_TENANT_COOKIE, parsed.tenantId, {
           httpOnly: true,
           sameSite: "lax",

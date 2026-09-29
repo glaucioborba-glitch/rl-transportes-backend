@@ -25,7 +25,9 @@ import {
 } from "@/components/portal/editar-embarque-dialog";
 import {
   patioCargaLabel,
+  patioDataAgendamentoLabel,
   patioEquipamentoLabel,
+  patioHoraJanelaLabel,
   patioSaldoMatchesQuery,
 } from "@/lib/portal-patio-display";
 import { DEFAULT_PERMISSOES, usePessoaPermissoesStore } from "@/stores/pessoaPermissoesStore";
@@ -109,6 +111,30 @@ function EmbarqueCells({
   if (keyName === "navio") {
     return <EmbarqueValor valor={r.navio?.trim() || ""} onEdit={onEdit ? () => onEdit("navio") : undefined} />;
   }
+  if (keyName === "localDestino") {
+    return (
+      <EmbarqueValor
+        valor={r.localDestino?.trim() || ""}
+        onEdit={onEdit ? () => onEdit("localDestino") : undefined}
+      />
+    );
+  }
+  if (keyName === "dataAgendamento") {
+    return (
+      <EmbarqueValor
+        valor={patioDataAgendamentoLabel(r.dataAgendamento)}
+        onEdit={onEdit ? () => onEdit("dataAgendamento") : undefined}
+      />
+    );
+  }
+  if (keyName === "horaJanela") {
+    return (
+      <EmbarqueValor
+        valor={patioHoraJanelaLabel(r.horaInicio, r.horaFim)}
+        onEdit={onEdit ? () => onEdit("horaJanela") : undefined}
+      />
+    );
+  }
   return null;
 }
 
@@ -120,6 +146,9 @@ const COLUMNS = [
   { key: "booking", header: "Booking", className: CELL },
   { key: "processo", header: "Processo", className: CELL },
   { key: "navio", header: "Navio", className: CELL },
+  { key: "localDestino", header: "Local de destino", className: CELL },
+  { key: "dataAgendamento", header: "Data", className: CELL },
+  { key: "horaJanela", header: "Hora", className: CELL },
 ];
 
 export default function OrganizadorEmbarquePage() {
@@ -182,7 +211,7 @@ export default function OrganizadorEmbarquePage() {
       <main className="mx-auto w-[90%] space-y-6 px-4 py-8">
         <SectionTitle
           title="Consulta de estoque"
-          description="ID, unidade, tipo, carga, booking, processo e navio das unidades depositadas."
+          description="ID, unidade, tipo, carga, booking, processo, navio, destino, data e hora das unidades depositadas."
         />
         <div className="mb-2">
           <ConsultaEstoqueSubnav />
@@ -207,7 +236,7 @@ export default function OrganizadorEmbarquePage() {
         <SectionTitle
           className="mb-0"
           title="Consulta de estoque"
-          description="ID, unidade, tipo, carga, booking, processo e navio das unidades depositadas."
+          description="ID, unidade, tipo, carga, booking, processo, navio, destino, data e hora das unidades depositadas."
         />
         <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
           <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
@@ -308,6 +337,27 @@ export default function OrganizadorEmbarquePage() {
                           <EmbarqueValor
                             valor={r.navio?.trim() || ""}
                             onEdit={podeEditar ? () => abrirEdicao(r, "navio") : undefined}
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <p className="text-xs text-slate-500">Local de destino</p>
+                          <EmbarqueValor
+                            valor={r.localDestino?.trim() || ""}
+                            onEdit={podeEditar ? () => abrirEdicao(r, "localDestino") : undefined}
+                          />
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500">Data</p>
+                          <EmbarqueValor
+                            valor={patioDataAgendamentoLabel(r.dataAgendamento)}
+                            onEdit={podeEditar ? () => abrirEdicao(r, "dataAgendamento") : undefined}
+                          />
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500">Hora</p>
+                          <EmbarqueValor
+                            valor={patioHoraJanelaLabel(r.horaInicio, r.horaFim)}
+                            onEdit={podeEditar ? () => abrirEdicao(r, "horaJanela") : undefined}
                           />
                         </div>
                       </div>

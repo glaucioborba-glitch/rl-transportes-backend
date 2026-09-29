@@ -11,6 +11,26 @@ export function patioEquipamentoLabel(item: PortalPatioSaldoItem): string {
   return formatTipoTamanhoContainerLabel(item.tipo, item.tamanho) ?? item.tipo ?? "—";
 }
 
+export function patioDataAgendamentoLabel(value?: string | null): string {
+  const ymd = value?.trim().slice(0, 10) ?? "";
+  const [y, m, d] = ymd.split("-");
+  return y && m && d ? `${d}/${m}/${y}` : "";
+}
+
+export function patioHoraJanelaLabel(inicio?: string | null, fim?: string | null): string {
+  const a = inicio?.trim() ?? "";
+  const b = fim?.trim() ?? "";
+  if (a && b) return `${a} – ${b}`;
+  return a || b || "";
+}
+
+export function patioHoraJanelaValor(inicio?: string | null, fim?: string | null): string {
+  const a = inicio?.trim() ?? "";
+  const b = fim?.trim() ?? "";
+  if (a && b) return `${a}-${b}`;
+  return "";
+}
+
 export function patioSaldoMatchesQuery(item: PortalPatioSaldoItem, q: string): boolean {
   const needle = q.trim().toLowerCase().replace(/[\s-]/g, "");
   if (!needle) return true;
@@ -19,6 +39,10 @@ export function patioSaldoMatchesQuery(item: PortalPatioSaldoItem, q: string): b
     item.booking,
     item.processo,
     item.navio,
+    item.localDestino,
+    item.dataAgendamento,
+    item.horaInicio,
+    item.horaFim,
     item.protocolo,
     item.unidadeProcessoLabel,
     item.tipo,

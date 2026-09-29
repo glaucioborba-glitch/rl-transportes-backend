@@ -19,12 +19,14 @@ import { toast } from "@/lib/toast";
 const TIPO_FILTERS = [
   { value: "todos", label: "Todos" },
   { value: "REJEICAO_GATE", label: "Rejeição Gate" },
+  { value: "REJEICAO_ALUGUEL", label: "Rejeição Aluguel" },
   { value: "RETORNO_PATIO", label: "Retorno Pátio" },
   { value: "CANCELAMENTO_CLIENTE", label: "Cancelamento" },
 ] as const;
 
 const TIPO_LABELS: Record<string, string> = {
   REJEICAO_GATE: "Rejeição no Gate",
+  REJEICAO_ALUGUEL: "Rejeição Aluguel",
   RETORNO_PATIO: "Retorno ao Pátio",
   CANCELAMENTO_CLIENTE: "Cancelamento do Cliente",
 };

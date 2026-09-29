@@ -13,7 +13,10 @@ export function solicitacaoStatusVariant(status: string): NonNullable<BadgeProps
     case "EM_ANALISE":
       return "pendente";
     case "EM_EXECUCAO":
+    case "INICIADO":
       return "aprovado";
+    case "ENCERRADO":
+      return "concluido";
     case "CANCELADO":
       return "rejeitado";
     case "CANCELADO_CLIENTE":
@@ -29,6 +32,8 @@ export function solicitacaoStatusLabel(status: string): string {
     APROVADO: "Aprovado",
     EM_ANALISE: "Em análise",
     EM_EXECUCAO: "Em execução",
+    INICIADO: "Em operação",
+    ENCERRADO: "Encerrada",
     CANCELADO: "Cancelado",
     CANCELADO_CLIENTE: "Cancelado pelo cliente",
     CONCLUIDO: "Concluído",

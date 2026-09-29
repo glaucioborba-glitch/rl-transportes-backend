@@ -5,11 +5,12 @@ import { OutboxModule } from '../outbox/outbox.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AluguelController } from './aluguel.controller';
 import { AluguelService } from './aluguel.service';
+import { SolicitacaoAluguelService } from './solicitacao-aluguel.service';
 
 @Module({
   imports: [PrismaModule, ArmazenagemFaturamentoModule, OutboxModule],
   controllers: [AluguelController],
-  providers: [AluguelService, CadastrosTabelasAluguelService],
-  exports: [AluguelService],
+  providers: [AluguelService, SolicitacaoAluguelService, CadastrosTabelasAluguelService],
+  exports: [AluguelService, SolicitacaoAluguelService],
 })
 export class AluguelModule {}

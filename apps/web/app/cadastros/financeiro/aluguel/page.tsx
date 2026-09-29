@@ -75,7 +75,7 @@ export default function AluguelCadastroPage() {
                 </div>
                 <div className="flex gap-2">
                   {t.padrao ? <Badge>Padrão</Badge> : null}
-                  {t.ativo ? null : <Badge variant="secondary">Inativa</Badge>}
+                  {t.ativo ? null : <Badge variant="neutral">Inativa</Badge>}
                 </div>
               </div>
               {canEdit || canCreate ? (

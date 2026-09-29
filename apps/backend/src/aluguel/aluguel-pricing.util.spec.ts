@@ -55,7 +55,7 @@ describe('aluguel-pricing.util', () => {
     });
     const diaria = result.items.find((i) => i.eventoGatilho === EventoGatilhoTarifa.DIARIA_ARMAZENAGEM);
     expect(diaria?.valorUnitario).toBe(80);
-    expect(diaria?.quantidade).toBe(3);
+    expect(diaria?.quantidade).toBe(4);
     expect(diaria?.descricao).toMatch(/aluguel/i);
   });
 
@@ -76,8 +76,8 @@ describe('aluguel-pricing.util', () => {
       fase: 'DIARIA',
     });
     const diaria = result.items.find((i) => i.eventoGatilho === EventoGatilhoTarifa.DIARIA_ARMAZENAGEM);
-    expect(diaria?.valorTotal).toBe(7 * 50 + 3 * 80);
-    expect(diaria?.quantidade).toBe(10);
+    expect(diaria?.valorTotal).toBe(7 * 50 + 4 * 80);
+    expect(diaria?.quantidade).toBe(11);
   });
 
   it('na devolução no mesmo dia cobra no mínimo 1 diária, sem coleta', () => {

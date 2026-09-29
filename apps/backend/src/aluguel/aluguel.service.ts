@@ -9,6 +9,7 @@ import {
   ModalidadeUnidadeProcesso,
   Prisma,
   StatusAluguel,
+  StatusSolicitacaoAluguel,
   StatusUnidadeAluguel,
   StatusUnidadeProcesso,
 } from '@prisma/client';
@@ -123,8 +124,28 @@ export class AluguelService {
         );
       }
 
+      let clienteId = dto.clienteId;
+      let solicitacaoAluguelId: string | null = null;
+      if (dto.solicitacaoAluguelId) {
+        const reserva = await tx.solicitacaoAluguel.findFirst({
+          where: { id: dto.solicitacaoAluguelId },
+        });
+        if (!reserva) throw new NotFoundException('Reserva de aluguel não encontrada.');
+        if (reserva.status !== StatusSolicitacaoAluguel.APROVADO) {
+          throw new BadRequestException('Esta reserva não está aguardando início.');
+        }
+        const jaIniciados = await tx.aluguel.count({
+          where: { solicitacaoAluguelId: reserva.id },
+        });
+        if (jaIniciados >= reserva.quantidade) {
+          throw new BadRequestException('Todas as unidades desta reserva já foram iniciadas.');
+        }
+        clienteId = reserva.clienteId;
+        solicitacaoAluguelId = reserva.id;
+      }
+
       const cliente = await tx.cliente.findFirst({
-        where: { id: dto.clienteId, deletedAt: null },
+        where: { id: clienteId, deletedAt: null },
         select: { id: true, tenantId: true, razaoSocial: true, cadastroTabelaAluguelId: true },
       });
       if (!cliente) throw new NotFoundException('Cliente não encontrado.');
@@ -184,8 +205,23 @@ export class AluguelService {
           status: StatusAluguel.ATIVO,
           iniciadoEm: now,
           observacao: dto.observacao?.trim() || null,
+          solicitacaoAluguelId,
         },
       });
+
+      if (solicitacaoAluguelId) {
+        const iniciados = await tx.aluguel.count({ where: { solicitacaoAluguelId } });
+        const qtd = await tx.solicitacaoAluguel.findFirst({
+          where: { id: solicitacaoAluguelId },
+          select: { quantidade: true },
+        });
+        if (qtd && iniciados >= qtd.quantidade) {
+          await tx.solicitacaoAluguel.update({
+            where: { id: solicitacaoAluguelId },
+            data: { status: StatusSolicitacaoAluguel.INICIADO },
+          });
+        }
+      }
 
       await tx.cadastroUnidadeAluguel.update({
         where: { id: unidade.id },
@@ -286,6 +322,22 @@ export class AluguelService {
         where: { id: aluguel.unidadeAluguelId },
         data: { status: StatusUnidadeAluguel.DISPONIVEL },
       });
+
+      if (aluguel.solicitacaoAluguelId) {
+        const aindaAtivos = await tx.aluguel.count({
+          where: {
+            solicitacaoAluguelId: aluguel.solicitacaoAluguelId,
+            status: StatusAluguel.ATIVO,
+            id: { not: id },
+          },
+        });
+        if (aindaAtivos === 0) {
+          await tx.solicitacaoAluguel.update({
+            where: { id: aluguel.solicitacaoAluguelId },
+            data: { status: StatusSolicitacaoAluguel.ENCERRADO },
+          });
+        }
+      }
 
       await this.billing.consolidateAluguel(
         {

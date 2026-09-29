@@ -23,7 +23,16 @@ import { useTenantTurnos } from "@/hooks/use-tenant-turnos";
 import { resolveAgendamentoTurno } from "@/lib/api/tenant-config-client";
 import { usePessoaAutorizadaStore } from "@/stores/pessoaAutorizadaStore";
 import { usePortalClienteAuthStore } from "@/stores/portalClienteAuthStore";
-import { intentLabel, intentUsesBookingDeadline, intentUsesEstoqueDoCliente, intentUsesFlFrete, intentUsesPrevisaoRetirada, optionalDateTimeLocalToIso } from "@/lib/solicitacao-intent";
+import {
+  horariosAgendamentoSlots,
+  intentLabel,
+  intentUsesBookingDeadline,
+  intentUsesEstoqueDoCliente,
+  intentUsesFlFrete,
+  intentUsesPrevisaoRetirada,
+  optionalDateTimeLocalToIso,
+  todayDateInputValue,
+} from "@/lib/solicitacao-intent";
 import { QuitacaoPixSaidaDialog, useQuitacaoPixSaidaDialog } from "@/components/portal/quitacao-pix-saida-dialog";
 import { ContainerEstoqueSearch } from "@/components/portal/container-estoque-search";
 import {
@@ -51,6 +60,8 @@ import {
   SOLICITACAO_SPAN2 as SPAN2,
 } from "@/components/portal/solicitacao-form-layout";
 import { useMotoristaCpfAutofill } from "@/hooks/use-motorista-cpf-autofill";
+import { usePortalOrigensDestinos } from "@/hooks/use-portal-origens-destinos";
+import { labelCadastroLocalTransporte } from "@/lib/api/cadastros-locais-transporte-client";
 
 type TipoCaminhao = "LS" | "RODOTREM";
 
@@ -115,7 +126,7 @@ export function SolicitacaoFormModal({
   const [containers, setContainers] = useState<ContainerDraft[]>([emptyContainer(1)]);
   const [catalogoHints, setCatalogoHints] = useState<Record<number, string>>({});
 
-  const [dataRef, setDataRef] = useState("");
+  const [dataRef, setDataRef] = useState(todayDateInputValue);
   const { turnos } = useTenantTurnos();
   const [turno, setTurno] = useState("");
 
@@ -128,7 +139,10 @@ export function SolicitacaoFormModal({
 
   const [previsaoRetirada, setPrevisaoRetirada] = useState("");
   const [bookingDeadline, setBookingDeadline] = useState("");
+  const [horaInicio, setHoraInicio] = useState("08:00");
+  const [horaFim, setHoraFim] = useState("12:00");
   const [layerReady, setLayerReady] = useState(false);
+  const horarios = useMemo(() => horariosAgendamentoSlots(30), []);
 
   const pessoa = usePessoaAutorizadaStore((s) => s.pessoa);
   const user = usePortalClienteAuthStore((s) => s.user);
@@ -145,6 +159,11 @@ export function SolicitacaoFormModal({
   const showBookingDeadline = useMemo(() => intentUsesBookingDeadline(intent), [intent]);
   const containerCount = isFrotaFL || tipoCaminhao === "LS" ? 1 : 2;
   const { tipos: tiposContainer, loading: loadingTipos } = usePortalTiposContainer(open);
+  const {
+    locais: destinosCadastro,
+    loading: loadingDestinos,
+    error: destinosError,
+  } = usePortalOrigensDestinos(open && intent === "SOLICITAR_EXPORTACAO_ENTREGA_DEPOT");
   const estoque = usePortalEstoqueCliente(open && usesEstoqueDoCliente);
   const pixQuitacao = useQuitacaoPixSaidaDialog();
   const prefillAppliedIso = useRef<string | null>(null);
@@ -168,14 +187,16 @@ export function SolicitacaoFormModal({
 
   useEffect(() => {
     if (!open) return;
+    setDataRef(todayDateInputValue());
     if (pessoa) {
       setSolNome(pessoa.nome);
       setSolEmail(pessoa.email);
       if (pessoa.telefone) setSolTelefone(formatPhoneBr(pessoa.telefone));
     } else if (user?.email) {
       setSolEmail(user.email);
+      if (user.nome) setSolNome(user.nome);
     }
-  }, [open, pessoa, user?.email]);
+  }, [open, pessoa, user?.email, user?.nome]);
 
   useEffect(() => {
     if (isFrotaFL) setTipoCaminhao("LS");
@@ -259,8 +280,10 @@ export function SolicitacaoFormModal({
     setLocalOrigem("");
     setLocalDestino("");
     setContainers([emptyContainer(1)]);
-    setDataRef("");
+    setDataRef(todayDateInputValue());
     setTurno(turnos[0]?.id ?? "MANHA");
+    setHoraInicio("08:00");
+    setHoraFim("12:00");
     setFiles([]);
     setPrevisaoRetirada("");
     setBookingDeadline("");
@@ -344,7 +367,14 @@ export function SolicitacaoFormModal({
         ? { localOrigem: localOrigem.trim() }
         : {}),
       ...(intent === "SOLICITAR_EXPORTACAO_ENTREGA_DEPOT"
-        ? { localDestino: localDestino.trim() }
+        ? {
+            localDestino: (() => {
+              const escolhido = destinosCadastro.find((l) => l.id === localDestino);
+              return escolhido
+                ? `${escolhido.nome} (${escolhido.codigo})`
+                : localDestino.trim();
+            })(),
+          }
         : {}),
       ...(!isFrotaFL
         ? {
@@ -378,19 +408,33 @@ export function SolicitacaoFormModal({
         };
       }),
       agendamento: {
-        dataRef,
-        turno: resolveAgendamentoTurno(turnos, turno),
+        dataRef: dataRef || todayDateInputValue(),
+        turno:
+          intent === "SOLICITAR_EXPORTACAO_ENTREGA_DEPOT"
+            ? resolveAgendamentoTurno(
+                turnos,
+                turnos.find((t) => t.inicio <= horaInicio && horaInicio < t.fim)?.id ??
+                  (parseInt(horaInicio.slice(0, 2), 10) < 12 ? "MANHA" : "TARDE"),
+              )
+            : resolveAgendamentoTurno(turnos, turno),
+        ...(intent === "SOLICITAR_EXPORTACAO_ENTREGA_DEPOT"
+          ? { horaInicio, horaFim }
+          : {}),
       },
       solicitante: {
-        nome: solNome.trim(),
-        telefone: solTelefone.trim(),
-        email: solEmail.trim().toLowerCase(),
+        nome: (solNome || pessoa?.nome || user?.nome || "").trim(),
+        telefone: (solTelefone || pessoa?.telefone || "").trim() || "00000000",
+        email: (solEmail || pessoa?.email || user?.email || "").trim().toLowerCase(),
       },
       ...(showPrevisaoRetirada
         ? { previsaoRetirada: optionalDateTimeLocalToIso(previsaoRetirada) }
         : {}),
       ...(showBookingDeadline
-        ? { bookingDeadline: optionalDateTimeLocalToIso(bookingDeadline) }
+        ? {
+            bookingDeadline: optionalDateTimeLocalToIso(
+              `${dataRef || todayDateInputValue()}T${horaInicio}`,
+            ),
+          }
         : {}),
     };
     return payload;
@@ -404,9 +448,24 @@ export function SolicitacaoFormModal({
       toast.error("Informe o local de origem.");
       return;
     }
-    if (intent === "SOLICITAR_EXPORTACAO_ENTREGA_DEPOT" && !localDestino.trim()) {
-      toast.error("Informe o local de destino.");
-      return;
+    if (intent === "SOLICITAR_EXPORTACAO_ENTREGA_DEPOT") {
+      const escolhido = destinosCadastro.find((l) => l.id === localDestino);
+      if (!escolhido) {
+        toast.error("Selecione um destino da lista cadastrada em Origens e destinos.");
+        return;
+      }
+      if (!dataRef) {
+        toast.error("Informe a data de agendamento.");
+        return;
+      }
+      if (!horaInicio || !horaFim) {
+        toast.error("Informe o início e o fim do agendamento.");
+        return;
+      }
+      if (horaFim <= horaInicio) {
+        toast.error("O fim do agendamento deve ser depois do início.");
+        return;
+      }
     }
     if (!isFrotaFL) {
       if (!nomeMotorista.trim() || cpfMotorista.replace(/\D/g, "").length !== 11) {
@@ -514,7 +573,7 @@ export function SolicitacaoFormModal({
             </h2>
             <p className="text-sm text-slate-400">
               {isFrotaFL
-                ? "Transporte Frota FL — 1 contêiner. Informe endereço e dados da unidade."
+                ? "Transporte Frota FL — 1 contêiner. Selecione o destino cadastrado e os dados da unidade."
                 : "Frota do cliente — escolha LS ou Rodotrem e informe o motorista."}
             </p>
           </div>
@@ -540,48 +599,106 @@ export function SolicitacaoFormModal({
           {intent === "SOLICITAR_EXPORTACAO_ENTREGA_DEPOT" ? (
             <Card className="border-white/10 bg-black/25">
               <CardHeader className={CARD_H}>
-                <CardTitle className="text-sm text-white">Local de destino</CardTitle>
+                <CardTitle className="text-sm text-white">Destino e prazos</CardTitle>
               </CardHeader>
               <CardContent className={CARD_C}>
-                <Input
-                  placeholder="Endereço ou referência de entrega"
-                  value={localDestino}
-                  onChange={(e) => setLocalDestino(e.target.value)}
-                  required
-                  className="bg-black/40"
-                />
+                <div className="grid grid-cols-1 gap-x-2 gap-y-2 min-[860px]:grid-cols-[minmax(0,2.2fr)_minmax(9.25rem,1fr)_5.75rem_5.75rem]">
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">Local de destino</label>
+                    <select
+                      className={SELECT_CLS}
+                      value={localDestino}
+                      onChange={(e) => setLocalDestino(e.target.value)}
+                      required
+                      disabled={loadingDestinos || destinosCadastro.length === 0}
+                    >
+                      <option value="">
+                        {loadingDestinos
+                          ? "Carregando destinos…"
+                          : destinosCadastro.length === 0
+                            ? "Nenhum destino cadastrado"
+                            : "Selecione um destino"}
+                      </option>
+                      {destinosCadastro.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {labelCadastroLocalTransporte(l)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {showBookingDeadline ? (
+                    <>
+                      <div>
+                        <label className="mb-1 block text-xs text-slate-500">Data</label>
+                        <Input
+                          type="date"
+                          value={dataRef}
+                          onChange={(e) => setDataRef(e.target.value)}
+                          required
+                          className="bg-black/40"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs text-slate-500">Início</label>
+                        <select
+                          className={SELECT_CLS}
+                          value={horaInicio}
+                          onChange={(e) => setHoraInicio(e.target.value)}
+                          required
+                        >
+                          {horarios.map((h) => (
+                            <option key={`ini-${h}`} value={h}>
+                              {h}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs text-slate-500">Fim</label>
+                        <select
+                          className={SELECT_CLS}
+                          value={horaFim}
+                          onChange={(e) => setHoraFim(e.target.value)}
+                          required
+                        >
+                          {horarios.map((h) => (
+                            <option key={`fim-${h}`} value={h}>
+                              {h}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+                {destinosError ? (
+                  <p className="mt-1 text-[11px] text-red-400">{destinosError}</p>
+                ) : destinosCadastro.length === 0 && !loadingDestinos ? (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Cadastre locais em Origens e destinos para liberar esta lista.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Somente destinos cadastrados no terminal.
+                  </p>
+                )}
               </CardContent>
             </Card>
           ) : null}
 
-          {showPrevisaoRetirada || showBookingDeadline ? (
+          {showPrevisaoRetirada ? (
             <Card className="border-white/10 bg-black/25">
               <CardHeader className={CARD_H}>
                 <CardTitle className="text-sm text-white">Prazos (opcional)</CardTitle>
               </CardHeader>
-              <CardContent className={`${GRID} ${CARD_C}`}>
-                {showPrevisaoRetirada ? (
-                  <div className={SPAN2}>
-                    <label className="mb-1 block text-xs text-slate-500">Previsão de retirada</label>
-                    <Input
-                      type="datetime-local"
-                      value={previsaoRetirada}
-                      onChange={(e) => setPrevisaoRetirada(e.target.value)}
-                      className="bg-black/40"
-                    />
-                  </div>
-                ) : null}
-                {showBookingDeadline ? (
-                  <div className={SPAN2}>
-                    <label className="mb-1 block text-xs text-slate-500">Deadline do navio / booking</label>
-                    <Input
-                      type="datetime-local"
-                      value={bookingDeadline}
-                      onChange={(e) => setBookingDeadline(e.target.value)}
-                      className="bg-black/40"
-                    />
-                  </div>
-                ) : null}
+              <CardContent className={CARD_C}>
+                <label className="mb-1 block text-xs text-slate-500">Previsão de retirada</label>
+                <Input
+                  type="datetime-local"
+                  value={previsaoRetirada}
+                  onChange={(e) => setPrevisaoRetirada(e.target.value)}
+                  className="bg-black/40"
+                />
               </CardContent>
             </Card>
           ) : null}
@@ -804,6 +921,7 @@ export function SolicitacaoFormModal({
             </Card>
           ))}
 
+          {intent === "SOLICITAR_EXPORTACAO_ENTREGA_DEPOT" ? null : (
           <Card className="border-white/10 bg-black/25">
             <CardHeader className={CARD_H}>
               <CardTitle className="text-sm text-white">Agendamento e contato</CardTitle>
@@ -869,6 +987,7 @@ export function SolicitacaoFormModal({
               </div>
             </CardContent>
           </Card>
+          )}
 
           <Card className="border-white/10 bg-black/25">
             <CardHeader className={CARD_H}>

@@ -115,7 +115,14 @@ export function isCsrfEnabled(): boolean {
 export function isCsrfExemptPath(path: string): boolean {
   const p = (path.split('?')[0] || path).replace(/\/$/, '') || '/';
 
-  if (p === '/auth/login' || p === '/auth/refresh' || p === '/auth/health' || p === '/auth/register' || p === '/auth/reset-password')
+  if (
+    p === '/auth/login' ||
+    p === '/auth/super-admin/login' ||
+    p === '/auth/refresh' ||
+    p === '/auth/health' ||
+    p === '/auth/register' ||
+    p === '/auth/reset-password'
+  )
     return true;
   if (
     p === '/portal/login' ||
@@ -160,6 +167,8 @@ export function isSecurityHeadersExemptPath(path: string): boolean {
 
   if (
     p === '/auth/login' ||
+    p === '/auth/super-admin/login' ||
+    p === '/auth/me' ||
     p === '/auth/refresh' ||
     p === '/auth/health' ||
     p === '/auth/register' ||

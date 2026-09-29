@@ -66,10 +66,13 @@ function formatAgendadoPara(
   data?: string | null,
   turno?: string | null,
   turnos: TenantTurnoConfig[] = [],
+  horaInicio?: string | null,
+  horaFim?: string | null,
 ) {
   const raw = dataRef ?? data;
   if (!raw) return undefined;
   const date = formatDate(String(raw));
+  if (horaInicio && horaFim) return `${date} · ${horaInicio}–${horaFim}`;
   const label = turnoCadastroLabel(turno, turnos);
   return label ? `${date} - ${label}` : date;
 }
@@ -286,6 +289,15 @@ export function GateAutorizacaoDetalhePanel({ id }: Props) {
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <DataField label="Solicitante" value={ct?.nome != null ? String(ct.nome) : undefined} />
+        <DataField
+          label="Telefone"
+          value={
+            ct?.telefone != null && String(ct.telefone).replace(/0/g, "")
+              ? String(ct.telefone)
+              : undefined
+          }
+        />
+        <DataField label="E-mail" value={ct?.email != null ? String(ct.email) : undefined} />
         <DataField label="Empresa" value={cliente?.razaoSocial} />
         <DataField
           label="Transporte"
@@ -293,7 +305,6 @@ export function GateAutorizacaoDetalhePanel({ id }: Props) {
         />
         <DataField label="Motorista" value={ts?.nomeMotorista != null ? String(ts.nomeMotorista) : undefined} />
         <DataField label="CPF Motorista" value={ts?.cpfMotorista != null ? String(ts.cpfMotorista) : undefined} />
-        <DataField label="Turno" value={turnoCadastroLabel(ag?.turno != null ? String(ag.turno) : null, turnos) || undefined} />
         <DataField
           label="Agendado para"
           value={formatAgendadoPara(
@@ -301,6 +312,8 @@ export function GateAutorizacaoDetalhePanel({ id }: Props) {
             ag?.data != null ? String(ag.data) : null,
             ag?.turno != null ? String(ag.turno) : null,
             turnos,
+            ag?.horaInicio != null ? String(ag.horaInicio) : null,
+            ag?.horaFim != null ? String(ag.horaFim) : null,
           )}
         />
       </div>

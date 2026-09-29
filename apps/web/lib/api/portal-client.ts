@@ -1020,6 +1020,10 @@ export type PortalPatioSaldoItem = {
   booking: string | null;
   processo: string | null;
   navio?: string | null;
+  localDestino?: string | null;
+  dataAgendamento?: string | null;
+  horaInicio?: string | null;
+  horaFim?: string | null;
   lacre?: string | null;
   setPoint?: number | null;
   protocolo: string;
@@ -1045,7 +1049,13 @@ export function fetchPatioSaldo() {
   return portalJson<PortalPatioSaldoResponse>("/cliente/portal/patio/saldo");
 }
 
-export type CampoEmbarquePatio = "booking" | "processo" | "navio";
+export type CampoEmbarquePatio =
+  | "booking"
+  | "processo"
+  | "navio"
+  | "localDestino"
+  | "dataAgendamento"
+  | "horaJanela";
 export type AlcanceEmbarquePatio = "unidade" | "processo" | "booking" | "navio";
 
 export type PortalEmbarqueUpdatePayload = {
@@ -1062,6 +1072,9 @@ export type PortalEmbarqueUpdateResponse = {
   booking: string | null;
   processo: string | null;
   navio: string | null;
+  localDestino?: string | null;
+  dataAgendamento?: string | null;
+  horaJanela?: string | null;
 };
 
 export function atualizarPatioEmbarque(body: PortalEmbarqueUpdatePayload) {
@@ -1145,6 +1158,44 @@ export type PortalSimulacaoLote = {
   totalGeral: number;
   valorLancadoGeral: number;
 };
+
+export type PortalSolicitacaoAluguel = {
+  id: string;
+  protocolo: string;
+  clienteId: string;
+  empresa: string | null;
+  quantidade: number;
+  finalidade: "RETIRADA_USO_EXTERNO" | "UTILIZACAO_PATIO_FL";
+  dataColeta: string | null;
+  dataPrevistaDevolucao: string | null;
+  status: "PENDENTE" | "APROVADO" | "REJEITADO" | "INICIADO" | "ENCERRADO";
+  motivoRejeicao: string | null;
+  createdAt: string;
+  updatedAt: string;
+  autorizadoEm: string | null;
+  contrato: {
+    unidadeIso: string | null;
+    numero: number | null;
+    idLabel: string | null;
+    status: "ATIVO" | "ENCERRADO";
+  } | null;
+};
+
+export function listarSolicitacoesAluguelPortal() {
+  return portalJson<{ items: PortalSolicitacaoAluguel[]; total: number }>("/cliente/portal/aluguel");
+}
+
+export function criarSolicitacaoAluguelPortal(payload: {
+  finalidade: PortalSolicitacaoAluguel["finalidade"];
+  dataColeta?: string;
+  dataPrevistaDevolucao?: string;
+}) {
+  return portalJson<PortalSolicitacaoAluguel>("/cliente/portal/aluguel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
 
 export function fetchSimulacaoValoresCatalogo() {
   return portalJson<PortalSimulacaoCatalogo>(`/cliente/portal/simulacao-valores`);
@@ -1321,6 +1372,22 @@ export function fetchPortalCatalogoNavios(q?: string) {
 export function listPortalTiposContainer() {
   return portalJson<{ items: PortalTipoContainerCatalogItem[]; total: number }>(
     "/cliente/portal/catalogo/tipos-container",
+  );
+}
+
+export type PortalLocalTransporte = {
+  id: string;
+  codigo: string;
+  nome: string;
+  tipo: string;
+  cidade: string | null;
+  uf: string | null;
+};
+
+/** Locais ativos de Cadastros → Origens e destinos. */
+export function listPortalOrigensDestinos() {
+  return portalJson<{ items: PortalLocalTransporte[]; total: number }>(
+    "/cliente/portal/catalogo/origens-destinos",
   );
 }
 
@@ -1502,6 +1569,8 @@ export type CreateSolicitacaoV2Payload = {
   agendamento: {
     dataRef: string;
     turno: string;
+    horaInicio?: string;
+    horaFim?: string;
   };
   solicitante: {
     nome: string;

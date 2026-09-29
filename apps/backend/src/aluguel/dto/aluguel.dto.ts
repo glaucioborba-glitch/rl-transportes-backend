@@ -20,4 +20,9 @@ export class IniciarAluguelDto {
   @IsString()
   @MaxLength(500)
   observacao?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  solicitacaoAluguelId?: string;
 }
