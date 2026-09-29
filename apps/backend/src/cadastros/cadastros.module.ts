@@ -11,6 +11,8 @@ import { CadastrosColaboradoresController } from './cadastros-colaboradores.cont
 import { CadastrosColaboradoresService } from './cadastros-colaboradores.service';
 import { AniversariosService } from './aniversarios.service';
 import { RhAgendaService } from './rh-agenda.service';
+import { RhTurnoJornadaController } from './rh-turno-jornada.controller';
+import { RhTurnoJornadaService } from './rh-turno-jornada.service';
 import { CadastrosContainerCacheController } from './cadastros-container-cache.controller';
 import { CadastrosContainerCacheService } from './cadastros-container-cache.service';
 import { CadastrosEquipamentosController } from './cadastros-equipamentos.controller';
@@ -63,6 +65,7 @@ import { CadastrosTerceirosService } from './cadastros-terceiros.service';
   controllers: [
     CadastrosClientesController,
     CadastrosColaboradoresController,
+    RhTurnoJornadaController,
     CadastrosTransportadorasController,
     CadastrosMotoristasController,
     CadastrosTiposContainerController,
@@ -91,6 +94,7 @@ import { CadastrosTerceirosService } from './cadastros-terceiros.service';
     CadastrosColaboradoresService,
     AniversariosService,
     RhAgendaService,
+    RhTurnoJornadaService,
     CadastrosTransportadorasService,
     CadastrosMotoristasService,
     CadastrosTiposContainerService,

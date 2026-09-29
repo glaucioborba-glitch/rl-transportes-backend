@@ -361,12 +361,12 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
   rh: [
     { label: "Agenda", href: "/rh/agenda", icon: CalendarClock },
     { label: "Colaboradores", href: "/rh/colaboradores", icon: Users },
+    { label: "Turnos", href: "/rh/turnos", icon: Timer },
     { label: "Competências", href: "/rh/competencias", icon: Award },
     { label: "Equipe e Escalas", href: "/rh/equipe", icon: Calendar },
     { label: "Estrutura", href: "/rh/estrutura", icon: GitBranch },
     { label: "Jornada", href: "/rh/jornada", icon: Clock },
     { label: "Ponto", href: "/rh/jornada/ponto", icon: Fingerprint },
-    { label: "Turnos", href: "/rh/jornada/turnos", icon: Timer },
   ],
   admin: [
     { label: "Dashboard", href: "/admin", icon: LayoutDashboard },

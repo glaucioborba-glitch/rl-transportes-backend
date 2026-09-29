@@ -37,7 +37,7 @@ import {
   type CentroCustoRef,
   type GestorRef,
 } from "@/lib/api/cadastros-colaboradores-client";
-import { fetchParametrosGerais, type TenantTurnoOperacionalConfig } from "@/lib/api/tenant-config-client";
+import { listRhTurnosJornada, type RhTurnoJornada } from "@/lib/api/rh-turnos-jornada-client";
 import {
   formatCEP,
   formatCPF,
@@ -65,7 +65,7 @@ export function ColaboradorForm({ colaboradorId, basePath = "/rh/colaboradores" 
   const [validatingCpf, setValidatingCpf] = useState(false);
   const [gestores, setGestores] = useState<GestorRef[]>([]);
   const [centrosCusto, setCentrosCusto] = useState<CentroCustoRef[]>([]);
-  const [turnos, setTurnos] = useState<TenantTurnoOperacionalConfig[]>([]);
+  const [turnos, setTurnos] = useState<RhTurnoJornada[]>([]);
   const [formData, setFormData] = useState<CadastrosColaboradorFormData>(EMPTY_COLABORADOR_FORM);
   const [familiares, setFamiliares] = useState<ColaboradorFamiliarForm[]>([]);
   const [senha, setSenha] = useState("");
@@ -98,17 +98,17 @@ export function ColaboradorForm({ colaboradorId, basePath = "/rh/colaboradores" 
   useEffect(() => {
     void (async () => {
       try {
-        const [g, c, params] = await Promise.all([
+        const [g, c, turnosRh] = await Promise.all([
           fetchCadastrosGestores(),
           fetchCadastrosCentrosCusto(),
-          fetchParametrosGerais().catch(() => null),
+          listRhTurnosJornada().catch(() => ({ items: [] as RhTurnoJornada[] })),
         ]);
         setGestores(g);
         setCentrosCusto(c);
-        const ativos = (params?.operacional?.turnos ?? []).filter((t) => t.ativo !== false);
+        const ativos = (turnosRh.items ?? []).filter((t) => t.ativo !== false);
         setTurnos(ativos);
         if (!colaboradorId && ativos[0]) {
-          setFormData((prev) => ({ ...prev, turno: prev.turno || ativos[0].codigo || ativos[0].id }));
+          setFormData((prev) => ({ ...prev, turno: prev.turno || ativos[0].id }));
         }
       } catch {
         /* aux endpoints opcionais */
@@ -151,6 +151,14 @@ export function ColaboradorForm({ colaboradorId, basePath = "/rh/colaboradores" 
       on = false;
     };
   }, [colaboradorId]);
+
+  useEffect(() => {
+    if (!formData.turno || turnos.length === 0) return;
+    const match = turnos.find((t) => t.id === formData.turno || t.codigo === formData.turno);
+    if (match && formData.turno !== match.id) {
+      setFormData((prev) => ({ ...prev, turno: match.id }));
+    }
+  }, [formData.turno, turnos]);
 
   const validateCpf = async (cpf: string) => {
     const clean = cpf.replace(/\D/g, "");
@@ -567,7 +575,7 @@ export function ColaboradorForm({ colaboradorId, basePath = "/rh/colaboradores" 
               className="tabular-nums"
             />
           </FormField>
-          <FormField label="Turno" size="md">
+          <FormField label="Turno de jornada" size="md">
             <select
               value={formData.turno}
               onChange={(e) => setFormData({ ...formData, turno: e.target.value })}
@@ -575,20 +583,26 @@ export function ColaboradorForm({ colaboradorId, basePath = "/rh/colaboradores" 
             >
               <option value="">Selecione o turno</option>
               {turnos.map((t) => (
-                <option key={t.id || t.codigo} value={t.codigo || t.id}>
-                  {t.nome} ({t.horaInicio} – {t.horaFim})
+                <option key={t.id} value={t.id}>
+                  {t.nome} ({t.horaInicio} – {t.horaFim}
+                  {t.regimeSabado === "ESPANHOL" ? " · espanhol" : ""}
+                  {t.regimeSabado === "TODOS_SABADOS" ? " · sábados" : ""})
                 </option>
               ))}
             </select>
             {turnos.length === 0 ? (
               <p className="mt-1 text-xs text-muted-foreground">
-                Nenhum turno cadastrado. Defina em{" "}
-                <Link href="/rh/jornada/turnos" className="text-[var(--accent)] hover:underline">
+                Nenhum turno de jornada. Cadastre em{" "}
+                <Link href="/rh/turnos" className="text-[var(--accent)] hover:underline">
                   RH → Turnos
                 </Link>
                 .
               </p>
-            ) : null}
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Jornada da pessoa. Os turnos do Gate ficam em Parâmetros operacionais.
+              </p>
+            )}
           </FormField>
         </div>
       </FormSection>

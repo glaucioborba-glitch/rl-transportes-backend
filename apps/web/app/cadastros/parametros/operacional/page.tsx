@@ -397,11 +397,12 @@ export default function ParametrosOperacionalPage() {
 
       <FormSection title="Turnos Operacionais" icon={Clock}>
         <p className="mb-3 text-sm text-muted-foreground">
-          A equipe cadastra e ajusta turnos em{" "}
-          <a href="/rh/jornada/turnos" className="text-[var(--accent)] hover:underline">
+          Turnos do <strong>Gate e agendamento</strong> (capacidade e slot manhã/tarde). A jornada
+          dos colaboradores é outro cadastro, em{" "}
+          <a href="/rh/turnos" className="text-[var(--accent)] hover:underline">
             RH → Turnos
           </a>
-          . É a mesma lista usada no cadastro do colaborador e no Gate.
+          .
         </p>
         <div className="space-y-3">
           {form.turnos.map((turno, index) => (

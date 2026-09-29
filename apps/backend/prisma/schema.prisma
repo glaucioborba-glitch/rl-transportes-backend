@@ -450,6 +450,7 @@ model Tenant {
   bloqueiosContainer BloqueioContainer[]
   arquivosBancarios  ArquivoBancario[]
   cadastrosColaboradores CadastroColaborador[]
+  rhTurnosJornada RhTurnoJornada[]
   cadastrosTransportadoras CadastroTransportadora[]
   cadastrosMotoristas CadastroMotorista[]
   catalogoMotoristasExternos CatalogoMotoristaExterno[]
@@ -2062,6 +2063,36 @@ model CadastroColaborador {
   @@index([tenantId, vinculo])
   @@index([gestorId])
   @@map("cadastros_colaboradores")
+}
+
+/// Turnos de jornada da equipe (RH) — distintos dos turnos operacionais do Gate.
+model RhTurnoJornada {
+  id        String @id @default(uuid())
+  tenantId  String @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  codigo    String @db.VarChar(32)
+  nome      String @db.VarChar(120)
+  horaInicio String @map("hora_inicio") @db.VarChar(8)
+  horaFim    String @map("hora_fim") @db.VarChar(8)
+  diasSemana Json   @default("[]") @map("dias_semana")
+  jornadaSemanalHoras Int? @map("jornada_semanal_horas")
+
+  /// SEM_SABADO | TODOS_SABADOS | ESPANHOL (um sábado o dia todo, o outro folga).
+  regimeSabado      String  @default("SEM_SABADO") @map("regime_sabado") @db.VarChar(32)
+  sabadoHoraInicio  String? @map("sabado_hora_inicio") @db.VarChar(8)
+  sabadoHoraFim     String? @map("sabado_hora_fim") @db.VarChar(8)
+  sabadoReferencia  DateTime? @map("sabado_referencia") @db.Date
+  observacoes       String? @db.VarChar(500)
+  ativo             Boolean @default(true)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([tenantId, codigo])
+  @@index([tenantId, ativo])
+  @@map("rh_turnos_jornada")
 }
 
 model ColaboradorFamiliar {
