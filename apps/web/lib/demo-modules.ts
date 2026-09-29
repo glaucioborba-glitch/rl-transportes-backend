@@ -1,7 +1,6 @@
 /** Módulos de demonstração (localStorage) — desligados em produção por padrão. */
 
 export const DEMO_MODULE_PREFIXES = [
-  '/rh',
   '/ssma',
   '/grc',
   '/digital-twin',
