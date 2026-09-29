@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { todayYmd, toYmdUtc } from './rh-agenda.util';
 import { nearestSaturdayOnOrAfter, proximoParEspanhol } from './espanhol-sabado.util';
 import { RhTurnoJornadaFormDto } from './dto/rh-turno-jornada-form.dto';
+import { assertBatidasJornada } from './rh-turno-batidas.util';
 
 const DIAS_UTEIS = ['SEG', 'TER', 'QUA', 'QUI', 'SEX'];
 
@@ -16,11 +17,15 @@ type TurnoRow = {
   codigo: string;
   nome: string;
   horaInicio: string;
+  intervaloInicio: string | null;
+  intervaloFim: string | null;
   horaFim: string;
   diasSemana: Prisma.JsonValue;
   jornadaSemanalHoras: number | null;
   regimeSabado: string;
   sabadoHoraInicio: string | null;
+  sabadoIntervaloInicio: string | null;
+  sabadoIntervaloFim: string | null;
   sabadoHoraFim: string | null;
   sabadoReferencia: Date | null;
   observacoes: string | null;
@@ -103,6 +108,8 @@ export class RhTurnoJornadaService {
           codigo: 'ADM',
           nome: 'Administrativo (seg–sex)',
           horaInicio: '08:00',
+          intervaloInicio: '12:00',
+          intervaloFim: '13:00',
           horaFim: '17:00',
           diasSemana: DIAS_UTEIS,
           jornadaSemanalHoras: 44,
@@ -113,11 +120,15 @@ export class RhTurnoJornadaService {
           codigo: 'OP_ESP',
           nome: 'Operacional (sistema espanhol)',
           horaInicio: '07:00',
+          intervaloInicio: '11:00',
+          intervaloFim: '12:00',
           horaFim: '16:00',
           diasSemana: DIAS_UTEIS,
           jornadaSemanalHoras: 44,
           regimeSabado: 'ESPANHOL',
           sabadoHoraInicio: '07:00',
+          sabadoIntervaloInicio: '12:00',
+          sabadoIntervaloFim: '13:00',
           sabadoHoraFim: '17:00',
           sabadoReferencia: new Date(`${ref}T12:00:00.000Z`),
           observacoes: 'Trabalha um sábado o dia todo e folga no sábado seguinte.',
@@ -133,16 +144,44 @@ export class RhTurnoJornadaService {
     const ref = dto.sabadoReferencia
       ? nearestSaturdayOnOrAfter(dto.sabadoReferencia.slice(0, 10))
       : null;
+    const horaInicio = dto.horaInicio.slice(0, 5);
+    const horaFim = dto.horaFim.slice(0, 5);
+    const intervaloInicio = dto.intervaloInicio?.slice(0, 5) || null;
+    const intervaloFim = dto.intervaloFim?.slice(0, 5) || null;
+    assertBatidasJornada(horaInicio, intervaloInicio, intervaloFim, horaFim, 'Dias úteis');
+
+    const sabadoHoraInicio =
+      regime === 'SEM_SABADO' ? null : dto.sabadoHoraInicio?.slice(0, 5) || '07:00';
+    const sabadoHoraFim =
+      regime === 'SEM_SABADO' ? null : dto.sabadoHoraFim?.slice(0, 5) || '17:00';
+    const sabadoIntervaloInicio =
+      regime === 'SEM_SABADO' ? null : dto.sabadoIntervaloInicio?.slice(0, 5) || '12:00';
+    const sabadoIntervaloFim =
+      regime === 'SEM_SABADO' ? null : dto.sabadoIntervaloFim?.slice(0, 5) || '13:00';
+    if (regime !== 'SEM_SABADO' && sabadoHoraInicio && sabadoHoraFim) {
+      assertBatidasJornada(
+        sabadoHoraInicio,
+        sabadoIntervaloInicio,
+        sabadoIntervaloFim,
+        sabadoHoraFim,
+        'Sábado',
+      );
+    }
+
     return {
       codigo,
       nome: dto.nome.trim(),
-      horaInicio: dto.horaInicio.slice(0, 5),
-      horaFim: dto.horaFim.slice(0, 5),
+      horaInicio,
+      intervaloInicio,
+      intervaloFim,
+      horaFim,
       diasSemana: dias,
       jornadaSemanalHoras: dto.jornadaSemanalHoras ?? null,
       regimeSabado: regime,
-      sabadoHoraInicio: regime === 'SEM_SABADO' ? null : dto.sabadoHoraInicio?.slice(0, 5) || '07:00',
-      sabadoHoraFim: regime === 'SEM_SABADO' ? null : dto.sabadoHoraFim?.slice(0, 5) || '17:00',
+      sabadoHoraInicio,
+      sabadoIntervaloInicio,
+      sabadoIntervaloFim,
+      sabadoHoraFim,
       sabadoReferencia:
         regime === 'ESPANHOL' && ref ? new Date(`${ref}T12:00:00.000Z`) : null,
       observacoes: dto.observacoes?.trim() || null,
@@ -173,11 +212,15 @@ export class RhTurnoJornadaService {
       codigo: row.codigo,
       nome: row.nome,
       horaInicio: row.horaInicio,
+      intervaloInicio: row.intervaloInicio,
+      intervaloFim: row.intervaloFim,
       horaFim: row.horaFim,
       diasSemana,
       jornadaSemanalHoras: row.jornadaSemanalHoras,
       regimeSabado: row.regimeSabado,
       sabadoHoraInicio: row.sabadoHoraInicio,
+      sabadoIntervaloInicio: row.sabadoIntervaloInicio,
+      sabadoIntervaloFim: row.sabadoIntervaloFim,
       sabadoHoraFim: row.sabadoHoraFim,
       sabadoReferencia: ref,
       observacoes: row.observacoes,

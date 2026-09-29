@@ -2074,6 +2074,8 @@ model RhTurnoJornada {
   codigo    String @db.VarChar(32)
   nome      String @db.VarChar(120)
   horaInicio String @map("hora_inicio") @db.VarChar(8)
+  intervaloInicio String? @map("intervalo_inicio") @db.VarChar(8)
+  intervaloFim    String? @map("intervalo_fim") @db.VarChar(8)
   horaFim    String @map("hora_fim") @db.VarChar(8)
   diasSemana Json   @default("[]") @map("dias_semana")
   jornadaSemanalHoras Int? @map("jornada_semanal_horas")
@@ -2081,6 +2083,8 @@ model RhTurnoJornada {
   /// SEM_SABADO | TODOS_SABADOS | ESPANHOL (um sábado o dia todo, o outro folga).
   regimeSabado      String  @default("SEM_SABADO") @map("regime_sabado") @db.VarChar(32)
   sabadoHoraInicio  String? @map("sabado_hora_inicio") @db.VarChar(8)
+  sabadoIntervaloInicio String? @map("sabado_intervalo_inicio") @db.VarChar(8)
+  sabadoIntervaloFim    String? @map("sabado_intervalo_fim") @db.VarChar(8)
   sabadoHoraFim     String? @map("sabado_hora_fim") @db.VarChar(8)
   sabadoReferencia  DateTime? @map("sabado_referencia") @db.Date
   observacoes       String? @db.VarChar(500)

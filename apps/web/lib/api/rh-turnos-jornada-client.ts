@@ -7,11 +7,15 @@ export type RhTurnoJornada = {
   codigo: string;
   nome: string;
   horaInicio: string;
+  intervaloInicio: string | null;
+  intervaloFim: string | null;
   horaFim: string;
   diasSemana: string[];
   jornadaSemanalHoras: number | null;
   regimeSabado: RegimeSabadoJornada | string;
   sabadoHoraInicio: string | null;
+  sabadoIntervaloInicio: string | null;
+  sabadoIntervaloFim: string | null;
   sabadoHoraFim: string | null;
   sabadoReferencia: string | null;
   observacoes: string | null;
@@ -24,11 +28,15 @@ export type RhTurnoJornadaPayload = {
   codigo: string;
   nome: string;
   horaInicio: string;
+  intervaloInicio?: string;
+  intervaloFim?: string;
   horaFim: string;
   diasSemana: string[];
   jornadaSemanalHoras?: number;
   regimeSabado: RegimeSabadoJornada;
   sabadoHoraInicio?: string;
+  sabadoIntervaloInicio?: string;
+  sabadoIntervaloFim?: string;
   sabadoHoraFim?: string;
   sabadoReferencia?: string;
   observacoes?: string;
@@ -68,11 +76,15 @@ export function emptyRhTurnoJornada(): RhTurnoJornada {
     codigo: "",
     nome: "",
     horaInicio: "07:00",
+    intervaloInicio: "12:00",
+    intervaloFim: "13:00",
     horaFim: "16:00",
     diasSemana: ["SEG", "TER", "QUA", "QUI", "SEX"],
     jornadaSemanalHoras: 44,
     regimeSabado: "SEM_SABADO",
     sabadoHoraInicio: "07:00",
+    sabadoIntervaloInicio: "12:00",
+    sabadoIntervaloFim: "13:00",
     sabadoHoraFim: "17:00",
     sabadoReferencia: "",
     observacoes: "",
@@ -87,6 +99,8 @@ export function templateEspanhol(): RhTurnoJornada {
     ...emptyRhTurnoJornada(),
     codigo: "OP_ESP",
     nome: "Operacional (sistema espanhol)",
+    intervaloInicio: "11:00",
+    intervaloFim: "12:00",
     regimeSabado: "ESPANHOL",
     observacoes: "Trabalha um sábado o dia todo e folga no sábado seguinte.",
   };

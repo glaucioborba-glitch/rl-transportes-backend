@@ -584,7 +584,11 @@ export function ColaboradorForm({ colaboradorId, basePath = "/rh/colaboradores" 
               <option value="">Selecione o turno</option>
               {turnos.map((t) => (
                 <option key={t.id} value={t.id}>
-                  {t.nome} ({t.horaInicio} – {t.horaFim}
+                  {t.nome} ({t.horaInicio}
+                  {t.intervaloInicio && t.intervaloFim
+                    ? `–${t.intervaloInicio} / ${t.intervaloFim}–`
+                    : " – "}
+                  {t.horaFim}
                   {t.regimeSabado === "ESPANHOL" ? " · espanhol" : ""}
                   {t.regimeSabado === "TODOS_SABADOS" ? " · sábados" : ""})
                 </option>

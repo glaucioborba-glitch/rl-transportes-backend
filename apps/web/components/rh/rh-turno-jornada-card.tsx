@@ -12,21 +12,75 @@ const DIAS = ["SEG", "TER", "QUA", "QUI", "SEX", "SAB", "DOM"] as const;
 const SELECT_CLASS =
   "flex h-10 w-full rounded-md border border-input bg-black/40 px-3 py-2 text-sm";
 
+function timeOr(value: string | null | undefined, fallback = "") {
+  return value?.slice(0, 5) || fallback;
+}
+
 function toPayload(t: RhTurnoJornada) {
   return {
     codigo: t.codigo,
     nome: t.nome,
     horaInicio: t.horaInicio,
+    intervaloInicio: t.intervaloInicio || undefined,
+    intervaloFim: t.intervaloFim || undefined,
     horaFim: t.horaFim,
     diasSemana: t.diasSemana,
     jornadaSemanalHoras: t.jornadaSemanalHoras ?? undefined,
     regimeSabado: (t.regimeSabado as RegimeSabadoJornada) || "SEM_SABADO",
     sabadoHoraInicio: t.sabadoHoraInicio ?? undefined,
+    sabadoIntervaloInicio: t.sabadoIntervaloInicio ?? undefined,
+    sabadoIntervaloFim: t.sabadoIntervaloFim ?? undefined,
     sabadoHoraFim: t.sabadoHoraFim ?? undefined,
     sabadoReferencia: t.sabadoReferencia || undefined,
     observacoes: t.observacoes ?? undefined,
     ativo: t.ativo,
   };
+}
+
+function BatidasRow({
+  inicio,
+  intervaloInicio,
+  intervaloFim,
+  saida,
+  onInicio,
+  onIntervaloInicio,
+  onIntervaloFim,
+  onSaida,
+}: {
+  inicio: string;
+  intervaloInicio: string;
+  intervaloFim: string;
+  saida: string;
+  onInicio: (v: string) => void;
+  onIntervaloInicio: (v: string) => void;
+  onIntervaloFim: (v: string) => void;
+  onSaida: (v: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <TimeField label="Início" value={inicio} onChange={onInicio} />
+      <TimeField label="Início intervalo" value={intervaloInicio} onChange={onIntervaloInicio} />
+      <TimeField label="Retorno intervalo" value={intervaloFim} onChange={onIntervaloFim} />
+      <TimeField label="Saída" value={saida} onChange={onSaida} />
+    </div>
+  );
+}
+
+function TimeField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-[10px] font-bold uppercase text-zinc-400">{label}</label>
+      <Input type="time" value={value} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
 }
 
 type Props = {
@@ -61,27 +115,11 @@ export function RhTurnoJornadaCard({ turno, onChange, onSave, onRemove, saving }
           <label className="mb-1 block text-[10px] font-bold uppercase text-zinc-400">Código</label>
           <Input value={turno.codigo} onChange={(e) => patch({ codigo: e.target.value })} />
         </div>
-        <div className="md:col-span-2">
+        <div className="md:col-span-3">
           <label className="mb-1 block text-[10px] font-bold uppercase text-zinc-400">Nome</label>
           <Input value={turno.nome} onChange={(e) => patch({ nome: e.target.value })} />
         </div>
-        <div>
-          <label className="mb-1 block text-[10px] font-bold uppercase text-zinc-400">Início</label>
-          <Input
-            type="time"
-            value={turno.horaInicio}
-            onChange={(e) => patch({ horaInicio: e.target.value })}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-[10px] font-bold uppercase text-zinc-400">Fim</label>
-          <Input
-            type="time"
-            value={turno.horaFim}
-            onChange={(e) => patch({ horaFim: e.target.value })}
-          />
-        </div>
-        <div className="flex items-end justify-between gap-2">
+        <div className="flex items-end justify-between gap-2 md:col-span-2">
           <div>
             <label className="mb-1 block text-[10px] font-bold uppercase text-zinc-400">Ativo</label>
             <Switch checked={turno.ativo} onCheckedChange={(v) => patch({ ativo: v })} />
@@ -90,6 +128,22 @@ export function RhTurnoJornadaCard({ turno, onChange, onSave, onRemove, saving }
             <p className="text-xs text-zinc-500">{turno.colaboradores} colaborador(es)</p>
           ) : null}
         </div>
+      </div>
+
+      <div>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-zinc-500">
+          Dias úteis — quatro batidas
+        </p>
+        <BatidasRow
+          inicio={timeOr(turno.horaInicio, "07:00")}
+          intervaloInicio={timeOr(turno.intervaloInicio)}
+          intervaloFim={timeOr(turno.intervaloFim)}
+          saida={timeOr(turno.horaFim, "16:00")}
+          onInicio={(v) => patch({ horaInicio: v })}
+          onIntervaloInicio={(v) => patch({ intervaloInicio: v || null })}
+          onIntervaloFim={(v) => patch({ intervaloFim: v || null })}
+          onSaida={(v) => patch({ horaFim: v })}
+        />
       </div>
 
       <div className="flex flex-wrap gap-1">
@@ -117,7 +171,20 @@ export function RhTurnoJornadaCard({ turno, onChange, onSave, onRemove, saving }
           </label>
           <select
             value={turno.regimeSabado}
-            onChange={(e) => patch({ regimeSabado: e.target.value as RegimeSabadoJornada })}
+            onChange={(e) => {
+              const regime = e.target.value as RegimeSabadoJornada;
+              patch({
+                regimeSabado: regime,
+                ...(regime !== "SEM_SABADO"
+                  ? {
+                      sabadoHoraInicio: turno.sabadoHoraInicio || "07:00",
+                      sabadoIntervaloInicio: turno.sabadoIntervaloInicio || "12:00",
+                      sabadoIntervaloFim: turno.sabadoIntervaloFim || "13:00",
+                      sabadoHoraFim: turno.sabadoHoraFim || "17:00",
+                    }
+                  : {}),
+              });
+            }}
             className={SELECT_CLASS}
           >
             <option value="SEM_SABADO">Folga todo sábado</option>
@@ -125,31 +192,25 @@ export function RhTurnoJornadaCard({ turno, onChange, onSave, onRemove, saving }
             <option value="ESPANHOL">Sistema espanhol (um sim, um não)</option>
           </select>
         </div>
-        {temSabado ? (
-          <>
-            <div>
-              <label className="mb-1 block text-[10px] font-bold uppercase text-zinc-400">
-                Sábado início
-              </label>
-              <Input
-                type="time"
-                value={turno.sabadoHoraInicio ?? "07:00"}
-                onChange={(e) => patch({ sabadoHoraInicio: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-[10px] font-bold uppercase text-zinc-400">
-                Sábado fim (dia todo)
-              </label>
-              <Input
-                type="time"
-                value={turno.sabadoHoraFim ?? "17:00"}
-                onChange={(e) => patch({ sabadoHoraFim: e.target.value })}
-              />
-            </div>
-          </>
-        ) : null}
       </div>
+
+      {temSabado ? (
+        <div>
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-zinc-500">
+            Sábado (quando trabalha) — quatro batidas
+          </p>
+          <BatidasRow
+            inicio={timeOr(turno.sabadoHoraInicio, "07:00")}
+            intervaloInicio={timeOr(turno.sabadoIntervaloInicio, "12:00")}
+            intervaloFim={timeOr(turno.sabadoIntervaloFim, "13:00")}
+            saida={timeOr(turno.sabadoHoraFim, "17:00")}
+            onInicio={(v) => patch({ sabadoHoraInicio: v })}
+            onIntervaloInicio={(v) => patch({ sabadoIntervaloInicio: v || null })}
+            onIntervaloFim={(v) => patch({ sabadoIntervaloFim: v || null })}
+            onSaida={(v) => patch({ sabadoHoraFim: v })}
+          />
+        </div>
+      ) : null}
 
       {espanhol ? (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

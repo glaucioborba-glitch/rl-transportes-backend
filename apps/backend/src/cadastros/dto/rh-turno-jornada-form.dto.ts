@@ -32,6 +32,20 @@ export class RhTurnoJornadaFormDto {
   @MaxLength(8)
   horaInicio!: string;
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value == null ? undefined : value))
+  @IsString()
+  @MaxLength(8)
+  intervaloInicio?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value == null ? undefined : value))
+  @IsString()
+  @MaxLength(8)
+  intervaloFim?: string;
+
   @ApiProperty()
   @IsString()
   @MaxLength(8)
@@ -60,6 +74,20 @@ export class RhTurnoJornadaFormDto {
   @IsString()
   @MaxLength(8)
   sabadoHoraInicio?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value == null ? undefined : value))
+  @IsString()
+  @MaxLength(8)
+  sabadoIntervaloInicio?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value == null ? undefined : value))
+  @IsString()
+  @MaxLength(8)
+  sabadoIntervaloFim?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
