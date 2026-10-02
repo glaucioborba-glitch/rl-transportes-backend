@@ -360,91 +360,70 @@ export async function seedCadastros(): Promise<SeedCadastrosIds> {
     ids.equipamentos.push(row.id);
   }
 
-  // ========== POSIÇÕES DE PÁTIO ==========
-  const zonaA = await prisma.posicaoPatioZona.upsert({
-    where: { tenantId_codigo: { tenantId: DEFAULT_TENANT, codigo: 'A' } },
-    update: { nome: 'Zona A — Dry', cor: '#3B82F6', deletedAt: null, ativo: true },
-    create: { tenantId: DEFAULT_TENANT, codigo: 'A', nome: 'Zona A — Dry', cor: '#3B82F6' },
-  });
-  const baiaA01 = await prisma.posicaoPatioBaia.upsert({
-    where: { tenantId_zonaId_codigo: { tenantId: DEFAULT_TENANT, zonaId: zonaA.id, codigo: 'A-01' } },
-    update: { deletedAt: null, ativo: true },
-    create: { tenantId: DEFAULT_TENANT, zonaId: zonaA.id, codigo: 'A-01' },
-  });
-  const baiaA02 = await prisma.posicaoPatioBaia.upsert({
-    where: { tenantId_zonaId_codigo: { tenantId: DEFAULT_TENANT, zonaId: zonaA.id, codigo: 'A-02' } },
-    update: { deletedAt: null, ativo: true },
-    create: { tenantId: DEFAULT_TENANT, zonaId: zonaA.id, codigo: 'A-02' },
-  });
-
-  for (const baia of [baiaA01, baiaA02]) {
-    for (let slot = 1; slot <= 4; slot++) {
-      for (let stack = 1; stack <= 3; stack++) {
-        const codigo = `${baia.codigo}-${String(slot).padStart(2, '0')}-${stack}`;
-        await prisma.cadastroPosicaoPatio.upsert({
-          where: { tenantId_codigo: { tenantId: DEFAULT_TENANT, codigo } },
-          update: {
-            status: stack === 1 && slot <= 2 ? 'OCUPADO' : 'LIVRE',
-            deletedAt: null,
-            ativo: true,
-          },
-          create: {
-            tenantId: DEFAULT_TENANT,
-            zonaId: zonaA.id,
-            baiaId: baia.id,
-            codigo,
-            zonaCodigo: zonaA.codigo,
-            baiaCodigo: baia.codigo,
-            zonaNome: zonaA.nome,
-            zonaCor: zonaA.cor,
-            slotNumero: slot,
-            stackAltura: stack,
-            tipoAceito: 'DRY',
-            tomadaReefer: false,
-            capacidadePeso: 30,
-            status: stack === 1 && slot <= 2 ? 'OCUPADO' : 'LIVRE',
-            ativo: true,
-          },
-        });
-      }
-    }
-  }
-
-  const zonaR = await prisma.posicaoPatioZona.upsert({
-    where: { tenantId_codigo: { tenantId: DEFAULT_TENANT, codigo: 'R' } },
-    update: { nome: 'Zona R — Reefer', cor: '#06B6D4', deletedAt: null, ativo: true },
-    create: { tenantId: DEFAULT_TENANT, codigo: 'R', nome: 'Zona R — Reefer', cor: '#06B6D4' },
-  });
-  const baiaR01 = await prisma.posicaoPatioBaia.upsert({
-    where: { tenantId_zonaId_codigo: { tenantId: DEFAULT_TENANT, zonaId: zonaR.id, codigo: 'R-01' } },
-    update: { deletedAt: null, ativo: true },
-    create: { tenantId: DEFAULT_TENANT, zonaId: zonaR.id, codigo: 'R-01' },
-  });
-  for (let slot = 1; slot <= 4; slot++) {
-    for (let stack = 1; stack <= 2; stack++) {
-      const codigo = `${baiaR01.codigo}-${String(slot).padStart(2, '0')}-${stack}`;
+  // ========== POSIÇÕES DE PÁTIO (zona + posição, grade 4×3) ==========
+  const zonasPatio = [
+    { codigo: 'A', nome: 'Zona A', cor: '#3B82F6' },
+    { codigo: 'B', nome: 'Zona B', cor: '#10B981' },
+    { codigo: 'C', nome: 'Zona C', cor: '#F59E0B' },
+  ] as const;
+  for (const z of zonasPatio) {
+    const zona = await prisma.posicaoPatioZona.upsert({
+      where: { tenantId_codigo: { tenantId: DEFAULT_TENANT, codigo: z.codigo } },
+      update: { nome: z.nome, cor: z.cor, deletedAt: null, ativo: true },
+      create: { tenantId: DEFAULT_TENANT, codigo: z.codigo, nome: z.nome, cor: z.cor },
+    });
+    const baia = await prisma.posicaoPatioBaia.upsert({
+      where: { tenantId_zonaId_codigo: { tenantId: DEFAULT_TENANT, zonaId: zona.id, codigo: z.codigo } },
+      update: { deletedAt: null, ativo: true },
+      create: { tenantId: DEFAULT_TENANT, zonaId: zona.id, codigo: z.codigo },
+    });
+    for (let posicao = 1; posicao <= 12; posicao++) {
+      const codigo = `${z.codigo}-${posicao}`;
       await prisma.cadastroPosicaoPatio.upsert({
         where: { tenantId_codigo: { tenantId: DEFAULT_TENANT, codigo } },
-        update: { deletedAt: null, ativo: true, status: 'LIVRE' },
+        update: {
+          zonaId: zona.id,
+          baiaId: baia.id,
+          zonaCodigo: zona.codigo,
+          baiaCodigo: baia.codigo,
+          zonaNome: zona.nome,
+          zonaCor: zona.cor,
+          slotNumero: posicao,
+          stackAltura: 1,
+          deletedAt: null,
+          ativo: true,
+        },
         create: {
           tenantId: DEFAULT_TENANT,
-          zonaId: zonaR.id,
-          baiaId: baiaR01.id,
+          zonaId: zona.id,
+          baiaId: baia.id,
           codigo,
-          zonaCodigo: zonaR.codigo,
-          baiaCodigo: baiaR01.codigo,
-          zonaNome: zonaR.nome,
-          zonaCor: zonaR.cor,
-          slotNumero: slot,
-          stackAltura: stack,
-          tipoAceito: 'REEFER',
-          tomadaReefer: true,
-          capacidadePeso: 30,
+          zonaCodigo: zona.codigo,
+          baiaCodigo: baia.codigo,
+          zonaNome: zona.nome,
+          zonaCor: zona.cor,
+          slotNumero: posicao,
+          stackAltura: 1,
+          tipoAceito: 'MISTO',
+          tomadaReefer: false,
           status: 'LIVRE',
           ativo: true,
         },
       });
     }
+  }
+  const posicoesAtivas = await prisma.cadastroPosicaoPatio.findMany({
+    where: { tenantId: DEFAULT_TENANT, deletedAt: null },
+    select: { id: true, codigo: true },
+  });
+  const legadoIds = posicoesAtivas
+    .filter((r) => !/^[A-Z][A-Z0-9]*-\d{1,2}$/i.test(r.codigo.trim()))
+    .map((r) => r.id);
+  if (legadoIds.length) {
+    await prisma.cadastroPosicaoPatio.updateMany({
+      where: { id: { in: legadoIds } },
+      data: { ativo: false, deletedAt: new Date() },
+    });
   }
 
   const tiposOp = [

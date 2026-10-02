@@ -1,3 +1,5 @@
+import { parsePatioZonaPosicao } from './patio-fila.util';
+
 export type PatioSaldoUnidade = {
   id: string;
   unidadeIso: string;
@@ -54,6 +56,7 @@ export function filtrarSaldoUnidades(
   const cliente = (f.cliente ?? '').trim().toLowerCase();
 
   return unidades.filter((u) => {
+    const zp = parsePatioZonaPosicao(u.baia);
     if (tipo === 'REEFER' && !u.refrigerado) return false;
     if (tipo === 'DRY' && u.refrigerado) return false;
     if (diasMin && diasNoPatio(u.entradaEm, now) < diasMin) return false;
@@ -62,7 +65,11 @@ export function filtrarSaldoUnidades(
     if (baia === 'SEM' && u.baia) return false;
     if (baia === 'COM' && !u.baia) return false;
     if (baia && baia !== 'TODAS' && baia !== 'SEM' && baia !== 'COM') {
-      if ((u.baia ?? '').toLowerCase() !== baia.toLowerCase()) return false;
+      const wanted = baia.toUpperCase();
+      const sameCode = (u.baia ?? '').toUpperCase() === wanted;
+      const sameZona = zp?.zona === wanted;
+      const sameSlot = zp ? `${zp.zona}-${zp.posicao}` === wanted : false;
+      if (!sameCode && !sameZona && !sameSlot) return false;
     }
     if (cliente) {
       const hit =
@@ -77,6 +84,8 @@ export function filtrarSaldoUnidades(
         u.booking,
         u.navio,
         u.baia ?? '',
+        zp?.zona ?? '',
+        zp?.posicao != null ? String(zp.posicao) : '',
         u.situacao,
         u.tamanho,
         u.tamanhoLabel,
@@ -113,9 +122,9 @@ export function rotuloFiltrosSaldo(f: PatioSaldoFiltro): string {
   if (f.situacao?.trim() && f.situacao.toUpperCase() !== 'TODOS') parts.push(f.situacao);
   if (f.tamanho?.trim() && f.tamanho !== 'TODOS') parts.push(`${f.tamanho}'`);
   if (f.baia && f.baia !== 'TODAS') {
-    if (f.baia === 'SEM') parts.push('sem baia');
-    else if (f.baia === 'COM') parts.push('com baia');
-    else parts.push(`baia ${f.baia}`);
+    if (f.baia === 'SEM') parts.push('sem posição');
+    else if (f.baia === 'COM') parts.push('com posição');
+    else parts.push(`zona ${f.baia}`);
   }
   if (f.cliente?.trim()) parts.push(`cliente="${f.cliente.trim()}"`);
   return parts.length ? parts.join(' · ') : 'Todos';
@@ -134,6 +143,7 @@ export function buildSaldoXml(opts: {
   const linhas = opts.unidades
     .map((u) => {
       const dias = diasNoPatio(u.entradaEm);
+      const zp = parsePatioZonaPosicao(u.baia);
       return [
         '  <unidade>',
         `    <iso>${xmlEscape(u.unidadeIso)}</iso>`,
@@ -142,6 +152,8 @@ export function buildSaldoXml(opts: {
         `    <situacao>${xmlEscape(u.situacao)}</situacao>`,
         `    <tamanho>${xmlEscape(u.tamanhoLabel || u.tamanho)}</tamanho>`,
         `    <baia>${xmlEscape(u.baia ?? '')}</baia>`,
+        `    <zona>${xmlEscape(zp?.zona ?? '')}</zona>`,
+        `    <posicao>${zp?.posicao ?? ''}</posicao>`,
         `    <entrada>${xmlEscape(u.entradaEm)}</entrada>`,
         `    <diasNoPatio>${dias}</diasNoPatio>`,
         `    <cliente>${xmlEscape(u.cliente)}</cliente>`,

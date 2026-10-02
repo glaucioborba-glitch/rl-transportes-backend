@@ -5,8 +5,14 @@ alwaysApply: true
 
 # Posições de pátio
 
-O cadastro em `/cadastros/operacional/posicoes-patio` é só MDM (lista com editar/excluir). O layout **não** ficou bom para o pátio real.
+Só **duas** variáveis: **zona** e **posição**. Grade **4 de base × 3 de altura** (12 por zona). Código `A1-5`.
 
-Ainda **não** redesenhar mapa, zona/baia/slot nem o fluxo de inclusão nesta tela.
+A zona é cadastrável (A1, A2, B7…). No MDM: cadastrar, editar (Salvar) e excluir.
 
-Quando for a hora: no **app do operador**. É lá que a posição precisa ser visual e operacional.
+Numeração: **01 embaixo à esquerda**, **02 acima**, sobe a coluna e segue para a direita.
+
+Em cada módulo 4×3: **Fundos** à esquerda, **Frente** à direita.
+
+O cadastro em `/cadastros/operacional/posicoes-patio` é MDM: dá para **cadastrar zona** e **cadastrar posição**. Sem baia, slot extra nem stack.
+
+O mapa operacional (ocupação ao vivo, fila, Finalizar) fica no **app do operador** (`/operador/patio`). Não misturar de novo zona/baia/slot nesta tela.

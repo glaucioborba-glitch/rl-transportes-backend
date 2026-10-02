@@ -58,8 +58,8 @@ export function GatePatioPanel({
     );
   }, [unidades]);
 
-  const baias = useMemo(() => {
-    return [...new Set(unidades.map((u) => u.posicao).filter((p) => p && p !== "—"))].sort((a, b) =>
+  const zonas = useMemo(() => {
+    return [...new Set(unidades.map((u) => u.zonaPatio).filter((z): z is string => Boolean(z)))].sort((a, b) =>
       a.localeCompare(b, "pt-BR"),
     );
   }, [unidades]);
@@ -78,9 +78,10 @@ export function GatePatioPanel({
       if (filtroDias && u.diasNoPatio <= 3) return false;
       if (filtroSituacao !== "TODOS" && u.situacao !== filtroSituacao) return false;
       if (filtroTamanho !== "TODOS" && u.tamanho !== filtroTamanho) return false;
-      if (filtroBaia === "SEM" && u.posicao !== "—") return false;
-      if (filtroBaia === "COM" && u.posicao === "—") return false;
-      if (filtroBaia !== "TODAS" && filtroBaia !== "SEM" && filtroBaia !== "COM" && u.posicao !== filtroBaia) {
+      const temPosicao = Boolean(u.zonaPatio);
+      if (filtroBaia === "SEM" && temPosicao) return false;
+      if (filtroBaia === "COM" && !temPosicao) return false;
+      if (filtroBaia !== "TODAS" && filtroBaia !== "SEM" && filtroBaia !== "COM" && u.zonaPatio !== filtroBaia) {
         return false;
       }
       if (filtroCliente !== "TODOS" && u.cliente !== filtroCliente) return false;
@@ -92,6 +93,8 @@ export function GatePatioPanel({
           u.booking,
           u.navio,
           u.posicao,
+          u.zonaPatio,
+          u.posicaoPatio != null ? String(u.posicaoPatio) : "",
           u.situacao,
           rotuloSituacao(u.situacao),
           u.tamanho,
@@ -150,7 +153,7 @@ export function GatePatioPanel({
           <p className="text-xl font-semibold text-sky-300">{reefers}</p>
         </div>
         <div>
-          <p className="text-[10px] uppercase tracking-wide text-zinc-500">Sem baia</p>
+          <p className="text-[10px] uppercase tracking-wide text-zinc-500">Sem posição</p>
           <p className="text-xl font-semibold text-zinc-200">{semBaia}</p>
         </div>
         <div className="ml-auto flex flex-wrap gap-2">
@@ -183,7 +186,7 @@ export function GatePatioPanel({
           <Input
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            placeholder="Buscar ISO, cliente, processo, booking, navio, ID ou baia"
+            placeholder="Buscar ISO, cliente, processo, booking, navio, ID, zona ou posição"
             className="pl-9"
             aria-label="Buscar unidades"
           />
@@ -239,14 +242,14 @@ export function GatePatioPanel({
             value={filtroBaia}
             onChange={(e) => setFiltroBaia(e.target.value)}
             className="h-8 rounded-md border border-white/10 bg-black/40 px-2 text-xs text-zinc-200"
-            aria-label="Filtrar por baia"
+            aria-label="Filtrar por zona"
           >
-            <option value="TODAS">Baia (todas)</option>
-            <option value="SEM">Sem baia</option>
-            <option value="COM">Com baia</option>
-            {baias.map((b) => (
-              <option key={b} value={b}>
-                {b}
+            <option value="TODAS">Zona (todas)</option>
+            <option value="SEM">Sem posição</option>
+            <option value="COM">Com posição</option>
+            {zonas.map((z) => (
+              <option key={z} value={z}>
+                Zona {z}
               </option>
             ))}
           </select>
@@ -280,7 +283,8 @@ export function GatePatioPanel({
               <th className="whitespace-nowrap px-2.5 py-2">Tipo</th>
               <th className="whitespace-nowrap px-2.5 py-2">Situação</th>
               <th className="whitespace-nowrap px-2.5 py-2">Tam.</th>
-              <th className="whitespace-nowrap px-2.5 py-2">Baia</th>
+              <th className="whitespace-nowrap px-2.5 py-2">Zona</th>
+              <th className="whitespace-nowrap px-2.5 py-2">Posição</th>
               <th className="whitespace-nowrap px-2.5 py-2">Entrada</th>
               <th className="whitespace-nowrap px-2.5 py-2">Dias</th>
               <th className="whitespace-nowrap px-2.5 py-2">Cliente</th>
@@ -315,7 +319,12 @@ export function GatePatioPanel({
                 <td className="whitespace-nowrap px-2.5 py-1.5 font-mono text-zinc-300">
                   {u.tamanhoLabel || (u.tamanho ? `${u.tamanho}'` : "—")}
                 </td>
-                <td className="whitespace-nowrap px-2.5 py-1.5 font-mono text-zinc-300">{u.posicao}</td>
+                <td className="whitespace-nowrap px-2.5 py-1.5 font-mono text-zinc-300">
+                  {u.zonaPatio ?? "—"}
+                </td>
+                <td className="whitespace-nowrap px-2.5 py-1.5 font-mono text-zinc-300">
+                  {u.posicaoPatio != null ? u.posicaoPatio : "—"}
+                </td>
                 <td className="whitespace-nowrap px-2.5 py-1.5 text-zinc-400">
                   {new Date(u.entradaEm).toLocaleDateString("pt-BR")}
                 </td>

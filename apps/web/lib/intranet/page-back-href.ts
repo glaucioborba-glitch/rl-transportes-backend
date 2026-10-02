@@ -17,6 +17,7 @@ const INTRANET_HUBS = new Set([
   "/digital-twin",
   "/operador/dashboard",
   "/operador/portaria",
+  "/operador/manutencao",
   "/operador",
 ]);
 

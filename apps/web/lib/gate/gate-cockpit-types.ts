@@ -3,6 +3,8 @@ export type GateContainerSituacao = "CHEIO" | "VAZIO";
 export type GatePatioUnidade = {
   stack: string;
   posicao: string;
+  zonaPatio?: string | null;
+  posicaoPatio?: number | null;
   unidadeId: string;
   container: string;
   tipo: string;

@@ -481,6 +481,7 @@ model Tenant {
   faturasPacote    FaturaPacote[]
   motoristaBiometrias MotoristaBiometria[]
   gateUnidadeNotificacoes GateUnidadeNotificacao[]
+  patioFilaTarefas PatioFilaTarefa[]
 
   @@index([status])
   @@map("tenants")
@@ -1290,6 +1291,54 @@ model PatioMovimentacao {
   @@index([operadorId])
   @@index([createdAt])
   @@map("patio_v2_movimentacoes")
+}
+
+enum PatioFilaUrgencia {
+  PRIORITARIO
+  PREFERENCIAL
+  NORMAL
+}
+
+enum PatioFilaTipo {
+  BAIXA
+  COLETA
+}
+
+enum PatioFilaStatus {
+  PENDENTE
+  CONCLUIDA
+  CANCELADA
+}
+
+/// Fila do operador de pátio: RIC confirmada → urgência → tablet confirma posição.
+model PatioFilaTarefa {
+  id        String @id @default(uuid())
+  tenantId  String @default("default") @map("tenant_id") @db.VarChar(64)
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  urgencia PatioFilaUrgencia
+  tipo     PatioFilaTipo
+  status   PatioFilaStatus   @default(PENDENTE)
+
+  protocolo     String  @db.VarChar(32)
+  solicitacaoId String  @map("solicitacao_id")
+  unidadeIso    String  @map("unidade_iso") @db.VarChar(16)
+  processoNumero Int?   @map("processo_numero")
+  clienteNome   String? @map("cliente_nome") @db.VarChar(255)
+
+  patioUnidadeId    String? @map("patio_unidade_id")
+  unidadeProcessoId String? @map("unidade_processo_id")
+
+  posicaoConhecidaCodigo String? @map("posicao_conhecida_codigo") @db.VarChar(64)
+  posicaoConfirmadaCodigo String? @map("posicao_confirmada_codigo") @db.VarChar(64)
+
+  criadoEm     DateTime  @default(now()) @map("criado_em")
+  concluidoEm  DateTime? @map("concluido_em")
+  operadorId   String?   @map("operador_id")
+
+  @@index([tenantId, status, urgencia, criadoEm])
+  @@index([solicitacaoId, unidadeIso, status])
+  @@map("patio_fila_tarefas")
 }
 
 model Saida {

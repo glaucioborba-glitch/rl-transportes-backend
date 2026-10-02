@@ -21,9 +21,10 @@ import { CadastrosPosicoesPatioService } from './cadastros-posicoes-patio.servic
 import {
   CadastrosPosicaoPatioDisponiveisQueryDto,
   CadastrosPosicaoPatioFormDto,
+  CadastrosZonaPatioFormDto,
 } from './dto/cadastros-posicao-patio-form.dto';
 
-const CADASTROS_ROLES = [Role.ADMIN, Role.GERENTE] as const;
+const CADASTROS_ROLES = [Role.ADMIN, Role.GERENTE, Role.SUPER_ADMIN] as const;
 
 @ApiTags('cadastros')
 @ApiBearerAuth('access-token')
@@ -39,6 +40,26 @@ export class CadastrosPosicoesPatioController {
     return this.service.listZonas();
   }
 
+  @Post('zonas')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Cadastrar zona de pátio (e, se pedido, as 12 posições)' })
+  createZona(@Body() dto: CadastrosZonaPatioFormDto) {
+    return this.service.createZona(dto);
+  }
+
+  @Put('zonas/:id')
+  @ApiOperation({ summary: 'Editar zona de pátio' })
+  updateZona(@Param('id') id: string, @Body() dto: CadastrosZonaPatioFormDto) {
+    return this.service.updateZona(id, dto);
+  }
+
+  @Delete('zonas/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Excluir zona de pátio e as posições dela' })
+  removeZona(@Param('id') id: string) {
+    return this.service.removeZona(id);
+  }
+
   @Get('disponiveis')
   @ApiOperation({ summary: 'Listar slots livres por tipo' })
   listDisponiveis(@Query() query: CadastrosPosicaoPatioDisponiveisQueryDto) {
@@ -49,6 +70,12 @@ export class CadastrosPosicoesPatioController {
   @ApiOperation({ summary: 'Listar posições de pátio' })
   list() {
     return this.service.list();
+  }
+
+  @Post('grade-padrao')
+  @ApiOperation({ summary: 'Gera as zonas A/B/C com 12 posições (4×3) e arquiva o formato antigo' })
+  gradePadrao() {
+    return this.service.ensureGradePadrao();
   }
 
   @Get(':id')

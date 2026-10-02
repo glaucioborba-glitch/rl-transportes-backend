@@ -1,54 +1,64 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Loader2, MapPin, Save, Snowflake, X } from "lucide-react";
-import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Loader2, Save, Trash2, X } from "lucide-react";
+import { CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api/staff-client";
 import {
   createCadastroPosicaoPatio,
+  deleteCadastroPosicaoPatio,
   getCadastroPosicaoPatio,
-  listCadastrosPosicoesPatioZonas,
   updateCadastroPosicaoPatio,
-  type CadastroPosicaoPatioZona,
 } from "@/lib/api/cadastros-posicoes-patio-client";
+import {
+  PATIO_POSICOES_POR_ZONA,
+  codigoPatioZonaPosicao,
+  posicaoCadastro,
+  rotuloPosicaoPatio,
+} from "@/lib/patio/patio-posicao";
 import { toast } from "@/lib/toast";
 
 const selectClass =
   "flex h-10 w-full rounded-md border border-border bg-background px-3 py-2 text-sm";
 
-const ZONA_NOVA = "__nova__";
-
 type Props = { posicaoId?: string };
 
 export function PosicaoForm({ posicaoId }: Props) {
-  const router = useRouter();
-  const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(Boolean(posicaoId));
-  const [zonas, setZonas] = useState<CadastroPosicaoPatioZona[]>([]);
-  const [zonaSelect, setZonaSelect] = useState("");
-  const [formData, setFormData] = useState({
-    zonaId: "",
-    zonaCodigo: "",
-    zonaNome: "",
-    zonaCor: "#3B82F6",
-    baiaCodigo: "",
-    slotNumero: "1",
-    stackAltura: 1,
-    tipoAceito: "MISTO",
-    tomadaReefer: false,
-    capacidadePeso: "",
-    status: "LIVRE",
-    ativo: true,
-  });
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-40 items-center justify-center text-muted-foreground">
+          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+          Carregando…
+        </div>
+      }
+    >
+      <PosicaoFormInner posicaoId={posicaoId} />
+    </Suspense>
+  );
+}
 
-  useEffect(() => {
-    void listCadastrosPosicoesPatioZonas()
-      .then((r) => setZonas(r.items))
-      .catch(() => {});
-  }, []);
+function PosicaoFormInner({ posicaoId }: Props) {
+  const router = useRouter();
+  const search = useSearchParams();
+  const zonaInicial = (search.get("zona") ?? "").toUpperCase();
+  const posicaoInicial = Number(search.get("posicao") ?? "");
+  const [saving, setSaving] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
+  const [loading, setLoading] = useState(Boolean(posicaoId));
+  const [zonaCodigo, setZonaCodigo] = useState(zonaInicial);
+  const [zonaNome, setZonaNome] = useState(zonaInicial ? `Zona ${zonaInicial}` : "");
+  const [posicao, setPosicao] = useState(
+    Number.isInteger(posicaoInicial) &&
+      posicaoInicial >= 1 &&
+      posicaoInicial <= PATIO_POSICOES_POR_ZONA
+      ? posicaoInicial
+      : 1,
+  );
+  const [status, setStatus] = useState("LIVRE");
 
   useEffect(() => {
     if (!posicaoId) return;
@@ -57,21 +67,10 @@ export function PosicaoForm({ posicaoId }: Props) {
       try {
         const data = await getCadastroPosicaoPatio(posicaoId);
         if (!on) return;
-        setZonaSelect(data.zonaId);
-        setFormData({
-          zonaId: data.zonaId,
-          zonaCodigo: data.zonaCodigo,
-          zonaNome: data.zonaNome,
-          zonaCor: data.zonaCor,
-          baiaCodigo: data.baiaCodigo,
-          slotNumero: String(data.slotNumero),
-          stackAltura: data.stackAltura,
-          tipoAceito: data.tipoAceito,
-          tomadaReefer: data.tomadaReefer,
-          capacidadePeso: data.capacidadePeso != null ? String(data.capacidadePeso) : "",
-          status: data.status,
-          ativo: data.ativo,
-        });
+        setZonaCodigo(data.zonaCodigo || "");
+        setZonaNome(data.zonaNome || `Zona ${data.zonaCodigo || ""}`);
+        setPosicao(posicaoCadastro(data) ?? data.slotNumero ?? 1);
+        setStatus(data.status);
       } catch {
         toast.error("Erro ao carregar posição.");
       } finally {
@@ -83,67 +82,61 @@ export function PosicaoForm({ posicaoId }: Props) {
     };
   }, [posicaoId]);
 
-  function aplicarZona(value: string) {
-    setZonaSelect(value);
-    if (value === ZONA_NOVA) {
-      setFormData({ ...formData, zonaId: "", zonaCodigo: "", zonaNome: "", zonaCor: "#3B82F6" });
-      return;
-    }
-    const zona = zonas.find((z) => z.id === value);
-    setFormData({
-      ...formData,
-      zonaId: value,
-      zonaCodigo: zona?.codigo ?? "",
-      zonaNome: zona?.nome ?? "",
-      zonaCor: zona?.cor ?? "#3B82F6",
-    });
-  }
+  const codigoGerado = zonaCodigo.trim()
+    ? codigoPatioZonaPosicao(zonaCodigo, posicao)
+    : "";
+
+  const voltar = () => router.push("/cadastros/operacional/posicoes-patio");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (zonaSelect === ZONA_NOVA) {
-      if (!formData.zonaCodigo.trim() || !formData.zonaNome.trim()) {
-        toast.error("Informe código e nome da nova zona.");
-        return;
-      }
-    } else if (!formData.zonaId) {
-      toast.error("Selecione a zona.");
+    const zonaFinal = zonaCodigo.trim().toUpperCase();
+    if (!zonaFinal) {
+      toast.error("Informe o código da zona (ex.: A1, A2, B7).");
       return;
     }
-    if (!formData.baiaCodigo.trim() || !formData.slotNumero) {
-      toast.error("Baia e número do slot são obrigatórios.");
+    if (!Number.isInteger(posicao) || posicao < 1 || posicao > PATIO_POSICOES_POR_ZONA) {
+      toast.error(`Posição deve ser de 1 a ${PATIO_POSICOES_POR_ZONA}.`);
       return;
     }
     setSaving(true);
     const payload = {
-      zonaId: formData.zonaId || undefined,
-      zonaCodigo: formData.zonaCodigo,
-      zonaNome: formData.zonaNome,
-      zonaCor: formData.zonaCor,
-      baiaCodigo: formData.baiaCodigo,
-      slotNumero: parseInt(formData.slotNumero, 10),
-      stackAltura: formData.stackAltura,
-      tipoAceito: formData.tipoAceito,
-      tomadaReefer: formData.tomadaReefer,
-      capacidadePeso: formData.capacidadePeso ? parseFloat(formData.capacidadePeso) : undefined,
-      status: formData.status,
-      ativo: formData.ativo,
+      zonaCodigo: zonaFinal,
+      zonaNome: zonaNome.trim() || `Zona ${zonaFinal}`,
+      posicao,
+      status,
+      ativo: true,
     };
     try {
       if (posicaoId) {
-        await updateCadastroPosicaoPatio(posicaoId, payload as never);
-        toast.success("Posição atualizada.");
+        await updateCadastroPosicaoPatio(posicaoId, payload);
+        toast.success("Posição salva.");
       } else {
-        await createCadastroPosicaoPatio(payload as never);
-        toast.success("Posição cadastrada.");
+        await createCadastroPosicaoPatio(payload);
+        toast.success("Posição salva.");
       }
-      router.push("/cadastros/operacional/posicoes-patio");
+      voltar();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Erro ao salvar.");
     } finally {
       setSaving(false);
     }
   };
+
+  async function excluir() {
+    if (!posicaoId) return;
+    if (!window.confirm(`Excluir a posição ${codigoGerado || posicaoId}?`)) return;
+    setExcluindo(true);
+    try {
+      await deleteCadastroPosicaoPatio(posicaoId);
+      toast.success("Posição excluída.");
+      voltar();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Não foi possível excluir.");
+    } finally {
+      setExcluindo(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -155,144 +148,98 @@ export function PosicaoForm({ posicaoId }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className={CADASTRO_FORM_CLASS}>
+    <form onSubmit={(e) => void handleSubmit(e)} className={CADASTRO_FORM_CLASS}>
       <div>
-        <h1 className="text-2xl font-bold">{posicaoId ? "Editar posição" : "Nova posição"}</h1>
+        <h1 className="text-2xl font-bold">{posicaoId ? "Editar posição" : "Cadastrar posição"}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Escolha a zona, informe a baia e o número do slot.
+          Código da zona, nome e o número da posição na grade (1 a 12). O 01 fica embaixo à
+          esquerda.
         </p>
       </div>
 
-      <FormSection title="Onde fica" icon={MapPin}>
-        <div className="flex flex-wrap gap-4">
-          <FormField label="Zona" required className="min-w-[16rem] flex-1">
-            <select className={selectClass} value={zonaSelect} onChange={(e) => aplicarZona(e.target.value)}>
-              <option value="">Selecione…</option>
-              {zonas.map((z) => (
-                <option key={z.id} value={z.id}>
-                  {z.codigo} — {z.nome}
-                </option>
-              ))}
-              <option value={ZONA_NOVA}>Criar nova zona…</option>
-            </select>
-          </FormField>
-          {zonaSelect === ZONA_NOVA ? (
-            <>
-              <FormField label="Código da zona" required size="sm">
-                <Input
-                  value={formData.zonaCodigo}
-                  onChange={(e) =>
-                    setFormData({ ...formData, zonaCodigo: e.target.value.toUpperCase().slice(0, 16) })
-                  }
-                  placeholder="A"
-                  className="font-mono"
-                />
-              </FormField>
-              <FormField label="Nome da zona" required className="min-w-[12rem] flex-1">
-                <Input
-                  value={formData.zonaNome}
-                  onChange={(e) => setFormData({ ...formData, zonaNome: e.target.value })}
-                  placeholder="Zona A — Dry"
-                />
-              </FormField>
-            </>
-          ) : null}
-          <FormField label="Baia" required size="sm">
+      <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+        <div className="flex flex-wrap gap-3">
+          <div className="w-32">
+            <label className="mb-1 block text-xs text-muted-foreground">Código</label>
             <Input
-              value={formData.baiaCodigo}
-              onChange={(e) => setFormData({ ...formData, baiaCodigo: e.target.value.toUpperCase() })}
-              placeholder="A-01"
+              value={zonaCodigo}
+              onChange={(e) => setZonaCodigo(e.target.value.toUpperCase().slice(0, 16))}
+              placeholder="A1"
               className="font-mono"
+              required
             />
-          </FormField>
-          <FormField label="Slot" required size="sm">
+          </div>
+          <div className="min-w-[12rem] flex-1">
+            <label className="mb-1 block text-xs text-muted-foreground">Nome</label>
             <Input
-              type="number"
-              min={1}
-              value={formData.slotNumero}
-              onChange={(e) => setFormData({ ...formData, slotNumero: e.target.value })}
-              className="tabular-nums"
+              value={zonaNome}
+              onChange={(e) => setZonaNome(e.target.value)}
+              placeholder="Zona A1"
             />
-          </FormField>
-          <FormField label="Altura (stack)" size="sm">
-            <Input
-              type="number"
-              min={1}
-              max={6}
-              value={formData.stackAltura}
-              onChange={(e) =>
-                setFormData({ ...formData, stackAltura: parseInt(e.target.value, 10) || 1 })
-              }
-              className="tabular-nums"
-            />
-          </FormField>
+          </div>
         </div>
-      </FormSection>
-
-      <FormSection title="Uso" icon={Snowflake}>
-        <div className="flex flex-wrap gap-4">
-          <FormField label="Tipo aceito" size="md">
-            <select
-              className={selectClass}
-              value={formData.tipoAceito}
-              onChange={(e) => setFormData({ ...formData, tipoAceito: e.target.value })}
-            >
-              <option value="MISTO">Misto</option>
-              <option value="DRY">Dry</option>
-              <option value="REEFER">Reefer</option>
-              <option value="HC">High Cube</option>
-            </select>
-          </FormField>
-          <FormField label="Status" size="md">
-            <select
-              className={selectClass}
-              value={formData.status}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-            >
+        <div className="flex flex-wrap gap-3">
+          <div className="w-40">
+            <label className="mb-1 block text-xs text-muted-foreground">Posição na grade</label>
+            <Input
+              type="number"
+              min={1}
+              max={PATIO_POSICOES_POR_ZONA}
+              value={posicao}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (!Number.isFinite(n)) {
+                  setPosicao(1);
+                  return;
+                }
+                setPosicao(Math.min(PATIO_POSICOES_POR_ZONA, Math.max(1, Math.floor(n))));
+              }}
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              1 a 12. 01 embaixo à esquerda, sobe a coluna e segue à direita.
+            </p>
+          </div>
+          <div className="w-40">
+            <label className="mb-1 block text-xs text-muted-foreground">Status</label>
+            <select className={selectClass} value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="LIVRE">Livre</option>
               <option value="OCUPADO">Ocupado</option>
-              <option value="RESERVADO">Reservado</option>
               <option value="BLOQUEADO">Bloqueado</option>
             </select>
-          </FormField>
-          <FormField label="Capacidade (t)" size="sm">
-            <Input
-              type="number"
-              step="0.5"
-              value={formData.capacidadePeso}
-              onChange={(e) => setFormData({ ...formData, capacidadePeso: e.target.value })}
-              className="tabular-nums"
-            />
-          </FormField>
-          <FormField label="Tomada reefer">
-            <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={formData.tomadaReefer}
-                onChange={(e) => setFormData({ ...formData, tomadaReefer: e.target.checked })}
-                className="h-4 w-4 rounded border-border"
-              />
-              Possui tomada
-            </label>
-          </FormField>
+          </div>
         </div>
-      </FormSection>
-
-      <div className="flex gap-3">
-        <Button type="button" variant="outline" onClick={() => router.back()}>
-          <X className="mr-2 h-4 w-4" /> Cancelar
-        </Button>
-        <Button type="submit" disabled={saving}>
-          {saving ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando…
-            </>
-          ) : (
-            <>
-              <Save className="mr-2 h-4 w-4" /> {posicaoId ? "Salvar" : "Cadastrar"}
-            </>
-          )}
-        </Button>
+        {codigoGerado ? (
+          <p className="font-mono text-sm text-muted-foreground">
+            Código da posição: {codigoGerado} ({rotuloPosicaoPatio(posicao)})
+          </p>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" size="sm" disabled={saving}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            Salvar
+          </Button>
+          {posicaoId ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="text-red-400 hover:text-red-300"
+              disabled={excluindo}
+              onClick={() => void excluir()}
+            >
+              {excluindo ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-2 h-4 w-4" />
+              )}
+              Excluir
+            </Button>
+          ) : null}
+          <Button type="button" variant="outline" size="sm" onClick={voltar}>
+            <X className="mr-2 h-4 w-4" />
+            Cancelar
+          </Button>
+        </div>
       </div>
     </form>
   );

@@ -1,5 +1,6 @@
 import { PDFDocument } from '../common/pdf/pdfkit.util';
 import type { EmpresaOperadoraDados } from '../tenant/empresa-operadora.types';
+import { parsePatioZonaPosicao } from './patio-fila.util';
 import {
   diasNoPatio,
   formatCnpj,
@@ -113,7 +114,7 @@ export async function generateSaldoPdf(opts: {
       .fontSize(8)
       .fillColor('#555')
       .font('Helvetica')
-      .text('Controle do que está armazenado no terminal. Preenchimento de baia é opcional.', L, y);
+      .text('Controle do que está armazenado no terminal. Zona e posição são opcionais.', L, y);
     y += 14;
     doc
       .fontSize(8)
@@ -128,7 +129,7 @@ export async function generateSaldoPdf(opts: {
       .fontSize(8)
       .fillColor('#333')
       .text(
-        `Saldo ${opts.lotacaoTotal}  ·  Capacidade ${opts.capacidadeTotal || '—'}  ·  Reefers ${opts.reefers}  ·  Sem baia ${opts.semBaia}`,
+        `Saldo ${opts.lotacaoTotal}  ·  Capacidade ${opts.capacidadeTotal || '—'}  ·  Reefers ${opts.reefers}  ·  Sem posição ${opts.semBaia}`,
         L,
         y,
       );
@@ -140,7 +141,8 @@ export async function generateSaldoPdf(opts: {
       { key: 'tipo', label: 'Tipo', w: 38 },
       { key: 'situacao', label: 'Situação', w: 48 },
       { key: 'tamanho', label: 'Tam.', w: 40 },
-      { key: 'baia', label: 'Baia', w: 44 },
+      { key: 'zona', label: 'Zona', w: 28 },
+      { key: 'posicao', label: 'Posição', w: 36 },
       { key: 'entrada', label: 'Entrada', w: 54 },
       { key: 'dias', label: 'Dias', w: 28 },
       { key: 'cliente', label: 'Cliente', w: 108 },
@@ -178,13 +180,15 @@ export async function generateSaldoPdf(opts: {
       if (i % 2 === 0) {
         doc.rect(L, y, W, 16).fill('#F4F4F4');
       }
+      const zp = parsePatioZonaPosicao(u.baia);
       const cells = [
         u.unidadeIso,
         u.processoNumero != null ? `ID ${u.processoNumero}` : '—',
         u.refrigerado ? 'Reefer' : 'Dry',
         rotuloSituacao(u.situacao),
         dash(u.tamanhoLabel || (u.tamanho ? `${u.tamanho}'` : '')),
-        dash(u.baia),
+        dash(zp?.zona),
+        dash(zp?.posicao != null ? String(zp.posicao) : ''),
         formatDate(u.entradaEm),
         String(diasNoPatio(u.entradaEm)),
         dash(u.cliente),

@@ -31,6 +31,8 @@ function mapUnidade(u: StaffPatioSaldoUnidade): GatePatioUnidade {
   return {
     stack: u.baia ?? "—",
     posicao: u.baia ?? "—",
+    zonaPatio: u.zonaPatio ?? null,
+    posicaoPatio: u.posicaoPatio ?? null,
     unidadeId: u.id,
     container: u.unidadeIso,
     tipo: u.refrigerado ? "Reefer" : "Dry",
@@ -150,7 +152,7 @@ export default function GatePatioPage() {
         <div>
           <h1 className="text-2xl font-bold">Saldo de Unidades</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Controle do que está armazenado no terminal. Baia é opcional.
+            Controle do que está armazenado no terminal. Zona e posição são opcionais.
           </p>
         </div>
         <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => void load()}>

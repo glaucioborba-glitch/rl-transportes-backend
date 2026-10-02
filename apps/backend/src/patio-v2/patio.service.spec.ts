@@ -21,6 +21,7 @@ describe('PatioV2Service', () => {
     containerSolicitacao: Record<string, jest.Mock>;
     unidadeProcesso: Record<string, jest.Mock>;
     cadastroTipoContainer: Record<string, jest.Mock>;
+    patioFilaTarefa: Record<string, jest.Mock>;
     solicitacao: Record<string, jest.Mock>;
     $transaction: jest.Mock;
   };
@@ -67,6 +68,9 @@ describe('PatioV2Service', () => {
       },
       cadastroTipoContainer: {
         findMany: jest.fn().mockResolvedValue([{ codigo: 'REEFER', tomadaReefer: true }]),
+      },
+      patioFilaTarefa: {
+        findMany: jest.fn().mockResolvedValue([]),
       },
       solicitacao: { update: jest.fn() },
       $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
@@ -234,6 +238,8 @@ describe('PatioV2Service', () => {
       expect.objectContaining({
         unidadeIso: 'TEMU6079348',
         baia: null,
+        zonaPatio: null,
+        posicaoPatio: null,
         cliente: 'ACME',
         processoNumero: 12,
         processo: 'PROC-44',

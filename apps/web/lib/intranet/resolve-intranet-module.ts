@@ -15,6 +15,7 @@ export function resolveIntranetModule(pathname: string): IntranetModuleId {
     return "dispatch";
   }
   if (pathname.startsWith("/operador/patio")) return "patio";
+  if (pathname.startsWith("/operador/manutencao")) return "manutencao";
   if (pathname.startsWith("/operador/dashboard") || pathname === "/operador") return "dashboard";
   if (pathname.startsWith("/financeiro")) return "financeiro";
   if (pathname.startsWith("/rh")) return "rh";
@@ -45,6 +46,7 @@ export function isIntranetDesktopPath(pathname: string): boolean {
     "/operador/localizacao-motoristas",
     "/operador/gate",
     "/operador/patio",
+    "/operador/manutencao",
     "/cadastros",
     "/financeiro",
     "/rh",

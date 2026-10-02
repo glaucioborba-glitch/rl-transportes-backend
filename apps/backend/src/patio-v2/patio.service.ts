@@ -28,6 +28,7 @@ import type {
 } from './dto/tomada.dto';
 import { formatTamanhoContainerMatrix, normalizeTamanhoContainer } from '../cadastros/tipo-container-tamanhos.util';
 import { matchContainerSolicitacao } from './patio-saldo.util';
+import { parsePatioZonaPosicao } from './patio-fila.util';
 import { tipoRequerTomadaReefer } from '../cadastros/tipo-container-tomada.util';
 import { sincronizarTomadaDiariaDoProcesso } from '../unidade-processo/tomada-diaria-id.util';
 
@@ -825,6 +826,18 @@ export class PatioV2Service {
       this.emitPatio('PATIO_DIVERGENCIA', 'system', undefined, { total: divergencias.length });
     }
 
+    const filaPos = await this.prisma.patioFilaTarefa.findMany({
+      where: { status: 'CONCLUIDA', posicaoConfirmadaCodigo: { not: null } },
+      orderBy: { concluidoEm: 'desc' },
+      select: { unidadeIso: true, posicaoConfirmadaCodigo: true },
+    });
+    const filaPorIso = new Map<string, string>();
+    for (const t of filaPos) {
+      if (!filaPorIso.has(t.unidadeIso) && t.posicaoConfirmadaCodigo) {
+        filaPorIso.set(t.unidadeIso, t.posicaoConfirmadaCodigo);
+      }
+    }
+
     const saldo = unidades
       .map((u) => {
         const c = matchContainerSolicitacao(u.unidadeIso, u.solicitacao.containersSolicitacao ?? []);
@@ -837,6 +850,8 @@ export class PatioV2Service {
               ? situacaoPatio
               : '';
         const tamanho = normalizeTamanhoContainer(c?.tamanho);
+        const baia = u.posicaoAtual?.codigoBaia ?? filaPorIso.get(u.unidadeIso) ?? null;
+        const zp = parsePatioZonaPosicao(baia);
         return {
           id: u.id,
           unidadeIso: u.unidadeIso,
@@ -847,7 +862,9 @@ export class PatioV2Service {
           tamanhoLabel: tamanho ? formatTamanhoContainerMatrix(tamanho) : '',
           cliente: u.solicitacao.cliente?.razaoSocial ?? '—',
           clienteId: u.solicitacao.clienteId,
-          baia: u.posicaoAtual?.codigoBaia ?? null,
+          baia,
+          zonaPatio: zp?.zona ?? null,
+          posicaoPatio: zp?.posicao ?? null,
           entradaEm: (u.unidadeProcesso?.entradaEm ?? u.createdAt).toISOString(),
           processoNumero: u.unidadeProcesso?.numero ?? null,
           processo: c?.processo?.trim() || '',

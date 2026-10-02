@@ -53,6 +53,7 @@ import { TomadaPedidoBadge } from "@/components/gate/tomada-pedido-badge";
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api/staff-client";
 import { useDocumentoSaida } from "@/components/documento-saida/documento-saida-dialog";
+import { UrgenciaPatioDialog } from "@/components/gate/urgencia-patio-dialog";
 
 const MOTIVOS = [
   { value: "CONTAINER_DIVERGENTE", label: "Contêiner não confere" },
@@ -109,6 +110,7 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
   const [modoAssinatura, setModoAssinatura] = useState<"DIGITAL" | "MANUAL">("DIGITAL");
   const [digitalRicOk, setDigitalRicOk] = useState(false);
   const [liberarErro, setLiberarErro] = useState<string | null>(null);
+  const [urgenciaPatioAberto, setUrgenciaPatioAberto] = useState(false);
   const documentoSaida = useDocumentoSaida();
 
   useEffect(() => {
@@ -368,7 +370,8 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
         filename: `RIC-${protocolo}.pdf`,
         obter: async () => pdfBlob,
       });
-      toast.success("RIC emitida. Unidade liberada para baixa/coleta.");
+      toast.success("RIC emitida. Escolha a urgência para o pátio.");
+      setUrgenciaPatioAberto(true);
     } catch (e) {
       const msg = e instanceof ApiError || e instanceof Error ? e.message : "Erro ao emitir a RIC.";
       setLiberarErro(msg);
@@ -461,6 +464,16 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
             <>
               {liberada || operacao.state === "RIC_GERADO" ? (
                 <>
+                  {liberada ? (
+                    <AcaoQuad
+                      label="Enviar ao pátio"
+                      tom="ativo"
+                      disabled={busy}
+                      onClick={() => setUrgenciaPatioAberto(true)}
+                    >
+                      <Repeat className="h-5 w-5" />
+                    </AcaoQuad>
+                  ) : null}
                   <AcaoQuad
                     label="Reimprimir cupom"
                     disabled={busy || operacao.assinaturaModo !== "DIGITAL"}
@@ -904,6 +917,11 @@ export function ControleEntradaSaidaFicha({ protocolo }: { protocolo: string }) 
           onOpenChange={setCessaoAberto}
         />
       ) : null}
+      <UrgenciaPatioDialog
+        open={urgenciaPatioAberto}
+        protocolo={protocolo}
+        onOpenChange={setUrgenciaPatioAberto}
+      />
       {documentoSaida.dialog}
     </div>
   );

@@ -45,6 +45,7 @@ describe('patio-saldo.util', () => {
     };
     const all = [base, reefer];
     expect(filtrarSaldoUnidades(all, { baia: 'SEM' })).toEqual([base]);
+    expect(filtrarSaldoUnidades(all, { baia: 'A' })).toEqual([reefer]);
     expect(filtrarSaldoUnidades(all, { tipo: 'REEFER' })).toEqual([reefer]);
     expect(filtrarSaldoUnidades(all, { q: 'acme' })).toEqual([base]);
     expect(filtrarSaldoUnidades(all, { q: 'bkg-9' })).toEqual([base]);

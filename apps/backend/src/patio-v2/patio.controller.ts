@@ -9,9 +9,11 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { PatioMovimentarDto } from './dto/movimentar.dto';
+import { ConfirmarPatioFilaDto, EnfileirarPatioDto, RemocaoPatioFilaDto } from './dto/patio-fila.dto';
 import { PatioPosicionarDto, PatioPrepararGateOutDto } from './dto/posicionar.dto';
 import { PatioSaldoQueryDto } from './dto/saldo-query.dto';
 import { PatioTomadaConectarDto, PatioTomadaDesconectarDto } from './dto/tomada.dto';
+import { PatioFilaService } from './patio-fila.service';
 import { PatioSaldoRelatorioService } from './patio-saldo-relatorio.service';
 import { PatioV2Service } from './patio.service';
 
@@ -30,8 +32,53 @@ const PATIO_ROLES: Role[] = [
 export class PatioV2Controller {
   constructor(
     private readonly patio: PatioV2Service,
+    private readonly fila: PatioFilaService,
     private readonly saldoRelatorio: PatioSaldoRelatorioService,
   ) {}
+
+  @Post('fila')
+  @ApiOperation({ summary: 'Envia a RIC confirmada para a fila do pátio, com urgência' })
+  @Roles(...PATIO_ROLES)
+  @Permissions('solicitacoes:patio')
+  enfileirar(@Body() dto: EnfileirarPatioDto) {
+    return this.fila.enfileirar(dto.protocolo, dto.urgencia);
+  }
+
+  @Get('fila')
+  @ApiOperation({ summary: 'Lista a fila do pátio (prioritário → preferencial → normal, FIFO no grupo)' })
+  @Roles(...PATIO_ROLES)
+  @Permissions('solicitacoes:patio')
+  listarFila() {
+    return this.fila.listar();
+  }
+
+  @Get('fila/posicoes')
+  @ApiOperation({ summary: 'Posições para o tablet (cadastro, pátio ou grade simulada)' })
+  @Roles(...PATIO_ROLES)
+  @Permissions('solicitacoes:patio')
+  posicoesFila() {
+    return this.fila.posicoes();
+  }
+
+  @Post('fila/remocao')
+  @ApiOperation({ summary: 'Remove a unidade de uma posição ocupada para um espaço livre' })
+  @Roles(...PATIO_ROLES)
+  @Permissions('solicitacoes:patio')
+  remocaoFila(@Body() dto: RemocaoPatioFilaDto, @CurrentUser() user: AuthUser) {
+    return this.fila.remocao(user.id, dto.origemCodigo, dto.destinoCodigo);
+  }
+
+  @Post('fila/:id/confirmar')
+  @ApiOperation({ summary: 'Confirma baixa ou coleta e grava a posição' })
+  @Roles(...PATIO_ROLES)
+  @Permissions('solicitacoes:patio')
+  confirmarFila(
+    @Param('id') id: string,
+    @Body() dto: ConfirmarPatioFilaDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.fila.confirmar(id, user.id, dto.posicaoCodigo);
+  }
 
   @Post('posicionar')
   @ApiOperation({ summary: 'Posicionar unidade recém-entrada (Gate In) em baia' })

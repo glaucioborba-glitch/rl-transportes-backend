@@ -31,6 +31,7 @@ const RULES: PathRule[] = [
   { prefix: "/operador/fretes", roles: ["ADMIN", "GERENTE", "OPERADOR_GATE"] },
   { prefix: "/operador/dispatch", roles: ["ADMIN", "GERENTE", "OPERADOR_GATE"] },
   { prefix: "/operador/patio", roles: ["ADMIN", "GERENTE", "OPERADOR_PATIO", "OPERADOR_GATE"] },
+  { prefix: "/operador/manutencao", roles: ["ADMIN", "GERENTE", "OPERADOR_PATIO", "OPERADOR_GATE"] },
   { prefix: "/operador", roles: ["ADMIN", "GERENTE", "OPERADOR_PORTARIA", "OPERADOR_GATE", "OPERADOR_PATIO"] },
   { prefix: "/cockpit", roles: ["ADMIN", "GERENTE", "OPERADOR_PORTARIA", "OPERADOR_GATE", "OPERADOR_PATIO"] },
   { prefix: "/ai-console", roles: ["ADMIN", "GERENTE"] },

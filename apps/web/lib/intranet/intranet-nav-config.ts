@@ -25,11 +25,15 @@ import {
   CreditCard,
   DollarSign,
   Eye,
+  ClipboardCheck,
+  CircleDot,
+  Factory,
   FileCheck,
   FileSearch,
   FileText,
   Fingerprint,
   FolderOpen,
+  Fuel,
   GitBranch,
   Grid3x3,
   History,
@@ -50,6 +54,7 @@ import {
   UserPlus,
   Users,
   Wallet,
+  Wrench,
   MapPin,
   Zap,
 } from "lucide-react";
@@ -61,6 +66,7 @@ export type IntranetModuleId =
   | "cadastros"
   | "dispatch"
   | "patio"
+  | "manutencao"
   | "financeiro"
   | "rh"
   | "admin"
@@ -135,7 +141,13 @@ export const MODULOS_INTRANET: IntranetNavItem[] = [
     id: "patio",
     label: "Pátio",
     href: "/operador/patio",
-    roles: ["OPERADOR_PATIO"],
+    roles: ["ADMIN", "GERENTE", "OPERADOR_PATIO", "OPERADOR_GATE"],
+  },
+  {
+    id: "manutencao",
+    label: "Manutenção",
+    href: "/operador/manutencao",
+    roles: ["ADMIN", "GERENTE", "OPERADOR_PATIO", "OPERADOR_GATE"],
   },
   {
     id: "financeiro",
@@ -197,6 +209,7 @@ export const MODULE_META: Record<
   cadastros: { title: "Cadastros", subtitle: "Master Data Management" },
   dispatch: { title: "Transportes", subtitle: "Fretes e operação de frota" },
   patio: { title: "Pátio", subtitle: "Operação de pátio" },
+  manutencao: { title: "Manutenção", subtitle: "Abastecimento e oficina" },
   financeiro: { title: "Financeiro", subtitle: "Tesouraria corporativa" },
   rh: { title: "RH", subtitle: "Recursos humanos" },
   admin: { title: "Admin", subtitle: "Administração corporativa" },
@@ -254,7 +267,7 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
       href: "/operador/gate/patio",
       icon: Container,
       badgeKey: "gate.patio",
-      description: "Estoque no terminal — baia opcional",
+      description: "Estoque no terminal — zona e posição opcionais",
     },
     {
       label: "Aluguéis",
@@ -457,7 +470,16 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
     },
   ],
   patio: [
-    { label: "Visão Geral", href: "/operador/patio", icon: Grid3x3 },
+    { label: "Fila do pátio", href: "/operador/patio", icon: Grid3x3 },
+  ],
+  manutencao: [
+    { label: "Painel", href: "/operador/manutencao", icon: LayoutDashboard },
+    { label: "Abastecimento", href: "/operador/manutencao/abastecimento", icon: Fuel },
+    { label: "Equipamentos", href: "/operador/manutencao/equipamentos", icon: Wrench },
+    { label: "Oficina", href: "/operador/manutencao/oficina", icon: Factory },
+    { label: "Pneus e esteiras", href: "/operador/manutencao/pneus", icon: CircleDot },
+    { label: "Checklist diário", href: "/operador/manutencao/checklist", icon: ClipboardCheck },
+    { label: "Histórico", href: "/operador/manutencao/historico", icon: History },
   ],
   dashboard: [
     { label: "Dashboard Geral", href: "/operador/dashboard", icon: LayoutDashboard },

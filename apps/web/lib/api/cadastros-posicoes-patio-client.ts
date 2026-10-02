@@ -9,6 +9,7 @@ export type CadastroPosicaoPatio = {
   baiaCodigo: string;
   zonaNome: string;
   zonaCor: string;
+  posicao?: number;
   slotNumero: number;
   stackAltura: number;
   tipoAceito: string;
@@ -18,6 +19,18 @@ export type CadastroPosicaoPatio = {
   restricoes: string | null;
   containerAtual: string | null;
   ativo: boolean;
+};
+
+export type CadastroPosicaoPatioPayload = {
+  zonaId?: string;
+  zonaCodigo?: string;
+  zonaNome?: string;
+  zonaCor?: string;
+  posicao: number;
+  status?: string;
+  tipoAceito?: string;
+  tomadaReefer?: boolean;
+  ativo?: boolean;
 };
 
 export type CadastroPosicaoPatioZona = {
@@ -37,15 +50,53 @@ export async function listCadastrosPosicoesPatioZonas() {
   );
 }
 
+export async function createCadastroZonaPatio(data: {
+  codigo: string;
+  nome?: string;
+  quantidadePosicoes?: number;
+}) {
+  return staffJson<{ zona: CadastroPosicaoPatioZona; criadas: number }>(
+    "/v2/cadastros/posicoes-patio/zonas",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    },
+  );
+}
+
+export async function updateCadastroZonaPatio(
+  id: string,
+  data: { codigo: string; nome?: string; quantidadePosicoes?: number },
+) {
+  return staffJson<{ zona: CadastroPosicaoPatioZona; criadas: number }>(
+    `/v2/cadastros/posicoes-patio/zonas/${encodeURIComponent(id)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    },
+  );
+}
+
+export async function deleteCadastroZonaPatio(id: string) {
+  return staffJson<void>(`/v2/cadastros/posicoes-patio/zonas/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function getCadastroPosicaoPatio(id: string) {
   return staffJson<CadastroPosicaoPatio>(`/v2/cadastros/posicoes-patio/${encodeURIComponent(id)}`);
 }
 
-export async function createCadastroPosicaoPatio(data: Omit<CadastroPosicaoPatio, "id" | "codigo"> & {
-  zonaCodigo?: string;
-  zonaNome?: string;
-  zonaCor?: string;
-}) {
+export async function ensureGradePadraoPosicoesPatio() {
+  return staffJson<{ items: CadastroPosicaoPatio[]; total: number; criadas: number; arquivadas: number }>(
+    "/v2/cadastros/posicoes-patio/grade-padrao",
+    { method: "POST" },
+  );
+}
+
+export async function createCadastroPosicaoPatio(data: CadastroPosicaoPatioPayload) {
   return staffJson<CadastroPosicaoPatio>("/v2/cadastros/posicoes-patio", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -55,11 +106,7 @@ export async function createCadastroPosicaoPatio(data: Omit<CadastroPosicaoPatio
 
 export async function updateCadastroPosicaoPatio(
   id: string,
-  data: Omit<CadastroPosicaoPatio, "id" | "codigo"> & {
-    zonaCodigo?: string;
-    zonaNome?: string;
-    zonaCor?: string;
-  },
+  data: CadastroPosicaoPatioPayload,
 ) {
   return staffJson<CadastroPosicaoPatio>(`/v2/cadastros/posicoes-patio/${encodeURIComponent(id)}`, {
     method: "PUT",

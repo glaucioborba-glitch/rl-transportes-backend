@@ -506,6 +506,8 @@ export type StaffPatioSaldoUnidade = {
   cliente: string;
   clienteId?: string;
   baia: string | null;
+  zonaPatio?: string | null;
+  posicaoPatio?: number | null;
   entradaEm: string;
   processoNumero: number | null;
   processo?: string;

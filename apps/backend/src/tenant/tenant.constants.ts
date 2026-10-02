@@ -30,6 +30,7 @@ export const TENANT_SCOPED_MODELS = new Set([
   'CadastroTabelaPreco',
   'UnidadeProcesso',
   'SolicitacaoAluguel',
+  'PatioFilaTarefa',
 ]);
 
 export const DEFAULT_TENANT_ID = 'default';

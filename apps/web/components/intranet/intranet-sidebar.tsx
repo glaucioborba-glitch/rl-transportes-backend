@@ -37,6 +37,7 @@ function sidebarItemActive(pathname: string, search: string, href: string): bool
       href !== "/cockpit" &&
       href !== "/rh" &&
       href !== "/cadastros" &&
+      href !== "/operador/manutencao" &&
       pathname.startsWith(`${href}/`))
   );
 }
