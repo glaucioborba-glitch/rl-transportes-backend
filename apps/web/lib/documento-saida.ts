@@ -90,18 +90,43 @@ function printHtmlBlob(
   });
 }
 
+/** PDF no visualizador do Chrome — caminho do lab (Ubuntu sem print-agent). */
+function printPdfNoNavegador(blob: Blob): Promise<void> {
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, "_blank", "noopener");
+  if (!win) {
+    URL.revokeObjectURL(url);
+    throw new Error("Permita pop-ups neste site para imprimir o cupom.");
+  }
+  return new Promise((resolve) => {
+    const tryPrint = () => {
+      try {
+        win.focus();
+        win.print();
+      } catch {
+        /* o visualizador do Chrome já mostra o PDF */
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      resolve();
+    };
+    win.addEventListener("load", () => window.setTimeout(tryPrint, 400), { once: true });
+    window.setTimeout(tryPrint, 1_200);
+  });
+}
+
 /**
- * PDF vai pelo agente local (127.0.0.1:39202). O Chrome não imprime PDF de forma estável.
- * HTML/imagem usam o agente se estiver no ar; senão, a caixa nativa do navegador.
+ * PDF vai pelo agente local (Windows + Epson) quando ele estiver no ar.
+ * Sem agente (lab Ubuntu / outro PC), abre a caixa de impressão do navegador.
  */
 export async function imprimirDocumento(blob: Blob, printer?: string): Promise<void> {
   const health = await probePrintAgent();
-  if (health.ok) {
+  if (health.ok && health.sumatra) {
     await printViaAgent(blob, printer);
     return;
   }
   if (isPdfBlob(blob)) {
-    throw new Error(health.error || "Rode npm run print-agent neste PC para imprimir o PDF.");
+    await printPdfNoNavegador(blob);
+    return;
   }
   await printBlob(blob);
 }

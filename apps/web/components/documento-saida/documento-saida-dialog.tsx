@@ -35,7 +35,6 @@ type Props = {
 export function DocumentoSaidaDialog({ open, onOpenChange, pedido }: Props) {
   const [busy, setBusy] = useState<"download" | "impressao" | null>(null);
   const [agentOk, setAgentOk] = useState<boolean | null>(null);
-  const [agentError, setAgentError] = useState<string | null>(null);
   const [printers, setPrinters] = useState<PrintAgentPrinter[]>([]);
   const [printer, setPrinter] = useState("");
   const [sumatra, setSumatra] = useState(false);
@@ -47,7 +46,6 @@ export function DocumentoSaidaDialog({ open, onOpenChange, pedido }: Props) {
       const health = await probePrintAgent();
       if (cancelled) return;
       setAgentOk(health.ok);
-      setAgentError(health.error ?? null);
       setSumatra(Boolean(health.sumatra));
       setPrinters(health.printers.filter((p) => !p.virtual));
       let saved: string | null = null;
@@ -121,7 +119,7 @@ export function DocumentoSaidaDialog({ open, onOpenChange, pedido }: Props) {
           </button>
           <button
             type="button"
-            disabled={!pedido || Boolean(busy) || agentOk === false || !sumatra || !printer}
+            disabled={!pedido || Boolean(busy)}
             onClick={() => void executar("impressao")}
             className={cn(
               "flex flex-col items-start rounded-xl border border-white/15 bg-white/5 p-4 text-left transition-colors",
@@ -135,13 +133,16 @@ export function DocumentoSaidaDialog({ open, onOpenChange, pedido }: Props) {
             )}
             <span className="mt-3 text-base font-semibold text-white">Impressão</span>
             <span className="mt-1 text-xs text-slate-400">
-              Envia ao agente local, sem passar pelo Chrome.
+              {agentOk && sumatra && printer
+                ? "Envia ao agente local, sem passar pelo Chrome."
+                : "Abre a caixa de impressão do navegador."}
             </span>
           </button>
         </div>
         {agentOk === false ? (
-          <p className="text-xs text-amber-300">
-            {agentError ?? "Rode npm run print-agent neste PC e abra esta caixa de novo."}
+          <p className="text-xs text-slate-500">
+            Sem o agente neste PC (Epson). A impressão segue no navegador — escolha a impressora na
+            caixa do Chrome.
           </p>
         ) : null}
         {agentOk && !sumatra ? (
