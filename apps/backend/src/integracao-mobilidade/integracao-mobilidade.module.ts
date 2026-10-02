@@ -1,9 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import type { StringValue } from 'ms';
 import { JwtModule } from '@nestjs/jwt';
+import { CronAlertModule } from '../common/cron/cron-alert.module';
 import { AuditoriaModule } from '../auditoria/auditoria.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { TenantModule } from '../tenant/tenant.module';
+import { MobileHubModule } from '../mobile-hub/mobile-hub.module';
 import { IntegracaoApiV1ClienteCatalogoController } from './controllers/integracao-api-v1-cliente.controller';
 import { IntegracaoApiV1FinanceiroController } from './controllers/integracao-api-v1-financeiro.controller';
 import { IntegracaoApiV1FiscalController } from './controllers/integracao-api-v1-fiscal.controller';
@@ -27,6 +31,7 @@ import { MobileOperacionalService } from './services/mobile-operacional.service'
 import { WebhookDeliveryService } from './services/webhook-delivery.service';
 import { IntegracaoApiKeyStore } from './stores/integracao-api-key.store';
 import { IntegracaoEventLogStore } from './stores/integracao-event-log.store';
+import { IntegracaoEventLogCleanupService } from './stores/integracao-event-log-cleanup.service';
 import { IotSensorStore } from './stores/iot-sensor.store';
 import { MobileOpsStore } from './stores/mobile-ops.store';
 import { WebhookSubscriptionStore } from './stores/webhook-subscription.store';
@@ -34,6 +39,10 @@ import { WebhookSubscriptionStore } from './stores/webhook-subscription.store';
 @Module({
   imports: [
     PrismaModule,
+    TenantModule,
+    ScheduleModule,
+    CronAlertModule,
+    MobileHubModule,
     AuditoriaModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -63,6 +72,7 @@ import { WebhookSubscriptionStore } from './stores/webhook-subscription.store';
     IntegracaoApiKeyStore,
     WebhookSubscriptionStore,
     IntegracaoEventLogStore,
+    IntegracaoEventLogCleanupService,
     MobileOpsStore,
     IotSensorStore,
     IntegracaoRateLimitService,

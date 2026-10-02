@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  ServiceUnavailableException,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
@@ -23,9 +24,8 @@ import { IntegracaoFinanceiraService } from '../services/integracao-financeira.s
 @ApiTags('integracao-financeira')
 @ApiHeader({
   name: 'X-Integracao-Signature',
-  required: false,
-  description:
-    'HMAC-SHA256 (hex) de canonicalPagamentoPayload quando INTEGRACAO_FINANCE_WEBHOOK_SECRET esta definido.',
+  required: true,
+  description: 'HMAC-SHA256 (hex) de canonicalPagamentoPayload (INTEGRACAO_FINANCE_WEBHOOK_SECRET).',
 })
 @Controller('integracao/pagamentos')
 export class IntegracaoFinanceiraWebhookController {
@@ -39,19 +39,19 @@ export class IntegracaoFinanceiraWebhookController {
   @UseGuards(IntegracaoIpAllowlistGuard)
   @ApiOperation({
     summary: 'Webhook de pagamento (PIX/boleto)',
-    description:
-      'Aceita confirmacoes automaticas e emite eventos internos (pagamento.*). Assinatura opcional via segredo em env.',
+    description: 'HMAC-SHA256 obrigatório. Sem secret configurado a API recusa o evento.',
   })
   async webhook(
     @Body() dto: PagamentoWebhookDto,
     @Headers('x-integracao-signature') sig?: string,
   ) {
     const secret = this.config.get<string>('INTEGRACAO_FINANCE_WEBHOOK_SECRET')?.trim();
-    if (secret) {
-      const canonical = canonicalPagamentoPayload(dto);
-      const ok = sig && verifyWebhookSignature(secret, canonical, sig);
-      if (!ok) throw new UnauthorizedException('Assinatura invalida.');
+    if (!secret) {
+      throw new ServiceUnavailableException('Webhook financeiro sem INTEGRACAO_FINANCE_WEBHOOK_SECRET.');
     }
+    const canonical = canonicalPagamentoPayload(dto);
+    const ok = Boolean(sig && verifyWebhookSignature(secret, canonical, sig));
+    if (!ok) throw new UnauthorizedException('Assinatura invalida.');
     return this.finance.processWebhook(dto);
   }
 }

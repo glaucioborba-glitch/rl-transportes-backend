@@ -1,0 +1,443 @@
+================================================================
+RL TRANSPORTES — ROTEIRO DA DEMO
+Reunião:  30/09/2026
+Entrega:  15/10/2026 (aplicação final — outro plano)
+Duração:  20 a 25 minutos + 5 de perguntas
+Pessoas:  1 apresentador + 1 operador no 2º notebook (opcional)
+================================================================
+
+Montagem da máquina (Ubuntu / Docker / seeds):
+  docs/pacote-montagem-demo-2026-09-30.txt
+
+Imprima DUAS vias deste arquivo.
+
+  VIA 1 — folhas 1 a 2 (logins e checagem)
+          Fica com o apresentador. NÃO entrega ao comprador.
+
+  VIA 2 — a partir de "ROTEIRO FALADO"
+          Pode ir à mesa. Sem senha.
+
+Preencha à mão no dia:
+
+  URL da máquina (LAN):  http://________________:3000
+  Quem apresenta:        ________________________________
+  Quem opera o gate:     ________________________________
+
+
+----------------------------------------------------------------
+FOLHA DO APRESENTADOR — NÃO ENTREGAR
+----------------------------------------------------------------
+
+Ambiente: um terminal só (default / RL). Build de produção.
+Não usar next dev nem nest --watch.
+
+STAFF — intranet  /login/staff   (CPF com 11 dígitos)
+
+  Papel              CPF            Senha
+  -----------------  -------------  ----------------
+  ADMIN (gestor)     390.533.447-05 Admin@123
+  OPERADOR GATE      153.509.460-56 OpsGate@QA2026
+  GERENTE            987.654.321-00 Gerente@OpsQA2026
+
+  Use o ADMIN na tela grande (menu completo).
+  O operador no 2º notebook entra como OPERADOR GATE.
+
+PORTAL DO CLIENTE — /portal/login
+  Fluxo: CNPJ da empresa  →  CPF da pessoa autorizada  →  senha.
+
+  Empresa da demo (PJ 01):
+    Nome:   Atlântico Logística Importadora LTDA
+    Fantasia: Atlântico Log
+    CNPJ:   27.000.145/0001-49
+    CPF:    390.533.401-14   (Carlos Mendes)
+    Senha:  Demo@PJ2026!
+
+  Se o login PJ 01 falhar, abra o arquivo gerado no seed:
+    dados-teste-demo-operacional.txt
+  (apague esse arquivo da pasta compartilhada DEPOIS da reunião)
+
+SUPER ADMIN — /super-admin/login
+  CPF: 036.501.639-00
+  Senha: a que está em SEED_SUPER_ADMIN_PASSWORD no .env
+         da máquina. NÃO anote aqui se esta folha circular.
+
+  O mesmo CPF NÃO entra em /login/staff.
+
+ISO DE HISTÓRICO (já no seed):
+  MSCU 100113-7     várias passagens no dossiê
+
+PROTOCOLOS DE DEMO (depois do seed-demo-operacional):
+  DEMO-RL-2026-001  em diante
+  Escolha UM em pátio e UM só autorizado, no ensaio de 29/09,
+  e anote aqui:
+
+  ISO da reunião (pátio):         ____________________
+  Protocolo da reunião (entrada): ____________________
+  Protocolo da reunião (saída):   ____________________
+
+
+----------------------------------------------------------------
+T-30 MIN  — ANTES DO COMPRADOR ENTRAR
+----------------------------------------------------------------
+
+[ ] Máquina ligada, URL abre no notebook da TV e no 2º PC
+[ ] /health responde 200 (só banco e Redis — se falhar, NÃO começa)
+[ ] Login staff ADMIN ok
+[ ] Login portal Atlântico Log ok (aba anônima)
+[ ] Gate CPO mostra unidades (não lista vazia)
+[ ] Histórico acha MSCU 100113-7
+[ ] Impressora da RIC com uma folha de teste (PDFKit, sem Chrome)
+[ ] NFS-e automática DESLIGADA
+    (Parâmetros financeiros: emiteNfseAutomatico = não)
+[ ] Super Admin NÃO está aberto no projetor
+[ ] dados-teste-*.txt fora da área visível
+[ ] Celular em silencioso; Slack/e-mail fechados na TV
+
+Se algo da lista falhar: ensaie o plano B da última página
+ANTES de receber o comprador. Não improvise na hora.
+
+
+----------------------------------------------------------------
+ROTEIRO FALADO  — 25 MINUTOS
+Pode imprimir e levar à mesa.
+----------------------------------------------------------------
+
+Abrir DOIS navegadores (ou uma janela + uma anônima):
+
+  A = intranet   /login/staff
+  B = portal     /portal/login   (anônima)
+
+
+MINUTO 0–2  ·  Abertura
+-----------------------
+Diga, em voz alta, o recorte:
+
+  "Vou mostrar o dia de um terminal de contêiner: o cliente
+   pede, a portaria recebe, o gate registra, o pátio guarda,
+   o financeiro cobra. Três papéis — operador, cliente e
+   dono do sistema. Um pátio só, o da RL."
+
+Não fale de AWS, plano PREMIUM, segundo tenant nem auditoria.
+
+
+MINUTO 2–4  ·  Login da intranet                         [navegador A]
+--------------------------------------------------------
+URL:  /login/staff
+Quem: ADMIN  390.533.447-05
+
+O que mostrar:
+  - Login por CPF (não e-mail). Operador de pátio não usa e-mail.
+  - Menu de cima: Dashboard, Portaria, Gate CPO, Cadastros,
+    Pátio, Financeiro.
+
+O que NÃO fazer:
+  - Não abrir BI, GRC, SSMA, Chaos, Admin "executivo".
+  - Não clicar em "Localização" se a internet do Maps falhar
+    no ensaio — pule e siga.
+
+Frase:
+  "A intranet é o chão de pátio. O portal do cliente é outra
+   porta. O dono do software, outra ainda."
+
+
+MINUTO 4–10  ·  Gate: entrada, RIC, pátio                [navegador A]
+--------------------------------------------------------
+Menu:  Gate CPO  →  Controle de Gate
+URL:   /operador/gate/controle-entrada-saida
+
+1) Abra o dossiê do protocolo anotado no ensaio
+   (entrada / autorizado).
+
+   Mostre, sem correr:
+     - ISO da caixa
+     - Cliente (Atlântico Log ou o do protocolo)
+     - Motorista e placas
+     - Lacre
+     - Se for reefer: set point
+     - Transportadora (lista do cadastro, não digitação solta)
+
+2) Avance o que o ensaio deixou pronto — check-in ou
+   conferência de entrada. NÃO comece um cadastro do zero
+   se o relógio apertar.
+
+3) Imprima a RIC.
+   URL de consulta depois: /operador/gate/consulta-ric
+   A RIC é PDFKit (cupom / A4). Pode imprimir.
+
+   Frase:
+     "A RIC é o recibo da operação. O ISO da placa física
+      vem do catálogo — não se inventa tipo de caixa na hora."
+
+4) Menu Gate CPO → Saldo de Unidades
+   URL: /operador/gate/patio
+
+   Mostre a caixa no chão. Clique no ISO.
+
+5) Menu Gate CPO → Histórico de Contêiner
+   URL: /operador/gate/historico-container
+   Busque:  MSCU1001137   ou   MSCU 100113-7
+
+   Frase:
+     "A mesma caixa física pode ter vários IDs no tempo.
+      Aluguel é um processo. Pátio é outro. Não misturamos
+      a cobrança dos dois."
+
+Se o HDD engasgar na foto da vistoria:
+  "A máquina de homologação é disco lento. Em operação
+   as fotos vão para armazenamento próprio — a tela é a mesma."
+
+
+MINUTO 10–12  ·  Uma saída (se o ensaio deixou pronta)
+--------------------------------------------------------
+Mesmo Controle de Gate, protocolo de SAÍDA anotado.
+
+Mostre só:
+  - Conferência de saída
+  - ISO some do saldo (ou fica "saiu")
+  - Não abra NFS-e, boleto nem emissão fiscal
+
+Se a saída não estiver pronta no ensaio, PULE.
+Vá ao portal. Não invente um gate-out ao vivo.
+
+
+MINUTO 12–18  ·  Portal do cliente                       [navegador B]
+--------------------------------------------------------
+URL:  /portal/login
+      CNPJ  27.000.145/0001-49
+      CPF   390.533.401-14
+      Senha (apresentador digita; não fala alto)
+
+Telas, nesta ordem:
+
+  1. Dashboard
+     /portal/dashboard
+     "O cliente vê o que é dele. Não vê o pátio inteiro."
+
+  2. Solicitações
+     /portal/solicitacoes
+     Abra UMA (DEMO-RL-2026-00x). Mostre status e ISO.
+     Não crie solicitação nova se faltar menos de 6 minutos.
+
+  3. Pátio / saldo
+     /portal/patio
+     "A caixa que o gate colocou no chão aparece aqui
+      para o dono da carga."
+
+  4. Financeiro
+     /portal/financeiro
+     Mostre a lista. Se houver demonstrativo, abra.
+     NÃO aperte emitir nota, gerar boleto, enviar PIX.
+
+  Opcional (30 segundos, se sobrar tempo):
+     /portal/simulacao-valores
+     "O cliente simula estadia ANTES de mandar a caixa.
+      O valor oficial é o do fechamento, com a tabela
+      cadastrada — não um preço escondido no sistema."
+
+Volte ao dashboard do portal e deixe a aba aberta.
+
+
+MINUTO 18–21  ·  Financeiro interno                      [navegador A]
+--------------------------------------------------------
+Menu: Financeiro → Conta corrente
+URL:  /financeiro/conta-corrente
+
+Mostre Atlântico Log (ou o cliente do protocolo).
+
+Frase:
+  "PIX de crédito o cliente envia o comprovante; o
+   financeiro confere e lança. Não é o sistema que
+   inventa saldo sozinho — é controle."
+
+NÃO clique em Compensar duas vezes.
+NÃO aprove comprovante na reunião.
+
+Se perguntarem de fatura:
+  "Fatura, para nós, é o pacote: demonstrativo + NFS-e
+   + boleto ou PIX. Um cliente, vários IDs no demonstrativo,
+   uma nota. Não é uma nota por caixa."
+
+
+MINUTO 21–23  ·  Super Admin (opcional, 2 minutos)
+--------------------------------------------------------
+Só se o comprador perguntar "e se eu tiver outro pátio?"
+ou "como vocês vendem isso?". Senão, pule.
+
+Outra aba:  /super-admin/login
+CPF do dono. NÃO use o login da intranet.
+
+Mostre:
+  - Lista de terminais
+  - Botão "Abrir intranet" (explica: o dono entra no pátio
+    daquele terminal sem misturar dado)
+  - /super-admin/integracoes  — cards IPM e Emissor Nacional
+    "Cada terminal tem o certificado A1 e o município dele.
+     Se o IPM da prefeitura cair, o sistema pode ir para o
+     Emissor Nacional."
+
+NÃO:
+  - Envie certificado de teste
+  - Aperte Testar contra a Receita
+  - Abra Chaos
+  - Mostre senha SMTP
+
+Depois: "Voltar ao Super Admin" (limpa o cookie).
+Não deixe a intranet do Super Admin aberta na TV.
+
+
+MINUTO 23–25  ·  Fechamento
+---------------------------
+Volte ao Gate CPO (navegador A) e ao portal (navegador B)
+lado a lado, se couber.
+
+Diga:
+
+  "O que vocês viram é o produto no ar, num PC de homologação,
+   com dois ou três operadores. A entrega de 15 de outubro
+   fecha conferência de valor e o pacote fiscal. Se avançarmos,
+   o próximo passo é nuvem — não este computador."
+
+Perguntas: cinco minutos. Respostas prontas na próxima folha.
+
+
+----------------------------------------------------------------
+SE PERGUNTAREM  — respostas curtas
+----------------------------------------------------------------
+
+"Dá para outro terminal no mesmo sistema?"
+  Sim. Cada terminal é um cadastro com os dados e as chaves
+  dele (NFS-e, e-mail, certificado). A RL que vocês viram
+  é o primeiro. Isolamento fino entre vários no mesmo
+  servidor entra na implantação em nuvem, não nesta demo.
+
+"Aluguel e pátio da mesma caixa?"
+  São dois IDs. O cliente pode alugar, levar no caminhão e
+  depois hospedar no pátio. Gate e pátio só olham o ID de
+  pátio. A fatura do mês pode juntar os dois IDs no
+  demonstrativo — uma NFS-e, um cliente.
+
+"E a nota fiscal?"
+  NFS-e municipal (IPM / Atende.net, Navegantes) e, se
+  falhar, Emissor Nacional (gov.br) com certificado A1.
+  Hoje não emitimos ao vivo para não gerar nota de verdade.
+
+"O mapa do pátio é esse?"
+  O cadastro de posição é a lista (MDM). O mapa visual fica
+  no app do operador — ainda não é esta tela. O saldo e o
+  dossiê já operam.
+
+"E se a internet cair?"
+  Gate, pátio e RIC rodam no servidor local. Foto e mapa
+  sentem a rede. A máquina de hoje é laboratório; produção
+  vai para nuvem com backup.
+
+"Quanto custa a diária / o plano?"
+  Não inventar preço. "Tabela por cliente, cadastrada.
+  Plano STANDARD / PREMIUM / ENTERPRISE é rótulo — o que
+  vocês viram é o pacote operacional completo."
+
+"Dá para o comprador acessar de casa?"
+  Se combinamos HTTPS e só a porta do site, sim. Super Admin
+  fica fechado. Este PC não vai nu para a internet.
+
+
+----------------------------------------------------------------
+O QUE NÃO ABRIR NESTA REUNIÃO
+----------------------------------------------------------------
+
+  /admin/chaos  e qualquer "simular queda"
+  Emissão NFS-e / boleto ao vivo
+  Cadastros → Operacional → Turnos
+      (turnos ficam em Parâmetros → Operacional)
+  Cadastros → posições de pátio para "desenhar o mapa"
+  Cadastros → equipamentos → datas de manutenção
+  BI, Datahub, GRC, SSMA, folha de RH
+  Criar segundo tenant na hora
+  Seed, migrate, build, restart do Docker
+  Arquivo dados-teste-*.txt na TV
+
+
+----------------------------------------------------------------
+SE QUEBRAR NO MEIO  — plano B
+----------------------------------------------------------------
+
+Tela branca / API mudo
+  Abra o histórico MSCU 100113-7 (já carregado no ensaio)
+  ou o portal já logado na aba anônima. Não reinicie o
+  Docker na frente do comprador.
+
+Login staff falha
+  Tente OPERADOR GATE (153.509.460-56). Se os dois falharem,
+  use o portal (navegador B) e conte o gate de memória com
+  o dossiê que o operador do 2º PC já abriu.
+
+RIC não imprime
+  Mostre na tela (Consulta RIC). "A via do motorista sai
+  daqui; a impressora do lab é que está muda."
+
+Portal sem dado
+  Intranet → Gate CPO → Saldo. O produto continua
+  demonstrável só pelo lado operador.
+
+Foto de vistoria lenta
+  Pule a foto. Dossiê + RIC + saldo bastam.
+
+Maps / localização sem chave
+  "GPS do motorista. Fora do recorte de hoje."
+
+Nunca diga "está quebrado no código".
+Diga "esta máquina de homologação" e siga o próximo bloco.
+
+
+----------------------------------------------------------------
+DEPOIS DA REUNIÃO  — 15/10
+----------------------------------------------------------------
+
+O que o comprador pode repetir sozinho e achar número
+errado entra na entrega de 15/10, nesta ordem:
+
+  1. Uma conta de diária só (simulação = fatura)
+  2. PIX aprovado amarrado ao lançamento
+  3. Cobrança (dunning) só com nota/boleto prontos
+  4. Número de RPS em sequência, não por relógio
+  5. PDF operacional com Chrome na imagem, ou botão sumido
+
+O que NÃO entra até 15/10:
+  redesenho de mapa, turnos, manutenção, fatura FAT
+  consolidada, feature flag por plano, segundo terminal
+  no mesmo banco sem teste de isolamento.
+
+Este roteiro não substitui o ensaio de 27/09 e o de 29/09
+no hardware final. Se o ensaio mudar o ISO ou o protocolo,
+atualize a FOLHA DO APRESENTADOR à caneta.
+
+
+----------------------------------------------------------------
+ENSAIO  — preencher em 29/09 e grampear nesta via
+----------------------------------------------------------------
+
+Data do ensaio: ____ / ____ / 2026
+URL usada:      http://________________:3000
+Build:          produção  [ ]    (se for dev, refazer)
+
+  Login ADMIN          [ ] ok
+  Login GATE           [ ] ok
+  Login portal PJ 01   [ ] ok
+  Dossiê entrada       [ ] ok   prot. ______________
+  RIC impressa         [ ] ok
+  Saldo mostra ISO     [ ] ok   ISO ______________
+  Histórico MSCU       [ ] ok
+  Portal pátio         [ ] ok
+  Portal financeiro    [ ] ok
+  Super Admin (opcional) [ ] ok  /  [ ] não vamos mostrar
+
+Tempo real do roteiro:  ______ minutos
+Ajustes para o dia 30:
+  ________________________________________________
+  ________________________________________________
+  ________________________________________________
+
+================================================================
+Fim. Impressão: A4, fonte mono 10 ou 11 pt, frente e verso.
+Não grampear a folha de senhas na via da mesa.
+================================================================

@@ -11,6 +11,7 @@ describe('MobileSyncService', () => {
   const operadorCx: MobileRequestUser = {
     sub: 'op1',
     email: 'op@test',
+    cpfCnpj: '11000000000108',
     mobileRole: 'OPERADOR_MOBILE',
     deviceId: 'd1',
     tv: 0,
@@ -21,6 +22,7 @@ describe('MobileSyncService', () => {
   const motCx: MobileRequestUser = {
     sub: 'm1',
     email: 'm@test',
+    cpfCnpj: '27692077000126',
     mobileRole: 'MOTORISTA',
     deviceId: 'd2',
     tv: 0,

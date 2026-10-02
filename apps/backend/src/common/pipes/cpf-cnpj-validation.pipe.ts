@@ -1,34 +1,88 @@
 import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
+import { TipoCliente } from '@prisma/client';
+
+function isPf(t: unknown): boolean {
+  return t === TipoCliente.PF || t === 'PF';
+}
+
+function isPj(t: unknown): boolean {
+  return t === TipoCliente.PJ || t === 'PJ';
+}
+
+function sanitizeDocumento(raw: unknown): string {
+  return String(raw ?? '').replace(/\D/g, '');
+}
 
 @Injectable()
 export class CpfCnpjValidationPipe implements PipeTransform {
-  transform(value: any) {
-    if (!value?.cpfCnpj) {
+  transform(value: unknown) {
+    if (value == null || typeof value !== 'object') {
       return value;
     }
 
-    const clean = value.cpfCnpj.replace(/\D/g, '');
+    const body = value as Record<string, unknown>;
+    const sanitized = sanitizeDocumento(body.cpfCnpj);
+    const tipo = body.tipo;
 
-    if (clean.length === 11) {
-      if (!this.isValidCpf(clean)) {
+    if (isPf(tipo)) {
+      if (!sanitized) {
         throw new BadRequestException(
-          'CPF inválido. Verifique os dígitos verificadores.',
+          'CPF é obrigatório. Informe um documento de 11 dígitos.',
         );
       }
-    } else if (clean.length === 14) {
-      if (!this.isValidCnpj(clean)) {
+      if (sanitized.length === 14) {
+        throw new BadRequestException('Para Pessoa Física, somente CPF é permitido.');
+      }
+      if (sanitized.length !== 11) {
+        throw new BadRequestException('CPF inválido. Informe um documento de 11 dígitos.');
+      }
+      if (!this.isValidCpf(sanitized)) {
+        throw new BadRequestException('CPF inválido. Verifique os dígitos verificadores.');
+      }
+      body.cpfCnpj = sanitized;
+      return body;
+    }
+
+    if (isPj(tipo)) {
+      if (!sanitized) {
         throw new BadRequestException(
-          'CNPJ inválido. Verifique os dígitos verificadores.',
+          'CNPJ é obrigatório. Informe um documento de 14 dígitos.',
         );
       }
-    } else {
+      if (sanitized.length !== 14) {
+        throw new BadRequestException('CNPJ inválido. Informe um documento de 14 dígitos.');
+      }
+      if (!this.isValidCnpj(sanitized)) {
+        throw new BadRequestException('CNPJ inválido. Verifique os dígitos verificadores.');
+      }
+      body.cpfCnpj = sanitized;
+      return body;
+    }
+
+    if (!sanitized) {
+      return value;
+    }
+
+    if (sanitized.length !== 11 && sanitized.length !== 14) {
       throw new BadRequestException(
         'Documento deve ter 11 (CPF) ou 14 (CNPJ) dígitos.',
       );
     }
 
-    value.cpfCnpj = clean;
-    return value;
+    if (sanitized.length === 11) {
+      if (!this.isValidCpf(sanitized)) {
+        throw new BadRequestException(
+          'CPF inválido. Verifique os dígitos verificadores.',
+        );
+      }
+    } else if (!this.isValidCnpj(sanitized)) {
+      throw new BadRequestException(
+        'CNPJ inválido. Verifique os dígitos verificadores.',
+      );
+    }
+
+    body.cpfCnpj = sanitized;
+    return body;
   }
 
   private isValidCpf(cpf: string): boolean {

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import type { LegalProcess } from "@/lib/admin/types";
 import { readJson, writeJson, adminLegalKey } from "@/lib/admin/storage";
@@ -22,7 +23,7 @@ const SEED: LegalProcess[] = [
 ];
 
 export default function AdminJuridicoPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [items, setItems] = useState<LegalProcess[]>([]);
   const [clienteId, setClienteId] = useState("");
   const [classif, setClassif] = useState("");

@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
+import { collectSolicitacaoContainerISOs } from "@/lib/container-display";
+import { OperationPageHeader } from "@/components/shared/operation-identity";
 import { OperationalTimeline } from "@/components/operador/operational-timeline";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -43,12 +45,20 @@ export default function PatioDetalhePage() {
 
   return (
     <main className="mx-auto max-w-4xl space-y-6 px-4 py-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-mono text-xl text-white">{String(row.protocolo)}</h1>
-        <Button variant="outline" asChild>
-          <Link href="/operador/patio">Voltar</Link>
-        </Button>
-      </div>
+      <OperationPageHeader
+        isos={collectSolicitacaoContainerISOs({
+          unidades: (row.unidades as Array<{ numeroIso?: string }> | undefined) ?? [],
+          containersSolicitacao:
+            (row.containersSolicitacao as Array<{ unidade?: string; ordem?: number }> | undefined) ??
+            [],
+        })}
+        protocolo={String(row.protocolo ?? "")}
+        actions={
+          <Button variant="outline" asChild>
+            <Link href="/operador/patio">Voltar</Link>
+          </Button>
+        }
+      />
 
       <Card className="border-white/10 bg-[#0c0f14]">
         <CardHeader>

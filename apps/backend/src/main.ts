@@ -1,16 +1,31 @@
+import './timezone';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
+import { json, urlencoded, type NextFunction, type Request, type Response } from 'express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import { AppModule } from './app.module';
 import { PlataformaPublicSurfaceModule } from './plataforma-integracao/plataforma-public-surface.module';
 import { MobileHubModule } from './mobile-hub/mobile-hub.module';
 import { CockpitOperacoesModule } from './cockpit-operacoes/cockpit-operacoes.module';
 import { applyBaseHttpStack } from './http/http-stack';
-import { isSwaggerEnabled } from './config/security.config';
+import { assertProductionEnvBoot } from './config/env-boot.validation';
+import { getCorsOrigins, isProductionDeploy, isSwaggerEnabled } from './config/security.config';
+import { createSecurityHeadersMiddleware } from './middleware/security-headers.middleware';
+import { IntrusionService } from './security-engine/intrusion.service';
+import { PrismaService } from './prisma/prisma.service';
+import { attachResilienceRouteHints } from './resilience/bootstrap';
+import { initSentry } from './common/observability/sentry.init';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  initSentry();
+  assertProductionEnvBoot();
+  const app = await NestFactory.create(AppModule, { bufferLogs: true, bodyParser: false });
+  // Vistoria da portaria envia JPEG em data URL (várias fotos ~0,3 MB cada).
+  app.use(json({ limit: '25mb' }));
+  app.use(urlencoded({ extended: true, limit: '25mb' }));
+  app.useWebSocketAdapter(new IoAdapter(app));
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
   const logger = new Logger('Bootstrap');
 
@@ -20,6 +35,55 @@ async function bootstrap() {
   }
 
   applyBaseHttpStack(app, logger);
+
+  attachResilienceRouteHints(app);
+
+  // Chrome Private Network Access: site :3000 → API :3001 na LAN.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (String(req.headers['access-control-request-private-network'] ?? '') === 'true') {
+      res.setHeader('Access-Control-Allow-Private-Network', 'true');
+    }
+    next();
+  });
+
+  app.enableCors({
+    origin: getCorsOrigins(),
+    credentials: true,
+    methods: ['GET', 'HEAD', 'OPTIONS', 'PUT', 'PATCH', 'POST', 'DELETE'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+      'X-Correlation-ID',
+      'x-correlation-id',
+      'X-Request-ID',
+      'x-request-id',
+      'X-RL-Auth-Cookie',
+      'X-RL-Portal-Cookie',
+      'X-CSRF-Token',
+      'x-device-screen',
+      'x-device-os',
+      'x-device-browser',
+      'x-device-timezone',
+      'x-device-fingerprint',
+      'x-session-id',
+      'x-requested-with',
+      'sentry-trace',
+      'baggage',
+      'traceparent',
+    ],
+    exposedHeaders: ['Authorization', 'x-session-id', 'x-device-fingerprint'],
+  });
+  logger.log(`✓ CORS origins: ${getCorsOrigins().join(', ')} (inclui /portal/auth/*)`);
+
+  const securityHeadersLogger = new Logger('SecurityHeaders');
+  app.use(
+    createSecurityHeadersMiddleware({
+      intrusion: app.get(IntrusionService),
+      prisma: app.get(PrismaService),
+      logger: securityHeadersLogger,
+    }),
+  );
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -82,6 +146,10 @@ async function bootstrap() {
     .addTag('health', 'Disponibilidade')
     .addTag('clientes', 'Gerenciamento de Clientes')
     .addTag('solicitacoes', 'Gerenciamento de Solicitações')
+    .addTag(
+      'agendamentos',
+      'Agendamentos FL — fila por turno (AM/PM), capacidade configurável, integração resilience',
+    )
     .addTag('auditoria', 'Auditoria e rastreabilidade')
     .addTag('faturamento', 'Faturamento, NFS-e e boletos')
     .addTag('nfse', 'NFS-e IPM / Atende.Net')
@@ -119,7 +187,7 @@ async function bootstrap() {
     )
     .addTag(
       'financeiro-conciliacao',
-      'Conciliação bancária (OFX/CSV), fluxo de caixa, previsibilidade e tesouraria (extratos em memória até migração)',
+      'Conciliação bancária (OFX/CSV), fluxo de caixa, previsibilidade — extratos persistidos em PostgreSQL (financeiro_extrato_lotes)',
     )
     .addTag(
       'tesouraria',
@@ -155,7 +223,7 @@ async function bootstrap() {
     )
     .addTag(
       'integracao-financeira',
-      'Webhook de pagamentos (`/integracao/pagamentos/webhook`): opcionalmente assinado.',
+      'Webhook de pagamentos (`/integracao/pagamentos/webhook`): HMAC-SHA256 obrigatório.',
     )
     .addTag(
       'integracao-visao',
@@ -360,7 +428,7 @@ async function bootstrap() {
     SwaggerModule.setup('docs/cockpit', app, cockpitDocument);
   }
 
-  const port = parseInt(process.env.API_PORT || '3000', 10);
+  const port = parseInt(process.env.API_PORT || '3001', 10);
   const host = process.env.API_HOST || '0.0.0.0';
 
   await app.listen(port, host);
@@ -375,7 +443,21 @@ async function bootstrap() {
     logger.log('✓ Documentação Swagger desligada (defina SWAGGER_ENABLED=1 para habilitar em produção)');
   }
   logger.log(`✓ Ambiente: ${process.env.NODE_ENV || 'development'}`);
-  logger.log(process.env.DATABASE_URL ? '✓ Banco: configurado' : '✗ Banco: DATABASE_URL ausente');
+  const dbUrl = process.env.DATABASE_URL ?? '';
+  if (dbUrl) {
+    try {
+      const u = new URL(dbUrl.replace(/^postgresql:/, 'http:'));
+      logger.log(`✓ Banco: ${u.hostname}:${u.port || '5432'}${u.pathname}`);
+    } catch {
+      logger.log('✓ Banco: configurado');
+    }
+  } else {
+    logger.log('✗ Banco: DATABASE_URL ausente');
+  }
+  if (isProductionDeploy() && process.env.REDIS_OPTIONAL === '1') {
+    logger.error('✗ Produção exige REDIS_OPTIONAL=0 (Redis obrigatório para sessão/rate-limit).');
+    process.exit(1);
+  }
 }
 
 bootstrap().catch((err) => {

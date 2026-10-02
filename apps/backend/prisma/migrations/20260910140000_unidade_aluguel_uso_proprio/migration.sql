@@ -1,0 +1,1 @@
+ALTER TYPE "StatusUnidadeAluguel" ADD VALUE IF NOT EXISTS 'USO_PROPRIO';

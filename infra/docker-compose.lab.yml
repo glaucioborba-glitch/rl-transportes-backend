@@ -1,0 +1,35 @@
+# Homologação LAN (demo 30/09) — NÃO é o compose da Oracle/AWS.
+# Sobe a stack sem Nginx/Certbot e publica 3000/3001 na rede local.
+#
+#   docker compose \
+#     -f infra/docker-compose.prod.yml \
+#     -f infra/docker-compose.lab.yml \
+#     --env-file .env.production \
+#     up -d --build postgres redis minio minio-init backend frontend
+#
+# Nginx e Certbot ficam no profile "cloud": não sobem neste comando.
+
+services:
+  nginx:
+    profiles: ["cloud"]
+
+  certbot:
+    profiles: ["cloud"]
+
+  frontend:
+    ports: !override
+      - "3000:3000"
+    build:
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL}
+
+  backend:
+    environment:
+      TZ: America/Sao_Paulo
+    ports: !override
+      - "3001:3001"
+
+  minio:
+    ports:
+      - "9000:9000"
+      - "127.0.0.1:9001:9001"

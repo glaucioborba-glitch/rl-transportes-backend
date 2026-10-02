@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
+import { IntranetShell } from "@/components/intranet/intranet-shell";
 
 export default function SsmaLayout({ children }: { children: ReactNode }) {
-  return children;
+  return <IntranetShell>{children}</IntranetShell>;
 }

@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import {
   AcaoAuditoria,
   Prisma,
-  StatusPagamento,
 } from '@prisma/client';
+import { BOLETO_STATUS_ENCERRADO } from '../common/finance/boleto-status.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import type { FiscalGovernancaQueryDto } from './dto/fiscal-governanca-query.dto';
 import type {
@@ -425,7 +425,7 @@ export class FiscalGovernancaService {
         where: {
           dataVencimento: { lt: new Date() },
           statusPagamento: {
-            notIn: [StatusPagamento.PAGO, StatusPagamento.CANCELADO],
+            notIn: [...BOLETO_STATUS_ENCERRADO],
           },
         },
       }),

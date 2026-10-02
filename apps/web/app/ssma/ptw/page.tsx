@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { SsmaWorkspace } from "@/components/ssma/ssma-workspace";
 import { SsmaSection } from "@/components/ssma/ssma-section";
 import { PtwForm } from "@/components/ssma/ptw-form";
 import { SafetyChecklist } from "@/components/ssma/safety-checklist";
 import { RcaVisualizer } from "@/components/ssma/rca-visualizer";
 import { MaturityRadar } from "@/components/ssma/maturity-radar";
 import { ActionPlanBoard } from "@/components/ssma/action-plan-board";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { ssmaStorage } from "@/lib/ssma/storage";
 import { cn } from "@/lib/utils";
@@ -21,20 +21,20 @@ const TABS = [
 ] as const;
 
 export default function SsmaPtwPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("ptw");
   const [, bump] = useState(0);
 
   if (!allowed) {
     return (
-      <SsmaWorkspace>
+      <div>
         <p className="text-center text-amber-400">Acesso restrito.</p>
-      </SsmaWorkspace>
+      </div>
     );
   }
 
   return (
-    <SsmaWorkspace>
+    <div>
       <div className="mb-6 flex flex-wrap gap-2 border-b border-white/10 pb-3">
         {TABS.map((t) => (
           <button
@@ -94,6 +94,6 @@ export default function SsmaPtwPage() {
           <ActionPlanBoard />
         </SsmaSection>
       ) : null}
-    </SsmaWorkspace>
+    </div>
   );
 }

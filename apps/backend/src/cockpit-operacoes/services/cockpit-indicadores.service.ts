@@ -28,7 +28,7 @@ export class CockpitIndicadoresService {
         where: { deletedAt: null },
         _count: true,
       }),
-      Promise.resolve(this.mobileOps.ultimos(400)),
+      this.mobileOps.ultimos(400),
     ]);
 
     const cap = this.capacidade();

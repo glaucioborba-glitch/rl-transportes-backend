@@ -82,7 +82,7 @@ export class PortalBrandingController {
     summary: 'Obter white-label do tenant',
     description: 'JWT portal (cliente/fornecedor) ou staff. Query `tenantId` opcional.',
   })
-  obter(@Req() req: Request & { cxUser?: CxPortalRequestUser }, @Query('tenantId') tenantQ?: string) {
+  async obter(@Req() req: Request & { cxUser?: CxPortalRequestUser }, @Query('tenantId') tenantQ?: string) {
     const u = req.cxUser;
     const tenantId = tenantQ?.trim() || u?.tenantId || 'default';
     return this.branding.obter(tenantId);
@@ -101,7 +101,7 @@ export class PortalBrandingController {
     if (body.menuItens) patch.menuItens = body.menuItens;
     if (body.slasExibidos) patch.slasExibidos = body.slasExibidos;
     if (body.kpisExibidos) patch.kpisExibidos = body.kpisExibidos;
-    const out = this.branding.salvar(body.tenantId, patch);
+    const out = await this.branding.salvar(body.tenantId, patch);
     await this.auditoria.registrar({
       tabela: 'cx_portal_branding',
       registroId: body.tenantId,

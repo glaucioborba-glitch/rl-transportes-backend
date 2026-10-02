@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Twin3DScene, type Twin3DLayers } from "@/components/digital-twin/twin-3d-scene";
+import { LazyTwin3DScene as Twin3DScene } from "@/components/lazy/heavy-charts";
+import type { Twin3DLayers } from "@/components/digital-twin/twin-3d-scene";
 import { useTwinTelemetry } from "@/lib/digital-twin/use-twin-telemetry";
 import { mapQuadrasFromDashboard } from "@/lib/digital-twin/derive";
 import { staffJson, staffTryJson, ApiError } from "@/lib/api/staff-client";

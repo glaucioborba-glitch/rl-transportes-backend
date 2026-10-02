@@ -1,0 +1,57 @@
+CONTA CORRENTE DO CLIENTE — CAIXA COMERCIAL
+RL Transportes
+========================================
+
+Não é o extrato de todas as faturas. É um caixa por cliente
+para o financeiro/adm dar folga ao processo.
+
+Crédito (verde, saldo positivo)
+  A favor do cliente. Entra na próxima fatura/pagamento.
+  Exemplos: acordo comercial; fatura saiu maior que o combinado;
+  PIX maior que o devido.
+
+Débito (âmbar, saldo negativo)
+  Cliente em aberto conosco. Exemplo: liberou a retirada
+  com PIX para pagamento posterior.
+
+O saldo NÃO entra sozinho na NFS-e / boleto.
+Quando aplicar, abra a conta e use "Compensar saldo"
+(informe a fatura ou o pagamento na referência).
+
+
+----------------------------------------
+ONDE FICA
+----------------------------------------
+
+Intranet → Financeiro → Conta corrente
+  http://localhost:3000/financeiro/conta-corrente
+
+Na ficha do cliente: botão "Conta corrente".
+
+Papéis: ADMIN, GERENTE e SUPER_ADMIN (Abrir intranet).
+
+
+----------------------------------------
+COMO LANÇAR
+----------------------------------------
+
+1. Abra o cliente.
+2. Tipo + motivo + valor + descrição (obrigatória).
+3. Referência opcional (ISO, PIX, protocolo).
+4. Lançar.
+
+Não apaga lançamento. Se errou, lance o contrário
+ou use Compensar.
+
+
+----------------------------------------
+QUEM FAZ O QUÊ
+----------------------------------------
+
+Situação                         O que lançar
+-------------------------------  --------------------------------
+Acordo de crédito na operação    Crédito · Acordo comercial
+Fatura maior que o combinado     Crédito · Ajuste de fatura
+PIX a maior                      Crédito · PIX a maior
+Liberou saída para pagar depois  Débito · Liberação — pagar depois
+Aplicou na fatura/pagamento      Compensar saldo

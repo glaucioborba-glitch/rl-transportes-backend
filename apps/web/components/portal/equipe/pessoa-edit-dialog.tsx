@@ -1,0 +1,139 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  ApiError,
+  portalAtualizarPessoaAutorizada,
+  portalObterPermissoesPessoa,
+  portalPatchPermissoesPessoa,
+  type PessoaAutorizadaRow,
+} from "@/lib/api/portal-client";
+import { formatPhoneBr } from "@/lib/nfse/cliente-fiscal";
+import { toast } from "@/lib/toast";
+import { DEFAULT_PERMISSOES, type PermissoesPessoa } from "@/stores/pessoaPermissoesStore";
+import { PermissoesOperacionaisFields } from "./permissoes-operacionais-fields";
+
+type PessoaEditDialogProps = {
+  pessoa: PessoaAutorizadaRow | null;
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+};
+
+export function PessoaEditDialog({ pessoa, open, onClose, onSaved }: PessoaEditDialogProps) {
+  const [email, setEmail] = useState("");
+  const [telefone, setTelefone] = useState("");
+  const [permissoes, setPermissoes] = useState<PermissoesPessoa>({ ...DEFAULT_PERMISSOES });
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open || !pessoa) return;
+    setEmail(pessoa.email);
+    setTelefone(pessoa.telefone ? formatPhoneBr(pessoa.telefone) : "");
+    setLoading(true);
+    void portalObterPermissoesPessoa(pessoa.id)
+      .then((p) => setPermissoes({ ...DEFAULT_PERMISSOES, ...p }))
+      .catch((e) => {
+        toast.error(e instanceof ApiError ? e.message : "Não foi possível carregar permissões.");
+        setPermissoes({ ...DEFAULT_PERMISSOES });
+      })
+      .finally(() => setLoading(false));
+  }, [open, pessoa]);
+
+  async function salvarEdicao() {
+    if (!pessoa) return;
+    const tel = telefone.replace(/\D/g, "");
+    if (!email.trim() || !/^\S+@\S+\.\S+$/.test(email.trim())) {
+      toast.error("Informe um e-mail válido.");
+      return;
+    }
+    if (tel && !/^\d{10,11}$/.test(tel)) {
+      toast.error("Telefone inválido (DDD + número).");
+      return;
+    }
+    setSaving(true);
+    try {
+      await Promise.all([
+        portalAtualizarPessoaAutorizada(pessoa.id, {
+          email: email.trim(),
+          telefone: tel || undefined,
+        }),
+        portalPatchPermissoesPessoa(pessoa.id, permissoes),
+      ]);
+      toast.success("Alterações salvas.");
+      onSaved();
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Falha ao salvar alterações.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Editar Permissões — {pessoa?.nome}</DialogTitle>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="flex items-center gap-2 py-8 text-sm text-slate-400">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Carregando…
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>E-mail</Label>
+                <Input
+                  type="email"
+                  className="mt-1.5"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label>Telefone</Label>
+                <Input
+                  className="mt-1.5"
+                  value={telefone}
+                  onChange={(e) => setTelefone(formatPhoneBr(e.target.value))}
+                  inputMode="tel"
+                />
+              </div>
+            </div>
+            <div className="mt-4">
+              <Label className="text-xs uppercase">Permissões Operacionais</Label>
+              <div className="mt-2">
+                <PermissoesOperacionaisFields value={permissoes} onChange={setPermissoes} />
+              </div>
+            </div>
+          </>
+        )}
+
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+            Cancelar
+          </Button>
+          <Button type="button" onClick={() => void salvarEdicao()} disabled={saving || loading}>
+            {saving ? "Salvando…" : "Salvar Alterações"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

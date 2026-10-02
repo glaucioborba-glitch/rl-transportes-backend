@@ -42,7 +42,7 @@ export class ObservabilidadeController {
     description:
       'Campos JSON padronizados; emails mascarados; sem secrets; correlacionado por requestId.',
   })
-  logs(@Query() q: ObservabilidadeLogsQueryDto) {
+  async logs(@Query() q: ObservabilidadeLogsQueryDto) {
     return this.store.listLogs({
       origem: q.origem,
       severidade: q.severidade,
@@ -68,9 +68,9 @@ export class ObservabilidadeController {
     description:
       'Spans inferidos por requisição HTTP sem instrumentar outros módulos. Query requestId opcional.',
   })
-  tracing(@Query('requestId') requestId?: string) {
+  async tracing(@Query('requestId') requestId?: string) {
     if (requestId) {
-      const t = this.store.getTrace(requestId);
+      const t = await this.store.getTrace(requestId);
       return t ? [t] : [];
     }
     return this.store.listTraces(80);

@@ -1,0 +1,495 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  AlertTriangle,
+  FileText,
+  Fingerprint,
+  IdCard,
+  Loader2,
+  MapPin,
+  Phone,
+  Save,
+  Truck,
+  User,
+  X,
+} from "lucide-react";
+import { FormField, FormSection, CADASTRO_FORM_CLASS } from "@/components/cadastros/form-field";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ApiError } from "@/lib/api/staff-client";
+import {
+  buscaCepMotorista,
+  checkCadastrosMotoristaCpf,
+  createCadastrosMotorista,
+  EMPTY_MOTORISTA_FORM,
+  getCadastrosMotorista,
+  updateCadastrosMotorista,
+  type CadastrosMotoristaFormData,
+} from "@/lib/api/cadastros-motoristas-client";
+import {
+  listCadastrosTransportadoras,
+  type CadastrosTransportadoraListItem,
+} from "@/lib/api/cadastros-transportadoras-client";
+import { formatCEP, formatCNPJ, formatCPF, formatPhone, isValidCPF } from "@/lib/cadastros/formatters";
+import { isValidPlacaMercosul } from "@/lib/placa-mercosul";
+import { toast } from "@/lib/toast";
+import { MotoristaDigitalPanel } from "@/components/biometria/motorista-digital-panel";
+
+const SELECT_CLASS =
+  "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+function normalizePlacaInput(value: string) {
+  return value.replace(/[\s-]/g, "").toUpperCase();
+}
+
+type Props = {
+  motoristaId?: string;
+};
+
+export function MotoristaForm({ motoristaId }: Props) {
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(Boolean(motoristaId));
+  const [validatingCpf, setValidatingCpf] = useState(false);
+  const [transportadoras, setTransportadoras] = useState<CadastrosTransportadoraListItem[]>([]);
+  const [formData, setFormData] = useState<CadastrosMotoristaFormData>(EMPTY_MOTORISTA_FORM);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const data = await listCadastrosTransportadoras({
+          status: "ativas",
+          limit: 100,
+        });
+        setTransportadoras(data.items || []);
+      } catch {
+        /* aux opcional */
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!motoristaId) return;
+    let on = true;
+    void (async () => {
+      try {
+        const data = await getCadastrosMotorista(motoristaId);
+        if (on) setFormData({ ...EMPTY_MOTORISTA_FORM, ...data });
+      } catch {
+        toast.error("Erro ao carregar motorista.");
+      } finally {
+        if (on) setLoading(false);
+      }
+    })();
+    return () => {
+      on = false;
+    };
+  }, [motoristaId]);
+
+  const validateCpf = async (cpf: string) => {
+    const clean = cpf.replace(/\D/g, "");
+    if (clean.length !== 11) return;
+
+    setValidatingCpf(true);
+    try {
+      if (!isValidCPF(clean)) {
+        toast.error("CPF inválido.");
+        return;
+      }
+      const result = await checkCadastrosMotoristaCpf(clean, motoristaId);
+      if (result.exists) {
+        toast.error(`CPF já cadastrado: ${result.nome}`);
+      }
+    } catch {
+      /* não bloqueia */
+    } finally {
+      setValidatingCpf(false);
+    }
+  };
+
+  const validarPlacaCampo = (placa: string, label: string) => {
+    const n = normalizePlacaInput(placa);
+    if (!n) return;
+    if (!isValidPlacaMercosul(n)) {
+      toast.error(`${label}: placa inválida. Use Mercosul (ABC1D23) ou o formato antigo (ABC1234).`);
+    }
+  };
+
+  const cnhVencida =
+    formData.cnhValidade &&
+    new Date(`${formData.cnhValidade}T12:00:00`) < new Date(new Date().toDateString());
+  const cnhVencendo =
+    formData.cnhValidade &&
+    !cnhVencida &&
+    new Date(`${formData.cnhValidade}T12:00:00`) <
+      new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.nome || !formData.cpf) {
+      toast.error("Nome e CPF são obrigatórios.");
+      return;
+    }
+    if (!isValidCPF(formData.cpf)) {
+      toast.error("CPF inválido.");
+      return;
+    }
+    if (!formData.transportadoraId) {
+      toast.error("Transportadora é obrigatória — todo motorista deve ser vinculado a uma.");
+      return;
+    }
+    const placaCavalo = normalizePlacaInput(formData.placaCavalo);
+    const placaCarreta = normalizePlacaInput(formData.placaCarreta);
+    if (placaCavalo && !isValidPlacaMercosul(placaCavalo)) {
+      toast.error("Cavalo: placa inválida. Use Mercosul (ABC1D23) ou o formato antigo (ABC1234).");
+      return;
+    }
+    if (placaCarreta && !isValidPlacaMercosul(placaCarreta)) {
+      toast.error("Carreta: placa inválida. Use Mercosul (ABC1D23) ou o formato antigo (ABC1234).");
+      return;
+    }
+    if (!formData.cnhNumero || !formData.cnhCategoria || !formData.cnhValidade) {
+      toast.error("Dados da CNH são obrigatórios (número, categoria e validade).");
+      return;
+    }
+
+    const validade = new Date(`${formData.cnhValidade}T12:00:00`);
+    if (validade < new Date(new Date().toDateString())) {
+      toast.warning(
+        "ATENÇÃO: A CNH informada está vencida. O motorista será bloqueado no Gate CPO.",
+      );
+    }
+
+    setSaving(true);
+    try {
+      const { id: _omitId, ...rest } = formData;
+      const payload: CadastrosMotoristaFormData = {
+        ...rest,
+        placaCavalo,
+        placaCarreta,
+        email: rest.email.trim(),
+        dataNascimento: rest.dataNascimento,
+      };
+      if (motoristaId) {
+        await updateCadastrosMotorista(motoristaId, payload);
+        toast.success("Motorista atualizado!");
+      } else {
+        await createCadastrosMotorista(payload);
+        toast.success("Motorista cadastrado!");
+      }
+      router.push("/cadastros/pessoas/motoristas");
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : "Erro ao salvar motorista.";
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex h-40 items-center justify-center text-muted-foreground">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+        Carregando…
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className={CADASTRO_FORM_CLASS}>
+      <FormSection title="Dados Pessoais" icon={User}>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Nome Completo" required className="min-w-[16rem] flex-[2]">
+            <Input
+              value={formData.nome}
+              onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+              placeholder="Ex: Carlos Eduardo Ferreira"
+            />
+          </FormField>
+          <FormField label="Data de Nascimento" size="md">
+            <Input
+              type="date"
+              value={formData.dataNascimento}
+              onChange={(e) => setFormData({ ...formData, dataNascimento: e.target.value })}
+            />
+          </FormField>
+          <FormField label="CPF" required size="md">
+            <div className="flex gap-2">
+              <Input
+                value={formatCPF(formData.cpf)}
+                onChange={(e) =>
+                  setFormData({ ...formData, cpf: e.target.value.replace(/\D/g, "") })
+                }
+                onBlur={(e) => void validateCpf(e.target.value)}
+                placeholder="000.000.000-00"
+                className="tabular-nums"
+              />
+              {validatingCpf ? (
+                <Loader2 className="h-4 w-4 animate-spin self-center text-muted-foreground" />
+              ) : null}
+            </div>
+          </FormField>
+          <FormField label="RG" size="md">
+            <Input
+              value={formData.rg}
+              onChange={(e) => setFormData({ ...formData, rg: e.target.value })}
+              placeholder="00.000.000-0"
+              className="tabular-nums"
+            />
+          </FormField>
+        </div>
+      </FormSection>
+
+      <FormSection title="Transportadora" icon={Truck}>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Transportadora Vinculada" required className="min-w-[16rem] flex-1">
+            <select
+              value={formData.transportadoraId}
+              onChange={(e) =>
+                setFormData({ ...formData, transportadoraId: e.target.value })
+              }
+              className={SELECT_CLASS}
+            >
+              <option value="">Selecione uma transportadora...</option>
+              {transportadoras.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.razaoSocial} — {formatCNPJ(t.cnpj)}
+                </option>
+              ))}
+            </select>
+            {transportadoras.length === 0 ? (
+              <p className="mt-1 text-xs text-amber-400">
+                ⚠ Nenhuma transportadora ativa cadastrada. Cadastre uma transportadora primeiro.
+              </p>
+            ) : null}
+          </FormField>
+          <div className="min-w-[16rem]">
+            <p className="mb-1 text-xs uppercase tracking-wider text-muted-foreground">
+              Placas Preferenciais
+            </p>
+            <div className="flex flex-wrap gap-4">
+              <FormField label="Cavalo" size="sm">
+                <Input
+                  className="uppercase tabular-nums"
+                  maxLength={8}
+                  placeholder="ABC1D23"
+                  value={formData.placaCavalo}
+                  onChange={(e) =>
+                    setFormData({ ...formData, placaCavalo: normalizePlacaInput(e.target.value) })
+                  }
+                  onBlur={(e) => validarPlacaCampo(e.target.value, "Cavalo")}
+                />
+              </FormField>
+              <FormField label="Carreta" size="sm">
+                <Input
+                  className="uppercase tabular-nums"
+                  maxLength={8}
+                  placeholder="ABC1D23"
+                  value={formData.placaCarreta}
+                  onChange={(e) =>
+                    setFormData({ ...formData, placaCarreta: normalizePlacaInput(e.target.value) })
+                  }
+                  onBlur={(e) => validarPlacaCampo(e.target.value, "Carreta")}
+                />
+              </FormField>
+            </div>
+          </div>
+        </div>
+      </FormSection>
+
+      <FormSection title="Carteira Nacional de Habilitação (CNH)" icon={IdCard}>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Número da CNH" required size="md">
+            <Input
+              value={formData.cnhNumero}
+              onChange={(e) => setFormData({ ...formData, cnhNumero: e.target.value })}
+              placeholder="00000000000"
+              className="tabular-nums"
+            />
+          </FormField>
+          <FormField label="Categoria" required size="sm">
+            <select
+              value={formData.cnhCategoria}
+              onChange={(e) => setFormData({ ...formData, cnhCategoria: e.target.value })}
+              className={SELECT_CLASS}
+            >
+              <option value="">Selecione...</option>
+              <option value="A">A (Moto)</option>
+              <option value="B">B (Carro)</option>
+              <option value="C">C (Caminhão)</option>
+              <option value="D">D (Ônibus)</option>
+              <option value="E">E (Carreta)</option>
+              <option value="AB">AB</option>
+              <option value="AC">AC</option>
+              <option value="AD">AD</option>
+              <option value="AE">AE</option>
+            </select>
+          </FormField>
+          <FormField label="Validade" required size="md">
+            <Input
+              type="date"
+              value={formData.cnhValidade}
+              onChange={(e) => setFormData({ ...formData, cnhValidade: e.target.value })}
+            />
+          </FormField>
+          <FormField label="UF Emissão" size="xs">
+            <Input
+              value={formData.cnhUfEmissao}
+              onChange={(e) =>
+                setFormData({ ...formData, cnhUfEmissao: e.target.value.toUpperCase() })
+              }
+              placeholder="SC"
+              maxLength={2}
+            />
+          </FormField>
+        </div>
+        {cnhVencida ? (
+          <div className="mt-3 flex items-center gap-2 rounded bg-red-500/10 px-3 py-2 text-xs text-red-400">
+            <AlertTriangle className="h-4 w-4" />
+            Esta CNH está VENCIDA. O motorista será bloqueado automaticamente no Gate CPO até a
+            renovação.
+          </div>
+        ) : null}
+        {cnhVencendo ? (
+          <div className="mt-3 flex items-center gap-2 rounded bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+            <AlertTriangle className="h-4 w-4" />
+            Esta CNH vence em menos de 30 dias. Renove antes do vencimento para evitar bloqueio.
+          </div>
+        ) : null}
+      </FormSection>
+
+      <FormSection title="Endereço" icon={MapPin}>
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-4">
+          <FormField label="CEP" size="sm">
+            <Input
+              value={formatCEP(formData.cep)}
+              onChange={(e) => setFormData({ ...formData, cep: e.target.value.replace(/\D/g, "") })}
+              onBlur={(e) => void buscaCepMotorista(e.target.value, setFormData)}
+              placeholder="00000-000"
+              className="tabular-nums"
+            />
+          </FormField>
+          <FormField label="Endereço" className="min-w-[16rem] flex-[3]">
+            <Input
+              value={formData.endereco}
+              onChange={(e) => setFormData({ ...formData, endereco: e.target.value })}
+            />
+          </FormField>
+          <FormField label="Número" size="sm">
+            <Input
+              value={formData.numero}
+              onChange={(e) => setFormData({ ...formData, numero: e.target.value })}
+            />
+          </FormField>
+          </div>
+          <div className="flex flex-wrap gap-4">
+          <FormField label="Complemento" className="min-w-[10rem] flex-1">
+            <Input
+              value={formData.complemento}
+              onChange={(e) => setFormData({ ...formData, complemento: e.target.value })}
+            />
+          </FormField>
+          <FormField label="Bairro" className="min-w-[10rem] flex-1">
+            <Input
+              value={formData.bairro}
+              onChange={(e) => setFormData({ ...formData, bairro: e.target.value })}
+            />
+          </FormField>
+          <FormField label="Cidade" className="min-w-[10rem] flex-1">
+            <Input
+              value={formData.cidade}
+              onChange={(e) => setFormData({ ...formData, cidade: e.target.value })}
+            />
+          </FormField>
+          <FormField label="UF" size="xs">
+            <Input
+              value={formData.uf}
+              onChange={(e) => setFormData({ ...formData, uf: e.target.value.toUpperCase() })}
+              maxLength={2}
+            />
+          </FormField>
+          </div>
+        </div>
+      </FormSection>
+
+      <FormSection title="Contato" icon={Phone}>
+        <div className="flex flex-wrap gap-4">
+          <FormField label="Celular" size="md">
+            <Input
+              value={formatPhone(formData.celular)}
+              onChange={(e) =>
+                setFormData({ ...formData, celular: e.target.value.replace(/\D/g, "") })
+              }
+              placeholder="(00) 00000-0000"
+              className="tabular-nums"
+            />
+          </FormField>
+          <FormField label="Telefone" size="md">
+            <Input
+              value={formatPhone(formData.telefone)}
+              onChange={(e) =>
+                setFormData({ ...formData, telefone: e.target.value.replace(/\D/g, "") })
+              }
+              placeholder="(00) 0000-0000"
+              className="tabular-nums"
+            />
+          </FormField>
+          <FormField label="E-mail" className="min-w-[16rem] flex-[2]">
+            <Input
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              placeholder="carlos@email.com"
+            />
+          </FormField>
+        </div>
+      </FormSection>
+
+      <FormSection title="Impressão digital (RIC)" icon={Fingerprint}>
+        <MotoristaDigitalPanel cpf={formData.cpf} variant="cadastro" />
+      </FormSection>
+
+      <FormSection title="Observações" icon={FileText}>
+        <textarea
+          value={formData.observacoes}
+          onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })}
+          placeholder="Restrições médicas, observações de segurança, etc..."
+          rows={4}
+          className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        />
+      </FormSection>
+
+      <div className="flex items-center gap-3">
+        <label className="flex cursor-pointer items-center gap-2">
+          <input
+            type="checkbox"
+            checked={formData.ativo}
+            onChange={(e) => setFormData({ ...formData, ativo: e.target.checked })}
+            className="h-4 w-4 rounded border-border"
+          />
+          <span className="text-sm">Motorista ativo</span>
+        </label>
+      </div>
+
+      <div className="flex gap-3">
+        <Button type="button" variant="outline" onClick={() => router.back()}>
+          <X className="mr-2 h-4 w-4" /> Cancelar
+        </Button>
+        <Button variant="default" type="submit" disabled={saving}>
+          {saving ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...
+            </>
+          ) : (
+            <>
+              <Save className="mr-2 h-4 w-4" /> {motoristaId ? "Atualizar" : "Cadastrar"} Motorista
+            </>
+          )}
+        </Button>
+      </div>
+    </form>
+  );
+}

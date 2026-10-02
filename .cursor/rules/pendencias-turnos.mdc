@@ -1,0 +1,20 @@
+---
+description: Turnos operacionais vs jornada da equipe
+alwaysApply: true
+---
+
+# Turnos
+
+Há **duas** listas. Não misturar.
+
+## Operacionais (Gate / agendamento)
+
+Fonte: `/cadastros/parametros/operacional` (`tenant.operacional.turnos`).
+Capacidade, slot manhã/tarde, janela do terminal. Quem agenda no Gate lê daqui.
+
+O menu Cadastros → Operacional → Turnos **não existe**. Não usar a tabela `cadastros_turnos`.
+
+## Jornada da equipe (RH)
+
+Fonte: `/rh/turnos` (`rh_turnos_jornada`).
+Horário cumprido pelo colaborador. Pode ser sistema espanhol (um sábado o dia todo, o outro folga) ou sem sábado — **por turno**, não global. O cadastro do colaborador anexa um destes turnos.

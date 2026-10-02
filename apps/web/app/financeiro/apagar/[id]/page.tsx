@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { toast } from "@/lib/toast";
 import { formatBRL, parseDecimal } from "@/lib/financeiro/format";
@@ -22,7 +22,7 @@ type FatDetail = {
   statusNfe: string;
   statusBoleto: string;
   createdAt: string;
-  cliente: { id: string; nome: string; email?: string };
+  cliente: { id: string; razaoSocial: string; email?: string };
   itens: { id: string; descricao: string; valor: unknown }[];
   boletos: {
     id: string;
@@ -47,7 +47,7 @@ export default function ApagarDetalhePage() {
   const params = useParams();
   const id = String(params.id ?? "");
   const user = useStaffAuthStore((s) => s.user);
-  const ok = user?.role === "ADMIN" || user?.role === "GERENTE";
+  const ok = isIntranetGestorRole(user?.role);
   const [fat, setFat] = useState<FatDetail | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -86,9 +86,6 @@ export default function ApagarDetalhePage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
-        <Link href="/financeiro/apagar" className="text-sm text-amber-500 hover:underline">
-          ← Voltar
-        </Link>
         <h1 className="text-xl font-bold text-white">Lançamento {fat.periodo}</h1>
         <FinanceStatusBadge status={fat.statusBoleto} />
       </div>
@@ -99,7 +96,7 @@ export default function ApagarDetalhePage() {
             <CardTitle className="text-white">Credor</CardTitle>
           </CardHeader>
           <CardContent className="space-y-1 text-zinc-300">
-            <p className="text-lg font-semibold text-white">{fat.cliente.nome}</p>
+            <p className="text-lg font-semibold text-white">{fat.cliente.razaoSocial}</p>
             <p className="text-xs font-mono text-zinc-500">{fat.clienteId}</p>
             <p className="mt-4 text-sm">Valor total: {formatBRL(parseDecimal(fat.valorTotal))}</p>
             <p className="text-sm">NFS-e: {fat.statusNfe}</p>
@@ -216,8 +213,7 @@ export default function ApagarDetalhePage() {
         <div className="col-span-12">
           <AuditTrail tabela="faturamentos" registroId={fat.id} />
           <p className="mt-2 text-xs text-zinc-500">
-            Boletos: histórico em <code className="text-zinc-400">GET /auditoria/registro/boletos/&lt;id&gt;</code>{" "}
-            (mesmo padrão do cabeçalho de faturamento).
+            Histórico deste ID e dos boletos no menu Auditoria, com classificação verde / amarelo / vermelho.
           </p>
         </div>
       </div>

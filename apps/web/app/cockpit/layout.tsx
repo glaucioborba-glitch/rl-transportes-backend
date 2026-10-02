@@ -1,10 +1,5 @@
-import { OperadorHeader } from "@/components/operador/operador-header";
+import { IntranetShell } from "@/components/intranet/intranet-shell";
 
 export default function CockpitLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="min-h-screen bg-[#06080c] text-slate-100">
-      <OperadorHeader />
-      {children}
-    </div>
-  );
+  return <IntranetShell>{children}</IntranetShell>;
 }

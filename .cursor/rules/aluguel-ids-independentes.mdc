@@ -1,0 +1,14 @@
+---
+description: Aluguel e handling são IDs separados; Fatura FAT agrupa vários IDs do mesmo cliente
+alwaysApply: true
+---
+
+# Aluguel vs pátio (IDs independentes)
+
+O aluguel de uma unidade da frota é **um processo com ID próprio** (modalidade `ALUGUEL`). Handling + estadia no pátio é **outro processo com outro ID** (modalidade `PATIO`).
+
+O cliente pode alugar, levar no caminhão e **depois hospedar a mesma caixa no pátio** (entrada/handling/estadia/saída normais). Os dois IDs podem coexistir no mesmo ISO. Gate/pátio só olham ID `PATIO`. Devolução do aluguel só fecha o ID `ALUGUEL`.
+
+## Faturamento
+
+Uma **Fatura** (`FAT-…`) é **um cliente**, com **vários IDs** no demonstrativo, **uma NFS-e** e boleto ou PIX. Ver `.cursor/rules/fatura.mdc`. Não emitir uma NFS-e por ID só porque os processos são separados.

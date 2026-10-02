@@ -15,7 +15,7 @@ function isStateChanging(method: string): boolean {
 
 /**
  * Double-submit CSRF: cookie não-httpOnly + header X-CSRF-Token em métodos mutáveis.
- * Desligado por padrão (CSRF_ENABLED≠1) para não impactar integrações existentes.
+ * Ligado por default em produção (`isCsrfEnabled`); CSRF_ENABLED=0 desliga.
  */
 export function csrfProtectionMiddleware() {
   return (req: Request, res: Response, next: NextFunction): void => {

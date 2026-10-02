@@ -6,12 +6,35 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/portal/status-badge";
+import { SolicitacaoDirecaoBadge } from "@/components/solicitacao/solicitacao-direcao-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ApiError, aprovarSolicitacao, fetchSolicitacao, type SolicitacaoRow } from "@/lib/api/portal-client";
-import { formatDateTime } from "@/lib/portal-tracking";
+import {
+  ApiError,
+  aprovarSolicitacao,
+  fetchSolicitacao,
+  fetchSolicitacaoHistoricoAlteracoes,
+  fetchSolicitacaoVistorias,
+  portalDownloadSolicitacaoV2Pdf,
+  type SolicitacaoRow,
+} from "@/lib/api/portal-client";
+import { formatDateTime, solicitacaoControleDisplay } from "@/lib/portal-tracking";
+import { formatTipoTamanhoContainerLabel } from "@/lib/cadastros/tipo-container-tamanhos";
+import type { VistoriaPortalRow } from "@/lib/gate-vistoria";
+import { VistoriaGallery } from "@/components/portal/vistoria-gallery";
+import { collectSolicitacaoContainerISOs } from "@/lib/container-display";
+import { ContainerNumber } from "@/components/ui/container-number";
+import { ProtocolRefLabel } from "@/components/shared/operation-identity";
 import { toast } from "@/lib/toast";
 import { usePortalAuthStore } from "@/stores/portal-store";
+import { usePessoaPermissoesStore } from "@/stores/pessoaPermissoesStore";
+import { SolicitacaoHistoricoAlteracoes } from "@/components/solicitacao/solicitacao-historico-alteracoes";
+import { PortalTomadaReeferActions } from "@/components/portal/portal-tomada-reefer-actions";
+import { usePortalTiposContainer } from "@/hooks/use-portal-tipos-container";
+import { findPortalTipo } from "@/components/portal/container-form-fields";
+import { rotuloTomadaPedido } from "@/lib/cadastros/tomada-display";
+import { TomadaPedidoBadge } from "@/components/gate/tomada-pedido-badge";
+import { useDocumentoSaida } from "@/components/documento-saida/documento-saida-dialog";
 
 function PhotoStrip({ title, urls }: { title: string; urls: unknown }) {
   const list = Array.isArray(urls) ? urls.filter((u) => typeof u === "string") : [];
@@ -66,9 +89,13 @@ export default function SolicitacaoDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const bumpDashboard = usePortalAuthStore((s) => s.bumpDashboard);
+  const permissoes = usePessoaPermissoesStore((s) => s.permissoes);
   const [row, setRow] = useState<SolicitacaoRow | null>(null);
+  const [vistorias, setVistorias] = useState<VistoriaPortalRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [aproving, setAproving] = useState(false);
+  const documentoSaida = useDocumentoSaida();
+  const { tipos } = usePortalTiposContainer(true);
 
   useEffect(() => {
     if (!id) return;
@@ -78,6 +105,12 @@ export default function SolicitacaoDetailPage() {
       try {
         const s = await fetchSolicitacao(id);
         if (!cancelled) setRow(s);
+        try {
+          const v = await fetchSolicitacaoVistorias(id);
+          if (!cancelled) setVistorias(v);
+        } catch {
+          if (!cancelled) setVistorias([]);
+        }
       } catch (e) {
         toast.error(e instanceof ApiError ? e.message : "Erro ao carregar");
         if (!cancelled) router.push("/portal/solicitacoes");
@@ -89,6 +122,17 @@ export default function SolicitacaoDetailPage() {
       cancelled = true;
     };
   }, [id, router]);
+
+  function onBaixarPdfCorporativo() {
+    if (!id) return;
+    const protocolo = row?.protocolo?.replace(/[^\w.-]+/g, "_") || id;
+    documentoSaida.pedir({
+      titulo: "Autorização",
+      descricao: "PDF da solicitação com QR Code. Baixe o arquivo ou envie direto para a impressora.",
+      filename: `autorizacao-${protocolo}.pdf`,
+      obter: () => portalDownloadSolicitacaoV2Pdf(id),
+    });
+  }
 
   async function onAprovar() {
     if (!id) return;
@@ -108,26 +152,43 @@ export default function SolicitacaoDetailPage() {
 
   if (loading || !row) {
     return (
-      <main className="mx-auto max-w-7xl px-4 py-8">
+      <main className="mx-auto w-[90%] px-4 py-8">
         <Skeleton className="h-40 w-full" />
       </main>
     );
   }
 
+  const isCorporativa = Boolean(row.transporteSolicitacao);
   const p = row.portaria;
 
+  const isos = collectSolicitacaoContainerISOs(row);
+  const controle = solicitacaoControleDisplay(row);
+
   return (
-    <main className="mx-auto max-w-7xl space-y-6 px-4 py-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">{row.protocolo}</h1>
-          <p className="text-sm text-slate-400">
-            Cliente · {row.cliente?.nome ?? "—"} · {formatDateTime(row.createdAt)}
-          </p>
+    <main className="mx-auto w-[90%] space-y-6 px-4 py-8">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-1 space-y-2">
+          <ContainerNumber value={isos[0] ?? "—"} size="lg" />
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="font-mono text-base font-semibold tracking-tight text-white">{controle.primario}</p>
+            <SolicitacaoDirecaoBadge intent={row.tipoOperacao} />
+          </div>
+          {controle.secundario ? (
+            <ProtocolRefLabel protocolo={row.protocolo} prefix="Protocolo:" />
+          ) : null}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           <StatusBadge status={row.status} />
-          {row.status === "PENDENTE" ? (
+          {isCorporativa && permissoes?.podeGerarPDF ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onBaixarPdfCorporativo()}
+            >
+              Baixar PDF
+            </Button>
+          ) : null}
+          {row.status === "PENDENTE" && !isCorporativa && permissoes?.podeAprovarOS ? (
             <Button disabled={aproving} onClick={() => void onAprovar()}>
               {aproving ? "…" : "Aprovar"}
             </Button>
@@ -137,13 +198,142 @@ export default function SolicitacaoDetailPage() {
           </Button>
         </div>
       </div>
+      <p className="text-sm text-slate-400">
+        Cliente · {row.cliente?.razaoSocial ?? "—"} · {formatDateTime(row.createdAt)}
+      </p>
 
-      <Tabs defaultValue="unidades" className="w-full">
+      <Tabs defaultValue={isCorporativa ? "corporativa" : "unidades"} className="w-full">
         <TabsList className="w-full justify-start overflow-x-auto">
+          {isCorporativa ? <TabsTrigger value="corporativa">Dados da solicitação</TabsTrigger> : null}
           <TabsTrigger value="unidades">Unidades</TabsTrigger>
           <TabsTrigger value="eventos">Eventos</TabsTrigger>
+          {isCorporativa ? <TabsTrigger value="historico">Histórico de Alterações</TabsTrigger> : null}
           <TabsTrigger value="documentos">Documentos</TabsTrigger>
         </TabsList>
+
+        {isCorporativa ? (
+          <TabsContent value="corporativa" className="space-y-6">
+            {row.transporteSolicitacao ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Transporte</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-2 text-sm text-slate-300 sm:grid-cols-2">
+                  <p>
+                    CPF: <span className="font-mono text-white">{row.transporteSolicitacao.cpfMotorista}</span>
+                  </p>
+                  <p>
+                    Motorista: <span className="text-white">{row.transporteSolicitacao.nomeMotorista}</span>
+                  </p>
+                  <p>
+                    Tipo: <span className="text-white">{row.transporteSolicitacao.tipoCaminhao}</span>
+                  </p>
+                  <p>
+                    Placas:{" "}
+                    <span className="font-mono text-white">
+                      {row.transporteSolicitacao.placaCavalo} · {row.transporteSolicitacao.placaCarreta01}
+                      {row.transporteSolicitacao.placaCarreta02
+                        ? ` · ${row.transporteSolicitacao.placaCarreta02}`
+                        : ""}
+                    </span>
+                  </p>
+                </CardContent>
+              </Card>
+            ) : null}
+            {(row.containersSolicitacao?.length ?? 0) > 0 ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Containers</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {(row.containersSolicitacao ?? []).map((c) => (
+                    <div key={c.id} className="rounded-lg border border-white/10 bg-black/20 p-3 text-sm">
+                      <ContainerNumber value={c.unidade} size="md" />
+                      <p className="mt-1 text-xs text-slate-500">Unidade #{c.ordem}</p>
+                      <p className="text-slate-400">
+                        {c.booking} · {c.status}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {c.processo} ·{" "}
+                        {formatTipoTamanhoContainerLabel(c.tipo, c.tamanho) ?? "—"}
+                        {c.lacre ? ` · lacre ${c.lacre}` : ""}
+                      </p>
+                      <div className="mt-2">
+                        <TomadaPedidoBadge
+                          label={rotuloTomadaPedido({
+                            tipo: c.tipo,
+                            refrigerado: c.refrigerado,
+                            setPoint: c.setPoint,
+                            tipos,
+                          })}
+                        />
+                      </div>
+                      <PortalTomadaReeferActions
+                        unidadeIso={c.unidade}
+                        solicitacaoStatus={row.status}
+                        tipoCodigo={c.tipo}
+                        requerTomada={Boolean(findPortalTipo(tipos, c.tipo)?.tomadaReefer)}
+                      />
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            ) : null}
+            {row.agendamentoSolicitacao ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Agendamento</CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm text-slate-300">
+                  <p>
+                    Data:{" "}
+                    <span className="text-white">
+                      {String(row.agendamentoSolicitacao.dataRef).slice(0, 10)}
+                    </span>
+                  </p>
+                  <p>
+                    Turno: <span className="text-white">{row.agendamentoSolicitacao.turno}</span>
+                  </p>
+                </CardContent>
+              </Card>
+            ) : null}
+            {row.solicitanteContato ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Contato do solicitante</CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm text-slate-300">
+                  <p className="text-white">{row.solicitanteContato.nome}</p>
+                  <p>{row.solicitanteContato.telefone}</p>
+                  <p>{row.solicitanteContato.email}</p>
+                </CardContent>
+              </Card>
+            ) : null}
+            {(row.anexosSolicitacao?.length ?? 0) > 0 ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Anexos</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  {(row.anexosSolicitacao ?? []).map((a) => (
+                    <div key={a.id} className="flex flex-wrap justify-between gap-2 border-b border-white/5 py-2">
+                      <span className="text-white">{a.filename}</span>
+                      <span className="text-slate-500">
+                        {a.mimeType} · {(a.size / 1024).toFixed(0)} KB
+                      </span>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            ) : null}
+            {isCorporativa ? (
+              <p className="text-xs text-slate-500">
+                Esta solicitação segue o fluxo corporativo: aprovação pela equipe RL (status permanece pendente até
+                análise).
+              </p>
+            ) : null}
+          </TabsContent>
+        ) : null}
 
         <TabsContent value="unidades" className="space-y-6">
           <Card>
@@ -159,12 +349,37 @@ export default function SolicitacaoDetailPage() {
                     className="flex flex-col gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div>
-                      <span className="font-mono text-white">{u.numeroIso}</span>
+                      <ContainerNumber value={u.numeroIso} showLabel={false} size="sm" />
                       <p className="text-xs text-slate-500">{u.tipo}</p>
                     </div>
                     <Button variant="ghost" size="sm" asChild>
                       <Link href={`/portal/unidades/${u.id}`}>Linha do tempo</Link>
                     </Button>
+                  </div>
+                ))
+              ) : (row.containersSolicitacao ?? []).length ? (
+                (row.containersSolicitacao ?? []).map((c) => (
+                  <div key={c.id} className="rounded-lg border border-white/10 bg-black/20 p-3">
+                    <ContainerNumber value={c.unidade} showLabel={false} size="sm" />
+                    <p className="mt-1 text-xs text-slate-500">
+                      {formatTipoTamanhoContainerLabel(c.tipo, c.tamanho) ?? "—"} · {c.status}
+                    </p>
+                    <div className="mt-2">
+                      <TomadaPedidoBadge
+                        label={rotuloTomadaPedido({
+                          tipo: c.tipo,
+                          refrigerado: c.refrigerado,
+                          setPoint: c.setPoint,
+                          tipos,
+                        })}
+                      />
+                    </div>
+                    <PortalTomadaReeferActions
+                      unidadeIso={c.unidade}
+                      solicitacaoStatus={row.status}
+                      tipoCodigo={c.tipo}
+                      requerTomada={Boolean(findPortalTipo(tipos, c.tipo)?.tomadaReefer)}
+                    />
                   </div>
                 ))
               ) : (
@@ -176,7 +391,7 @@ export default function SolicitacaoDetailPage() {
           {p ? (
             <Card>
               <CardHeader>
-                <CardTitle>Fotos (portaria)</CardTitle>
+                <CardTitle>Fotos (portaria legado)</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
                 <PhotoStrip title="Contêiner" urls={p.fotosContainer} />
@@ -186,6 +401,18 @@ export default function SolicitacaoDetailPage() {
               </CardContent>
             </Card>
           ) : null}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Vistoria Gate (escudo de responsabilidade)</CardTitle>
+              <CardDescription>
+                4 fotos obrigatórias por entrada/saída e avarias registradas no gate operacional.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <VistoriaGallery vistorias={vistorias} />
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="eventos">
@@ -203,6 +430,12 @@ export default function SolicitacaoDetailPage() {
           </Card>
         </TabsContent>
 
+        {isCorporativa && id ? (
+          <TabsContent value="historico">
+            <SolicitacaoHistoricoAlteracoes solicitacaoId={id} load={fetchSolicitacaoHistoricoAlteracoes} />
+          </TabsContent>
+        ) : null}
+
         <TabsContent value="documentos">
           <Card>
             <CardHeader>
@@ -213,15 +446,13 @@ export default function SolicitacaoDetailPage() {
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" asChild>
-                <Link href="/portal/documentos">Central de documentos</Link>
-              </Button>
-              <Button variant="outline" size="sm" asChild>
                 <Link href="/portal/financeiro">Financeiro</Link>
               </Button>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+      {documentoSaida.dialog}
     </main>
   );
 }

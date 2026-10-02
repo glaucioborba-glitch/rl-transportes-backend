@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, StatusPagamento, TipoCliente } from '@prisma/client';
+import { Prisma, TipoCliente } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  BOLETO_STATUS,
+  BOLETO_STATUS_ABERTO,
+  isBoletoCancelado,
+  isBoletoPago,
+} from '../common/finance/boleto-status.constants';
 import type { DashboardFinanceiroQueryDto } from './dto/dashboard-financeiro-query.dto';
 import type {
   DashboardFinanceiroAbcDto,
@@ -189,8 +195,8 @@ export class DashboardFinanceiroService {
     let pendente = 0;
     for (const f of rows) {
       const v = num(f.valorTotal);
-      if (f.statusBoleto === StatusPagamento.PAGO) concluido += v;
-      else if (f.statusBoleto !== StatusPagamento.CANCELADO) pendente += v;
+      if (isBoletoPago(f.statusBoleto)) concluido += v;
+      else if (!isBoletoCancelado(f.statusBoleto)) pendente += v;
     }
     const t = concluido + pendente;
     const donut: DashboardFinanceiroDonutDto = {
@@ -251,10 +257,10 @@ export class DashboardFinanceiroService {
       clienteIds.length > 0
         ? await this.prisma.cliente.findMany({
             where: { id: { in: clienteIds }, deletedAt: null },
-            select: { id: true, nome: true },
+            select: { id: true, razaoSocial: true },
           })
         : [];
-    const nomePorId = new Map(clientes.map((c) => [c.id, c.nome]));
+    const nomePorId = new Map(clientes.map((c) => [c.id, c.razaoSocial]));
 
     const top10: DashboardFinanceiroReceitaPorClienteDto[] = topRaw.map((r) => {
       const v = num(r._sum.valorTotal);
@@ -288,7 +294,7 @@ export class DashboardFinanceiroService {
     clienteId?: string,
   ): Promise<Omit<DashboardFinanceiroInadimplenciaDto, 'forecastInadimplenciaPercent' | 'forecastFaturamentoProximoMes'>> {
     const bWhere: Prisma.BoletoWhereInput = {
-      statusPagamento: { not: StatusPagamento.CANCELADO },
+      statusPagamento: { not: BOLETO_STATUS.CANCELADO },
       ...(clienteId
         ? { faturamento: { clienteId } }
         : {}),
@@ -296,13 +302,13 @@ export class DashboardFinanceiroService {
 
     const [pendentes, vencidos, somaVenc, valorTotalBoletos, rankingRows] = await Promise.all([
       this.prisma.boleto.count({
-        where: { ...bWhere, statusPagamento: StatusPagamento.PENDENTE },
+        where: { ...bWhere, statusPagamento: BOLETO_STATUS.PENDENTE },
       }),
       this.prisma.boleto.count({
-        where: { ...bWhere, statusPagamento: StatusPagamento.VENCIDO },
+        where: { ...bWhere, statusPagamento: BOLETO_STATUS.VENCIDO },
       }),
       this.prisma.boleto.aggregate({
-        where: { ...bWhere, statusPagamento: StatusPagamento.VENCIDO },
+        where: { ...bWhere, statusPagamento: BOLETO_STATUS.VENCIDO },
         _sum: { valorBoleto: true },
       }),
       this.prisma.boleto.aggregate({
@@ -311,7 +317,7 @@ export class DashboardFinanceiroService {
       }),
       this.prisma.boleto.groupBy({
         by: ['faturamentoId'],
-        where: { ...bWhere, statusPagamento: StatusPagamento.VENCIDO },
+        where: { ...bWhere, statusPagamento: BOLETO_STATUS.VENCIDO },
         _sum: { valorBoleto: true },
         _count: { id: true },
       }),
@@ -340,10 +346,10 @@ export class DashboardFinanceiroService {
       cids.length > 0
         ? await this.prisma.cliente.findMany({
             where: { id: { in: cids }, deletedAt: null },
-            select: { id: true, nome: true },
+            select: { id: true, razaoSocial: true },
           })
         : [];
-    const nomeMap = new Map(nomes.map((c) => [c.id, c.nome]));
+    const nomeMap = new Map(nomes.map((c) => [c.id, c.razaoSocial]));
 
     const ranking: DashboardFinanceiroRankingInadimplenciaDto[] = cids
       .map((id) => ({
@@ -411,7 +417,7 @@ export class DashboardFinanceiroService {
         SELECT b.id,
                b."valorBoleto"::numeric AS val,
                CASE
-                 WHEN b."statusPagamento"::text IN ('PAGO', 'CANCELADO') THEN 'nao_aplica'
+                 WHEN LOWER(b."statusPagamento"::text) IN ('pago', 'cancelado') THEN 'nao_aplica'
                  WHEN CURRENT_DATE <= b."dataVencimento"::date THEN 'a_vencer'
                  WHEN (CURRENT_DATE - b."dataVencimento"::date) <= 30 THEN '0-30'
                  WHEN (CURRENT_DATE - b."dataVencimento"::date) <= 60 THEN '31-60'
@@ -420,7 +426,7 @@ export class DashboardFinanceiroService {
                END AS faixa
         FROM boletos b
         INNER JOIN faturamentos f ON f.id = b."faturamentoId"
-        WHERE b."statusPagamento"::text NOT IN ('PAGO', 'CANCELADO')
+        WHERE LOWER(b."statusPagamento"::text) NOT IN ('pago', 'cancelado')
         ${clienteFilter}
       ) x
       WHERE x.faixa != 'nao_aplica'
@@ -463,10 +469,10 @@ export class DashboardFinanceiroService {
       >`
         SELECT
           COALESCE(SUM(f."valorTotal"), 0)::numeric AS faturado,
-          COALESCE(SUM(CASE WHEN b."statusPagamento"::text = 'PAGO' THEN b."valorBoleto" ELSE 0 END), 0)::numeric AS recebido,
-          COALESCE(SUM(CASE WHEN b."statusPagamento"::text = 'PENDENTE' THEN b."valorBoleto" ELSE 0 END), 0)::numeric AS pendente,
-          COALESCE(SUM(CASE WHEN b."statusPagamento"::text = 'VENCIDO'
-              OR (b."statusPagamento"::text = 'PENDENTE' AND b."dataVencimento"::date < CURRENT_DATE)
+          COALESCE(SUM(CASE WHEN LOWER(b."statusPagamento"::text) = 'pago' THEN b."valorBoleto" ELSE 0 END), 0)::numeric AS recebido,
+          COALESCE(SUM(CASE WHEN LOWER(b."statusPagamento"::text) = 'pendente' THEN b."valorBoleto" ELSE 0 END), 0)::numeric AS pendente,
+          COALESCE(SUM(CASE WHEN LOWER(b."statusPagamento"::text) = 'vencido'
+              OR (LOWER(b."statusPagamento"::text) = 'pendente' AND b."dataVencimento"::date < CURRENT_DATE)
             THEN b."valorBoleto" ELSE 0 END), 0)::numeric AS vencido
         FROM faturamentos f
         LEFT JOIN boletos b ON b."faturamentoId" = f.id
@@ -503,7 +509,7 @@ export class DashboardFinanceiroService {
       ids.length > 0
         ? await this.prisma.cliente.findMany({
             where: { id: { in: ids }, deletedAt: null },
-            select: { id: true, nome: true, tipo: true },
+            select: { id: true, razaoSocial: true, tipo: true },
           })
         : [];
     const meta = new Map(clientes.map((c) => [c.id, c]));
@@ -524,7 +530,7 @@ export class DashboardFinanceiroService {
       const c = meta.get(row.clienteId);
       return {
         clienteId: row.clienteId,
-        clienteNome: c?.nome ?? '',
+        clienteNome: c?.razaoSocial ?? '',
         valor: round2(v),
         percentualAcumulado: round2(cumPct),
         classe,
@@ -552,20 +558,20 @@ export class DashboardFinanceiroService {
       });
       const boAbertos = await this.prisma.boleto.count({
         where: {
-          statusPagamento: { in: [StatusPagamento.PENDENTE, StatusPagamento.VENCIDO] },
+          statusPagamento: { in: [...BOLETO_STATUS_ABERTO] },
           faturamento: { clienteId: clienteIdFilter },
         },
       });
       const vinad = await this.prisma.boleto.aggregate({
         where: {
-          statusPagamento: StatusPagamento.VENCIDO,
+          statusPagamento: BOLETO_STATUS.VENCIDO,
           faturamento: { clienteId: clienteIdFilter },
         },
         _sum: { valorBoleto: true },
       });
       visao = {
         clienteId: clienteIdFilter,
-        clienteNome: c?.nome ?? '',
+        clienteNome: c?.razaoSocial ?? '',
         faturamentoTotalPeriodo: round2(num(fatCliente._sum.valorTotal)),
         quantidadeBoletosAbertos: boAbertos,
         valorInadimplente: round2(num(vinad._sum.valorBoleto)),

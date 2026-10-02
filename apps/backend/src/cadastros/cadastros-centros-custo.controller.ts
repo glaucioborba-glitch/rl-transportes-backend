@@ -1,0 +1,52 @@
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Put,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
+import { Roles } from '../common/decorators/roles.decorator';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { PermissionsGuard } from '../common/guards/permissions.guard';
+import { CadastrosCentrosCustoService } from './cadastros-centros-custo.service';
+import { CadastrosCentroCustoFormDto } from './dto/cadastros-centro-custo-form.dto';
+
+const CADASTROS_ROLES = [Role.ADMIN, Role.GERENTE] as const;
+
+@ApiTags('cadastros')
+@ApiBearerAuth('access-token')
+@Controller('v2/cadastros/centros-custo')
+@UseGuards(AuthGuard('jwt'), RolesGuard, PermissionsGuard)
+@Roles(...CADASTROS_ROLES)
+export class CadastrosCentrosCustoController {
+  constructor(private readonly service: CadastrosCentrosCustoService) {}
+
+  @Get()
+  list(@Query('tipo') tipo?: string) {
+    return this.service.list(tipo);
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.service.findOne(id);
+  }
+
+  @Post()
+  @HttpCode(HttpStatus.CREATED)
+  create(@Body() dto: CadastrosCentroCustoFormDto) {
+    return this.service.create(dto);
+  }
+
+  @Put(':id')
+  update(@Param('id') id: string, @Body() dto: CadastrosCentroCustoFormDto) {
+    return this.service.update(id, dto);
+  }
+}

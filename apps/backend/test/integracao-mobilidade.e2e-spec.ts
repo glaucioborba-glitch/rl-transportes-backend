@@ -1,11 +1,15 @@
+import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
+import request = require('supertest');
 import * as bcrypt from 'bcrypt';
 import { Role, TipoCliente } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
+import { clienteE2eDefaults } from './helpers/e2e-cliente.factory';
+import { canonicalPagamentoPayload } from '../src/integracao-mobilidade/common/integracao-finance.canonical';
+import { signWebhookPayload } from '../src/integracao-mobilidade/common/webhook-signature.util';
 
 describe('Integracao mobilidade (e2e)', () => {
   let app: INestApplication;
@@ -25,6 +29,7 @@ describe('Integracao mobilidade (e2e)', () => {
 
   beforeAll(async () => {
     process.env.INTEGRACAO_INTERNO_SECRET = 'interno-secreto-teste-16';
+    process.env.INTEGRACAO_FINANCE_WEBHOOK_SECRET = 'e2e-finance-hmac-secret-32chars!!';
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -45,27 +50,26 @@ describe('Integracao mobilidade (e2e)', () => {
     const hash = await bcrypt.hash(password, 10);
 
     const cliente = await prisma.cliente.create({
-      data: {
-        nome: `E2E Int ${suffix}`,
+      data: clienteE2eDefaults({
+        razaoSocial: `E2E Int ${suffix}`,
+        nomeFantasia: `E2E Int Fan ${suffix}`,
         tipo: TipoCliente.PJ,
         cpfCnpj: `${suffix}`.replace(/\D/g, '').padStart(14, '0').slice(-14),
         email: `e2e-int-cli-${suffix}@local.test`,
-        telefone: '',
-        endereco: '',
-      },
+        emailNfse: `nfse-int-${suffix}@local.test`,
+      }),
     });
     clienteId = cliente.id;
     process.env.INTEGRACAO_API_KEYS = `${apiKey}|${clienteId}`;
 
     const admin = await prisma.user.create({
-      data: { email: emailAdmin, password: hash, role: Role.ADMIN },
+      data: { cpfCnpj: cpfCnpjForTestUser(emailAdmin), email: emailAdmin, password: hash, role: Role.ADMIN },
     });
     const op = await prisma.user.create({
-      data: { email: emailOp, password: hash, role: Role.OPERADOR_GATE },
+      data: { cpfCnpj: cpfCnpjForTestUser(emailOp), email: emailOp, password: hash, role: Role.OPERADOR_GATE },
     });
     const cli = await prisma.user.create({
-      data: {
-        email: emailCliente,
+      data: { cpfCnpj: cpfCnpjForTestUser(emailCliente), email: emailCliente,
         password: hash,
         role: Role.CLIENTE,
         clienteId,
@@ -79,7 +83,7 @@ describe('Integracao mobilidade (e2e)', () => {
 
   afterAll(async () => {
     await prisma.user.deleteMany({
-      where: { email: { in: [emailAdmin, emailOp, emailCliente] } },
+      where: { cpfCnpj: { in: [cpfCnpjForTestUser(emailAdmin), cpfCnpjForTestUser(emailOp), cpfCnpjForTestUser(emailCliente)] } },
     });
     await prisma.cliente.deleteMany({ where: { id: clienteId } });
     await app.close();
@@ -95,12 +99,12 @@ describe('Integracao mobilidade (e2e)', () => {
     expect(res.body.data).toBeDefined();
   });
 
-  it('POST /mobile/portaria — OPERADOR_GATE 202', async () => {
+  it('POST /mobile/portaria — legado descontinuado (410)', async () => {
     await request(app.getHttpServer())
       .post('/mobile/portaria')
       .set('Authorization', `Bearer ${tokenOp}`)
       .send({ protocolo: 'X', observacao: 'e2e' })
-      .expect(202);
+      .expect(410);
   });
 
   it('GET /cliente-api/solicitacoes — API Key', async () => {
@@ -130,15 +134,21 @@ describe('Integracao mobilidade (e2e)', () => {
     expect(res.body.aceito).toBe(true);
   });
 
-  it('POST /integracao/pagamentos/webhook — aceito', async () => {
+  it('POST /integracao/pagamentos/webhook — aceito com HMAC', async () => {
+    const dto = {
+      referencia: `REF-${suffix}`,
+      valor: 10.5,
+      status: 'confirmado' as const,
+      meio: 'PIX' as const,
+    };
+    const sig = signWebhookPayload(
+      process.env.INTEGRACAO_FINANCE_WEBHOOK_SECRET!,
+      canonicalPagamentoPayload(dto),
+    );
     const res = await request(app.getHttpServer())
       .post('/integracao/pagamentos/webhook')
-      .send({
-        referencia: `REF-${suffix}`,
-        valor: 10.5,
-        status: 'confirmado',
-        meio: 'PIX',
-      })
+      .set('X-Integracao-Signature', sig)
+      .send(dto)
       .expect(202);
     expect(res.body.aceito).toBe(true);
   });

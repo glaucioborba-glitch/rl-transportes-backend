@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { FinanceiroConciliacaoService } from './financeiro-conciliacao.service';
 import { ExtratoStoreService } from './extrato-store.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantContextService } from '../tenant/tenant-context.service';
 
 describe('FinanceiroConciliacaoService', () => {
   let service: FinanceiroConciliacaoService;
@@ -13,6 +14,12 @@ describe('FinanceiroConciliacaoService', () => {
       aggregate: jest.fn(),
     },
     auditoria: { create: jest.fn() },
+    financeiroExtratoLote: { create: jest.fn().mockResolvedValue({ batchId: 'batch-1' }) },
+    financeiroExtratoLinha: { findMany: jest.fn().mockResolvedValue([]) },
+    financeiroExtratoConciliacaoManual: {
+      upsert: jest.fn().mockResolvedValue({}),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     $queryRaw: jest.fn(),
   };
 
@@ -21,12 +28,15 @@ describe('FinanceiroConciliacaoService', () => {
     prismaMock.boleto.findMany.mockResolvedValue([]);
     prismaMock.boleto.aggregate.mockResolvedValue({ _sum: { valorBoleto: null } });
     prismaMock.$queryRaw.mockResolvedValue([]);
+    prismaMock.financeiroExtratoLote.create.mockResolvedValue({ batchId: 'batch-1' });
+    prismaMock.financeiroExtratoConciliacaoManual.upsert.mockResolvedValue({});
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FinanceiroConciliacaoService,
         ExtratoStoreService,
         { provide: PrismaService, useValue: prismaMock },
+        { provide: TenantContextService, useValue: { getTenantId: () => 'default' } },
         {
           provide: ConfigService,
           useValue: {

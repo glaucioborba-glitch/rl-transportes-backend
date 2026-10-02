@@ -40,13 +40,13 @@ export class RhPerformanceController {
       '**scoreFinal** = 0,40 × média(aderência + qualidade) + 0,30 × média(comportamental + comprometimento) + 0,30 × notaTécnica — todos os critérios em 0–10.',
   })
   @ApiCreatedResponse({ type: AvaliacaoRhRespostaDto })
-  criarAvaliacao(@Body() dto: CreateAvaliacaoRhDto): AvaliacaoRhRespostaDto {
+  criarAvaliacao(@Body() dto: CreateAvaliacaoRhDto): Promise<AvaliacaoRhRespostaDto> {
     return this.rhPerformance.createAvaliacao(dto);
   }
 
   @Get('avaliacoes')
   @ApiOkResponse({ type: [AvaliacaoRhRespostaDto] })
-  listarAvaliacoes(): AvaliacaoRhRespostaDto[] {
+  listarAvaliacoes(): Promise<AvaliacaoRhRespostaDto[]> {
     return this.rhPerformance.listAvaliacoes();
   }
 
@@ -57,7 +57,7 @@ export class RhPerformanceController {
       'Mistura dados locais (baselines por cargo/turno nas avaliações) com **proxies de integração** (`RH_PERF_*`, folha-rh, IA-operacional, dashboards) sem acoplamento de código.',
   })
   @ApiOkResponse({ type: RhKpisRespostaDto })
-  getKpis(): RhKpisRespostaDto {
+  getKpis(): Promise<RhKpisRespostaDto> {
     return this.rhPerformance.getKpis();
   }
 
@@ -70,13 +70,13 @@ export class RhPerformanceController {
       'Exclusivo **ADMIN/GERENTE**. Integração com produtividade real e metas financeiras via variáveis de ambiente e rotinas externas — não altera outros módulos.',
   })
   @ApiCreatedResponse({ type: OkrRhRespostaDto })
-  criarOkr(@Body() dto: CreateOkrRhDto): OkrRhRespostaDto {
+  criarOkr(@Body() dto: CreateOkrRhDto): Promise<OkrRhRespostaDto> {
     return this.rhPerformance.createOkr(dto);
   }
 
   @Get('okr')
   @ApiOkResponse({ type: [OkrRhRespostaDto] })
-  listarOkr(): OkrRhRespostaDto[] {
+  listarOkr(): Promise<OkrRhRespostaDto[]> {
     return this.rhPerformance.listOkrs();
   }
 
@@ -87,7 +87,7 @@ export class RhPerformanceController {
       'Compõe scores 0–100 por perspectiva com KPIs proxy + horas de treinamento realizadas neste módulo.',
   })
   @ApiOkResponse({ type: BscRhRespostaDto })
-  getBsc(): BscRhRespostaDto {
+  getBsc(): Promise<BscRhRespostaDto> {
     return this.rhPerformance.getBsc();
   }
 
@@ -95,13 +95,13 @@ export class RhPerformanceController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Registrar trilha / treinamento' })
   @ApiCreatedResponse({ type: TreinamentoRhRespostaDto })
-  criarTreinamento(@Body() dto: CreateTreinamentoRhDto): TreinamentoRhRespostaDto {
+  criarTreinamento(@Body() dto: CreateTreinamentoRhDto): Promise<TreinamentoRhRespostaDto> {
     return this.rhPerformance.createTreinamento(dto);
   }
 
   @Get('treinamentos')
   @ApiOkResponse({ type: [TreinamentoRhRespostaDto] })
-  listarTreinamentos(): TreinamentoRhRespostaDto[] {
+  listarTreinamentos(): Promise<TreinamentoRhRespostaDto[]> {
     return this.rhPerformance.listTreinamentos();
   }
 
@@ -112,7 +112,7 @@ export class RhPerformanceController {
       'Regras sobre última avaliação por colaborador: técnico baixo, comportamental baixo, retrabalho proxy alto.',
   })
   @ApiOkResponse({ type: [SugestaoTreinamentoRhDto] })
-  getSugestoesTreinamento(): SugestaoTreinamentoRhDto[] {
+  getSugestoesTreinamento(): Promise<SugestaoTreinamentoRhDto[]> {
     return this.rhPerformance.getSugestoesTreinamento();
   }
 
@@ -123,7 +123,7 @@ export class RhPerformanceController {
       'Inclui tendência entre períodos, gaps, mapa de competências e progresso médio dos OKR cadastrados.',
   })
   @ApiOkResponse({ type: DashboardRhPerformanceDto })
-  getDashboard(): DashboardRhPerformanceDto {
+  getDashboard(): Promise<DashboardRhPerformanceDto> {
     return this.rhPerformance.getDashboard();
   }
 }

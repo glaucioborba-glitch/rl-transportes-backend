@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import type { AdminDoc, AdminDocCategory } from "@/lib/admin/types";
 import { readJson, writeJson, adminDocsKey } from "@/lib/admin/storage";
@@ -12,7 +13,7 @@ import { cn } from "@/lib/utils";
 const CATS: AdminDocCategory[] = ["Contratos", "Jurídico", "Financeiro", "Operacional", "Compliance"];
 
 export default function AdminDocumentosPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [docs, setDocs] = useState<AdminDoc[]>([]);
   const [cat, setCat] = useState<AdminDocCategory>("Contratos");
   const [viewer, setViewer] = useState<{ url: string; nome: string } | null>(null);

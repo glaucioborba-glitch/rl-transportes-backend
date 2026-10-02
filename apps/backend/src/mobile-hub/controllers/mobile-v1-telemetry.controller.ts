@@ -60,7 +60,7 @@ export class MobileV1TelemetryController {
 
   @Post('telemetria')
   @ApiOperation({ summary: 'Lote de telemetria mobile' })
-  post(@Req() req: Request & { mobileUser?: MobileRequestUser }, @Body() body: TelemetriaDto) {
+  async post(@Req() req: Request & { mobileUser?: MobileRequestUser }, @Body() body: TelemetriaDto) {
     const cx = req.mobileUser!;
     return this.tel.registrar({
       deviceId: cx.deviceId,

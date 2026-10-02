@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { toast } from "@/lib/toast";
 import { defaultRange90d, formatBRL, parseDecimal } from "@/lib/financeiro/format";
@@ -19,7 +20,7 @@ type FatDetail = {
   statusNfe: string;
   statusBoleto: string;
   createdAt: string;
-  cliente: { id: string; nome: string; email?: string };
+  cliente: { id: string; razaoSocial: string; email?: string };
   itens: { id: string; descricao: string; valor: unknown }[];
   boletos: {
     id: string;
@@ -62,7 +63,7 @@ function SparkLine({ values }: { values: number[] }) {
 export default function ApagarPage() {
   const { di, df } = defaultRange90d();
   const user = useStaffAuthStore((s) => s.user);
-  const ok = user?.role === "ADMIN" || user?.role === "GERENTE";
+  const ok = isIntranetGestorRole(user?.role);
 
   const [dataInicio, setDataInicio] = useState(di);
   const [dataFim, setDataFim] = useState(df);
@@ -74,7 +75,7 @@ export default function ApagarPage() {
   const [rows, setRows] = useState<ApRow[]>([]);
   const [dashFin, setDashFin] = useState<Record<string, unknown> | null>(null);
   const [relResumo, setRelResumo] = useState<Record<string, unknown> | null>(null);
-  const [clientes, setClientes] = useState<{ id: string; nome: string }[]>([]);
+  const [clientes, setClientes] = useState<{ id: string; razaoSocial: string }[]>([]);
 
   const load = useCallback(async () => {
     if (!ok) return;
@@ -98,7 +99,7 @@ export default function ApagarPage() {
             clienteId ? `&clienteId=${encodeURIComponent(clienteId)}` : ""
           }`,
         ).catch(() => null),
-        staffJson<{ data: { id: string; nome: string }[] }>(`/clientes?limit=200&page=1`).catch(() => ({
+        staffJson<{ data: { id: string; razaoSocial: string }[] }>(`/clientes?limit=200&page=1`).catch(() => ({
           data: [],
         })),
       ]);
@@ -119,7 +120,7 @@ export default function ApagarPage() {
             out.push({
               id: b.id,
               fatId: f.id,
-              credor: f.cliente.nome,
+              credor: f.cliente.razaoSocial,
               clienteId: f.clienteId,
               categoria: "boleto",
               valor: parseDecimal(b.valorBoleto),
@@ -133,7 +134,7 @@ export default function ApagarPage() {
           out.push({
             id: f.id,
             fatId: f.id,
-            credor: f.cliente.nome,
+            credor: f.cliente.razaoSocial,
             clienteId: f.clienteId,
             categoria: "faturamento",
             valor: parseDecimal(f.valorTotal),
@@ -216,7 +217,11 @@ export default function ApagarPage() {
         <h1 className="text-2xl font-bold text-white">Contas a pagar · Tesouraria</h1>
         <p className="text-sm text-zinc-500">
           Dados: relatórios financeiros, faturamento, boletos e dashboard executivo. Alteração de status: PATCH{" "}
-          <code className="text-zinc-400">/faturamento/boletos/:id</code>.
+          <code className="text-zinc-400">/faturamento/boletos/:id</code>. Impostos da RL ficam em{" "}
+          <Link href="/financeiro/provisao-encargos" className="text-amber-300 underline">
+            Provisão de encargos
+          </Link>{" "}
+          — não entram nesta lista até virar guia confirmada.
         </p>
       </div>
 
@@ -313,7 +318,7 @@ export default function ApagarPage() {
             <option value="">Todos clientes</option>
             {clientes.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.nome}
+                {c.razaoSocial}
               </option>
             ))}
           </select>

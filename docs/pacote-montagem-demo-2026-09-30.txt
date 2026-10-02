@@ -1,0 +1,445 @@
+================================================================
+RL TRANSPORTES — PACOTE DE MONTAGEM (MÁQUINA DA DEMO)
+Reunião:   30/09/2026
+Hardware:  i5 3ª geração, 16 GB RAM, 1 TB (provável HDD)
+SO:        Ubuntu Server 22.04 ou 24.04  AMD64 (x86_64)
+Rede:      LAN  http://IP-DA-MAQUINA:3000
+NÃO é:     AWS, Oracle Cloud, nem "produção"
+================================================================
+
+Use junto com:  docs/roteiro-demo-2026-09-30.txt
+
+Imprima esta folha e deixe no gabinete da máquina.
+Monte TUDO até 26/09. No dia 30 não roda build, migrate nem seed.
+
+
+----------------------------------------------------------------
+0. O QUE ESTE PACOTE EVITA (leia antes de colar comando)
+----------------------------------------------------------------
+
+1) NÃO rode  infra/scripts/setup-oracle-vm.sh
+   Esse script é da VM Oracle (ARM + firewall só 22/80/443
+   + Nginx redirecionando para HTTPS). Nesta máquina quebra
+   o acesso pela LAN.
+
+2) NÃO suba o Nginx do compose de produção neste lab.
+   infra/nginx/nginx.conf faz  HTTP → HTTPS. Sem certificado
+   Let's Encrypt a tela fica em branco / ERR_SSL.
+
+3) NÃO rode só  npm run seed:prod
+   Esse seed cria outro ADMIN (CPF 529.982.247-25 / Mudar@123)
+   e NÃO cria operador de gate nem os PJ do roteiro.
+   O roteiro usa os logins do  prisma/seed.ts  + demo operacional.
+
+4) NÃO use  next dev  /  nest start --watch
+   16 GB aguentam a stack COMPILADA. Watch estoura memória
+   neste i5 e congela no meio da reunião.
+
+5) NEXT_PUBLIC_API_URL é gravado no BUILD do front.
+   Se você buildar com localhost, o notebook do comprador
+   tenta falar com o PC DELE. Tem que ser o IP da LAN.
+
+
+----------------------------------------------------------------
+1. NO PC DE CASA — ANTES DE IR AO LAB (22–25/09)
+----------------------------------------------------------------
+
+[ ] Branch no GitHub com o código da demo
+    (hoje: feat/container-dossie-container-first-ui)
+    https://github.com/glaucioborba-glitch/rl-transportes-backend
+
+[ ] Anote o IP que a máquina vai ter na LAN, ou reserve DHCP.
+    Ex.: 192.168.0.40     (preencha)  ________________
+
+[ ] Leve num pen drive / anote (NÃO deixe na mesa do comprador):
+      senha do usuário ubuntu
+      SEED_SUPER_ADMIN_PASSWORD  (a do .env da raiz, sem #)
+      senhas do roteiro (folha 1)
+
+[ ] Se o disco for HDD: avise que foto de vistoria e o primeiro
+    build são lentos. SSD ajuda; não é obrigatório.
+
+
+----------------------------------------------------------------
+2. UBUNTU — SISTEMA (uma vez)
+----------------------------------------------------------------
+
+ATALHO PENDRIVE (um arquivo só, com internet no servidor):
+  No PC de casa copie para o pendrive:
+    infra/scripts/montar-demo-lab.sh
+  Na Ubuntu, DEPOIS do login (sem sudo bash):
+    cp /media/$USER/*/montar-demo-lab.sh ~
+    bash ~/montar-demo-lab.sh
+  Ele pede a senha do Super Admin, instala Docker, clona,
+  gera .env, builda e semeia o roteiro. 40–90 min.
+  Se preferir colar comando a comando, siga abaixo.
+
+# Conferir arquitetura (tem que ser x86_64, não aarch64)
+uname -m
+
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl git openssl ufw
+
+# Docker Engine + Compose plugin (oficial)
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io \
+  docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker "$USER"
+# saia e entre de novo (ou newgrp docker)
+
+# Swap 4 GB — o build do Next neste i5 precisa
+if [ ! -f /swapfile ]; then
+  sudo fallocate -l 4G /swapfile
+  sudo chmod 600 /swapfile
+  sudo mkswap /swapfile
+  sudo swapon /swapfile
+  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+fi
+
+# Firewall: SSH + site. NÃO abra Postgres/Redis para a LAN.
+sudo ufw allow OpenSSH
+sudo ufw allow 3000/tcp comment 'RL web'
+sudo ufw allow 3001/tcp comment 'RL api'
+sudo ufw --force enable
+
+# IP da LAN (anote o que NÃO for 127.0.0.1)
+ip -4 addr show | grep inet
+
+
+----------------------------------------------------------------
+3. REPOSITÓRIO
+----------------------------------------------------------------
+
+sudo mkdir -p /opt/rl-transportes
+sudo chown "$USER:$USER" /opt/rl-transportes
+
+git clone https://github.com/glaucioborba-glitch/rl-transportes-backend.git \
+  /opt/rl-transportes
+cd /opt/rl-transportes
+git checkout feat/container-dossie-container-first-ui
+git log -1 --oneline
+# Confira se o commit tem o pacote da demo (roteiro + NFS-e + seeds).
+
+
+----------------------------------------------------------------
+4. .env.production  — cole e troque os TROCAR_*
+----------------------------------------------------------------
+
+cd /opt/rl-transportes
+cp infra/.env.production.example .env.production
+chmod 600 .env.production
+
+# Gera segredos (cole a saída no arquivo)
+python3 - <<'PY'
+import secrets
+print("DB_PASSWORD=" + secrets.token_urlsafe(24))
+print("REDIS_PASSWORD=" + secrets.token_urlsafe(18))
+print("JWT_SECRET=" + secrets.token_hex(32))
+print("JWT_REFRESH_SECRET=" + secrets.token_hex(32))
+print("STORAGE_SIGNING_SECRET=" + secrets.token_hex(32))
+print("INTEGRACAO_FINANCE_WEBHOOK_SECRET=" + secrets.token_hex(32))
+print("INTEGRACAO_INTERNO_SECRET=" + secrets.token_hex(32))
+print("MOTORISTA_SESSION_SECRET=" + secrets.token_hex(32))
+print("MINIO_ROOT_PASSWORD=" + secrets.token_urlsafe(24))
+PY
+
+nano .env.production
+
+Valores que TÊM que ficar assim (IP = o da etapa 2):
+
+  NODE_ENV=production
+  DEPLOY_ENV=production
+  FEATURE_PHASES=operational
+  CHAOS_ENGINE_ENABLED=0
+  REDIS_OPTIONAL=0
+  SENTRY_ENABLED=false
+  WHATSAPP_ENABLED=false
+
+  # Site que o navegador do comprador abre
+  PUBLIC_API_URL=http://192.168.X.X:3000
+  NEXT_PUBLIC_API_URL=http://192.168.X.X:3000
+  CORS_ORIGIN=http://192.168.X.X:3000
+  PORTAL_PUBLIC_BASE_URL=http://192.168.X.X:3000
+
+  # Banco / Redis / MinIO DENTRO do Docker (nomes dos serviços)
+  DATABASE_URL=postgresql://rl:SENHA_DB@postgres:5432/rl_transportes?schema=public
+  REDIS_URL=redis://redis:6379
+  REDIS_PASSWORD=SENHA_REDIS          (mínimo 16 caracteres)
+  AWS_S3_BUCKET=rl-transportes
+  STORAGE_ENDPOINT=http://minio:9000
+  STORAGE_PUBLIC_BASE_URL=http://192.168.X.X:9000
+  MINIO_ROOT_USER=rlminio
+  MINIO_ROOT_PASSWORD=SENHA_MINIO     (forte, 32 chars)
+
+  # NFS-e AUTOMÁTICA OFF — não emite nota na reunião
+  # (os cards IPM/Nacional ficam no Super Admin; não preencha
+  #  certificado nesta máquina)
+
+  # Seed do roteiro (prisma/seed.ts), NÃO o seed:prod
+  SEED_ADMIN_EMAIL=admin@rltransportes.com
+  SEED_ADMIN_CPF=39053344705
+  SEED_ADMIN_PASSWORD=Admin@123
+  SEED_SUPER_ADMIN_EMAIL=superadmin@rltransportes.com
+  SEED_SUPER_ADMIN_CPF=03650163900
+  SEED_SUPER_ADMIN_PASSWORD=cole_a_senha_do_env_da_raiz
+  ALLOW_PROD_SEED=0
+      ↑ deixe 0 no arquivo. Só passa 1 no comando do seed (abaixo).
+
+  # JWT / webhook / storage: os gerados pelo python3
+  # Sem placeholder tipo TROCAR_POR_* — o boot recusa e o
+  # container do backend não sobe.
+
+Se o IP da LAN mudar depois do build do front: tem que
+REBUILDAR o serviço frontend. Anote o IP com reserva DHCP.
+
+
+----------------------------------------------------------------
+5. SUBIR A STACK (primeira vez: 40–90 min neste i5/HDD)
+----------------------------------------------------------------
+
+cd /opt/rl-transportes
+
+# Só estes serviços. Sem nginx, sem certbot.
+docker compose \
+  -f infra/docker-compose.prod.yml \
+  -f infra/docker-compose.lab.yml \
+  --env-file .env.production \
+  up -d --build postgres redis minio minio-init backend frontend
+
+# Acompanhe (o front demora mais):
+docker compose \
+  -f infra/docker-compose.prod.yml \
+  -f infra/docker-compose.lab.yml \
+  --env-file .env.production \
+  ps
+
+# Esperado: postgres, redis, minio, backend, frontend = healthy
+# Se o backend reinicia em loop:
+docker logs rl-backend --tail 80
+# Quase sempre: segredo curto ou AWS_S3_BUCKET / CORS_ORIGIN vazios.
+
+
+----------------------------------------------------------------
+6. BANCO — migrate + seeds do ROTEIRO
+----------------------------------------------------------------
+
+# 6.1 Schema (já na imagem)
+docker exec rl-backend npx prisma migrate deploy
+
+# 6.2 Copiar scripts de seed (NÃO vão na imagem de produção)
+docker cp apps/backend/prisma/seed.ts          rl-backend:/app/prisma/seed.ts
+docker cp apps/backend/scripts                 rl-backend:/app/scripts
+
+# 6.3 Staff + Super Admin + operador de gate
+#     ALLOW_PROD_SEED só neste exec. Não deixe =1 no .env permanente.
+docker exec \
+  -e ALLOW_PROD_SEED=1 \
+  -e SEED_SUPER_ADMIN_PASSWORD \
+  rl-backend npx prisma db seed
+
+# Se o container não tiver SEED_SUPER_ADMIN_PASSWORD no env_file:
+docker exec \
+  -e ALLOW_PROD_SEED=1 \
+  -e SEED_SUPER_ADMIN_PASSWORD='cole_aqui' \
+  rl-backend npx prisma db seed
+
+# 6.4 Cadastros MDM + tabela de preço (simulação do portal)
+docker exec -e ALLOW_PROD_SEED=1 rl-backend \
+  npx ts-node --compiler-options '{"module":"CommonJS"}' \
+  scripts/seed-all.ts --cadastros
+
+# 6.5 10 PJ + ~57 solicitações (portal Atlântico Log)
+docker exec -e ALLOW_PROD_SEED=1 rl-backend \
+  npx ts-node --compiler-options '{"module":"CommonJS"}' \
+  scripts/seed-demo-operacional.ts
+
+# 6.6 Histórico MSCU 100113-7
+docker exec -e ALLOW_PROD_SEED=1 rl-backend \
+  npx ts-node --compiler-options '{"module":"CommonJS"}' \
+  scripts/seed-historico-container-demo.ts
+
+# 6.7 Apague o arquivo de senhas que o seed grava, se aparecer
+sudo rm -f /opt/rl-transportes/dados-teste-*.txt
+docker exec rl-backend rm -f /app/dados-teste-demo-operacional.txt \
+  /dados-teste-demo-operacional.txt 2>/dev/null || true
+
+
+Logins que TÊM que funcionar depois disso
+(os mesmos do roteiro):
+
+  Intranet  /login/staff
+    ADMIN          390.533.447-05   Admin@123
+    OPERADOR GATE  153.509.460-56   OpsGate@QA2026
+
+  Portal    /portal/login
+    CNPJ  27.000.145/0001-49
+    CPF   390.533.401-14
+    Senha Demo@PJ2026!
+
+  Super Admin  /super-admin/login
+    CPF   036.501.639-00
+    Senha a do SEED_SUPER_ADMIN_PASSWORD
+
+  Histórico de contêiner
+    MSCU 100113-7
+
+
+----------------------------------------------------------------
+7. CONFERÊNCIA  (T-1 dia, e de novo T-30 min)
+----------------------------------------------------------------
+
+No PRÓPRIO servidor:
+
+  curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3001/health
+  # 200
+
+  curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/api/auth/health
+  # 200
+
+De OUTRO notebook na LAN (o do comprador / o 2º operador):
+
+  http://IP-DA-MAQUINA:3000/login/staff
+  http://IP-DA-MAQUINA:3000/portal/login
+  http://IP-DA-MAQUINA:3000/super-admin/login
+
+[ ] Login ADMIN
+[ ] Gate CPO → Controle de Gate tem dossiê (DEMO-RL-2026-…)
+[ ] Saldo de Unidades não está vazio
+[ ] Histórico acha MSCU 100113-7
+[ ] Portal Atlântico Log abre dashboard
+[ ] RIC abre/imprime pelo navegador (PDFKit — sem Chrome)
+[ ] Super Admin NÃO está com Chaos à vista
+[ ] dados-teste-*.txt sumiu
+
+Anote no roteiro (folha 1) o ISO e os dois protocolos
+que você vai usar na reunião.
+
+
+----------------------------------------------------------------
+8. DIA 30 — SÓ ISTO
+----------------------------------------------------------------
+
+# Ver se está de pé. NÃO dê up --build. NÃO dê migrate.
+docker compose \
+  -f infra/docker-compose.prod.yml \
+  -f infra/docker-compose.lab.yml \
+  --env-file .env.production \
+  ps
+
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3001/health
+
+Se um container caiu de madrugada (reboot):
+
+  docker compose \
+    -f infra/docker-compose.prod.yml \
+    -f infra/docker-compose.lab.yml \
+    --env-file .env.production \
+    up -d postgres redis minio backend frontend
+
+  # Sem --build. Sem seed. Sem migrate.
+
+
+----------------------------------------------------------------
+9. SE O COMPRADOR VIER DE FORA DA LAN
+----------------------------------------------------------------
+
+Este PC i5 NÃO é firewall. Não exponha a porta 3000/3001
+cru na internet.
+
+Caminho aceitável: túnel/VPN ou domínio + HTTPS numa
+máquina/VPS, Super Admin fechado, só porta do site.
+
+Se não deu tempo de fazer isso direito: a demo é na LAN.
+Leve o comprador até a sala. É o recorte combinado.
+
+
+----------------------------------------------------------------
+10. O QUE NÃO INSTALAR / NÃO LIGAR
+----------------------------------------------------------------
+
+  Chrome/Chromium no container     — RIC não precisa.
+                                     PDF operacional (puppeteer)
+                                     NÃO entra no roteiro.
+  bio-agent / print-agent          — são Windows; nesta Ubuntu
+                                     a RIC sai pelo navegador.
+  FEATURE_PHASES=full              — carrega BI/Enterprise e
+                                     este i5 morre.
+  CHAOS_ENGINE_ENABLED=1
+  emiteNfseAutomatico / boleto auto
+  seed-all completo (sem --cadastros)
+      gera dados-teste-seed-all.txt e mistura outro portal
+  git pull no dia 30
+  infra/scripts/deploy.sh
+      sobe código ANTES do migrate — não use neste lab.
+
+
+----------------------------------------------------------------
+11. COMANDOS DE SOCORRO (ensaio, não na frente do comprador)
+----------------------------------------------------------------
+
+Logs backend:    docker logs rl-backend --tail 100 -f
+Logs front:      docker logs rl-frontend --tail 80
+Reiniciar API:   docker restart rl-backend
+Uso de memória:  free -h
+                 docker stats --no-stream
+
+Refazer SÓ o front (IP da LAN mudou):
+  # edite PUBLIC_API_URL e CORS_ORIGIN no .env.production
+  docker compose \
+    -f infra/docker-compose.prod.yml \
+    -f infra/docker-compose.lab.yml \
+    --env-file .env.production \
+    up -d --build frontend
+
+Apagar TUDO e começar de novo (último recurso, nunca dia 30):
+  docker compose \
+    -f infra/docker-compose.prod.yml \
+    -f infra/docker-compose.lab.yml \
+    --env-file .env.production \
+    down -v
+  # volta para a etapa 5. Perde banco e MinIO.
+
+
+----------------------------------------------------------------
+12. DEPOIS DE 15/10 / SE FECHAR A VENDA
+----------------------------------------------------------------
+
+Esta máquina continua laboratório.
+AWS: outro ambiente, outro .env, seed:prod (admin novo),
+sem senha Admin@123, Super Admin fechado na internet,
+backup testado. Não “promova” este i5 a produção.
+
+
+----------------------------------------------------------------
+CHECKLIST DE MONTAGEM  (preencher à caneta)
+----------------------------------------------------------------
+
+Data da montagem:  ____ / ____ / 2026
+IP da LAN:         http://________________:3000
+Commit:            ________________
+Build terminou:    ____ h  (começar de manhã se for HDD)
+
+  Docker + swap + UFW          [ ]
+  .env.production sem TROCAR_  [ ]
+  compose lab healthy          [ ]
+  /health 200                  [ ]
+  migrate deploy               [ ]
+  prisma db seed               [ ]
+  seed --cadastros             [ ]
+  seed-demo-operacional        [ ]
+  seed-historico MSCU          [ ]
+  login staff + portal + SA    [ ]
+  dados-teste-*.txt apagado    [ ]
+  roteiro folha 1 preenchida   [ ]
+
+Quem montou:  ________________________________
+
+================================================================
+Fim. A4, mono 10 pt. Não grampear senhas na via da mesa.
+================================================================

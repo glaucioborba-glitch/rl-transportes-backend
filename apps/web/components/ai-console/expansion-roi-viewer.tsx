@@ -1,5 +1,7 @@
 "use client";
 
+import { formatBRL } from "@/lib/financeiro/format";
+
 export function ExpansionRoiViewer({ data }: { data: Record<string, unknown> | null }) {
   const d = data as {
     slotsAdicionaisEstimados?: number;
@@ -33,7 +35,7 @@ export function ExpansionRoiViewer({ data }: { data: Record<string, unknown> | n
         </div>
         <div>
           <dt className="text-zinc-500">Investimento proxy</dt>
-          <dd>{d?.investimentoEstimadoProxy != null ? `R$ ${Number(d.investimentoEstimadoProxy).toLocaleString("pt-BR")}` : "—"}</dd>
+          <dd>{d?.investimentoEstimadoProxy != null ? formatBRL(Number(d.investimentoEstimadoProxy)) : "—"}</dd>
         </div>
       </dl>
     </div>

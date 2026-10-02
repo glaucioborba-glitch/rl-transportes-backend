@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
+import request = require('supertest');
 import { applyBaseHttpStack } from '../src/http/http-stack';
 
 describe('Security hardening (e2e)', () => {

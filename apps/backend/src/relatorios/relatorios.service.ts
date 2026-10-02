@@ -81,9 +81,9 @@ export class RelatoriosService {
 
     const nomes = await this.prisma.cliente.findMany({
       where: { id: { in: porCliente.map((p) => p.clienteId) } },
-      select: { id: true, nome: true },
+      select: { id: true, razaoSocial: true },
     });
-    const mapa = new Map(nomes.map((n) => [n.id, n.nome]));
+    const mapa = new Map(nomes.map((n) => [n.id, n.razaoSocial]));
 
     return {
       periodo: { dataInicio: ini.toISOString(), dataFim: fim.toISOString() },
@@ -132,7 +132,7 @@ export class RelatoriosService {
           status: true,
           createdAt: true,
           clienteId: true,
-          cliente: { select: { id: true, nome: true } },
+          cliente: { select: { id: true, razaoSocial: true } },
         },
       }),
       this.prisma.solicitacao.count({ where }),
@@ -171,7 +171,7 @@ export class RelatoriosService {
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
-          cliente: { select: { id: true, nome: true } },
+          cliente: { select: { id: true, razaoSocial: true } },
           _count: { select: { nfsEmitidas: true, boletos: true, solicitacoesVinculadas: true } },
         },
       }),

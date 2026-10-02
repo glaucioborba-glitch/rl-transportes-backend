@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { SsmaWorkspace } from "@/components/ssma/ssma-workspace";
 import { SsmaSection } from "@/components/ssma/ssma-section";
 import { IncidentForm } from "@/components/ssma/incident-form";
 import { RiskMatrix } from "@/components/ssma/risk-matrix";
@@ -11,6 +10,7 @@ import { SsmaHeatLevels } from "@/components/ssma/ssma-heat-levels";
 import { Button } from "@/components/ui/button";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
 import { toast } from "@/lib/toast";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { buildTerminalRiskCatalog } from "@/lib/ssma/risk-catalog";
 import { ssmaStorage } from "@/lib/ssma/storage";
@@ -24,13 +24,12 @@ const TOC = [
 ];
 
 export default function SsmaIncidentesPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [incidents, setIncidents] = useState(() => ssmaStorage.incidents.list());
   const [dash, setDash] = useState<Record<string, unknown> | null>(null);
   const [perf, setPerf] = useState<Record<string, unknown> | null>(null);
   const [relTotal, setRelTotal] = useState<number | null>(null);
   const [clienteTotal, setClienteTotal] = useState<number | null>(null);
-  const [auditoriaN, setAuditoriaN] = useState<number | null>(null);
 
   const [w2h, setW2h] = useState<Investigation5w2h>(() => ssmaStorage.investigation.get5w2h());
   const [fish, setFish] = useState<IshikawaBranches>(() => ssmaStorage.investigation.getIshikawa());
@@ -43,18 +42,16 @@ export default function SsmaIncidentesPage() {
     const di = start.toISOString().slice(0, 10);
     const df = end.toISOString().slice(0, 10);
     try {
-      const [d, p, r, cl, aud] = await Promise.all([
+      const [d, p, r, cl] = await Promise.all([
         staffJson<Record<string, unknown>>(`/dashboard?dataInicio=${di}&dataFim=${df}`),
         staffJson<Record<string, unknown>>(`/dashboard-performance?dataInicio=${di}&dataFim=${df}`),
         staffJson<{ total?: number }>(`/relatorios/operacional/solicitacoes?dataInicio=${di}&dataFim=${df}&page=1&limit=1`).catch(() => ({ total: null })),
         staffJson<{ meta?: { total?: number } }>(`/clientes?page=1&limit=1`).catch(() => null),
-        staffJson<{ data?: unknown[] }>(`/auditoria?limit=80&order=desc`).catch(() => ({ data: [] })),
       ]);
       setDash(d);
       setPerf(p);
       setRelTotal(r.total ?? null);
       setClienteTotal(cl?.meta?.total ?? null);
-      setAuditoriaN(Array.isArray(aud.data) ? aud.data.length : 0);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Falha ao carregar dados SSMA");
     }
@@ -140,14 +137,14 @@ export default function SsmaIncidentesPage() {
 
   if (!allowed) {
     return (
-      <SsmaWorkspace>
+      <div>
         <p className="text-center text-amber-400">Acesso restrito.</p>
-      </SsmaWorkspace>
+      </div>
     );
   }
 
   return (
-    <SsmaWorkspace>
+    <div>
       <div className="flex flex-col gap-6 lg:flex-row">
         <aside className="lg:w-44 lg:shrink-0">
           <div className="sticky top-28 rounded-xl border border-amber-500/15 bg-[#0c0a08] p-3 text-[11px]">
@@ -169,10 +166,9 @@ export default function SsmaIncidentesPage() {
         <div className="min-w-0 flex-1 space-y-5">
           <p className="text-xs text-zinc-500">
             Leitura: <code className="text-zinc-400">/dashboard</code>, <code className="text-zinc-400">/dashboard-performance</code>,{" "}
-            <code className="text-zinc-400">/relatorios/operacional/solicitacoes</code>, <code className="text-zinc-400">/clientes</code>,{" "}
-            <code className="text-zinc-400">/auditoria</code>. Registros locais no navegador.
+            <code className="text-zinc-400">/relatorios/operacional/solicitacoes</code>, <code className="text-zinc-400">/clientes</code>.
+            Trilha de auditoria no menu Auditoria.
             {clienteTotal != null ? ` · ${clienteTotal} clientes.` : ""}
-            {auditoriaN != null ? ` · ${auditoriaN} eventos de auditoria (amostra).` : ""}
           </p>
 
           <SsmaSection id="registro" title="Registro de incidentes" subtitle="Formulário SSMA + evidências (somente local)">
@@ -277,6 +273,6 @@ export default function SsmaIncidentesPage() {
           </SsmaSection>
         </div>
       </div>
-    </SsmaWorkspace>
+    </div>
   );
 }

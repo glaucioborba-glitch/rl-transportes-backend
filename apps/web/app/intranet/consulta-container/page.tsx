@@ -1,0 +1,158 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { Search } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { ContainerTimeline } from "@/components/container-timeline/container-timeline-ui";
+import { useDocumentoSaida } from "@/components/documento-saida/documento-saida-dialog";
+import { ApiError, staffContainerRic, staffContainerTimeline } from "@/lib/api/staff-client";
+import type { ContainerTimelineResponse } from "@/lib/container-timeline";
+import { downloadRicPdf } from "@/lib/gate/operacao-api";
+import { ricPrintHtmlBlob } from "@/lib/ric-print";
+import { toast } from "@/lib/toast";
+import { ContainerNumber } from "@/components/ui/container-number";
+import { isValidISO6346 } from "@/lib/cadastros/formatters";
+import { formatContainerISO, stripContainerISO } from "@/utils/containerFormatter";
+import { ServicosIdCard } from "@/components/gate/servicos-id-card";
+import { TomadaGateCard } from "@/components/gate/tomada-gate-card";
+import { listCadastrosTiposContainer, type CadastrosTipoContainer } from "@/lib/api/cadastros-tipos-container-client";
+import { tipoRequerTomadaReefer } from "@/lib/cadastros/tipo-requer-tomada";
+
+export default function ConsultaContainerPage() {
+  const [isoInput, setIsoInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<ContainerTimelineResponse | null>(null);
+  const [servicosTick, setServicosTick] = useState(0);
+  const documentoSaida = useDocumentoSaida();
+  const [tipos, setTipos] = useState<CadastrosTipoContainer[]>([]);
+
+  useEffect(() => {
+    void listCadastrosTiposContainer()
+      .then((r) => setTipos(r.items))
+      .catch(() => setTipos([]));
+  }, []);
+
+  const buscar = useCallback(async () => {
+    const raw = stripContainerISO(isoInput);
+    if (raw.length !== 11 || !isValidISO6346(raw)) {
+      toast.error("Número ISO 6346 inválido — dígito verificador não confere.");
+      return;
+    }
+    setLoading(true);
+    try {
+      setData(await staffContainerTimeline(isoInput));
+    } catch (e) {
+      setData(null);
+      toast.error(e instanceof ApiError ? e.message : "Falha na consulta");
+    } finally {
+      setLoading(false);
+    }
+  }, [isoInput]);
+
+  function reimprimirRic(tipo: "ENTRADA" | "SAIDA") {
+    if (!data) return;
+    const iso = data.isoFormatado;
+    documentoSaida.pedir({
+      titulo: `RIC ${tipo === "ENTRADA" ? "de entrada" : "de saída"}`,
+      descricao: "Baixe o arquivo ou envie direto para a impressora.",
+      filename: `RIC-${tipo}-${iso.replace(/\s+/g, "")}.pdf`,
+      obter: async () => {
+        const payload = await staffContainerRic(iso, tipo);
+        try {
+          return await downloadRicPdf(payload.protocolo);
+        } catch {
+          return ricPrintHtmlBlob(payload);
+        }
+      },
+    });
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-widest text-cyan-400/90">Operações</p>
+        <h1 className="text-2xl font-semibold text-white">Consulta Container — Dossiê 360º</h1>
+        <p className="mt-1 max-w-2xl text-sm text-zinc-400">
+          Event sourcing do ciclo de vida do equipamento (ISO 6346). API:{" "}
+          <code className="text-cyan-200/90">GET /admin/container/:iso/timeline</code>
+        </p>
+      </div>
+
+      <Card className="border-white/10 bg-[#0b101c]/80">
+        <CardHeader>
+          <CardTitle className="text-lg text-white">Buscar contêiner</CardTitle>
+          <CardDescription className="text-zinc-500">
+            Padrão ISO: 4 letras + 6 dígitos + verificador (ex.: GLDU 944333-5)
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 sm:flex-row">
+          <Input
+            value={isoInput}
+            onChange={(e) => setIsoInput(formatContainerISO(e.target.value))}
+            placeholder="GLDU 944333-5"
+            className="border-zinc-600 bg-black/40 font-mono text-white"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void buscar();
+            }}
+          />
+          <Button type="button" className="gap-2 bg-cyan-700 hover:bg-cyan-600" disabled={loading} onClick={() => void buscar()}>
+            <Search className="h-4 w-4" />
+            {loading ? "Consultando…" : "Consultar"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {data?.bloqueios?.length ? (
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base text-amber-100">Bloqueios / retenções</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-amber-50/90">
+            {data.bloqueios.map((b, i) => (
+              <p key={`${b.tipo}-${i}`}>
+                <strong>{b.origem}</strong> ({b.tipo}): {b.motivo}
+              </p>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {data &&
+      tipoRequerTomadaReefer(tipos, data.unidadeProcessoAberto?.tipoContainer) ? (
+        <TomadaGateCard
+          unidadeIso={data.isoFormatado}
+          onChanged={() => setServicosTick((n) => n + 1)}
+        />
+      ) : null}
+
+      {data?.unidadeProcessoAberto ? (
+        <ServicosIdCard
+          key={`${data.unidadeProcessoAberto.id}-${servicosTick}`}
+          unidadeProcessoId={data.unidadeProcessoAberto.id}
+          numero={data.unidadeProcessoAberto.numero}
+        />
+      ) : null}
+
+      {data ? (
+        <Card className="border-white/10 bg-[#0b101c]/80">
+          <CardHeader>
+            <ContainerNumber value={data.isoFormatado} size="lg" showLabel={false} />
+            <CardDescription className="text-zinc-500">
+              {data.eventos.length} evento(s) · gerado {new Date(data.geradoEm).toLocaleString("pt-BR")}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ContainerTimeline
+              eventos={data.eventos}
+              showAdminMeta
+              onReprintRic={(t) => reimprimirRic(t)}
+            />
+          </CardContent>
+        </Card>
+      ) : null}
+      {documentoSaida.dialog}
+    </div>
+  );
+}

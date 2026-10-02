@@ -12,6 +12,7 @@ import { canCreateSolicitacao, canListClientes, canPortaria } from "@/lib/motori
 import { getOrCreatePin, qrPayloadFromTrip } from "@/lib/motorista/pin-storage";
 import { vibrateShort } from "@/lib/motorista/haptics";
 import { toast } from "@/lib/toast";
+import { isValidISO6346 } from "@/lib/cadastros/formatters";
 
 const ISO_RE = /^[A-Z]{4}[0-9]{6}[0-9]$/;
 
@@ -33,7 +34,7 @@ export default function MotoristaCheckinPage() {
   const [placaCarreta, setPlacaCarreta] = useState("");
   const [iso, setIso] = useState("");
   const [clienteId, setClienteId] = useState("");
-  const [clientes, setClientes] = useState<{ id: string; nome: string }[]>([]);
+  const [clientes, setClientes] = useState<{ id: string; razaoSocial: string }[]>([]);
   const [opTipo, setOpTipo] = useState<"BAIXA" | "COLETA" | "TRANSBORDO">("BAIXA");
   const [protocoloBusca, setProtocoloBusca] = useState("");
   const [busy, setBusy] = useState(false);
@@ -52,7 +53,7 @@ export default function MotoristaCheckinPage() {
     if (!listCxOk || user?.role === "CLIENTE") return;
     void (async () => {
       try {
-        const r = await motoristaJson<{ data: { id: string; nome: string }[] }>("/clientes?limit=40&page=1");
+        const r = await motoristaJson<{ data: { id: string; razaoSocial: string }[] }>("/clientes?limit=40&page=1");
         setClientes(r.data ?? []);
       } catch {
         /* sem permissão ou rede */
@@ -65,8 +66,8 @@ export default function MotoristaCheckinPage() {
     setBusy(true);
     try {
       const isoNorm = iso.replace(/\s/g, "").toUpperCase();
-      if (!ISO_RE.test(isoNorm)) {
-        toast.error("ISO inválido (formato 6346)");
+      if (!ISO_RE.test(isoNorm) || !isValidISO6346(isoNorm)) {
+        toast.error("ISO 6346 inválido — dígito verificador não confere.");
         return;
       }
       const placa = normalizePlaca(placaCavalo);
@@ -246,7 +247,7 @@ export default function MotoristaCheckinPage() {
                       <option value="">Selecione…</option>
                       {clientes.map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.nome}
+                          {c.razaoSocial}
                         </option>
                       ))}
                     </select>

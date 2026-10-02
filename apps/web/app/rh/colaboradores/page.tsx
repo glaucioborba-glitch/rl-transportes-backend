@@ -1,55 +1,64 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ApiError } from "@/lib/api/staff-client";
-import { fetchRhDirectoryMerged } from "@/lib/rh/merge-directory";
-import type { RhStaffRole } from "@/lib/rh/types";
-import type { RhColaboradorDirectoryItem } from "@/lib/rh/types";
-import { RhCard } from "@/components/rh/rh-card";
+import { useRouter } from "next/navigation";
+import { Plus, Search } from "lucide-react";
+import { ColaboradorCard } from "@/app/cadastros/pessoas/colaboradores/components/colaborador-card";
+import {
+  ColaboradoresEmptyState,
+  ColaboradoresSkeleton,
+} from "@/components/cadastros/colaboradores-list-ui";
+import { PaginationSimple } from "@/components/cadastros/pagination-simple";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useWidgetData, WidgetError } from "@/components/ui/widget-error";
+import { listCadastrosColaboradores } from "@/lib/api/cadastros-colaboradores-client";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 
-const ROLES: RhStaffRole[] = [
-  "ADMIN",
-  "GERENTE",
-  "OPERADOR_PORTARIA",
-  "OPERADOR_GATE",
-  "OPERADOR_PATIO",
-];
+const SELECT_CLASS =
+  "flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm";
 
-export default function RhColaboradoresPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
-  const [rows, setRows] = useState<RhColaboradorDirectoryItem[]>([]);
-  const [err, setErr] = useState<string | null>(null);
-  const [roleF, setRoleF] = useState<string>("");
-  const [turnoF, setTurnoF] = useState<string>("");
-  const [aptF, setAptF] = useState<string>("");
-  const [nrF, setNrF] = useState<string>("");
+const BASE = "/rh/colaboradores";
+
+export default function RhColaboradoresListPage() {
+  const router = useRouter();
+  const staffUser = useStaffAuthStore((s) => s.user);
+  const allowed = isIntranetGestorRole(staffUser?.role);
+
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState<
+    "todos" | "ativos" | "inativos" | "afastados"
+  >("ativos");
+  const [filterVinculo, setFilterVinculo] = useState("todos");
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
-    let on = true;
-    (async () => {
-      try {
-        const dir = await fetchRhDirectoryMerged();
-        if (on) setRows(dir);
-      } catch (e) {
-        if (on) setErr(e instanceof ApiError ? e.message : "Erro ao listar");
-      }
-    })();
-    return () => {
-      on = false;
-    };
-  }, []);
+    const t = window.setTimeout(() => setDebouncedSearch(search), 350);
+    return () => window.clearTimeout(t);
+  }, [search]);
 
-  const filtered = useMemo(() => {
-    return rows.filter((r) => {
-      if (roleF && r.role !== roleF) return false;
-      if (turnoF && !String(r.turno).toUpperCase().includes(turnoF.toUpperCase())) return false;
-      if (aptF && !r.aptidaoLabel.toLowerCase().includes(aptF.toLowerCase())) return false;
-      if (nrF && !r.complianceNrLabel.toLowerCase().includes(nrF.toLowerCase())) return false;
-      return true;
-    });
-  }, [rows, roleF, turnoF, aptF, nrF]);
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, filterStatus, filterVinculo]);
+
+  const { data, loading, error, refetch } = useWidgetData(
+    () =>
+      listCadastrosColaboradores({
+        search: debouncedSearch,
+        status: filterStatus,
+        vinculo: filterVinculo,
+        page,
+      }),
+    [debouncedSearch, filterStatus, filterVinculo, page],
+  );
+
+  const colaboradores = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const pageSize = data?.pageSize ?? 10;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   if (!allowed) {
     return <p className="text-center text-amber-400">Acesso restrito.</p>;
@@ -57,107 +66,85 @@ export default function RhColaboradoresPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Colaboradores</h1>
-        <p className="text-sm text-zinc-500">Internos — dados mesclados em tempo de execução no front.</p>
-      </div>
-      {err ? <p className="text-sm text-red-400">{err}</p> : null}
-
-      <RhCard title="Filtros">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="text-xs text-zinc-500">
-            Role
-            <select
-              className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-2 py-2 text-sm text-white"
-              value={roleF}
-              onChange={(e) => setRoleF(e.target.value)}
-            >
-              <option value="">Todos</option>
-              {ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-xs text-zinc-500">
-            Turno
-            <select
-              className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-2 py-2 text-sm text-white"
-              value={turnoF}
-              onChange={(e) => setTurnoF(e.target.value)}
-            >
-              <option value="">Todos</option>
-              <option value="MANH">MANHÃ</option>
-              <option value="TARD">TARDE</option>
-              <option value="NOIT">NOITE</option>
-            </select>
-          </label>
-          <label className="text-xs text-zinc-500">
-            Aptidão (texto)
-            <input
-              className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-2 py-2 text-sm"
-              value={aptF}
-              onChange={(e) => setAptF(e.target.value)}
-              placeholder="ex: pátio"
-            />
-          </label>
-          <label className="text-xs text-zinc-500">
-            Compliance NR
-            <input
-              className="mt-1 w-full rounded-lg border border-white/10 bg-zinc-900 px-2 py-2 text-sm"
-              value={nrF}
-              onChange={(e) => setNrF(e.target.value)}
-              placeholder="Conforme / Reciclagem"
-            />
-          </label>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div className="mb-1 flex items-center gap-2 text-sm text-muted-foreground">
+            <Link href="/rh" className="hover:text-white">
+              RH
+            </Link>
+            <span>/</span>
+            <span>Colaboradores</span>
+          </div>
+          <h1 className="text-2xl font-bold">Colaboradores</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {total} colaborador(es) · Cadastro da equipe, turno, perfil e senha da intranet
+          </p>
         </div>
-      </RhCard>
-
-      <div className="overflow-x-auto rounded-xl border border-white/10">
-        <table className="min-w-[900px] w-full border-collapse text-left text-sm">
-          <thead>
-            <tr className="border-b border-white/10 bg-zinc-900/90 text-xs uppercase text-zinc-500">
-              <th className="px-3 py-2">Nome</th>
-              <th className="px-3 py-2">Email</th>
-              <th className="px-3 py-2">Role</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Último acesso</th>
-              <th className="px-3 py-2">Permissões</th>
-              <th className="px-3 py-2">Ops 24h</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((r) => (
-              <tr key={r.id} className="border-b border-white/5 hover:bg-white/[0.03]">
-                <td className="px-3 py-2 font-medium text-white">
-                  <Link href={`/rh/colaboradores/${encodeURIComponent(r.id)}`} className="text-cyan-400 hover:underline">
-                    {r.nome}
-                  </Link>
-                </td>
-                <td className="px-3 py-2 text-zinc-400">{r.email ?? "—"}</td>
-                <td className="px-3 py-2 text-zinc-300">{r.role}</td>
-                <td className="px-3 py-2">
-                  <span
-                    className={
-                      r.status === "ativo"
-                        ? "text-emerald-400"
-                        : r.status === "afastado"
-                          ? "text-amber-400"
-                          : "text-red-300"
-                    }
-                  >
-                    {r.status}
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-zinc-500">{r.ultimoAcesso ?? "—"}</td>
-                <td className="px-3 py-2 text-[11px] text-zinc-500">{r.permissions.slice(0, 4).join(", ") || "—"}</td>
-                <td className="px-3 py-2 font-mono text-cyan-300">{r.operacoes24h ?? "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Button variant="default" size="sm" onClick={() => router.push(`${BASE}/novo`)}>
+          <Plus className="mr-2 h-4 w-4" />
+          Novo Colaborador
+        </Button>
       </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative max-w-md flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nome, CPF, matrícula..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {(["ativos", "afastados", "inativos", "todos"] as const).map((status) => (
+            <Button
+              key={status}
+              variant={filterStatus === status ? "default" : "outline"}
+              size="sm"
+              onClick={() => setFilterStatus(status)}
+              className="capitalize"
+            >
+              {status}
+            </Button>
+          ))}
+        </div>
+        <select
+          value={filterVinculo}
+          onChange={(e) => setFilterVinculo(e.target.value)}
+          className={SELECT_CLASS}
+        >
+          <option value="todos">Todos os vínculos</option>
+          <option value="CLT">CLT</option>
+          <option value="TERCEIRIZADO">Terceirizado</option>
+          <option value="ESTAGIARIO">Estagiário</option>
+          <option value="TEMPORARIO">Temporário</option>
+          <option value="PRESTADOR">Prestador PJ</option>
+        </select>
+      </div>
+
+      {loading ? <ColaboradoresSkeleton /> : null}
+      {!loading && error ? (
+        <WidgetError title="Não foi possível carregar colaboradores" onRetry={refetch} />
+      ) : null}
+      {!loading && !error && colaboradores.length === 0 ? <ColaboradoresEmptyState /> : null}
+      {!loading && !error && colaboradores.length > 0 ? (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {colaboradores.map((colab) => (
+            <ColaboradorCard
+              key={colab.id}
+              colab={colab}
+              canEdit
+              onEdit={() => router.push(`${BASE}/${colab.id}`)}
+              onAuditoria={() => router.push(`${BASE}/${colab.id}/auditoria`)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {!loading && !error && total > pageSize ? (
+        <PaginationSimple page={page} total={totalPages} onChange={setPage} />
+      ) : null}
     </div>
   );
 }

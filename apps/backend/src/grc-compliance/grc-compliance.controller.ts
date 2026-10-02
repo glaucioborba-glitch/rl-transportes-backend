@@ -47,13 +47,13 @@ export class GrcComplianceController {
       '`severidade` persistida = probabilidade × impacto (1–25). Integrações futuras com auditoria/financeiro apenas via leitura.',
   })
   @ApiCreatedResponse({ type: RiscoGrcRespostaDto })
-  criarRisco(@Body() dto: CreateRiscoGrcDto): RiscoGrcRespostaDto {
+  criarRisco(@Body() dto: CreateRiscoGrcDto): Promise<RiscoGrcRespostaDto> {
     return this.grc.createRisco(dto);
   }
 
   @Get('riscos')
   @ApiOkResponse({ type: [RiscoGrcRespostaDto] })
-  listarRiscos(): RiscoGrcRespostaDto[] {
+  listarRiscos(): Promise<RiscoGrcRespostaDto[]> {
     return this.grc.listRiscos();
   }
 
@@ -66,13 +66,13 @@ export class GrcComplianceController {
       'Exclusivo **ADMIN/GERENTE**. `riscoRelacionadoId` deve existir em POST /grc/riscos.',
   })
   @ApiCreatedResponse({ type: ControleGrcRespostaDto })
-  criarControle(@Body() dto: CreateControleGrcDto): ControleGrcRespostaDto {
+  criarControle(@Body() dto: CreateControleGrcDto): Promise<ControleGrcRespostaDto> {
     return this.grc.createControle(dto);
   }
 
   @Get('controles')
   @ApiOkResponse({ type: [ControleGrcRespostaDto] })
-  listarControles(): ControleGrcRespostaDto[] {
+  listarControles(): Promise<ControleGrcRespostaDto[]> {
     return this.grc.listControles();
   }
 
@@ -102,13 +102,13 @@ export class GrcComplianceController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Plano de ação 5W2H' })
   @ApiCreatedResponse({ type: PlanoAcaoGrcRespostaDto })
-  criarPlano(@Body() dto: CreatePlanoAcaoGrcDto): PlanoAcaoGrcRespostaDto {
+  criarPlano(@Body() dto: CreatePlanoAcaoGrcDto): Promise<PlanoAcaoGrcRespostaDto> {
     return this.grc.createPlano(dto);
   }
 
   @Get('planos-acao')
   @ApiOkResponse({ type: [PlanoAcaoGrcRespostaDto] })
-  listarPlanos(): PlanoAcaoGrcRespostaDto[] {
+  listarPlanos(): Promise<PlanoAcaoGrcRespostaDto[]> {
     return this.grc.listPlanos();
   }
 

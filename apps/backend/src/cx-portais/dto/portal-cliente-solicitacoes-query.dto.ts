@@ -40,10 +40,27 @@ export class PortalClienteSolicitacoesQueryDto {
   @IsDateString()
   createdTo?: string;
 
-  @ApiPropertyOptional({ description: 'Contém no protocolo (sem distinção de maiúsculas)' })
+  @ApiPropertyOptional({ description: 'Protocolo sequencial, ID operacional ou trecho do protocolo legado' })
   @IsOptional()
   @IsString()
   protocolo?: string;
+
+  @ApiPropertyOptional({
+    description: 'Contém no número ISO do contêiner (containersSolicitacao.unidade ou unidades.numeroIso)',
+  })
+  @IsOptional()
+  @IsString()
+  container?: string;
+
+  @ApiPropertyOptional({ description: 'Contém em containersSolicitacao.booking' })
+  @IsOptional()
+  @IsString()
+  booking?: string;
+
+  @ApiPropertyOptional({ description: 'Contém em containersSolicitacao.processo' })
+  @IsOptional()
+  @IsString()
+  processo?: string;
 
   @ApiPropertyOptional({
     enum: ['createdAt', 'updatedAt', 'protocolo', 'status'],
@@ -57,4 +74,14 @@ export class PortalClienteSolicitacoesQueryDto {
   @IsOptional()
   @IsIn(['asc', 'desc'])
   order?: 'asc' | 'desc' = 'desc';
+
+  @ApiPropertyOptional({
+    enum: ['minhas', 'todas'],
+    default: 'todas',
+    description:
+      'minhas — solicitações criadas pela pessoa autorizada da sessão (e-mail do solicitante); todas — visão da empresa (tenant)',
+  })
+  @IsOptional()
+  @IsIn(['minhas', 'todas'])
+  escopo?: 'minhas' | 'todas' = 'todas';
 }

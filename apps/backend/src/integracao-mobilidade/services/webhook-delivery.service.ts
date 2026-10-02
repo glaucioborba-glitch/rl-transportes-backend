@@ -51,7 +51,7 @@ export class WebhookDeliveryService {
     };
     const rawBody = JSON.stringify(envelope);
 
-    this.eventLog.push({
+    await this.eventLog.push({
       tipo,
       payload,
       clienteId,
@@ -65,7 +65,7 @@ export class WebhookDeliveryService {
       correlationId,
     });
 
-    const matched = this.subs.matching(tipo);
+    const matched = await this.subs.matching(tipo);
     const results: EntregaResultado[] = [];
 
     for (const sub of matched) {

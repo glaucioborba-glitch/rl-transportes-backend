@@ -109,7 +109,7 @@ export class IntegracaoClienteApiService {
     };
   }
 
-  recentEvents(clienteId: string) {
+  async recentEvents(clienteId: string) {
     return this.eventLog.recent(clienteId, 50);
   }
 

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, StatusSolicitacao, StatusPagamento } from '@prisma/client';
+import { Prisma, StatusSolicitacao } from '@prisma/client';
+import { BOLETO_STATUS_ABERTO } from '../../common/finance/boleto-status.constants';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** Agregações read-only para API Gateway v1 (ADMIN/GERENTE). */
@@ -38,7 +39,7 @@ export class IntegracaoApiGatewayService {
       const [fatCount, boletoAberto] = await Promise.all([
         this.prisma.faturamento.count(),
         this.prisma.boleto.count({
-          where: { statusPagamento: { in: [StatusPagamento.PENDENTE, StatusPagamento.VENCIDO] } },
+          where: { statusPagamento: { in: [...BOLETO_STATUS_ABERTO] } },
         }),
       ]);
       return { faturamentosRegistrados: fatCount, boletosPendentesOuVencidos: boletoAberto };

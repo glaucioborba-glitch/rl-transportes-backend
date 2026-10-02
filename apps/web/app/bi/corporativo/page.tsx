@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { BiWorkspace } from "@/components/bi/bi-workspace";
 import { BiSection } from "@/components/bi/bi-section";
 import { RoiCard } from "@/components/bi/roi-card";
 import { WhatIfConfigurator } from "@/components/bi/what-if-configurator";
@@ -10,6 +9,7 @@ import { CapexSimulationChart } from "@/components/bi/capex-simulation-chart";
 import { ExecutiveRecommendationTile } from "@/components/bi/executive-recommendation-tile";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
 import { toast } from "@/lib/toast";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -72,7 +72,7 @@ const TIPO_LABEL: Record<string, string> = {
 };
 
 export default function BiCorporativoPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [exp, setExp] = useState<Expansao | null>(null);
   const [cenario, setCenario] = useState<Cenario | null>(null);
   const [proj, setProj] = useState<{ saturacaoAtualPct?: number; projecoes?: { dias: number; saturacaoPatioPrevistaPct: number }[] } | null>(null);
@@ -162,14 +162,14 @@ export default function BiCorporativoPage() {
 
   if (!allowed) {
     return (
-      <BiWorkspace>
+      <div>
         <p className="text-center text-amber-400">Acesso restrito.</p>
-      </BiWorkspace>
+      </div>
     );
   }
 
   return (
-      <BiWorkspace>
+      <div>
         <div className="flex flex-col gap-6 lg:flex-row">
           <aside className="lg:w-44 lg:shrink-0">
             <div className="sticky top-24 rounded-xl border border-white/10 bg-[#0a1018] p-3 text-[11px]">
@@ -294,6 +294,6 @@ export default function BiCorporativoPage() {
             </BiSection>
           </div>
         </div>
-      </BiWorkspace>
+      </div>
     );
 }

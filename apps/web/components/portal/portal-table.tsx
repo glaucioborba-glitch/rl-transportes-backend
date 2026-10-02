@@ -47,7 +47,9 @@ export function PortalTable<T>({
           rows.map((row) => (
             <TableRow key={getRowKey(row)}>
               {columns.map((c) => (
-                <TableCell key={c.key}>{renderCell(row, c.key)}</TableCell>
+                <TableCell key={c.key} className={c.className}>
+                  {renderCell(row, c.key)}
+                </TableCell>
               ))}
             </TableRow>
           ))

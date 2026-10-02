@@ -7,13 +7,25 @@ import { TesourariaService } from './tesouraria.service';
 
 describe('TesourariaService', () => {
   let service: TesourariaService;
-  let store: TesourariaStoreService;
+  let store: jest.Mocked<TesourariaStoreService>;
 
   beforeEach(async () => {
+    store = {
+      createFornecedor: jest.fn(),
+      listFornecedores: jest.fn().mockResolvedValue([]),
+      getFornecedor: jest.fn(),
+      createDespesa: jest.fn(),
+      listDespesas: jest.fn().mockResolvedValue([]),
+      getDespesa: jest.fn(),
+      createContrato: jest.fn(),
+      listContratos: jest.fn().mockResolvedValue([]),
+      getContrato: jest.fn(),
+    } as unknown as jest.Mocked<TesourariaStoreService>;
+
     const mod = await Test.createTestingModule({
       providers: [
         TesourariaService,
-        TesourariaStoreService,
+        { provide: TesourariaStoreService, useValue: store },
         {
           provide: ConfigService,
           useValue: {
@@ -38,11 +50,11 @@ describe('TesourariaService', () => {
     }).compile();
 
     service = mod.get(TesourariaService);
-    store = mod.get(TesourariaStoreService);
   });
 
-  it('createContrato exige fornecedor existente', () => {
-    expect(() =>
+  it('createContrato exige fornecedor existente', async () => {
+    store.getFornecedor.mockResolvedValue(undefined);
+    await expect(
       service.createContrato({
         fornecedorId: 'inexistente',
         tipoContrato: 'mensal',
@@ -51,18 +63,32 @@ describe('TesourariaService', () => {
         vigenciaFim: '2026-12-31',
         reajusteAnualPct: 0,
       }),
-    ).toThrow(BadRequestException);
+    ).rejects.toThrow(BadRequestException);
   });
 
-  it('createContrato aceita após cadastrar fornecedor', () => {
-    const f = store.createFornecedor({
+  it('createContrato aceita após cadastrar fornecedor', async () => {
+    const f = {
+      id: 'f1',
       nome: 'F',
       cnpj: '123',
-      categoriaFornecedor: 'geral',
+      categoriaFornecedor: 'geral' as const,
       contato: 'x',
       prazoPagamentoPadrao: 30,
+      createdAt: new Date().toISOString(),
+    };
+    store.getFornecedor.mockResolvedValue(f);
+    store.createContrato.mockResolvedValue({
+      id: 'c1',
+      fornecedorId: f.id,
+      tipoContrato: 'mensal',
+      valorFixo: 100,
+      vigenciaInicio: '2026-01-01',
+      vigenciaFim: '2026-12-31',
+      reajusteAnualPct: 2,
+      createdAt: new Date().toISOString(),
     });
-    const c = service.createContrato({
+
+    const c = await service.createContrato({
       fornecedorId: f.id,
       tipoContrato: 'mensal',
       valorFixo: 100,

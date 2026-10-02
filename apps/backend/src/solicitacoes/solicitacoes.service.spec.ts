@@ -29,7 +29,11 @@ describe('SolicitacoesService.update transições', () => {
       },
     };
     const auditoria = { registrar: jest.fn() };
-    const service = new SolicitacoesService(prisma, auditoria as any);
+    const servicosLogisticos = {
+      notificarBloqueioMovimentacao: jest.fn(),
+      notificarEventoIntegridade: jest.fn(),
+    };
+    const service = new SolicitacoesService(prisma, auditoria as any, servicosLogisticos as any);
 
     await expect(
       service.update('1', { status: StatusSolicitacao.PENDENTE }, 'u'),
@@ -47,10 +51,14 @@ describe('SolicitacoesService.update transições', () => {
 
 describe('SolicitacoesService.addContainer', () => {
   const auditoria = { registrar: jest.fn().mockResolvedValue({}) };
+  const servicosLogisticos = {
+    notificarBloqueioMovimentacao: jest.fn(),
+    notificarEventoIntegridade: jest.fn(),
+  };
   const tx = {
     solicitacao: { findFirst: jest.fn() },
     unidade: {
-      findUnique: jest.fn(),
+      findFirst: jest.fn(),
       create: jest.fn(),
     },
   };
@@ -59,7 +67,7 @@ describe('SolicitacoesService.addContainer', () => {
   } = {
     $transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
-  const service = new SolicitacoesService(prisma as never, auditoria as never);
+  const service = new SolicitacoesService(prisma as never, auditoria as never, servicosLogisticos as never);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -68,7 +76,7 @@ describe('SolicitacoesService.addContainer', () => {
 
   it('cria container quando solicitação existe e ISO livre', async () => {
     tx.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
-    tx.unidade.findUnique.mockResolvedValue(null);
+    tx.unidade.findFirst.mockResolvedValue(null);
     tx.unidade.create.mockResolvedValue({
       id: 'u1',
       solicitacaoId: 's1',
@@ -102,9 +110,9 @@ describe('SolicitacoesService.addContainer', () => {
     ).rejects.toThrow(NotFoundException);
   });
 
-  it('conflito quando ISO já existe', async () => {
+  it('conflito quando ISO já existe nesta solicitação', async () => {
     tx.solicitacao.findFirst.mockResolvedValue({ id: 's1' });
-    tx.unidade.findUnique.mockResolvedValue({ id: 'other' });
+    tx.unidade.findFirst.mockResolvedValue({ id: 'other' });
     await expect(
       service.addContainer(
         {
@@ -120,10 +128,17 @@ describe('SolicitacoesService.addContainer', () => {
 
 describe('SolicitacoesService.registerPortaria', () => {
   const auditoria = { registrar: jest.fn().mockResolvedValue({}) };
+  const servicosLogisticos = {
+    notificarBloqueioMovimentacao: jest.fn(),
+    notificarEventoIntegridade: jest.fn(),
+  };
   const tx = {
     portaria: {
       findUnique: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
+    },
+    solicitacao: {
       update: jest.fn(),
     },
   };
@@ -134,7 +149,7 @@ describe('SolicitacoesService.registerPortaria', () => {
     solicitacao: { findFirst: jest.fn() },
     $transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
-  const service = new SolicitacoesService(prisma as never, auditoria as never);
+  const service = new SolicitacoesService(prisma as never, auditoria as never, servicosLogisticos as never);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -142,7 +157,11 @@ describe('SolicitacoesService.registerPortaria', () => {
   });
 
   it('cria portaria quando não existe', async () => {
-    prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1', status: StatusSolicitacao.APROVADO });
+    prisma.solicitacao.findFirst.mockResolvedValue({
+      id: 's1',
+      status: StatusSolicitacao.APROVADO,
+      unidades: [],
+    });
     tx.portaria.findUnique.mockResolvedValue(null);
     tx.portaria.create.mockResolvedValue({
       id: 'p1',
@@ -156,7 +175,11 @@ describe('SolicitacoesService.registerPortaria', () => {
   });
 
   it('atualiza portaria quando já existe', async () => {
-    prisma.solicitacao.findFirst.mockResolvedValue({ id: 's1', status: StatusSolicitacao.APROVADO });
+    prisma.solicitacao.findFirst.mockResolvedValue({
+      id: 's1',
+      status: StatusSolicitacao.APROVADO,
+      unidades: [],
+    });
     tx.portaria.findUnique.mockResolvedValue({
       id: 'p1',
       solicitacaoId: 's1',
@@ -177,16 +200,21 @@ describe('SolicitacoesService.registerPortaria', () => {
     prisma.solicitacao.findFirst.mockResolvedValue({
       id: 's1',
       status: StatusSolicitacao.PENDENTE,
+      unidades: [],
     });
     await expect(
       service.registerPortaria({ solicitacaoId: 's1', placa: 'ABCD1D34' }, 'u'),
-    ).rejects.toThrow('aprovadas');
+    ).rejects.toThrow('execução');
     expect(auditoria.registrar).toHaveBeenCalled();
   });
 });
 
 describe('SolicitacoesService.registerGate — sequência', () => {
   const auditoria = { registrar: jest.fn().mockResolvedValue({}) };
+  const servicosLogisticos = {
+    notificarBloqueioMovimentacao: jest.fn(),
+    notificarEventoIntegridade: jest.fn(),
+  };
   const tx = {
     gate: {
       findUnique: jest.fn(),
@@ -201,7 +229,7 @@ describe('SolicitacoesService.registerGate — sequência', () => {
     solicitacao: { findFirst: jest.fn() },
     $transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
-  const service = new SolicitacoesService(prisma as never, auditoria as never);
+  const service = new SolicitacoesService(prisma as never, auditoria as never, servicosLogisticos as never);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -214,6 +242,7 @@ describe('SolicitacoesService.registerGate — sequência', () => {
       id: 's1',
       status: StatusSolicitacao.APROVADO,
       portaria: null,
+      unidades: [],
     });
     await expect(
       service.registerGate({ solicitacaoId: 's1', ricAssinado: true }, 'u'),
@@ -227,6 +256,7 @@ describe('SolicitacoesService.registerGate — sequência', () => {
       id: 's1',
       status: StatusSolicitacao.APROVADO,
       portaria: { id: 'p1' },
+      unidades: [],
     });
     await service.registerGate({ solicitacaoId: 's1', ricAssinado: true }, 'u');
     expect(tx.gate.create).toHaveBeenCalled();

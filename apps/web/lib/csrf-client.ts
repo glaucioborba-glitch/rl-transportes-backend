@@ -1,8 +1,14 @@
 /** Deve coincidir com apps/backend/src/auth/csrf.constants.ts (CSRF_COOKIE_NAME). */
 export const CSRF_COOKIE_NAME = "rl_csrf";
 
+/**
+ * Alinhado a `isCsrfEnabled()` no Nest: ligado em production por default.
+ * NEXT_PUBLIC_CSRF_ENABLED=0 desliga; =1 força (dev/homolog).
+ */
 export function isCsrfProtectionActive(): boolean {
-  return process.env.NEXT_PUBLIC_CSRF_ENABLED === "1";
+  if (process.env.NEXT_PUBLIC_CSRF_ENABLED === "0") return false;
+  if (process.env.NEXT_PUBLIC_CSRF_ENABLED === "1") return true;
+  return process.env.NODE_ENV === "production";
 }
 
 function readCookie(name: string): string | null {

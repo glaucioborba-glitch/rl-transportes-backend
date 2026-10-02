@@ -1,0 +1,18 @@
+---
+description: Pendência — layout de posições de pátio no app do operador
+alwaysApply: true
+---
+
+# Posições de pátio
+
+Só **duas** variáveis: **zona** e **posição**. Grade **4 de base × 3 de altura** (12 por zona). Código `A1-5`.
+
+A zona é cadastrável (A1, A2, B7…). No MDM: cadastrar, editar (Salvar) e excluir.
+
+Numeração: **01 embaixo à esquerda**, **02 acima**, sobe a coluna e segue para a direita.
+
+Em cada módulo 4×3: **Fundos** à esquerda, **Frente** à direita.
+
+O cadastro em `/cadastros/operacional/posicoes-patio` é MDM: dá para **cadastrar zona** e **cadastrar posição**. Sem baia, slot extra nem stack.
+
+O mapa operacional (ocupação ao vivo, fila, Finalizar) fica no **app do operador** (`/operador/patio`). Não misturar de novo zona/baia/slot nesta tela.

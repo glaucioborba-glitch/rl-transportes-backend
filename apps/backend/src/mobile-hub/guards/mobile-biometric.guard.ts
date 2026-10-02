@@ -14,7 +14,7 @@ export class MobileBiometricGuard implements CanActivate {
     private readonly lockout: MobilePinLockoutStore,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const critical = this.reflector.getAllAndOverride<boolean>(MOBILE_CRITICAL_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -29,15 +29,15 @@ export class MobileBiometricGuard implements CanActivate {
     const sub = (req as Request & { mobileUser?: { sub: string } }).mobileUser?.sub ?? 'anon';
     const chave = `${sub}:${req.ip}`;
 
-    if (this.lockout.bloqueado(chave)) {
+    if (await this.lockout.bloqueado(chave)) {
       throw new ForbiddenException('Bloqueio por tentativas de PIN');
     }
 
     if (pin !== expected) {
-      this.lockout.registrarFalha(chave);
+      await this.lockout.registrarFalha(chave);
       throw new ForbiddenException('PIN / biometria obrigatória para esta operação');
     }
-    this.lockout.limpar(chave);
+    await this.lockout.limpar(chave);
     return true;
   }
 }

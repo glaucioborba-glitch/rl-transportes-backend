@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
+import { ConfigCacheModule } from '../common/cache/config-cache.module';
 import { PlataformaTenantStore } from './stores/plataforma-tenant.store';
 import { PlataformaApiClientStore } from './stores/plataforma-api-client.store';
 import { PlataformaConsumptionStore } from './stores/plataforma-consumption.store';
@@ -12,7 +13,7 @@ import { PlataformaContractsService } from './services/plataforma-contracts.serv
 import { PlataformaConsumoInterceptor } from './interceptors/plataforma-consumo.interceptor';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, ConfigCacheModule],
   providers: [
     PlataformaTenantStore,
     PlataformaApiClientStore,

@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { staffJson } from "@/lib/api/staff-client";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import type { AdminContract } from "@/lib/admin/types";
 import { readJson, adminContractsKey } from "@/lib/admin/storage";
@@ -20,7 +20,7 @@ type Tab = "resumo" | "sla" | "penal" | "docs";
 export default function AdminContratoDetailPage() {
   const params = useParams();
   const id = typeof params.id === "string" ? decodeURIComponent(params.id) : "";
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [c, setC] = useState<AdminContract | null>(null);
   const [tab, setTab] = useState<Tab>("resumo");
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -95,9 +95,6 @@ export default function AdminContratoDetailPage() {
   if (!c) {
     return (
       <div>
-        <Link href="/admin/contratos" className="text-sky-400 text-sm">
-          ← Voltar
-        </Link>
         <p className="mt-4 text-zinc-500">Contrato não encontrado no armazenamento local.</p>
       </div>
     );
@@ -143,9 +140,6 @@ export default function AdminContratoDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link href="/admin/contratos" className="text-sm text-sky-400 hover:underline">
-        ← Contratos
-      </Link>
       <div>
         <h1 className="font-serif text-3xl font-bold text-white">{c.clienteNome}</h1>
         <p className="text-sm text-zinc-500">

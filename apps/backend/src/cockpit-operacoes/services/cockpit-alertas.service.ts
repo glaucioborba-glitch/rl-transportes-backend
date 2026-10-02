@@ -161,8 +161,8 @@ export class CockpitAlertasService {
     }
   }
 
-  private alertasAutomacao(): CockpitAlertItem[] {
-    const erros = this.execAutomacao.comErroUltimas24h();
+  private async alertasAutomacao(): Promise<CockpitAlertItem[]> {
+    const erros = await this.execAutomacao.comErroUltimas24h();
     return erros.slice(0, 40).map((e: AutomacaoExecucaoLog) => ({
       id: `auto-${e.id}`,
       fonte: 'automacao',
@@ -174,8 +174,8 @@ export class CockpitAlertasService {
     }));
   }
 
-  private alertasMobile(): CockpitAlertItem[] {
-    const jobs = this.push.listarUltimos(40);
+  private async alertasMobile(): Promise<CockpitAlertItem[]> {
+    const jobs = await this.push.listarUltimos(40);
     const out: CockpitAlertItem[] = [];
     for (const j of jobs) {
       if (j.tipo === 'os_critica' || j.tipo === 'alerta_risco_grc') {
@@ -190,7 +190,7 @@ export class CockpitAlertasService {
         });
       }
     }
-    const tel = this.tel.ultimosJanela(80).filter((b: MobileTelemetryBatch) => b.errosRecorrentes?.length);
+    const tel = (await this.tel.ultimosJanela(80)).filter((b: MobileTelemetryBatch) => b.errosRecorrentes?.length);
     for (const b of tel.slice(0, 15)) {
       out.push({
         id: `mob-tel-${b.id}`,

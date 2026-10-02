@@ -26,7 +26,21 @@ describe('PermissionsGuard', () => {
       sub: '1',
       id: '1',
       email: 'a@a.com',
+      cpfCnpj: '11000000000108',
       role: Role.ADMIN,
+      permissions: [],
+    };
+    expect(guard.canActivate(ctx(user))).toBe(true);
+  });
+
+  it('SUPER_ADMIN passa sempre', () => {
+    (reflector.getAllAndOverride as jest.Mock).mockReturnValue(['clientes:excluir']);
+    const user: AuthUser = {
+      sub: '1',
+      id: '1',
+      email: 'a@a.com',
+      cpfCnpj: '11000000000108',
+      role: Role.SUPER_ADMIN,
       permissions: [],
     };
     expect(guard.canActivate(ctx(user))).toBe(true);
@@ -38,6 +52,7 @@ describe('PermissionsGuard', () => {
       sub: '1',
       id: '1',
       email: 'a@a.com',
+      cpfCnpj: '11000000000108',
       role: Role.OPERADOR_PATIO,
       permissions: ['clientes:ler'],
     };

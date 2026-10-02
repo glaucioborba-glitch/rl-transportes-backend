@@ -39,7 +39,7 @@ export class RhPerformanceService {
     return Number.isFinite(v) ? v : fallback;
   }
 
-  createAvaliacao(dto: CreateAvaliacaoRhDto): AvaliacaoRhRespostaDto {
+  async createAvaliacao(dto: CreateAvaliacaoRhDto): Promise<AvaliacaoRhRespostaDto> {
     const calc = calcularScoreFinalPerformance({
       notaTecnica: dto.notaTecnica,
       notaComportamental: dto.notaComportamental,
@@ -47,7 +47,7 @@ export class RhPerformanceService {
       qualidadeExecucao: dto.qualidadeExecucao,
       comprometimento: dto.comprometimento,
     });
-    const e = this.store.createAvaliacao({
+    const e = await this.store.createAvaliacao({
       colaboradorId: dto.colaboradorId,
       turnoReferencia: dto.turnoReferencia,
       cargoReferencia: dto.cargoReferencia?.trim(),
@@ -64,8 +64,9 @@ export class RhPerformanceService {
     return this.mapAvaliacao(e);
   }
 
-  listAvaliacoes(): AvaliacaoRhRespostaDto[] {
-    return this.store.listAvaliacoes().map((a) => this.mapAvaliacao(a));
+  async listAvaliacoes(): Promise<AvaliacaoRhRespostaDto[]> {
+    const rows = await this.store.listAvaliacoes();
+    return rows.map((a) => this.mapAvaliacao(a));
   }
 
   private mapAvaliacao(a: AvaliacaoRhEntity): AvaliacaoRhRespostaDto {
@@ -87,8 +88,8 @@ export class RhPerformanceService {
     };
   }
 
-  createOkr(dto: CreateOkrRhDto): OkrRhRespostaDto {
-    const e = this.store.createOkr({
+  async createOkr(dto: CreateOkrRhDto): Promise<OkrRhRespostaDto> {
+    const e = await this.store.createOkr({
       objetivo: dto.objetivo.trim(),
       escopo: dto.escopo,
       keyResults: dto.keyResults.map((s) => s.trim()).filter(Boolean),
@@ -100,12 +101,13 @@ export class RhPerformanceService {
     return { ...e };
   }
 
-  listOkrs(): OkrRhRespostaDto[] {
-    return this.store.listOkrs().map((o) => ({ ...o }));
+  async listOkrs(): Promise<OkrRhRespostaDto[]> {
+    const rows = await this.store.listOkrs();
+    return rows.map((o) => ({ ...o }));
   }
 
-  createTreinamento(dto: CreateTreinamentoRhDto): TreinamentoRhRespostaDto {
-    const e = this.store.createTreinamento({
+  async createTreinamento(dto: CreateTreinamentoRhDto): Promise<TreinamentoRhRespostaDto> {
+    const e = await this.store.createTreinamento({
       colaboradorId: dto.colaboradorId,
       modulo: dto.modulo.trim(),
       cargaHoraria: dto.cargaHoraria,
@@ -115,12 +117,13 @@ export class RhPerformanceService {
     return { ...e };
   }
 
-  listTreinamentos(): TreinamentoRhRespostaDto[] {
-    return this.store.listTreinamentos().map((t) => ({ ...t }));
+  async listTreinamentos(): Promise<TreinamentoRhRespostaDto[]> {
+    const rows = await this.store.listTreinamentos();
+    return rows.map((t) => ({ ...t }));
   }
 
-  getKpis(): RhKpisRespostaDto {
-    const avs = this.store.listAvaliacoes();
+  async getKpis(): Promise<RhKpisRespostaDto> {
+    const avs = await this.store.listAvaliacoes();
     const baselinePorTurno = mediaPorTurno(avs);
 
     const porCargo = new Map<string, number[]>();
@@ -151,15 +154,14 @@ export class RhPerformanceService {
     };
   }
 
-  getBsc(): BscRhRespostaDto {
-    const horasRealizadas = this.store
-      .listTreinamentos()
+  async getBsc(): Promise<BscRhRespostaDto> {
+    const horasRealizadas = (await this.store.listTreinamentos())
       .filter((t) => t.status === 'concluido')
       .reduce((s, t) => s + t.cargaHoraria, 0);
 
     const metaHorasMes = this.numEnv('RH_PERF_META_HORAS_TREINO_MES', 120);
 
-    const avs = this.store.listAvaliacoes();
+    const avs = await this.store.listAvaliacoes();
     const npsInternoProxy =
       avs.length === 0
         ? this.numEnv('RH_PERF_NPS_INTERNO_DEFAULT', 72) / 10
@@ -205,9 +207,9 @@ export class RhPerformanceService {
     return { perspectivas, scoreGlobal };
   }
 
-  getSugestoesTreinamento(): SugestaoTreinamentoRhDto[] {
+  async getSugestoesTreinamento(): Promise<SugestaoTreinamentoRhDto[]> {
     const map = new Map<string, AvaliacaoRhEntity[]>();
-    for (const a of this.store.listAvaliacoes()) {
+    for (const a of await this.store.listAvaliacoes()) {
       map.set(a.colaboradorId, [...(map.get(a.colaboradorId) ?? []), a]);
     }
     const retrabalho = this.numEnv('RH_PERF_RETRABALHO_PCT', 6);
@@ -217,8 +219,8 @@ export class RhPerformanceService {
     }).map((s) => ({ ...s }));
   }
 
-  getDashboard(): DashboardRhPerformanceDto {
-    const avs = this.store.listAvaliacoes();
+  async getDashboard(): Promise<DashboardRhPerformanceDto> {
+    const avs = await this.store.listAvaliacoes();
     const notaMediaGlobal = mediaScoresAvaliacoes(avs);
     const mt = mediaPorTurno(avs);
     const eficienciaPorTurno: Record<string, number> = {};
@@ -226,8 +228,7 @@ export class RhPerformanceService {
       eficienciaPorTurno[k] = Math.min(100, Math.round(v * 10 * 100) / 100);
     }
 
-    const horasTreinamentoRealizadas = this.store
-      .listTreinamentos()
+    const horasTreinamentoRealizadas = (await this.store.listTreinamentos())
       .filter((t) => t.status === 'concluido')
       .reduce((s, t) => s + t.cargaHoraria, 0);
 
@@ -262,7 +263,7 @@ export class RhPerformanceService {
         Math.round((vals.reduce((x, y) => x + y, 0) / vals.length) * 1000) / 1000;
     }
 
-    const okrs = this.store.listOkrs();
+    const okrs = await this.store.listOkrs();
     const okrProgressoMedioPct =
       okrs.length === 0
         ? 0

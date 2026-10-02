@@ -17,7 +17,7 @@ export class MobileHubOperadorService {
     private readonly push: MobilePushStore,
   ) {}
 
-  minhasOperacoes(userId: string) {
+  async minhasOperacoes(userId: string) {
     return this.ops.porUsuario(userId);
   }
 
@@ -46,7 +46,7 @@ export class MobileHubOperadorService {
       update: { updatedAt: new Date() },
     });
     const digest = digestBase64Payload(dto.imagemBase64);
-    const entry = this.ops.add({
+    const entry = await this.ops.add({
       userId: cx.prismaUserId ?? cx.sub,
       canal: 'gate_in',
       protocolo: dto.protocolo,
@@ -77,7 +77,7 @@ export class MobileHubOperadorService {
       create: { solicitacaoId: sol.id, dataHoraSaida: new Date() },
       update: { dataHoraSaida: new Date() },
     });
-    const entry = this.ops.add({
+    const entry = await this.ops.add({
       userId: cx.prismaUserId ?? cx.sub,
       canal: 'gate_out',
       protocolo: dto.protocolo,
@@ -113,7 +113,7 @@ export class MobileHubOperadorService {
       },
       update: { quadra: dto.quadra, fileira: dto.fileira, posicao: dto.posicao },
     });
-    const entry = this.ops.add({
+    const entry = await this.ops.add({
       userId: cx.prismaUserId ?? cx.sub,
       canal: 'patio',
       protocolo: dto.protocolo,

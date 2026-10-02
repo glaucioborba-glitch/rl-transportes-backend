@@ -1,0 +1,21 @@
+---
+description: Botão Voltar padrão nas telas da intranet
+globs: apps/web/**/*.tsx
+alwaysApply: false
+---
+
+# Botão Voltar
+
+Toda tela que não for o hub do módulo (`/cadastros`, `/financeiro`, `/rh`, `/admin`, …) leva **← Voltar** acima do título, no mesmo estilo da auditoria.
+
+- O `IntranetShell` já injeta `PageBackButton` (exceto `flush`, ex. workspace do operador).
+- **Não duplicar** na página. Wizards, login e “passo anterior” continuam com o próprio Voltar.
+- Destino: um nível acima no path (`resolvePageBackHref`). Não depender só de `router.back()`.
+- Se o pai no path não existir, acrescente override em `lib/intranet/page-back-href.ts`.
+- Visual: `variant="ghost" size="sm"`, texto `← Voltar`.
+
+```tsx
+// Só quando o shell não cobre (flush / portal / super-admin)
+<PageBackButton href="/cadastros/pessoas/clientes" />
+<h1 className="text-2xl font-bold">Editar cadastro</h1>
+```

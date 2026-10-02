@@ -1,5 +1,5 @@
-import { randomUUID } from 'crypto';
 import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
 
 export type PortalTicket = {
   id: string;
@@ -14,39 +14,82 @@ export type PortalTicket = {
   respostas: { autorSub: string; texto: string; criadoEm: string }[];
 };
 
+type Resposta = { autorSub: string; texto: string; criadoEm: string };
+
 @Injectable()
 export class PortalTicketsStore {
-  private readonly tickets: PortalTicket[] = [];
+  constructor(private readonly prisma: PrismaService) {}
 
-  criar(t: Omit<PortalTicket, 'id' | 'criadoEm' | 'respostas' | 'status'> & { status?: PortalTicket['status'] }) {
-    const x: PortalTicket = {
-      id: randomUUID(),
-      criadoEm: new Date().toISOString(),
-      respostas: [],
-      status: t.status ?? 'aberto',
-      ...t,
+  private mapRow(row: {
+    id: string;
+    tenantId: string;
+    autorSub: string;
+    portalPapel: string;
+    assunto: string;
+    corpo: string;
+    categoria: string;
+    status: string;
+    respostas: unknown;
+    createdAt: Date;
+  }): PortalTicket {
+    return {
+      id: row.id,
+      tenantId: row.tenantId,
+      autorSub: row.autorSub,
+      portalPapel: row.portalPapel,
+      assunto: row.assunto,
+      corpo: row.corpo,
+      categoria: row.categoria as PortalTicket['categoria'],
+      status: row.status as PortalTicket['status'],
+      criadoEm: row.createdAt.toISOString(),
+      respostas: (row.respostas as Resposta[]) ?? [],
     };
-    this.tickets.push(x);
-    return x;
   }
 
-  listar(filtro: { tenantId?: string; autorSub?: string }) {
-    return this.tickets
-      .filter((x) => (filtro.tenantId ? x.tenantId === filtro.tenantId : true))
-      .filter((x) => (filtro.autorSub ? x.autorSub === filtro.autorSub : true))
-      .slice(-500)
-      .reverse();
+  async criar(
+    t: Omit<PortalTicket, 'id' | 'criadoEm' | 'respostas' | 'status'> & { status?: PortalTicket['status'] },
+  ) {
+    const row = await this.prisma.cxPortalTicket.create({
+      data: {
+        tenantId: t.tenantId,
+        autorSub: t.autorSub,
+        portalPapel: t.portalPapel,
+        assunto: t.assunto,
+        corpo: t.corpo,
+        categoria: t.categoria,
+        status: t.status ?? 'aberto',
+        respostas: [],
+      },
+    });
+    return this.mapRow(row);
   }
 
-  obter(id: string) {
-    return this.tickets.find((x) => x.id === id);
+  async listar(filtro: { tenantId?: string; autorSub?: string }) {
+    const rows = await this.prisma.cxPortalTicket.findMany({
+      where: {
+        ...(filtro.tenantId ? { tenantId: filtro.tenantId } : {}),
+        ...(filtro.autorSub ? { autorSub: filtro.autorSub } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+    return rows.map((r) => this.mapRow(r));
   }
 
-  responder(id: string, autorSub: string, texto: string) {
-    const t = this.obter(id);
+  async obter(id: string) {
+    const row = await this.prisma.cxPortalTicket.findUnique({ where: { id } });
+    return row ? this.mapRow(row) : undefined;
+  }
+
+  async responder(id: string, autorSub: string, texto: string) {
+    const t = await this.obter(id);
     if (!t) return undefined;
-    t.respostas.push({ autorSub, texto, criadoEm: new Date().toISOString() });
-    if (t.status === 'aberto') t.status = 'em_atendimento';
-    return t;
+    const respostas: Resposta[] = [...t.respostas, { autorSub, texto, criadoEm: new Date().toISOString() }];
+    const status = t.status === 'aberto' ? 'em_atendimento' : t.status;
+    const row = await this.prisma.cxPortalTicket.update({
+      where: { id },
+      data: { respostas, status },
+    });
+    return this.mapRow(row);
   }
 }

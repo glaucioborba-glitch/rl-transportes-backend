@@ -1,0 +1,61 @@
+name: E2E Integration (Nightly)
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  web-e2e-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: rl
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/backend/package-lock.json
+
+      - name: Backend setup
+        working-directory: apps/backend
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/rl
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: nightly-e2e-secret-min-32-chars-long
+          JWT_REFRESH_SECRET: nightly-e2e-refresh-secret-min-32
+        run: |
+          npm ci
+          npx prisma migrate deploy
+          npm run seed
+          npm run start &
+          npx wait-on http://localhost:3001/health --timeout 120000
+
+      - name: Playwright E2E (integration)
+        working-directory: apps/web
+        env:
+          E2E_MOCK_AUTH: "0"
+          NEXT_PUBLIC_API_URL: http://localhost:3001
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:3100
+          CI: "true"
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test --project=chromium operador-gate-checkin.spec.ts operador-hold-release.spec.ts

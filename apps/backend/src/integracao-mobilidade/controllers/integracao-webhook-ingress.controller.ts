@@ -35,8 +35,8 @@ export class IntegracaoWebhookIngressController {
       'Destinos HTTPS que recebem eventos com cabeçalho X-Integracao-Signature (HMAC-SHA256 do corpo JSON). Entrega com até 3 tentativas.',
   })
   @ApiCreatedResponse({ description: 'Assinatura criada' })
-  registrar(@Body() dto: RegisterWebhookDto) {
-    const sub = this.subs.register({
+  async registrar(@Body() dto: RegisterWebhookDto) {
+    const sub = await this.subs.register({
       url: dto.url,
       secret: dto.secret,
       eventos: dto.eventos as IntegracaoTipoEvento[],

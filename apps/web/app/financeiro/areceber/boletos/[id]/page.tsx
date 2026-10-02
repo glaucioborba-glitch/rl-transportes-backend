@@ -1,9 +1,9 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { toast } from "@/lib/toast";
 import { formatBRL, parseDecimal } from "@/lib/financeiro/format";
@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 type FatDetail = {
   id: string;
   periodo: string;
-  cliente: { nome: string; id: string };
+  cliente: { razaoSocial: string; id: string };
   boletos: {
     id: string;
     numeroBoleto: string;
@@ -32,7 +32,7 @@ function BoletosDetalheInner() {
   const boletoId = String(params.id ?? "");
   const fatId = searchParams.get("faturamentoId") ?? "";
   const user = useStaffAuthStore((s) => s.user);
-  const ok = user?.role === "ADMIN" || user?.role === "GERENTE";
+  const ok = isIntranetGestorRole(user?.role);
   const [fat, setFat] = useState<FatDetail | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -77,9 +77,6 @@ function BoletosDetalheInner() {
 
   return (
     <div className="space-y-6">
-      <Link href="/financeiro/areceber" className="text-sm text-amber-500 hover:underline">
-        ← AR
-      </Link>
       <h1 className="text-xl font-bold text-white">Boleto {boleto.numeroBoleto}</h1>
 
       <Card className="border-zinc-800 bg-zinc-900/70">
@@ -105,7 +102,7 @@ function BoletosDetalheInner() {
           </div>
           <div>
             <p className="text-xs text-zinc-500">Cliente</p>
-            <p>{fat.cliente.nome}</p>
+            <p>{fat.cliente.razaoSocial}</p>
           </div>
           <div>
             <p className="text-xs text-zinc-500">Fatura (período)</p>

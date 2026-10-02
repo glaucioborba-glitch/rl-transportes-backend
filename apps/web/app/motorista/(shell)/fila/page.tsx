@@ -10,6 +10,7 @@ import { MobileAlert } from "@/components/motorista/mobile-alert";
 import { ApiError, motoristaFetchSolicitacao, motoristaJson } from "@/lib/api/motorista-client";
 import { useMotoristaAuthStore } from "@/stores/motorista-auth-store";
 import { canAccessDashboard } from "@/lib/motorista/permissions";
+import { collectSolicitacaoContainerISOs } from "@/lib/container-display";
 import { vibrateAlertPattern } from "@/lib/motorista/haptics";
 
 type FilaItem = {
@@ -177,6 +178,12 @@ function FilaInner() {
 
         {sol ? (
           <FilaCard
+            containerIsos={collectSolicitacaoContainerISOs({
+              unidades: (sol.unidades as Array<{ numeroIso?: string }> | undefined) ?? [],
+              containersSolicitacao:
+                (sol.containersSolicitacao as Array<{ unidade?: string; ordem?: number }> | undefined) ??
+                [],
+            })}
             protocolo={String(sol.protocolo ?? "—")}
             statusLabel={globalLabel}
             subtitle={quadra ? `Quadra atual: ${quadra}` : undefined}

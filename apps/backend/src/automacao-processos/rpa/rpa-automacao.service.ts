@@ -10,16 +10,16 @@ export class RpaAutomacaoService {
     private readonly execucao: AutomacaoExecucaoStore,
   ) {}
 
-  listarJobs() {
+  async listarJobs() {
     return this.jobs.ultimos(200);
   }
 
   /** Enfileira execução assíncrona (não bloqueante). */
-  agendarExecucao(robotId: RpaRobotId): { jobId: string; status: string } {
+  async agendarExecucao(robotId: RpaRobotId): Promise<{ jobId: string; status: string }> {
     if (!AutomacaoRpaJobStore.validarRobot(robotId)) {
       throw new Error('robot_invalido');
     }
-    const job = this.jobs.registrar({
+    const job = await this.jobs.registrar({
       robotId,
       status: 'pendente',
       iniciadoEm: new Date().toISOString(),
@@ -34,27 +34,27 @@ export class RpaAutomacaoService {
   }
 
   private async executarJob(jobId: string, robotId: RpaRobotId) {
-    this.jobs.atualizar(jobId, { status: 'executando', tentativa: 1 });
+    await this.jobs.atualizar(jobId, { status: 'executando', tentativa: 1 });
     try {
       await this.simularTrabalho(robotId);
-      this.jobs.atualizar(jobId, {
+      await this.jobs.atualizar(jobId, {
         status: 'sucesso',
         finalizadoEm: new Date().toISOString(),
         mensagem: 'concluido_simulado',
       });
-      this.execucao.registrar({
+      await this.execucao.registrar({
         tipo: 'rpa',
         rpaJobId: jobId,
         ok: true,
         acoesResumo: [`robot:${robotId}`],
       });
     } catch (e) {
-      this.jobs.atualizar(jobId, {
+      await this.jobs.atualizar(jobId, {
         status: 'falha',
         finalizadoEm: new Date().toISOString(),
         mensagem: (e as Error).message,
       });
-      this.execucao.registrar({
+      await this.execucao.registrar({
         tipo: 'rpa',
         rpaJobId: jobId,
         ok: false,

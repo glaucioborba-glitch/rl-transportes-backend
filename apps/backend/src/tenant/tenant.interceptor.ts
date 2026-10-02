@@ -1,0 +1,80 @@
+import {
+  CallHandler,
+  ExecutionContext,
+  ForbiddenException,
+  Injectable,
+  NestInterceptor,
+} from '@nestjs/common';
+import { Role, TenantStatus } from '@prisma/client';
+import { Observable } from 'rxjs';
+import { PrismaService } from '../prisma/prisma.service';
+import { TenantContextService } from './tenant-context.service';
+import { resolveRequestTenant } from './resolve-request-tenant.util';
+import { isSuperAdminConsolePath, readSaActingTenantCookie } from './sa-acting-tenant.util';
+
+type AuthUser = {
+  role?: Role;
+  tenantId?: string | null;
+  sub?: string;
+};
+
+@Injectable()
+export class TenantInterceptor implements NestInterceptor {
+  constructor(
+    private readonly tenantContext: TenantContextService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
+    const req = context.switchToHttp().getRequest<{
+      user?: AuthUser;
+      cxUser?: { tenantId?: string; staffRole?: Role; portalPapel?: string };
+      tenantId?: string;
+      cookies?: Record<string, string | undefined>;
+      path?: string;
+      url?: string;
+    }>();
+    const { tenantId, role } = resolveRequestTenant(req);
+    const path = req.path || req.url?.split('?')[0] || '';
+    const actingId =
+      role === Role.SUPER_ADMIN && !isSuperAdminConsolePath(path)
+        ? readSaActingTenantCookie(req.cookies)
+        : null;
+
+    let effectiveTenant = tenantId;
+    let acting = false;
+    if (actingId) {
+      const actingTenant = await this.prisma.tenant.findUnique({ where: { id: actingId } });
+      if (actingTenant) {
+        effectiveTenant = actingTenant.id;
+        acting = true;
+        if (req.user) req.user.tenantId = actingTenant.id;
+      }
+    }
+
+    if (role && role !== Role.SUPER_ADMIN) {
+      const tenant = await this.prisma.tenant.findUnique({ where: { id: effectiveTenant } });
+      if (!tenant || tenant.status === TenantStatus.BLOQUEADO) {
+        throw new ForbiddenException('Terminal bloqueado ou inexistente');
+      }
+      if (tenant.status === TenantStatus.SUSPENSO) {
+        throw new ForbiddenException('Terminal suspenso — contate o suporte');
+      }
+    }
+
+    const state = this.tenantContext.setFromAuth(role ?? Role.CLIENTE, effectiveTenant, {
+      acting,
+    });
+    req.tenantId = state.tenantId ?? effectiveTenant;
+
+    return new Observable((subscriber) => {
+      this.tenantContext.run(state, () => {
+        next.handle().subscribe({
+          next: (v) => subscriber.next(v),
+          error: (e) => subscriber.error(e),
+          complete: () => subscriber.complete(),
+        });
+      });
+    });
+  }
+}

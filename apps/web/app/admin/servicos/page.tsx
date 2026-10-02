@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import type { ServicoInterno } from "@/lib/admin/types";
 import { readJson, writeJson, adminServicosKey } from "@/lib/admin/storage";
@@ -9,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export default function AdminServicosPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [items, setItems] = useState<ServicoInterno[]>([]);
 
   useEffect(() => {

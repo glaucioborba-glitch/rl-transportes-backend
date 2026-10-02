@@ -13,14 +13,15 @@ export class DashboardAutomacaoService {
     private readonly schedulers: AutomacaoSchedulerStore,
   ) {}
 
-  resumo() {
-    const wfs = this.workflows.listar();
-    const ult24 = this.execucao.ultimas24h();
-    const erros = this.execucao.comErroUltimas24h();
-    const jobs = this.rpaJobs.ultimos(500);
+  async resumo() {
+    const wfs = await this.workflows.listar();
+    const ult24 = await this.execucao.ultimas24h();
+    const erros = await this.execucao.comErroUltimas24h();
+    const jobs = await this.rpaJobs.ultimos(500);
     const ult24t = Date.now() - 24 * 60 * 60 * 1000;
     const jobsUlt24 = jobs.filter((j) => new Date(j.iniciadoEm).getTime() >= ult24t);
     const gatilhos = this.contarGatilhos(ult24);
+    const schedulers = await this.schedulers.listar();
 
     return {
       automacoesAtivas: wfs.filter((w) => w.ativo).length,
@@ -32,7 +33,7 @@ export class DashboardAutomacaoService {
       gatilhosMaisAcionados: gatilhos.slice(0, 8),
       economiaTempoProxyMinutos: Math.round(ult24.length * 2.5),
       impactoOperacionalScoreProxy: Math.min(100, 40 + ult24.filter((x) => x.ok).length * 3),
-      cronAgendamentos: this.schedulers.listar().filter((c) => c.ativo).length,
+      cronAgendamentos: schedulers.filter((c) => c.ativo).length,
     };
   }
 

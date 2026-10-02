@@ -1,22 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { GrcWorkspace } from "@/components/grc/grc-workspace";
+import { useCallback, useEffect, useState } from "react";
 import { GrcSection } from "@/components/grc/grc-section";
 import { CosoPillarsBoard } from "@/components/grc/coso-pillars-board";
 import { InternalControlsMatrix } from "@/components/grc/internal-controls-matrix";
 import { ControlEffectivenessChecklist } from "@/components/grc/control-effectiveness-checklist";
 import { GovernanceOrgChart } from "@/components/grc/governance-org-chart";
-import { AuditTrailTable } from "@/components/grc/audit-trail-table";
+import { AuditoriaHubCard } from "@/components/audit-trail/auditoria-hub-card";
 import { Button } from "@/components/ui/button";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
+import { fetchAuditTrail } from "@/lib/api/audit-trail-client";
 import { toast } from "@/lib/toast";
-import { mergeAuditoriaPayloads } from "@/lib/grc/auditoria-map";
-import type { AuditRow } from "@/components/ssma/audit-security-table";
 import { cn } from "@/lib/utils";
 
 export default function GrcGovernancaPage() {
-  const [audRows, setAudRows] = useState<AuditRow[]>([]);
+  const [audResumo, setAudResumo] = useState({ verde: 0, amarelo: 0, vermelho: 0 });
   const [dash, setDash] = useState<Record<string, unknown> | null>(null);
   const [perf, setPerf] = useState<Record<string, unknown> | null>(null);
   const [sol, setSol] = useState<Record<string, unknown> | null>(null);
@@ -31,20 +29,18 @@ export default function GrcGovernancaPage() {
     const df = end.toISOString().slice(0, 10);
     setLoading(true);
     try {
-      const [d, p, s, f, a0, a1, a2] = await Promise.all([
+      const [d, p, s, f, trail] = await Promise.all([
         staffJson<Record<string, unknown>>(`/dashboard?dataInicio=${di}&dataFim=${df}`),
         staffJson<Record<string, unknown>>(`/dashboard-performance?dataInicio=${di}&dataFim=${df}`),
         staffJson<unknown>(`/relatorios/operacional/solicitacoes?dataInicio=${di}&dataFim=${df}`).catch(() => null),
         staffJson<unknown>(`/relatorios/financeiro/faturamento?dataInicio=${di}&dataFim=${df}`).catch(() => null),
-        staffJson<unknown>(`/auditoria?limit=100&order=desc`).catch(() => ({ data: [] })),
-        staffJson<unknown>(`/auditoria?tabela=solicitacoes&limit=60&order=desc`).catch(() => ({ data: [] })),
-        staffJson<unknown>(`/auditoria?tabela=users&limit=40&order=desc`).catch(() => ({ data: [] })),
+        fetchAuditTrail({ limit: 1 }).catch(() => null),
       ]);
       setDash(d);
       setPerf(p);
       setSol(typeof s === "object" && s !== null ? (s as Record<string, unknown>) : null);
       setFat(typeof f === "object" && f !== null ? (f as Record<string, unknown>) : null);
-      setAudRows(mergeAuditoriaPayloads(a0, a1, a2));
+      setAudResumo(trail?.resumo ?? { verde: 0, amarelo: 0, vermelho: 0 });
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Falha ao carregar governança");
     } finally {
@@ -63,17 +59,17 @@ export default function GrcGovernancaPage() {
     (conflitos?.unidadesComISORepetido ?? 0) +
     (conflitos?.tentativas403PorEscopo ?? 0);
   const estr = perf?.estrategicos as { taxaGargaloDetectado?: boolean; ocupacaoPatioPercent?: number | null } | undefined;
-  const updateDelete = useMemo(() => audRows.filter((r) => /UPDATE|DELETE/i.test(r.acao)), [audRows]);
+  const criticas = audResumo.amarelo + audResumo.vermelho;
 
   return (
-    <GrcWorkspace>
+    <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-white">Governança COSO</h1>
           <p className="mt-1 max-w-3xl text-sm text-zinc-500">
             Estrutura de controles internos (ICIF) e linha COSO ERM — leitura de{" "}
-            <code className="text-zinc-600">/dashboard</code>, <code className="text-zinc-600">/dashboard-performance</code>, relatórios e{" "}
-            <code className="text-zinc-600">/auditoria</code>. Metadados de matriz e checklist permanecem no navegador.
+            <code className="text-zinc-600">/dashboard</code>, <code className="text-zinc-600">/dashboard-performance</code> e relatórios.
+            A trilha de auditoria unificada está no menu Auditoria.
           </p>
         </div>
         <Button type="button" variant="outline" size="sm" className="border-indigo-500/40" onClick={() => void load()} disabled={loading}>
@@ -96,10 +92,10 @@ export default function GrcGovernancaPage() {
           warn={(estr?.ocupacaoPatioPercent ?? 0) >= 70}
         />
         <Kpi
-          title="Trilha (UPDATE/DELETE)"
-          value={`${updateDelete.length}`}
-          hint={`Amostras mescladas · ${audRows.length} eventos.`}
-          warn={updateDelete.length > 25}
+          title="Alterações e críticas"
+          value={`${criticas}`}
+          hint={`Amarelo ${audResumo.amarelo} · vermelho ${audResumo.vermelho} · menu Auditoria.`}
+          warn={audResumo.vermelho > 0}
         />
       </div>
 
@@ -133,13 +129,13 @@ export default function GrcGovernancaPage() {
         </GrcSection>
         <GrcSection
           id="auditoria"
-          title="5. Auditoria interna — trilha"
-          subtitle="Eventos sensíveis, alterações em dados críticos e consultas à trilha (GET /auditoria). Visão do auditor."
+          title="5. Auditoria interna"
+          subtitle="Trilha unificada no menu gerencial — verde, amarelo e vermelho"
         >
-          <AuditTrailTable rows={audRows} />
+          <AuditoriaHubCard />
         </GrcSection>
       </div>
-    </GrcWorkspace>
+    </div>
   );
 }
 

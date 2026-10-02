@@ -1,0 +1,21 @@
+---
+description: Menu Manutenção — visual agora; funcionalidade depois
+alwaysApply: true
+---
+
+# Manutenção (menu operacional / tablet)
+
+Menu próprio: `/operador/manutencao`. **Não** misturar com o cadastro MDM (`/cadastros/operacional/equipamentos`).
+
+## Agora (só visual)
+
+O menu já existe na intranet e no tablet: Abastecimento, Equipamentos, Oficina, Pneus e esteiras, Checklist diário, Histórico. Telas de placeholder. **Não** criar API, tabela, OS, abastecimento real nem datas de preventiva no cadastro.
+
+## Quando for a hora de ligar
+
+- Abastecimento: litros, horímetro, equipamento, posto.
+- Equipamentos da empresa: preventiva e corretiva (empilhadeira, reach stacker, RTG).
+- Oficina, pneus, checklist e histórico no mesmo menu.
+- Status operacional **Em Manutenção** (`EM_MANUTENCAO`) no MDM continua — é disponibilidade da máquina, não o plano de preventiva.
+
+Não recolocar última/próxima preventiva na ficha do equipamento.

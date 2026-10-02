@@ -35,16 +35,17 @@ export class MobileJwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('Token mobile inválido');
     }
     if (pl.kind !== 'mobile_access') throw new UnauthorizedException('Token não é mobile');
-    if (!this.devices.dispositivoLiberado(pl.deviceId, pl.sub)) {
+    if (!(await this.devices.dispositivoLiberado(pl.deviceId, pl.sub))) {
       throw new UnauthorizedException('Device não vinculado à sessão');
     }
 
     if (pl.mobileRole === 'MOTORISTA') {
-      const mot = this.motoristas.obterPorId(pl.sub);
+      const mot = await this.motoristas.obterPorId(pl.sub);
       if (!mot || mot.tokenVersion !== pl.tv) throw new UnauthorizedException('Sessão inválida');
       req.mobileUser = {
         sub: mot.id,
         email: mot.email,
+        cpfCnpj: mot.cpfCnpj,
         mobileRole: 'MOTORISTA',
         deviceId: pl.deviceId,
         tv: mot.tokenVersion,
@@ -73,6 +74,7 @@ export class MobileJwtAuthGuard implements CanActivate {
     req.mobileUser = {
       sub: user.id,
       email: user.email,
+      cpfCnpj: user.cpfCnpj,
       mobileRole: pl.mobileRole,
       deviceId: pl.deviceId,
       tv: user.tokenVersion,

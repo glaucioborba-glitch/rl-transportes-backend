@@ -1,0 +1,56 @@
+---
+description: Lab de homologação — demo LAN, perfil de segurança temporário e como voltar no deploy
+alwaysApply: true
+---
+
+# Homologação — máquina de demo (rllab)
+
+Hardware: **i5 3ª geração, 16 GB RAM**. Apresentação **30/09/2026**. Até AWS, **não** tratar como produção.
+
+LAN: `http://IP:3000` (site) e `http://IP:3001` (API). Sem Nginx/HTTPS. Docker `unless-stopped` sobe sozinho no boot.
+
+## Local vs lab (o que alinhar)
+
+O dia a dia **fica em `next dev` / Nest watch** nesta máquina. Não copiar o container de produção do lab para o Windows.
+
+O que precisa ser **o mesmo**: código (git) e, quando for a hora, o banco (pg_dump → restore). O runtime do lab é build Docker; o daqui é dev. Isso é esperado.
+
+## Perfil DEMO (lab agora — LAN HTTP)
+
+Só `.env` / compose. **Não** deixar isso no deploy AWS/HTTPS.
+
+| Chave | Lab (demo) | Deploy / publicação |
+|---|---|---|
+| `AUTH_COOKIE_SECURE` | `0` (cookie em HTTP) | `1` + HTTPS |
+| `CSRF_ENABLED` | `0` | `1` |
+| `NEXT_PUBLIC_CSRF_ENABLED` | pode `1` (front) | `1` |
+| `SECURITY_HEADERS_ENFORCE` | `0` | omitir ou `1` |
+| `PORTAL_HTTP_ONLY_COOKIES` | `1` | **manter `1`** |
+| `PUBLIC_API_URL` / `NEXT_PUBLIC_API_URL` | `http://IP:3001` | URL pública da API |
+| `CORS_ORIGIN` / `PORTAL_PUBLIC_BASE_URL` | `http://IP:3000` | URL pública do site |
+
+MinIO no lab: imagem Bitnami Legacy (oficial sumiu). Produção: S3/MinIO oficial.
+
+## Correções de produto (ficam no código)
+
+Não são “abrir mão de segurança”; são bugs. **Não reverter** no deploy:
+
+- Login Super Admin isento de CSRF (`/auth/super-admin/login`)
+- `GET /auth/me` isento de headers de dispositivo (o middleware Next só manda cookie)
+- `AUTH_COOKIE_SECURE=0` honrado no Nest e no BFF `rl_sa_tenant` (`actingCookieSecure`)
+- Site `:3000` ≠ API `:3001`
+
+## Transferir daqui → lab
+
+1. Commit/push na branch do lab (hoje o lab clona o GitHub; mudanças só daqui não vão sozinhas).
+2. No lab: `git pull` + rebuild do serviço que mudou (`frontend` se for `NEXT_PUBLIC_*` ou page; `backend` se for Nest).
+3. Banco: só se precisar dos cadastros daqui — `pg_dump` local → restore no `rl-postgres`.
+4. IP novo (empresa): `bash ~/trocar-ip-lab.sh` (site `:3000`, API `:3001`).
+5. **Não** copiar patch feito à mão dentro do container; o próximo rebuild apaga. Tem que estar no git.
+
+## Deploy / publicação (devolver segurança)
+
+1. `.env` de produção: tabela da direita (`AUTH_COOKIE_SECURE=1`, `CSRF_ENABLED=1`, headers ligados).
+2. HTTPS no domínio; Super Admin **não** na internet aberta.
+3. Rebuild com `PUBLIC_API_URL` / `CORS_ORIGIN` do domínio (não IP da LAN).
+4. Conferir login staff, portal, Super Admin e **Abrir intranet** em HTTPS antes da reunião de go-live.

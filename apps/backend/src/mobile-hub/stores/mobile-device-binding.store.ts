@@ -1,25 +1,43 @@
 import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
+import { resolveStoreTenantId } from '../../common/stores/store-tenant.util';
+import { TenantContextService } from '../../tenant/tenant-context.service';
 
-/** Device binding (anti‑replay fraco; memória). */
+/** Device binding persistido em PostgreSQL. */
 @Injectable()
 export class MobileDeviceBindingStore {
-  private readonly deviceToSub = new Map<string, string>();
-  private readonly subDevices = new Map<string, Set<string>>();
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenantCtx: TenantContextService,
+  ) {}
 
-  registrar(sub: string, deviceId: string) {
+  private tenantId() {
+    return resolveStoreTenantId(this.tenantCtx);
+  }
+
+  async registrar(sub: string, deviceId: string) {
     const norm = deviceId.trim();
-    this.deviceToSub.set(norm, sub);
-    if (!this.subDevices.has(sub)) this.subDevices.set(sub, new Set());
-    this.subDevices.get(sub)!.add(norm);
+    const tenantId = this.tenantId();
+    await this.prisma.mobileDeviceBinding.upsert({
+      where: { deviceId: norm },
+      create: { tenantId, deviceId: norm, userSub: sub },
+      update: { userSub: sub, tenantId },
+    });
   }
 
-  dispositivosDoUsuario(sub: string): string[] {
-    return [...(this.subDevices.get(sub) ?? [])];
+  async dispositivosDoUsuario(sub: string): Promise<string[]> {
+    const rows = await this.prisma.mobileDeviceBinding.findMany({
+      where: { userSub: sub, tenantId: this.tenantId() },
+      select: { deviceId: true },
+    });
+    return rows.map((r) => r.deviceId);
   }
 
-  dispositivoLiberado(deviceId: string, sub: string): boolean {
+  async dispositivoLiberado(deviceId: string, sub: string): Promise<boolean> {
     const d = deviceId.trim();
-    const owner = this.deviceToSub.get(d);
-    return owner === sub;
+    const row = await this.prisma.mobileDeviceBinding.findUnique({
+      where: { deviceId: d },
+    });
+    return row?.userSub === sub;
   }
 }

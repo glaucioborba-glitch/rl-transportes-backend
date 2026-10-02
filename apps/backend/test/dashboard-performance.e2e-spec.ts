@@ -1,6 +1,7 @@
+import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
+import request = require('supertest');
 import * as bcrypt from 'bcrypt';
 import { Role } from '@prisma/client';
 import { AppModule } from '../src/app.module';
@@ -38,15 +39,13 @@ describe('Dashboard performance (e2e)', () => {
     const hash = await bcrypt.hash(password, 10);
 
     const gerente = await prisma.user.create({
-      data: {
-        email: gerenteEmail,
+      data: { cpfCnpj: cpfCnpjForTestUser(gerenteEmail), email: gerenteEmail,
         password: hash,
         role: Role.GERENTE,
       },
     });
     const cliente = await prisma.user.create({
-      data: {
-        email: clienteEmail,
+      data: { cpfCnpj: cpfCnpjForTestUser(clienteEmail), email: clienteEmail,
         password: hash,
         role: Role.CLIENTE,
       },
@@ -58,7 +57,7 @@ describe('Dashboard performance (e2e)', () => {
 
   afterAll(async () => {
     await prisma.user.deleteMany({
-      where: { email: { in: [gerenteEmail, clienteEmail] } },
+      where: { cpfCnpj: { in: [cpfCnpjForTestUser(gerenteEmail), cpfCnpjForTestUser(clienteEmail)] } },
     });
     await app.close();
   });

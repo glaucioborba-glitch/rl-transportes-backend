@@ -1,20 +1,17 @@
-import { Suspense } from "react";
-import LoginForm from "./login-form";
+import { redirect } from "next/navigation";
 
 export const metadata = {
-  title: "Login | Portal RL Transportes",
+  title: "Intranet | RL Transportes",
 };
 
-export default function LoginPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center bg-[#080a0d] text-slate-400">
-          Carregando…
-        </div>
-      }
-    >
-      <LoginForm />
-    </Suspense>
-  );
+/** `/login` → intranet staff (CPF-only). Portal do cliente: `/portal/login`. */
+export default function IntranetLoginRedirect({
+  searchParams,
+}: {
+  searchParams: Record<string, string | string[] | undefined>;
+}) {
+  const raw = searchParams.next;
+  const next =
+    typeof raw === "string" && raw.startsWith("/") && !raw.startsWith("//") ? raw : null;
+  redirect(next ? `/login/staff?next=${encodeURIComponent(next)}` : "/login/staff");
 }

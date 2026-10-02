@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { fetchRhColaboradorById } from "@/lib/rh/merge-directory";
 import { hashSeed } from "@/lib/rh/hash";
@@ -15,12 +14,13 @@ import { CertificateUploader } from "@/components/rh/certificate-uploader";
 import { RadarCompetencyChart } from "@/components/rh/radar-competency-chart";
 import { TrainingTimeline } from "@/components/rh/training-timeline";
 import { RhCard } from "@/components/rh/rh-card";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 
 export default function RhCompetenciaDetailPage() {
   const params = useParams();
   const idRaw = typeof params.id === "string" ? params.id : Array.isArray(params.id) ? params.id[0] : "";
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [row, setRow] = useState<RhColaboradorDirectoryItem | null>(null);
 
   const load = useCallback(async () => {
@@ -37,9 +37,6 @@ export default function RhCompetenciaDetailPage() {
   if (!row) {
     return (
       <div>
-        <Link href="/rh/competencias" className="text-cyan-400 text-sm">
-          ← Voltar
-        </Link>
         <p className="mt-4 text-zinc-500">Não encontrado.</p>
       </div>
     );
@@ -65,9 +62,6 @@ export default function RhCompetenciaDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link href="/rh/competencias" className="text-sm text-cyan-400 hover:underline">
-        ← Competências
-      </Link>
       <div>
         <h1 className="text-2xl font-bold text-white">{row.nome}</h1>
         <p className="text-sm text-zinc-500">

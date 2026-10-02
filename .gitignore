@@ -9,4 +9,21 @@ logs/
 # Ambiente local (nunca versionar segredos)
 .env
 .env.local
-.env.*.local
+
+# Credenciais e dumps locais de dev (não commitar)
+secrets/
+credenciais-teste*.txt
+dados-teste*.txt
+CODIGO-*.txt
+RELATORIO-AUDITORIA-CORRECOES.md
+tmp-cookies.txt
+.tmp-oci/
+
+# SDK Nitgen/Fingertech (proprietário + SERIAL). Não versionar.
+Impressao/
+apps/bio-agent/sdk/
+apps/print-agent/bin/
+
+# Uploads locais (dev) — produção usa S3
+uploads/
+apps/backend/uploads/

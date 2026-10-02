@@ -18,7 +18,13 @@ export class CockpitTimelineService {
   async fluxo(limite = 80) {
     const sols = await this.prisma.solicitacao.findMany({
       where: { deletedAt: null },
-      include: { portaria: true, gate: true, patio: true, saida: true, cliente: { select: { nome: true } } },
+      include: {
+        portaria: true,
+        gate: true,
+        patio: true,
+        saida: true,
+        cliente: { select: { razaoSocial: true } },
+      },
       orderBy: { updatedAt: 'desc' },
       take: limite,
     });
@@ -60,7 +66,7 @@ export class CockpitTimelineService {
         ];
         return {
           protocolo: s.protocolo,
-          clienteNome: s.cliente.nome,
+          clienteNome: s.cliente.razaoSocial,
           status: s.status,
           atualizadoEm: s.updatedAt.toISOString(),
           etapas,

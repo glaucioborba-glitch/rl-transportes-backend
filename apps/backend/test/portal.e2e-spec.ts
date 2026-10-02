@@ -1,11 +1,14 @@
+import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
+import request = require('supertest');
 import * as bcrypt from 'bcrypt';
 import { Role, StatusSolicitacao, TipoCliente } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
+import { PortalJwtService } from '../src/cx-portais/identity/portal-jwt.service';
+import { clienteE2eDefaults } from './helpers/e2e-cliente.factory';
 
 /** 14 dígitos únicos por execução (evita colisão com smoke/outros e2e). */
 function cnpjUnico(serie: 'a' | 'b') {
@@ -17,6 +20,7 @@ describe('Portal do cliente (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let auth: AuthService;
+  let portalJwt: PortalJwtService;
   const suffix = `${Date.now()}`;
   const email1 = `e2e-p1-${suffix}@local.test`;
   const email2 = `e2e-p2-${suffix}@local.test`;
@@ -46,42 +50,41 @@ describe('Portal do cliente (e2e)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     auth = app.get(AuthService);
+    portalJwt = app.get(PortalJwtService);
     const hash = await bcrypt.hash(password, 10);
 
     const c1 = await prisma.cliente.create({
-      data: {
-        nome: `E2E Cliente1 ${suffix}`,
+      data: clienteE2eDefaults({
+        razaoSocial: `E2E Cliente1 ${suffix}`,
+        nomeFantasia: `Fantasia1 ${suffix}`,
         tipo: TipoCliente.PJ,
         cpfCnpj: cnpjUnico('a'),
         email: `c1-mail-${suffix}@local.test`,
-        telefone: '',
-        endereco: '',
-      },
+        emailNfse: `nfse-c1-${suffix}@local.test`,
+      }),
     });
     const c2 = await prisma.cliente.create({
-      data: {
-        nome: `E2E Cliente2 ${suffix}`,
+      data: clienteE2eDefaults({
+        razaoSocial: `E2E Cliente2 ${suffix}`,
+        nomeFantasia: `Fantasia2 ${suffix}`,
         tipo: TipoCliente.PJ,
         cpfCnpj: cnpjUnico('b'),
         email: `c2-mail-${suffix}@local.test`,
-        telefone: '',
-        endereco: '',
-      },
+        emailNfse: `nfse-c2-${suffix}@local.test`,
+      }),
     });
     cliente1Id = c1.id;
     cliente2Id = c2.id;
 
     const u1 = await prisma.user.create({
-      data: {
-        email: email1,
+      data: { cpfCnpj: cpfCnpjForTestUser(email1), email: email1,
         password: hash,
         role: Role.CLIENTE,
         clienteId: cliente1Id,
       },
     });
     const u2 = await prisma.user.create({
-      data: {
-        email: email2,
+      data: { cpfCnpj: cpfCnpjForTestUser(email2), email: email2,
         password: hash,
         role: Role.CLIENTE,
         clienteId: cliente2Id,
@@ -126,7 +129,7 @@ describe('Portal do cliente (e2e)', () => {
       await prisma.auditoria.deleteMany({
         where: { usuario: { in: [user1Id, user2Id] } },
       });
-      await prisma.user.deleteMany({ where: { email: { in: [email1, email2] } } });
+      await prisma.user.deleteMany({ where: { cpfCnpj: { in: [cpfCnpjForTestUser(email1), cpfCnpjForTestUser(email2)] } } });
     }
     if (prisma && cliente1Id) {
       await prisma.cliente.deleteMany({ where: { id: { in: [cliente1Id, cliente2Id].filter(Boolean) } } });
@@ -134,28 +137,65 @@ describe('Portal do cliente (e2e)', () => {
     if (app) await app.close();
   });
 
-  /** Emite JWT como o login, sem Redis (útil quando ioredis não está disponível no CI). */
+  /** JWT portal (secret dedicado). Staff CLIENTE não autentica mais em /cliente/portal. */
   async function accessTokenCliente1() {
     const u = await prisma.user.findUnique({ where: { id: user1Id } });
     if (!u) throw new Error('user1 não criado no setup');
-    return auth.issueTokens(u).accessToken;
+    return portalJwt.signAccess({
+      sub: u.id,
+      email: u.email,
+      cpfCnpj: u.cpfCnpj,
+      portalPapel: 'CLIENTE',
+      tenantId: u.tenantId || 'default',
+      clienteId: u.clienteId,
+      tv: u.tokenVersion,
+    });
   }
 
-  it('emite accessToken (AuthService.issueTokens) para utilizador CLIENTE', async () => {
+  it('emite accessToken portal para utilizador CLIENTE', async () => {
     const t = await accessTokenCliente1();
     expect(t.length).toBeGreaterThan(20);
   });
 
-  it('GET /portal/solicitacoes retorna apenas solicitações do vínculo', async () => {
+  it('JWT staff CLIENTE não autentica em /cliente/portal', async () => {
+    const u = await prisma.user.findUnique({ where: { id: user1Id } });
+    const staffTok = auth.issueTokens(u!).accessToken;
+    await request(app.getHttpServer())
+      .get(`/cliente/portal/solicitacoes/${solC1PendId}`)
+      .set('Authorization', `Bearer ${staffTok}`)
+      .expect(403);
+  });
+
+  it('GET /cliente/portal/solicitacoes de outro cliente retorna 404 (IDOR)', async () => {
     const token = await accessTokenCliente1();
-    const res = await request(app.getHttpServer())
-      .get('/portal/solicitacoes')
+    await request(app.getHttpServer())
+      .get(`/cliente/portal/solicitacoes/${solC2PendId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+  });
+
+  it('GET /cliente/portal/solicitacoes/:id/vistorias de outro cliente retorna 404 (IDOR)', async () => {
+    const token = await accessTokenCliente1();
+    await request(app.getHttpServer())
+      .get(`/cliente/portal/solicitacoes/${solC2PendId}/vistorias`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+  });
+
+  it('GET /cliente/portal/solicitacoes/:id do próprio cliente retorna 200', async () => {
+    const token = await accessTokenCliente1();
+    await request(app.getHttpServer())
+      .get(`/cliente/portal/solicitacoes/${solC1PendId}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    const ids = (res.body.items as { id: string }[]).map((x) => x.id);
-    expect(ids).toContain(solC1PendId);
-    expect(ids).toContain(solC1AprovId);
-    expect(ids).not.toContain(solC2PendId);
+  });
+
+  it('PATCH aprovar no CX exige identidade (pessoa autorizada)', async () => {
+    const token = await accessTokenCliente1();
+    await request(app.getHttpServer())
+      .patch(`/cliente/portal/solicitacoes/${solC1PendId}/aprovar`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(403);
   });
 
   it('GET /cliente/portal/solicitacoes retorna envelope paginado e escopo do cliente', async () => {
@@ -172,37 +212,4 @@ describe('Portal do cliente (e2e)', () => {
     expect(ids).toContain(solC1PendId);
     expect(ids).not.toContain(solC2PendId);
   });
-
-  it('GET /portal/solicitacoes/:id de outro cliente retorna 403', async () => {
-    const token = await accessTokenCliente1();
-    await request(app.getHttpServer())
-      .get(`/portal/solicitacoes/${solC2PendId}`)
-      .set('Authorization', `Bearer ${token}`)
-      .expect(403);
-  });
-
-  it('GET /portal/solicitacoes/:id com leitura gera rasto READ na auditoria (evento inserido)', async () => {
-    const token = await accessTokenCliente1();
-    await request(app.getHttpServer())
-      .get(`/portal/solicitacoes/${solC1PendId}`)
-      .set('Authorization', `Bearer ${token}`)
-      .expect(200);
-    const reads = await prisma.auditoria.findMany({
-      where: { acao: 'READ', registroId: solC1PendId, usuario: user1Id },
-    });
-    expect(reads.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('PATCH aprovar somente com status PENDENTE', async () => {
-    const token = await accessTokenCliente1();
-    await request(app.getHttpServer())
-      .patch(`/portal/solicitacoes/${solC1AprovId}/aprovar`)
-      .set('Authorization', `Bearer ${token}`)
-      .expect(400);
-    await request(app.getHttpServer())
-      .patch(`/portal/solicitacoes/${solC1PendId}/aprovar`)
-      .set('Authorization', `Bearer ${token}`)
-      .expect(200);
-  });
-
 });

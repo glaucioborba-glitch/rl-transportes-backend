@@ -1,6 +1,7 @@
+import { cpfCnpjForTestUser } from './helpers/e2e-user.factory';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
+import request = require('supertest');
 import * as bcrypt from 'bcrypt';
 import { Role } from '@prisma/client';
 import { AppModule } from '../src/app.module';
@@ -38,10 +39,10 @@ describe('Dashboard financeiro executivo (e2e)', () => {
     const hash = await bcrypt.hash(password, 10);
 
     const uGe = await prisma.user.create({
-      data: { email: emailGe, password: hash, role: Role.GERENTE },
+      data: { cpfCnpj: cpfCnpjForTestUser(emailGe), email: emailGe, password: hash, role: Role.GERENTE },
     });
     const uOp = await prisma.user.create({
-      data: { email: emailOp, password: hash, role: Role.OPERADOR_GATE },
+      data: { cpfCnpj: cpfCnpjForTestUser(emailOp), email: emailOp, password: hash, role: Role.OPERADOR_GATE },
     });
     geId = uGe.id;
     opId = uOp.id;

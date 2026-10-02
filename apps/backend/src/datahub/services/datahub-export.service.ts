@@ -25,7 +25,7 @@ function toCsv(rows: Record<string, unknown>[]): string {
 export class DatahubExportService {
   constructor(private readonly dw: DatahubDwStore) {}
 
-  exportFatos(query: {
+  async exportFatos(query: {
     formato?: 'json' | 'csv';
     page?: number;
     limit?: number;
@@ -33,6 +33,7 @@ export class DatahubExportService {
     from?: string;
     to?: string;
   }) {
+    await this.dw.ensureFatosFresh();
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 50, 500);
     const nome = query.fato as NomeFato | undefined;

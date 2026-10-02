@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { StringValue } from 'ms';
+import type { JwtPayload } from '../../auth/strategies/jwt.strategy';
 import type { PortalAccessTokenPayload, PortalRefreshTokenPayload } from '../types/cx-portal.types';
 
 @Injectable()
@@ -55,8 +56,8 @@ export class PortalJwtService {
   }
 
   /** Valida JWT corporativo (staff). */
-  verifyStaffAccess(token: string): { sub: string; email: string; role: string; tv?: number } {
+  verifyStaffAccess(token: string): JwtPayload {
     const secret = this.config.get<string>('secrets.jwtSecret') ?? this.config.getOrThrow<string>('JWT_SECRET');
-    return this.jwt.verify(token, { secret });
+    return this.jwt.verify<JwtPayload>(token, { secret });
   }
 }

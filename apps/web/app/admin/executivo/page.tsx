@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { staffJson } from "@/lib/api/staff-client";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { monthsBackYm, currentPeriodoYM } from "@/lib/admin/dates";
 import { lastNDays } from "@/lib/admin/dates";
@@ -10,9 +11,10 @@ import { AdminSparkline } from "@/components/admin/admin-sparkline";
 import { GlobalRiskMatrix } from "@/components/admin/global-risk-matrix";
 import { ContractCard } from "@/components/admin/contract-card";
 import { SlaGauge } from "@/components/admin/sla-gauge";
+import { formatBRL } from "@/lib/financeiro/format";
 
 export default function AdminExecutivoPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [fin, setFin] = useState<{
     inadPercent: number | null;
     pendente: number | null;
@@ -85,7 +87,7 @@ export default function AdminExecutivoPage() {
         <ExecutiveTile label="SLA interno (modelo)" value={`${slaInterno}%`} sub="RH/TI/Ops · calculado no front" />
         <ExecutiveTile
           label="Custo médio / operação"
-          value={perf?.custoOp != null ? perf.custoOp.toFixed(2) : "—"}
+          value={perf?.custoOp != null ? formatBRL(perf.custoOp) : "—"}
           sub={perf?.ciclo != null ? `Ciclo médio ${perf.ciclo.toFixed(1)}h` : "Performance"}
         />
       </div>

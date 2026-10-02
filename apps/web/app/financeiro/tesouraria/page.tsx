@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { toast } from "@/lib/toast";
 import { defaultRange90d, formatBRL, parseDecimal } from "@/lib/financeiro/format";
@@ -9,15 +10,7 @@ import { FinanceStatusBadge } from "@/components/financeiro/finance-status-badge
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-
-type AuditRow = {
-  id: string;
-  tabela: string;
-  acao: string;
-  usuario: string;
-  createdAt: string;
-  registroId: string;
-};
+import { AuditoriaHubCard } from "@/components/audit-trail/auditoria-hub-card";
 
 /** Extrato simulado (somente front) */
 const MOCK_EXTRATO = [
@@ -31,12 +24,10 @@ export default function TesourariaPage() {
   const pi = di.slice(0, 7);
   const pf = df.slice(0, 7);
   const user = useStaffAuthStore((s) => s.user);
-  const ok = user?.role === "ADMIN" || user?.role === "GERENTE";
+  const ok = isIntranetGestorRole(user?.role);
 
   const [dash, setDash] = useState<Record<string, unknown> | null>(null);
   const [boletosPagos, setBoletosPagos] = useState(0);
-  const [audFat, setAudFat] = useState<AuditRow[]>([]);
-  const [audBol, setAudBol] = useState<AuditRow[]>([]);
   const [recoState, setRecoState] = useState<Record<string, string>>({});
   const [busca, setBusca] = useState("");
 
@@ -63,13 +54,6 @@ export default function TesourariaPage() {
         if (r.items.length < 25) break;
       }
       setBoletosPagos(paid);
-
-      const [a1, a2] = await Promise.all([
-        staffJson<{ data: AuditRow[]; meta?: { total: number } }>(`/auditoria?tabela=faturamentos&limit=30`),
-        staffJson<{ data: AuditRow[] }>(`/auditoria?tabela=boletos&limit=30`),
-      ]);
-      setAudFat(a1.data ?? []);
-      setAudBol(a2.data ?? []);
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Erro tesouraria");
     }
@@ -239,34 +223,11 @@ export default function TesourariaPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-12 gap-4">
-        <Card className="col-span-12 border-zinc-800 bg-zinc-900/70 lg:col-span-6">
-          <CardHeader>
-            <CardTitle className="text-white">Auditoria · faturamentos</CardTitle>
-          </CardHeader>
-          <CardContent className="max-h-72 space-y-2 overflow-y-auto text-xs">
-            {audFat.map((r) => (
-              <div key={r.id} className="rounded border border-zinc-800 p-2 text-zinc-400">
-                <span className="text-zinc-500">{new Date(r.createdAt).toLocaleString("pt-BR")}</span> — {r.acao} — reg{" "}
-                <span className="font-mono">{r.registroId.slice(0, 8)}…</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-        <Card className="col-span-12 border-zinc-800 bg-zinc-900/70 lg:col-span-6">
-          <CardHeader>
-            <CardTitle className="text-white">Auditoria · boletos</CardTitle>
-          </CardHeader>
-          <CardContent className="max-h-72 space-y-2 overflow-y-auto text-xs">
-            {audBol.map((r) => (
-              <div key={r.id} className="rounded border border-zinc-800 p-2 text-zinc-400">
-                <span className="text-zinc-500">{new Date(r.createdAt).toLocaleString("pt-BR")}</span> — {r.acao} — reg{" "}
-                <span className="font-mono">{r.registroId.slice(0, 8)}…</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
+      <AuditoriaHubCard
+        titulo="Auditoria de tesouraria"
+        descricao="Faturamentos e boletos deixaram de ter dump nesta tela. A trilha classificada (incluindo ações que pedem senha) está no menu Auditoria."
+        q="faturamentos"
+      />
     </div>
   );
 }

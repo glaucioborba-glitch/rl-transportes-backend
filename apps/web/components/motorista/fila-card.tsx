@@ -1,20 +1,26 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { buildContainerPrimaryDisplay } from "@/lib/container-display";
+import { ContainerPrimaryHeading, ProtocolRefLabel } from "@/components/shared/operation-identity";
 
 export function FilaCard({
+  containerIsos,
   protocolo,
   statusLabel,
   subtitle,
   highlight,
   children,
 }: {
-  protocolo: string;
+  containerIsos: string[];
+  protocolo?: string | null;
   statusLabel: string;
   subtitle?: string;
   highlight?: boolean;
   children?: React.ReactNode;
 }) {
+  const display = buildContainerPrimaryDisplay(containerIsos);
+
   return (
     <div
       className={cn(
@@ -24,8 +30,9 @@ export function FilaCard({
           : "border-white/12 bg-black/35",
       )}
     >
-      <p className="font-mono text-lg font-bold text-white">{protocolo}</p>
-      <p className="mt-1 text-base font-semibold text-[var(--accent)]">{statusLabel}</p>
+      {protocolo ? <ProtocolRefLabel protocolo={protocolo} className="mb-1" /> : null}
+      <ContainerPrimaryHeading display={display} size="lg" />
+      <p className="mt-2 text-base font-semibold text-[var(--accent)]">{statusLabel}</p>
       {subtitle ? <p className="mt-2 text-sm text-slate-400">{subtitle}</p> : null}
       {children}
     </div>

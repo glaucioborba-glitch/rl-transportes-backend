@@ -1,0 +1,44 @@
+import { Module } from '@nestjs/common';
+import { AuditLogModule } from '../../audit-log/audit-log.module';
+import { AuditoriaModule } from '../../auditoria/auditoria.module';
+import { PrismaModule } from '../../prisma/prisma.module';
+import { AgendamentosModule } from '../../agendamentos/agendamentos.module';
+import { RedisModule } from '../../redis/redis.module';
+import { SecurityEventsModule } from '../../security-center/security-events.module';
+import { SolicitacoesV2Service } from './solicitacoes-v2.service';
+import { SolicitacaoAnexoStorageService } from './solicitacao-anexo.storage';
+import { SolicitacoesV2Controller } from './solicitacoes-v2.controller';
+import { YardAllocationModule } from '../../yard-allocation/yard-allocation.module';
+import { HoldReleaseModule } from '../../hold-release/hold-release.module';
+import { UnidadeProcessoModule } from '../../unidade-processo/unidade-processo.module';
+import { CatalogoMotoristasExternosModule } from '../../catalogo-motoristas-externos/catalogo-motoristas-externos.module';
+import { CatalogoNaviosModule } from '../../catalogo-navios/catalogo-navios.module';
+import { TenantModule } from '../../tenant/tenant.module';
+import { ContaCorrenteModule } from '../../conta-corrente/conta-corrente.module';
+import { ArmazenagemFaturamentoModule } from '../../armazenagem-faturamento/armazenagem-faturamento.module';
+import { PixQuitacaoSaidaService } from './pix-quitacao-saida.service';
+import { CadastrosModule } from '../../cadastros/cadastros.module';
+
+@Module({
+  imports: [
+    PrismaModule,
+    AuditoriaModule,
+    AuditLogModule,
+    AgendamentosModule,
+    RedisModule,
+    SecurityEventsModule,
+    YardAllocationModule,
+    HoldReleaseModule,
+    UnidadeProcessoModule,
+    CatalogoMotoristasExternosModule,
+    CatalogoNaviosModule,
+    TenantModule,
+    ContaCorrenteModule,
+    ArmazenagemFaturamentoModule,
+    CadastrosModule,
+  ],
+  controllers: [SolicitacoesV2Controller],
+  providers: [SolicitacoesV2Service, SolicitacaoAnexoStorageService, PixQuitacaoSaidaService],
+  exports: [SolicitacoesV2Service, SolicitacaoAnexoStorageService, PixQuitacaoSaidaService],
+})
+export class SolicitacoesV2Module {}

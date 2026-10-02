@@ -7,10 +7,13 @@ import type { NomeDim, NomeFato } from '../datahub.types';
 export class DatahubDwService {
   constructor(private readonly store: DatahubDwStore) {}
 
-  catalogoFatos() {
+  async catalogoFatos() {
+    await this.store.ensureFatosFresh();
     return {
       geradoEm: new Date().toISOString(),
       ultimaCargaEm: this.store.ultimaCargaEm,
+      fonteFatos: 'postgresql_materialized_views',
+      cacheL1TtlSec: 300,
       catalogo: DW_CATALOGO_FATOS,
       amostras: this.store.fatos,
     };
@@ -25,7 +28,8 @@ export class DatahubDwService {
     };
   }
 
-  obterFato(nome: NomeFato): Record<string, unknown>[] {
+  async obterFato(nome: NomeFato): Promise<Record<string, unknown>[]> {
+    await this.store.ensureFatosFresh();
     return this.store.fatos[nome] ?? [];
   }
 

@@ -16,4 +16,8 @@ describe('br-documents', () => {
   it('valida CNPJ conhecido', () => {
     expect(validateCnpjDigits('11222333000181')).toBe(true);
   });
+
+  it('rejeita CNPJ inválido', () => {
+    expect(validateCnpjDigits('11111111111111')).toBe(false);
+  });
 });

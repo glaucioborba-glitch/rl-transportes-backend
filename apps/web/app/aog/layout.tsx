@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { AogShell } from "@/components/aog/aog-shell";
+import { IntranetShell } from "@/components/intranet/intranet-shell";
 
 export default function AogLayout({ children }: { children: ReactNode }) {
-  return <AogShell>{children}</AogShell>;
+  return <IntranetShell>{children}</IntranetShell>;
 }

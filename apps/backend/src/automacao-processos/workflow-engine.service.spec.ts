@@ -1,20 +1,51 @@
 import { WorkflowEngineService } from './workflow-engine/workflow-engine.service';
-import { AutomacaoWorkflowStore } from './stores/automacao-workflow.store';
-import { AutomacaoExecucaoStore } from './stores/automacao-execucao.store';
+import type { AutomacaoWorkflowStore } from './stores/automacao-workflow.store';
+import type { AutomacaoExecucaoStore } from './stores/automacao-execucao.store';
 
 describe('WorkflowEngineService', () => {
   let engine: WorkflowEngineService;
-  let store: AutomacaoWorkflowStore;
-  let exec: AutomacaoExecucaoStore;
+  let store: jest.Mocked<AutomacaoWorkflowStore>;
+  let exec: jest.Mocked<AutomacaoExecucaoStore>;
 
   beforeEach(() => {
-    store = new AutomacaoWorkflowStore();
-    exec = new AutomacaoExecucaoStore();
+    const workflows = new Map<string, ReturnType<typeof baseWorkflow>>();
+
+    store = {
+      listar: jest.fn(async () => [...workflows.values()]),
+      porEvento: jest.fn(async (evento: string) =>
+        [...workflows.values()].filter((w) => w.ativo && w.eventoDisparo === evento),
+      ),
+      obter: jest.fn(async (id: string) => workflows.get(id)),
+      salvar: jest.fn(async (w) => {
+        const full = baseWorkflow(w);
+        workflows.set(full.id, full);
+        return full;
+      }),
+      remover: jest.fn(async (id: string) => workflows.delete(id)),
+      definirAtivo: jest.fn(async (id: string, ativo: boolean) => {
+        const w = workflows.get(id);
+        if (!w) return undefined;
+        w.ativo = ativo;
+        return w;
+      }),
+    } as unknown as jest.Mocked<AutomacaoWorkflowStore>;
+
+    const logs: Array<{ workflowId?: string }> = [];
+    exec = {
+      registrar: jest.fn(async (entry) => {
+        const log = { id: 'log-1', criadoEm: new Date().toISOString(), ...entry };
+        logs.push(log);
+        return log;
+      }),
+      ultimas24h: jest.fn(async () => logs as never),
+      comErroUltimas24h: jest.fn(async () => []),
+    } as unknown as jest.Mocked<AutomacaoExecucaoStore>;
+
     engine = new WorkflowEngineService(store, exec);
   });
 
   it('processarEvento aplica primeiro workflow por prioridade', async () => {
-    store.salvar({
+    await store.salvar({
       nome: 'B',
       eventoDisparo: 'gate.registrado',
       condicoes: [],
@@ -22,7 +53,7 @@ describe('WorkflowEngineService', () => {
       prioridade: 3,
       ativo: true,
     });
-    store.salvar({
+    await store.salvar({
       nome: 'A',
       eventoDisparo: 'gate.registrado',
       condicoes: [],
@@ -33,14 +64,15 @@ describe('WorkflowEngineService', () => {
 
     await engine.processarEvento('gate.registrado', { x: 1 });
 
-    expect(exec.logs.length).toBe(1);
-    expect(exec.logs[0].workflowId).toBeDefined();
-    const w = store.obter(exec.logs[0].workflowId!);
+    expect(exec.registrar).toHaveBeenCalledTimes(1);
+    const call = exec.registrar.mock.calls[0][0];
+    expect(call.workflowId).toBeDefined();
+    const w = await store.obter(call.workflowId!);
     expect(w?.nome).toBe('A');
   });
 
-  it('testar usa rascunho', () => {
-    const r = engine.testar({
+  it('testar usa rascunho', async () => {
+    const r = await engine.testar({
       eventoDisparo: 'boleto.pago',
       payload: { valor: 2000 },
       rascunho: {
@@ -56,3 +88,15 @@ describe('WorkflowEngineService', () => {
     expect(r.acoes.some((a) => a.tipo === 'sugerir_nfse')).toBe(true);
   });
 });
+
+function baseWorkflow(
+  w: Omit<import('./automacao.types').WorkflowDef, 'id' | 'criadoEm' | 'atualizadoEm'> & { id?: string },
+) {
+  const now = new Date().toISOString();
+  return {
+    ...w,
+    id: w.id ?? `wf-${Math.random().toString(36).slice(2)}`,
+    criadoEm: now,
+    atualizadoEm: now,
+  };
+}

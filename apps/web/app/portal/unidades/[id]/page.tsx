@@ -53,14 +53,14 @@ export default function UnidadeDetailPage() {
 
   if (loading || !solicitacao || !unidade) {
     return (
-      <main className="mx-auto max-w-7xl px-4 py-8">
+      <main className="mx-auto w-[90%] px-4 py-8">
         <Skeleton className="h-40 w-full" />
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-7xl space-y-6 px-4 py-8">
+    <main className="mx-auto w-[90%] space-y-6 px-4 py-8">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold text-white">{unidade.numeroIso}</h1>

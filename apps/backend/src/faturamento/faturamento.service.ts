@@ -20,6 +20,7 @@ import { UpdateBoletoDto } from './dto/update-boleto.dto';
 import { EmitirNfseDto } from '../nfse/dto/emitir-nfse.dto';
 import { CancelarNfseDto } from '../nfse/dto/cancelar-nfse.dto';
 import { PRISMA_SERIALIZABLE_TX } from '../prisma/transaction-options';
+import { HoldReleaseService } from '../hold-release/hold-release.service';
 
 @Injectable()
 export class FaturamentoService {
@@ -29,6 +30,7 @@ export class FaturamentoService {
     private readonly prisma: PrismaService,
     private readonly auditoria: AuditoriaService,
     private readonly nfseService: NfseService,
+    private readonly holdRelease: HoldReleaseService,
   ) {}
 
   private isStaff(actor: AuthUser) {
@@ -208,7 +210,7 @@ export class FaturamentoService {
         take: Math.min(limit, 100),
         orderBy: { createdAt: 'desc' },
         include: {
-          cliente: { select: { id: true, nome: true, email: true } },
+          cliente: { select: { id: true, razaoSocial: true, email: true } },
           itens: true,
           solicitacoesVinculadas: { include: { solicitacao: { select: { id: true, protocolo: true, status: true } } } },
           _count: { select: { nfsEmitidas: true, boletos: true } },
@@ -384,6 +386,13 @@ export class FaturamentoService {
           },
           tx,
         );
+        const pago = String(dto.statusPagamento).toLowerCase() === 'pago';
+        if (pago && current.faturamento?.clienteId) {
+          await this.holdRelease.releaseFinancialHoldsForCliente(
+            current.faturamento.clienteId,
+            actorUserId,
+          );
+        }
         return updated;
       },
       PRISMA_SERIALIZABLE_TX,
@@ -461,7 +470,7 @@ export class FaturamentoService {
     const b = await this.prisma.boleto.findFirst({
       where: { id: boletoId, faturamento: { clienteId: actor.clienteId } },
       include: {
-        faturamento: { include: { cliente: { select: { id: true, nome: true } } } },
+        faturamento: { include: { cliente: { select: { id: true, razaoSocial: true } } } },
       },
     });
     if (!b) throw new NotFoundException('Boleto não encontrado');

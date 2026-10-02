@@ -11,6 +11,10 @@ export interface AuditoriaParams {
   usuario: string;
   dadosAntes?: unknown;
   dadosDepois?: unknown;
+  /** Chave operacional v2 — gravada em `dadosDepois`/`dadosAntes` para relatórios e timeline. */
+  solicitacaoId?: string;
+  /** Delta campo a campo (ex.: mudança de status). */
+  deltas?: Array<{ campo: string; antes: unknown; depois: unknown }>;
   ip?: string;
   userAgent?: string;
 }
@@ -43,7 +47,40 @@ export class AuditoriaService {
    */
   async registrar(params: AuditoriaParams, tx?: Prisma.TransactionClient) {
     const db = tx ?? this.prisma;
-    const { tabela, registroId, acao, usuario, dadosAntes, dadosDepois, ip, userAgent } = params;
+    const {
+      tabela,
+      registroId,
+      acao,
+      usuario,
+      dadosAntes,
+      dadosDepois,
+      solicitacaoId,
+      deltas,
+      ip,
+      userAgent,
+    } = params;
+
+    const enrich = (raw: unknown): unknown => {
+      const hasDeltas = deltas !== undefined && deltas.length > 0;
+      if (solicitacaoId === undefined && !hasDeltas) return raw;
+      if (raw === undefined || raw === null) {
+        const o: Record<string, unknown> = {};
+        if (solicitacaoId !== undefined) o.solicitacaoId = solicitacaoId;
+        if (deltas !== undefined && deltas.length > 0) o.deltas = deltas;
+        return o;
+      }
+      if (typeof raw === 'object' && !Array.isArray(raw)) {
+        const o = { ...(raw as Record<string, unknown>) };
+        if (solicitacaoId !== undefined) o.solicitacaoId = solicitacaoId;
+        if (deltas !== undefined && deltas.length > 0) o.deltas = deltas;
+        return o;
+      }
+      return {
+        valor: raw,
+        ...(solicitacaoId !== undefined ? { solicitacaoId } : {}),
+        ...(deltas !== undefined && deltas.length > 0 ? { deltas } : {}),
+      };
+    };
 
     const data: Prisma.AuditoriaUncheckedCreateInput = {
       tabela,
@@ -53,11 +90,11 @@ export class AuditoriaService {
     };
 
     if (dadosAntes !== undefined && dadosAntes !== null) {
-      data.dadosAntes = withRequestContext(dadosAntes, ip, userAgent);
+      data.dadosAntes = withRequestContext(enrich(dadosAntes), ip, userAgent);
     }
 
     if (dadosDepois !== undefined && dadosDepois !== null) {
-      data.dadosDepois = withRequestContext(dadosDepois, ip, userAgent);
+      data.dadosDepois = withRequestContext(enrich(dadosDepois), ip, userAgent);
     }
 
     try {

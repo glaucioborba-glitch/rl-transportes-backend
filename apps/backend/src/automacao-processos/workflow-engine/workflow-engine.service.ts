@@ -19,32 +19,34 @@ export class WorkflowEngineService {
     private readonly execucao: AutomacaoExecucaoStore,
   ) {}
 
-  listar(): WorkflowDef[] {
+  async listar(): Promise<WorkflowDef[]> {
     return this.store.listar();
   }
 
-  criarOuAtualizar(w: Omit<WorkflowDef, 'id' | 'criadoEm' | 'atualizadoEm'> & { id?: string }): WorkflowDef {
+  async criarOuAtualizar(
+    w: Omit<WorkflowDef, 'id' | 'criadoEm' | 'atualizadoEm'> & { id?: string },
+  ): Promise<WorkflowDef> {
     return this.store.salvar(w);
   }
 
-  remover(id: string): boolean {
+  async remover(id: string): Promise<boolean> {
     return this.store.remover(id);
   }
 
-  definirAtivo(id: string, ativo: boolean): WorkflowDef | undefined {
+  async definirAtivo(id: string, ativo: boolean): Promise<WorkflowDef | undefined> {
     return this.store.definirAtivo(id, ativo);
   }
 
   /** Simula um workflow sem persistir (ou usa rascunho inline). */
-  testar(params: {
+  async testar(params: {
     eventoDisparo: string;
     payload: Record<string, unknown>;
     rascunho?: Omit<WorkflowDef, 'id' | 'criadoEm' | 'atualizadoEm'> & { id?: string };
-  }): {
+  }): Promise<{
     aplicouWorkflow: boolean;
     workflowNome?: string;
     acoes: AcaoSimuladaResultado[];
-  } {
+  }> {
     const wf: WorkflowDef | null = params.rascunho
       ? ({
           id: 'draft',
@@ -63,7 +65,7 @@ export class WorkflowEngineService {
       ? wf.eventoDisparo === params.eventoDisparo && wf.ativo
         ? [wf]
         : []
-      : this.store.porEvento(params.eventoDisparo);
+      : await this.store.porEvento(params.eventoDisparo);
 
     if (!candidatos.length) {
       return { aplicouWorkflow: false, acoes: [] };
@@ -89,7 +91,7 @@ export class WorkflowEngineService {
 
   /** Executa ações de um workflow específico (ex.: encadeamento por regra). */
   async executarWorkflowPorId(workflowId: string, payload: Record<string, unknown>, maxRetries = 2): Promise<boolean> {
-    const workflow = this.store.obter(workflowId);
+    const workflow = await this.store.obter(workflowId);
     if (!workflow?.ativo) return false;
 
     const acoesResumo: string[] = [];
@@ -121,7 +123,7 @@ export class WorkflowEngineService {
       }
     }
 
-    this.execucao.registrar({
+    await this.execucao.registrar({
       tipo: 'workflow',
       evento: `workflowId:${workflowId}`,
       workflowId,
@@ -142,7 +144,7 @@ export class WorkflowEngineService {
 
   /** Dispara workflows para evento real (não destrutivo). */
   async processarEvento(evento: string, payload: Record<string, unknown>, maxRetries = 2): Promise<void> {
-    const candidatos = this.store.porEvento(evento);
+    const candidatos = await this.store.porEvento(evento);
     const ordenados = [...candidatos].sort((a, b) => a.prioridade - b.prioridade);
 
     for (const workflow of ordenados) {
@@ -178,7 +180,7 @@ export class WorkflowEngineService {
         }
       }
 
-      this.execucao.registrar({
+      await this.execucao.registrar({
         tipo: 'workflow',
         evento,
         workflowId: workflow.id,

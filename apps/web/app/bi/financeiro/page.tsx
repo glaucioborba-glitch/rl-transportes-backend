@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { BiWorkspace } from "@/components/bi/bi-workspace";
 import { BiSection } from "@/components/bi/bi-section";
 import { MarginRadarChart } from "@/components/bi/margin-radar-chart";
 import { AbcHybridMatrix, type AbcBubble } from "@/components/bi/abc-hybrid-matrix";
@@ -10,8 +9,10 @@ import { FinancialForecastChart } from "@/components/bi/financial-forecast-chart
 import { StrategicRiskBoard } from "@/components/bi/strategic-risk-board";
 import { ApiError, staffJson } from "@/lib/api/staff-client";
 import { toast } from "@/lib/toast";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { Button } from "@/components/ui/button";
+import { formatBRL } from "@/lib/financeiro/format";
 
 type SimuladorComercial = {
   impactoReceitaLinear: number;
@@ -29,7 +30,7 @@ const TOC = [
 ] as const;
 
 export default function BiFinanceiroPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [fin, setFin] = useState<Record<string, unknown> | null>(null);
   const [seriesT, setSeriesT] = useState<Record<string, unknown> | null>(null);
   const [ind, setInd] = useState<Record<string, unknown> | null>(null);
@@ -166,9 +167,7 @@ export default function BiFinanceiroPage() {
       label: "Próx. mês · faturamento (API)",
       value:
         inad?.forecastFaturamentoProximoMes != null
-          ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(
-              inad.forecastFaturamentoProximoMes,
-            )
+          ? formatBRL(inad.forecastFaturamentoProximoMes)
           : "—",
       tone: "ok" as const,
     },
@@ -196,14 +195,14 @@ export default function BiFinanceiroPage() {
 
   if (!allowed) {
     return (
-      <BiWorkspace>
+      <div>
         <p className="text-center text-amber-400">Acesso restrito.</p>
-      </BiWorkspace>
+      </div>
     );
   }
 
   return (
-    <BiWorkspace>
+    <div>
       <div className="flex flex-col gap-6 lg:flex-row">
         <aside className="lg:w-44 lg:shrink-0">
           <div className="sticky top-24 rounded-xl border border-white/10 bg-[#0a1018] p-3 text-[11px]">
@@ -240,7 +239,7 @@ export default function BiFinanceiroPage() {
                   <span className="text-zinc-500">Ticket médio:</span>{" "}
                   <span className="font-mono text-white">
                     {snap?.mediaTicketPorSolicitacao != null
-                      ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(snap.mediaTicketPorSolicitacao)
+                      ? formatBRL(snap.mediaTicketPorSolicitacao)
                       : "—"}
                   </span>
                 </p>
@@ -248,7 +247,7 @@ export default function BiFinanceiroPage() {
                   <span className="text-zinc-500">Faturamento / container:</span>{" "}
                   <span className="font-mono text-white">
                     {rent?.faturamentoPorContainer != null
-                      ? new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(rent.faturamentoPorContainer)
+                      ? formatBRL(rent.faturamentoPorContainer)
                       : "—"}
                   </span>
                 </p>
@@ -280,13 +279,13 @@ export default function BiFinanceiroPage() {
                 <p className="text-zinc-400">
                   Δ receita linear:{" "}
                   <span className="font-mono text-white">
-                    {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(sim.impactoReceitaLinear)}
+                    {formatBRL(sim.impactoReceitaLinear)}
                   </span>
                 </p>
                 <p className="text-zinc-400">
                   Volume estimado: <span className="font-mono text-white">{sim.volumeEstimado?.toFixed?.(0) ?? sim.volumeEstimado}</span> · receita nova:{" "}
                   <span className="font-mono text-white">
-                    {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(sim.receitaNovaEstimada)}
+                    {formatBRL(sim.receitaNovaEstimada)}
                   </span>
                 </p>
                 <p className="text-[11px] text-zinc-600">Elasticidade aplicada (API): {sim.elasticidadeAplicada?.toFixed?.(4) ?? sim.elasticidadeAplicada}</p>
@@ -311,6 +310,6 @@ export default function BiFinanceiroPage() {
           </BiSection>
         </div>
       </div>
-    </BiWorkspace>
+    </div>
   );
 }

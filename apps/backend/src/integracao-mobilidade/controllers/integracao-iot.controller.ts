@@ -18,7 +18,7 @@ export class IntegracaoIotController {
     description:
       'Requer X-Integracao-Interno. Sensores: ocupacao de patio, temperatura, vigilancia.',
   })
-  sensor(@Body() dto: IotSensorDto) {
+  async sensor(@Body() dto: IotSensorDto) {
     return this.store.add({
       tipo: dto.tipo,
       valor: dto.valor,

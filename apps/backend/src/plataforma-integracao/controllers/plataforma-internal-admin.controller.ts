@@ -53,21 +53,21 @@ export class PlataformaInternalAdminController {
   constructor(private readonly clients: PlataformaApiClientStore) {}
 
   @Get('api-clients')
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @Permissions('plataforma:api:write')
   @ApiOperation({ summary: 'Listar API Keys corporativas (sem exibir secret)' })
-  listarKeys() {
-    const list = this.clients.listar().map(({ secret: _s, ...rest }) => rest);
+  async listarKeys() {
+    const list = (await this.clients.listar()).map(({ secret: _s, ...rest }) => rest);
     return { success: true, data: list };
   }
 
   @Post('api-clients')
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.SUPER_ADMIN)
   @Permissions('plataforma:api:write')
   @ApiOperation({ summary: 'Criar novo par API Key + secret para parceiro externo' })
-  criar(@Body() dto: CriarApiClientePlataformaDto) {
+  async criar(@Body() dto: CriarApiClientePlataformaDto) {
     try {
-      const c = this.clients.criarClienteApi({
+      const c = await this.clients.criarClienteApi({
         apiKey: dto.apiKey,
         secret: dto.secret,
         label: dto.label,

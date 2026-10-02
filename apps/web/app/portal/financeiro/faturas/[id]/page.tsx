@@ -3,23 +3,40 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PortalTable } from "@/components/portal/portal-table";
-import { ApiError, fetchFaturamento } from "@/lib/api/portal-client";
+import { FaturaArmazenagemLinks } from "@/components/portal/fatura-armazenagem-links";
+import { ApiError, fetchFaturamento, fetchPortalDashboard, type PortalFatEnvelope } from "@/lib/api/portal-client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/lib/toast";
+import { formatBRL } from "@/lib/financeiro/format";
+import { isLayoutPixPortal } from "@/lib/condicao-pagamento-portal";
 
 export default function FaturaDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const [row, setRow] = useState<Record<string, unknown> | null>(null);
+  const [row, setRow] = useState<PortalFatEnvelope | null>(null);
+  const [layoutPix, setLayoutPix] = useState(false);
 
   useEffect(() => {
     if (!id) return;
     void (async () => {
       try {
-        setRow(await fetchFaturamento(id));
+        const [fat, dash] = await Promise.all([
+          fetchFaturamento(id),
+          fetchPortalDashboard({ recentPage: 1, recentLimit: 1 }).catch(() => null),
+        ]);
+        setRow(fat);
+        if (dash) {
+          setLayoutPix(
+            isLayoutPixPortal({
+              statusCadastro: dash.statusCadastro ?? null,
+              condicaoPagamento: dash.condicaoPagamento ?? null,
+            }),
+          );
+        }
       } catch (e) {
         toast.error(e instanceof ApiError ? e.message : "Erro");
         router.push("/portal/financeiro");
@@ -29,33 +46,51 @@ export default function FaturaDetailPage() {
 
   if (!row) {
     return (
-      <main className="mx-auto max-w-7xl px-4 py-8">
+      <main className="mx-auto w-[90%] px-4 py-8">
         <Skeleton className="h-40 w-full" />
       </main>
     );
   }
 
-  const itens = (row.itens as Record<string, unknown>[] | undefined) ?? [];
-  const nfs = (row.nfsEmitidas as { id?: string; numeroNfe?: string; statusIpm?: string }[] | undefined) ?? [];
-  const sols = (row.solicitacoesVinculadas as { solicitacao?: { id?: string; protocolo?: string } }[] | undefined) ?? [];
+  const itens = row.itens ?? [];
+  const nfs = row.nfsEmitidas ?? [];
+  const boletos = row.boletos ?? [];
+  const sols = row.solicitacoesVinculadas ?? [];
+  const numero = row.numeroFat || `FAT · ${row.periodo}`;
 
   return (
-    <main className="mx-auto max-w-7xl space-y-6 px-4 py-8">
+    <main className="mx-auto w-[90%] space-y-6 px-4 py-8">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold text-white">Fatura {String(row.periodo)}</h1>
+          <h1 className="text-2xl font-bold text-white">{numero}</h1>
           <p className="text-sm text-slate-400">
-            Status boleto: {String(row.statusBoleto ?? "—")} · Total: R$ {String(row.valorTotal ?? "—")}
+            {row.referencia || row.periodo}
+            {layoutPix ? (
+              <>
+                {" · "}
+                {nfs.length > 0
+                  ? nfs.map((n) => `${n.numeroNfe ? `NFS-e ${n.numeroNfe}` : "NFS-e"}${n.statusIpm ? ` · ${n.statusIpm}` : ""}`).join(" · ")
+                  : `NFS-e: ${row.statusNfe || "ainda não emitida"}`}
+              </>
+            ) : (
+              <>
+                {" · "}NFS-e: {row.statusNfe || "—"}
+                {` · Boleto: ${row.statusBoleto || "—"}`}
+              </>
+            )}
           </p>
         </div>
         <Button variant="outline" asChild>
-          <Link href="/portal/financeiro">Voltar</Link>
+          <Link href="/portal/financeiro">
+            <ArrowLeft className="mr-1 h-4 w-4" />
+            Voltar
+          </Link>
         </Button>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Itens</CardTitle>
+          <CardTitle>Demonstrativo</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <PortalTable
@@ -67,12 +102,85 @@ export default function FaturaDetailPage() {
             getRowKey={(r) => String(r.id ?? Math.random())}
             renderCell={(r, key) => {
               if (key === "d") return String(r.descricao ?? "—");
-              if (key === "v") return String(r.valor ?? "—");
+              if (key === "v") return formatBRL(Number(r.valor ?? 0));
               return null;
             }}
           />
         </CardContent>
       </Card>
+
+      {layoutPix ? (
+        nfs.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {nfs.map((n) => (
+              <Button key={n.id} variant="outline" size="sm" asChild>
+                <Link href={`/portal/financeiro/nfse/${n.id}`}>Ver NFS-e {n.numeroNfe}</Link>
+              </Button>
+            ))}
+          </div>
+        ) : null
+      ) : (
+      <Card>
+        <CardHeader>
+          <CardTitle>NFS-e</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {nfs.length === 0 ? (
+            <p className="text-slate-500">Nenhuma emitida.</p>
+          ) : (
+            nfs.map((n) => (
+              <div key={n.id} className="flex justify-between text-sm">
+                <span>
+                  {n.numeroNfe} · {n.statusIpm}
+                </span>
+                <Button variant="link" className="h-auto p-0" asChild>
+                  <Link href={`/portal/financeiro/nfse/${n.id}`}>Ver</Link>
+                </Button>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+      )}
+
+      {layoutPix ? null : (
+      <Card>
+        <CardHeader>
+          <CardTitle>Boleto</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {boletos.length === 0 ? (
+            <p className="text-slate-500">Nenhum boleto vinculado.</p>
+          ) : (
+            boletos.map((b) => (
+              <div key={b.id} className="flex justify-between text-sm">
+                <span>
+                  {b.numeroBoleto} · {b.statusPagamento} · {formatBRL(Number(b.valorBoleto ?? 0))}
+                </span>
+                <Button variant="link" className="h-auto p-0" asChild>
+                  <Link href={`/portal/financeiro/boletos/${b.id}`}>Ver</Link>
+                </Button>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+      )}
+
+      {row.faturasArmazenagem?.some((f) => f.linkNfse || (!layoutPix && f.linkBoleto) || f.linkPix) ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Documentos do pacote</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {row.faturasArmazenagem.map((f) =>
+              f.linkNfse || (!layoutPix && f.linkBoleto) || f.linkPix ? (
+                <FaturaArmazenagemLinks key={f.id} fatura={f} hideBoleto={layoutPix} />
+              ) : null,
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -87,28 +195,6 @@ export default function FaturaDetailPage() {
                 <span>{s.solicitacao?.protocolo}</span>
                 <Button variant="link" className="h-auto p-0 text-[var(--accent)]" asChild>
                   <Link href={`/portal/solicitacoes/${s.solicitacao?.id}`}>Abrir</Link>
-                </Button>
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>NFS-e associadas</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {nfs.length === 0 ? (
-            <p className="text-slate-500">Nenhuma emitida.</p>
-          ) : (
-            nfs.map((n) => (
-              <div key={n.id} className="flex justify-between text-sm">
-                <span>
-                  {n.numeroNfe} · {n.statusIpm}
-                </span>
-                <Button variant="link" className="h-auto p-0" asChild>
-                  <Link href={`/portal/financeiro/nfse/${n.id}`}>Ver</Link>
                 </Button>
               </div>
             ))

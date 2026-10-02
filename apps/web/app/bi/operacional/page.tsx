@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BiWorkspace } from "@/components/bi/bi-workspace";
 import { BiSection } from "@/components/bi/bi-section";
 import { ForecastLineChart, type ForecastSeries } from "@/components/bi/forecast-line-chart";
 import { SaturacaoProjectionChart } from "@/components/bi/saturacao-projection-chart";
@@ -14,6 +13,7 @@ import { ApiError, staffJson, staffTryJson } from "@/lib/api/staff-client";
 import { linearRegression, movingAverage, stddev, extrapolateLinear } from "@/lib/bi/forecast-math";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { isIntranetGestorRole } from "@/lib/intranet/intranet-path-access";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 import { Button } from "@/components/ui/button";
 
@@ -113,7 +113,7 @@ function pctSorted(arr: number[], p: number) {
 }
 
 export default function BiOperacionalPage() {
-  const allowed = useStaffAuthStore((s) => s.user?.role === "ADMIN" || s.user?.role === "GERENTE");
+  const allowed = useStaffAuthStore((s) => isIntranetGestorRole(s.user?.role));
   const [horizon, setHorizon] = useState<14 | 30 | 60>(14);
   const [perf, setPerf] = useState<Record<string, unknown> | null>(null);
   const [dash, setDash] = useState<Record<string, unknown> | null>(null);
@@ -277,14 +277,14 @@ export default function BiOperacionalPage() {
 
   if (!allowed) {
     return (
-      <BiWorkspace>
+      <div>
         <p className="text-center text-amber-400">Acesso restrito.</p>
-      </BiWorkspace>
+      </div>
     );
   }
 
   return (
-    <BiWorkspace>
+    <div>
       <div className="flex flex-col gap-6 lg:flex-row">
         <aside className="lg:w-44 lg:shrink-0">
           <div className="sticky top-24 rounded-xl border border-white/10 bg-[#0a1018] p-3 text-[11px]">
@@ -384,6 +384,6 @@ export default function BiOperacionalPage() {
           </BiSection>
         </div>
       </div>
-    </BiWorkspace>
+    </div>
   );
 }

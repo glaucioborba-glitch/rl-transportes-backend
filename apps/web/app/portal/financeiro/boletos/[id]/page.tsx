@@ -10,6 +10,7 @@ import { boletoStatusVariant } from "@/lib/portal-status";
 import { ApiError, fetchBoleto } from "@/lib/api/portal-client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/lib/toast";
+import { formatBRL, parseDecimal } from "@/lib/financeiro/format";
 
 export default function BoletoDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -36,7 +37,7 @@ export default function BoletoDetailPage() {
 
   if (!b) {
     return (
-      <main className="mx-auto max-w-7xl px-4 py-8">
+      <main className="mx-auto w-[90%] px-4 py-8">
         <Skeleton className="h-40 w-full" />
       </main>
     );
@@ -45,7 +46,7 @@ export default function BoletoDetailPage() {
   const st = String(b.statusPagamento ?? "");
 
   return (
-    <main className="mx-auto max-w-7xl space-y-6 px-4 py-8">
+    <main className="mx-auto w-[90%] space-y-6 px-4 py-8">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold text-white">Boleto {String(b.numeroBoleto)}</h1>
         <Button variant="outline" asChild>
@@ -60,7 +61,7 @@ export default function BoletoDetailPage() {
         <CardContent className="space-y-3 text-sm">
           <div className="flex justify-between">
             <span className="text-slate-500">Valor</span>
-            <span className="text-white">R$ {String(b.valorBoleto ?? "—")}</span>
+            <span className="text-white">{formatBRL(parseDecimal(b.valorBoleto))}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-slate-500">Vencimento</span>
@@ -73,8 +74,38 @@ export default function BoletoDetailPage() {
             <RawStatusBadge label={st} variant={boletoStatusVariant(st)} />
           </div>
           <p className="text-xs text-slate-600">
-            Schema atual não expõe linha digitável nem PDF; use o número para conciliação.
+            {b.linkPdf
+              ? "Use os botões abaixo para abrir o PDF ou copiar o PIX."
+              : "Schema legado pode não expor PDF; use o número para conciliação."}
           </p>
+          <div className="flex flex-wrap gap-2 pt-1">
+            {b.linkPdf ? (
+              <Button variant="outline" asChild>
+                <a href={String(b.linkPdf)} target="_blank" rel="noopener noreferrer">
+                  Abrir PDF do boleto
+                </a>
+              </Button>
+            ) : null}
+            {b.pixCopiaCola ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  void navigator.clipboard.writeText(String(b.pixCopiaCola));
+                  toast.success("PIX copiado");
+                }}
+              >
+                Copiar PIX
+              </Button>
+            ) : null}
+            {b.pixQrCodeUrl ? (
+              <Button variant="outline" asChild>
+                <a href={String(b.pixQrCodeUrl)} target="_blank" rel="noopener noreferrer">
+                  QR Code PIX
+                </a>
+              </Button>
+            ) : null}
+          </div>
           <Button type="button" variant="outline" onClick={() => copyLinha()}>
             Copiar número do boleto
           </Button>

@@ -31,7 +31,7 @@ export class PlataformaPublicAuthGuard implements CanActivate {
     private readonly reflector: Reflector,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<PlataformaHttpReq>();
     const rawKey = req.headers['x-public-api-key'] ?? req.headers['X-Public-Api-Key'];
     const rawSec =
@@ -47,7 +47,7 @@ export class PlataformaPublicAuthGuard implements CanActivate {
       });
     }
 
-    const client = this.clients.obterPorApiKey(apiKey);
+    const client = await this.clients.obterPorApiKey(apiKey);
     if (!client || !client.enabled) {
       this.consumo.registrarIncidente('auth_falha', 'API Key inválida ou desativada');
       throw new UnauthorizedException({
@@ -77,7 +77,17 @@ export class PlataformaPublicAuthGuard implements CanActivate {
     const rawTenant = req.headers['x-tenant-id'] ?? req.headers['X-Tenant-ID'];
     const tenantHeader =
       typeof rawTenant === 'string' ? rawTenant : Array.isArray(rawTenant) ? rawTenant[0] : '';
-    req.plataformaTenantId = (tenantHeader || client.tenantId || 'default').trim();
+    const boundTenant = (client.tenantId || 'default').trim();
+    if (tenantHeader?.trim() && tenantHeader.trim() !== boundTenant) {
+      throw new ForbiddenException({
+        success: false,
+        error: {
+          code: 'TENANT_MISMATCH',
+          message: 'X-Tenant-ID não corresponde à API Key.',
+        },
+      });
+    }
+    req.plataformaTenantId = boundTenant;
     req.plataformaCliente = client;
 
     const servico = this.reflector.getAllAndOverride<PlataformaServicoId | undefined>(

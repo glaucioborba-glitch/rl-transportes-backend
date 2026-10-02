@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
+import { TenantModule } from '../tenant/tenant.module';
 import { FinanceiroConciliacaoController } from './financeiro-conciliacao.controller';
 import { FinanceiroConciliacaoService } from './financeiro-conciliacao.service';
 import { ExtratoStoreService } from './extrato-store.service';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, TenantModule],
   controllers: [FinanceiroConciliacaoController],
   providers: [FinanceiroConciliacaoService, ExtratoStoreService],
 })

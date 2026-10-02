@@ -15,7 +15,7 @@ export class MobileSyncService {
     private readonly tel: MobileTelemetryStore,
   ) {}
 
-  enfileirar(
+  async enfileirar(
     cx: MobileRequestUser,
     op: OfflineOpType,
     body: Record<string, unknown>,
@@ -31,11 +31,10 @@ export class MobileSyncService {
     });
   }
 
-  /** Flush: replica eventos pendentes (LWW por op+protocolo implícito no processamento sequencial). */
   async flush(cx: MobileRequestUser, ids?: string[]) {
-    const pendentes = this.store
-      .listarPendentes(cx.deviceId)
-      .filter((e) => (ids?.length ? ids.includes(e.id) : true));
+    const pendentes = (await this.store.listarPendentes(cx.deviceId)).filter((e) =>
+      ids?.length ? ids.includes(e.id) : true,
+    );
 
     const grupos = new Map<string, typeof pendentes>();
     for (const e of pendentes) {
@@ -53,14 +52,11 @@ export class MobileSyncService {
       try {
         await this.aplicar(cx, vencedor.op, vencedor.body);
         aplicados.push(...arr.map((x) => x.id));
-        for (const x of arr) {
-          if (x.id !== vencedor.id) x.conflictResolved = `lww:${vencedor.id}`;
-        }
       } catch {
         /* mantém pendente */
       }
     }
-    this.store.marcarSincronizado(aplicados);
+    await this.store.marcarSincronizado(aplicados);
     return { sincronizados: aplicados.length, ids: aplicados };
   }
 
@@ -76,9 +72,6 @@ export class MobileSyncService {
       if (r !== 'MOTORISTA') {
         throw new ForbiddenException('Operação exclusiva do motorista');
       }
-      return;
-    }
-    if (op === 'telemetria_batch') {
       return;
     }
   }
@@ -115,7 +108,7 @@ export class MobileSyncService {
         break;
       case 'telemetria_batch': {
         const loc = body.localizacao as { lat?: number; lng?: number; precisaoM?: number } | undefined;
-        this.tel.registrar({
+        await this.tel.registrar({
           deviceId: cx.deviceId,
           userSub: cx.sub,
           mobileRole: cx.mobileRole,
