@@ -127,7 +127,12 @@ export function MotoristaDigitalPanel({ cpf, variant, onRicVerified }: Props) {
         <p className="text-sm text-amber-200">CPF do motorista é obrigatório.</p>
       ) : null}
       {agentOk === false ? (
-        <p className="text-sm text-amber-200">{agentErr}</p>
+        <div className="space-y-2">
+          <p className="text-sm text-amber-200">{agentErr}</p>
+          <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => void refresh()}>
+            Tentar de novo
+          </Button>
+        </div>
       ) : null}
       {agentOk && enrolled ? (
         <p className="text-sm text-emerald-300">

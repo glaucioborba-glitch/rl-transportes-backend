@@ -1,4 +1,4 @@
-import { localAgentFetchInit, localAgentUrl } from "@/lib/local-agent-url";
+import { fetchLocalAgent, localAgentUrl } from "@/lib/local-agent-url";
 
 export const PRINT_AGENT_URL = localAgentUrl(39202, process.env.NEXT_PUBLIC_PRINT_AGENT_URL);
 export const PRINT_AGENT_PRINTER_KEY = "rl.print-agent.printer";
@@ -70,9 +70,11 @@ export function preferirImpressora(printers: PrintAgentPrinter[], saved?: string
 
 export async function probePrintAgent(): Promise<PrintAgentHealth> {
   try {
-    const res = await fetch(
-      `${localAgentUrl(39202, process.env.NEXT_PUBLIC_PRINT_AGENT_URL)}/health`,
-      localAgentFetchInit({ headers: { Accept: "application/json" } }),
+    const res = await fetchLocalAgent(
+      39202,
+      "/health",
+      { headers: { Accept: "application/json" } },
+      process.env.NEXT_PUBLIC_PRINT_AGENT_URL,
     );
     const body = await parseAgent<PrintAgentHealth>(res);
     const printers = asPrinterList(body.printers);
@@ -91,15 +93,20 @@ export async function printViaAgent(blob: Blob, printer?: string): Promise<void>
   const qs = printer ? `?printer=${encodeURIComponent(printer)}` : "";
   let res: Response;
   try {
-    res = await fetch(`${localAgentUrl(39202, process.env.NEXT_PUBLIC_PRINT_AGENT_URL)}/print${qs}`, localAgentFetchInit({
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": blob.type || "application/pdf",
+    res = await fetchLocalAgent(
+      39202,
+      `/print${qs}`,
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": blob.type || "application/pdf",
+        },
+        body: blob,
+        signal: AbortSignal.timeout(25_000),
       },
-      body: blob,
-      signal: AbortSignal.timeout(25_000),
-    }));
+      process.env.NEXT_PUBLIC_PRINT_AGENT_URL,
+    );
   } catch (e) {
     throw new Error(mensagemFalhaAgente(e));
   }

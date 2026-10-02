@@ -1,4 +1,4 @@
-import { localAgentFetchInit, localAgentUrl } from "@/lib/local-agent-url";
+import { fetchLocalAgent, localAgentUrl } from "@/lib/local-agent-url";
 
 export const BIO_AGENT_URL = localAgentUrl(39201, process.env.NEXT_PUBLIC_BIO_AGENT_URL);
 
@@ -35,13 +35,10 @@ function mensagemFalhaAgente(error: unknown): string {
 async function agentJson<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(
-      `${localAgentUrl(39201, process.env.NEXT_PUBLIC_BIO_AGENT_URL)}${path}`,
-      localAgentFetchInit({
-        ...init,
-        headers: { Accept: "application/json", ...(init?.headers ?? {}) },
-      }),
-    );
+    res = await fetchLocalAgent(39201, path, {
+      ...init,
+      headers: { Accept: "application/json", ...(init?.headers ?? {}) },
+    }, process.env.NEXT_PUBLIC_BIO_AGENT_URL);
   } catch (e) {
     throw new Error(mensagemFalhaAgente(e));
   }
@@ -54,9 +51,11 @@ async function agentJson<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function probeBioAgent(): Promise<BioAgentHealth> {
   try {
-    const res = await fetch(
-      `${localAgentUrl(39201, process.env.NEXT_PUBLIC_BIO_AGENT_URL)}/health`,
-      localAgentFetchInit({ headers: { Accept: "application/json" } }),
+    const res = await fetchLocalAgent(
+      39201,
+      "/health",
+      { headers: { Accept: "application/json" } },
+      process.env.NEXT_PUBLIC_BIO_AGENT_URL,
     );
     const body = await parseAgent<BioAgentHealth>(res);
     return {
