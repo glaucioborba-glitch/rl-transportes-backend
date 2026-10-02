@@ -31,6 +31,7 @@ const STAFF_PREFIXES = [
 const PORTAL_PUBLIC_PREFIXES = [
   "/portal/login",
   "/portal/cadastrar",
+  "/portal/cadastro",
   "/portal/recuperar",
   "/portal/redefinir",
   "/portal/auth/select-pessoa",
@@ -68,6 +69,10 @@ export async function middleware(request: NextRequest) {
   const demoDest = demoModulesBlockedRedirect(pathname);
   if (demoDest) {
     return NextResponse.redirect(new URL(demoDest, request.url));
+  }
+
+  if (pathname === "/portal/cadastro" || pathname.startsWith("/portal/cadastro/")) {
+    return NextResponse.redirect(new URL("/portal/cadastrar", request.url));
   }
 
   if (process.env.E2E_MOCK_AUTH === "1") {

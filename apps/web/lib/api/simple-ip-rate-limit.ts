@@ -8,6 +8,7 @@ function clientIp(req: Request): string {
 
 /** Rate limit in-memory por IP (processo Next). Middleware não cobre `/api`. */
 export function consumeIpRateLimit(req: Request, key: string, max: number, windowMs = 60_000): boolean {
+  if (process.env.RATE_LIMIT_ENABLED !== "1") return true;
   const id = `${key}:${clientIp(req)}`;
   const now = Date.now();
   const cur = buckets.get(id);

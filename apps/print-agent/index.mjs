@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PORT = Number(process.env.PRINT_AGENT_PORT || 39202);
-const HOST = '127.0.0.1';
+const HOST = process.env.PRINT_AGENT_HOST || '0.0.0.0';
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(ROOT, 'print.ps1');
 const MAX_BYTES = 25 * 1024 * 1024;
@@ -18,6 +18,7 @@ function corsHeaders() {
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Accept',
     'Access-Control-Allow-Private-Network': 'true',
+    'Access-Control-Allow-Local-Network': 'true',
     'Access-Control-Max-Age': '86400',
   };
 }
@@ -148,6 +149,9 @@ const server = createServer(async (req, res) => {
         const extra = ['-File', filePath];
         if (printer) extra.push('-Printer', printer);
         const out = await runPrintPs('print', extra, 90000);
+        if (!out.ok) {
+          process.stderr.write(`print-agent falhou: ${out.error || 'sem detalhe'} printer=${printer || 'default'}\n`);
+        }
         send(res, out.ok ? 200 : 400, out);
       } finally {
         setTimeout(() => {

@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PORT = Number(process.env.BIO_AGENT_PORT || 39201);
-const HOST = '127.0.0.1';
+const HOST = process.env.BIO_AGENT_HOST || '0.0.0.0';
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(ROOT, 'nitgen.ps1');
 const BRIDGE = join(ROOT, 'sdk', 'NitgenBridge.exe');
@@ -18,6 +18,7 @@ function corsHeaders() {
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Accept',
     'Access-Control-Allow-Private-Network': 'true',
+    'Access-Control-Allow-Local-Network': 'true',
     'Access-Control-Max-Age': '86400',
   };
 }

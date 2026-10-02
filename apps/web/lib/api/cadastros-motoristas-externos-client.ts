@@ -29,19 +29,32 @@ export function fetchStaffMotoristaExterno(cpf: string) {
   );
 }
 
-export function suspenderMotoristaExterno(id: string, dias: number, motivo: string) {
+export function suspenderMotoristaExterno(
+  id: string,
+  body: {
+    dias?: number;
+    indefinido?: boolean;
+    inicio?: string;
+    motivo: string;
+    documento: string;
+    password: string;
+  },
+) {
   return staffJson<CatalogoMotoristaExterno>(
     `/v2/cadastros/motoristas-externos/${encodeURIComponent(id)}/suspender`,
     {
       method: "PATCH",
-      body: JSON.stringify({ dias, motivo }),
+      body: JSON.stringify(body),
     },
   );
 }
 
-export function liberarMotoristaExterno(id: string) {
+export function liberarMotoristaExterno(
+  id: string,
+  body: { documento: string; password: string },
+) {
   return staffJson<CatalogoMotoristaExterno>(
     `/v2/cadastros/motoristas-externos/${encodeURIComponent(id)}/liberar`,
-    { method: "PATCH" },
+    { method: "PATCH", body: JSON.stringify(body) },
   );
 }

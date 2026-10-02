@@ -7,7 +7,7 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { isAuthBruteForcePath } from '../common/http/auth-rate-limit-path.util';
 import { csrfProtectionMiddleware } from '../common/middleware/csrf.middleware';
-import { getGlobalRateLimitTiers, isProductionDeploy } from '../config/security.config';
+import { getGlobalRateLimitTiers, isProductionDeploy, isRateLimitEnabled } from '../config/security.config';
 
 function requestPath(req: Request): string {
   return (req as Request & { path?: string }).path || req.url?.split('?')[0] || '';
@@ -58,48 +58,52 @@ export function applyBaseHttpStack(app: INestApplication, logger?: Logger): void
   server.use(cookieParser());
   server.use(csrfProtectionMiddleware());
 
-  const tiers = getGlobalRateLimitTiers();
-  const rateMessage = {
-    message: 'Muitas requisições deste IP. Tente novamente em instantes.',
-  };
+  if (!isRateLimitEnabled()) {
+    logger?.log('✓ Rate limit por IP desligado (RATE_LIMIT_ENABLED≠1).');
+  } else {
+    const tiers = getGlobalRateLimitTiers();
+    const rateMessage = {
+      message: 'Muitas requisições deste IP. Tente novamente em instantes.',
+    };
 
-  server.use(
-    rateLimit({
-      windowMs: tiers.read.windowMs,
-      max: tiers.read.max,
-      standardHeaders: true,
-      legacyHeaders: false,
-      message: rateMessage,
-      skip: (req) => shouldSkipRateLimit(req) || req.method !== 'GET',
-    }),
-  );
+    server.use(
+      rateLimit({
+        windowMs: tiers.read.windowMs,
+        max: tiers.read.max,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: rateMessage,
+        skip: (req) => shouldSkipRateLimit(req) || req.method !== 'GET',
+      }),
+    );
 
-  server.use(
-    rateLimit({
-      windowMs: tiers.write.windowMs,
-      max: tiers.write.max,
-      standardHeaders: true,
-      legacyHeaders: false,
-      message: rateMessage,
-      skip: (req) => shouldSkipRateLimit(req) || req.method === 'GET',
-    }),
-  );
+    server.use(
+      rateLimit({
+        windowMs: tiers.write.windowMs,
+        max: tiers.write.max,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: rateMessage,
+        skip: (req) => shouldSkipRateLimit(req) || req.method === 'GET',
+      }),
+    );
 
-  const authMax = isProductionDeploy() ? 10 : 30;
-  server.use(
-    rateLimit({
-      windowMs: 60_000,
-      max: authMax,
-      standardHeaders: true,
-      legacyHeaders: false,
-      message: { message: 'Muitas tentativas de login. Aguarde um minuto.' },
-      skip: (req) => !isAuthBruteForcePath(requestPath(req)),
-    }),
-  );
+    const authMax = isProductionDeploy() ? 10 : 30;
+    server.use(
+      rateLimit({
+        windowMs: 60_000,
+        max: authMax,
+        standardHeaders: true,
+        legacyHeaders: false,
+        message: { message: 'Muitas tentativas de login. Aguarde um minuto.' },
+        skip: (req) => !isAuthBruteForcePath(requestPath(req)),
+      }),
+    );
 
-  logger?.log(
-    `✓ Rate limit: GET ${tiers.read.max}/${tiers.read.windowMs}ms · mutações ${tiers.write.max}/${tiers.write.windowMs}ms · auth ${authMax}/60s`,
-  );
+    logger?.log(
+      `✓ Rate limit: GET ${tiers.read.max}/${tiers.read.windowMs}ms · mutações ${tiers.write.max}/${tiers.write.windowMs}ms · auth ${authMax}/60s`,
+    );
+  }
 
   server.use(compression());
 }

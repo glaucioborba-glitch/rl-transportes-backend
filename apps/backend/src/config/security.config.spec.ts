@@ -2,6 +2,7 @@ import {
   assertJwtSecretForProduction,
   getCorsOrigins,
   getGlobalRateLimitTiers,
+  isRateLimitEnabled,
   isCsrfEnabled,
   isCsrfExemptPath,
   JWT_SECRET_MIN_LENGTH,
@@ -45,6 +46,25 @@ describe('security.config — CORS portal auth', () => {
 
   it('/auth/super-admin/login isento de CSRF (bootstrap do dono)', () => {
     expect(isCsrfExemptPath('/auth/super-admin/login')).toBe(true);
+  });
+});
+
+describe('security.config — rate limit enabled', () => {
+  const prev = process.env;
+
+  beforeEach(() => {
+    process.env = { ...prev };
+    delete process.env.RATE_LIMIT_ENABLED;
+  });
+
+  afterAll(() => {
+    process.env = prev;
+  });
+
+  it('fica desligado até RATE_LIMIT_ENABLED=1', () => {
+    expect(isRateLimitEnabled()).toBe(false);
+    process.env.RATE_LIMIT_ENABLED = '1';
+    expect(isRateLimitEnabled()).toBe(true);
   });
 });
 

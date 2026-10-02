@@ -8,7 +8,7 @@ describe('PixQuitacaoSaidaService', () => {
     unidadeProcesso: { findFirst: jest.fn() },
     preFatura: { findFirst: jest.fn() },
   };
-  const billing = { refreshExtrasForProcesso: jest.fn().mockResolvedValue(undefined) };
+  const billing = { recalcularDiariasAte: jest.fn().mockResolvedValue(undefined) };
   const contaCorrente = {
     saldoCliente: jest.fn(),
     debitarNaTransacao: jest.fn(),
@@ -63,12 +63,17 @@ describe('PixQuitacaoSaidaService', () => {
       clienteId: 'cli-1',
       intent: TipoOperacaoSolicitacaoIntent.SOLICITAR_COLETA,
       unidades: ['CSQU3054383'],
+      dataRef: '2026-10-05',
     });
     expect(out.exigido).toBe(true);
     expect(out.suficiente).toBe(false);
     expect(out.valor).toBe(150);
     expect(out.saldo).toBe(80);
-    expect(billing.refreshExtrasForProcesso).toHaveBeenCalledWith('up-1');
+    expect(billing.recalcularDiariasAte).toHaveBeenCalledWith(
+      'up-1',
+      new Date('2026-10-05T12:00:00.000Z'),
+      prisma,
+    );
   });
 
   it('debita na transação quando o saldo cobre o ID', async () => {

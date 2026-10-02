@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { validateCnpjDigits } from "@/lib/br-documents";
 import {
   buscarDadosCnpj,
+  CNPJ_INVALIDO_TOAST,
   CNPJ_LOOKUP_FAIL_TOAST,
   isCnpjLookupBenignError,
   type CnpjDadosEmpresa,
@@ -97,7 +98,8 @@ export function useCnpjLookup(cnpjFormatted: string, options?: { enabled?: boole
               if (isCnpjLookupBenignError(e) || ac.signal.aborted || mySeq !== seq.current) return;
               if (attempt < LOOKUP_MAX_ATTEMPTS - 1) continue;
               setData(null);
-              toast.warning(CNPJ_LOOKUP_FAIL_TOAST);
+              const msg = e instanceof Error ? e.message : "";
+              toast.warning(msg.includes("CNPJ inválido") ? CNPJ_INVALIDO_TOAST : CNPJ_LOOKUP_FAIL_TOAST);
             }
           }
         } finally {

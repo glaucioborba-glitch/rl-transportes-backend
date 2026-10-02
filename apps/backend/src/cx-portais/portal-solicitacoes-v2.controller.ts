@@ -134,7 +134,7 @@ export class PortalSolicitacoesV2Controller {
   ) {
     const u = this.cx(req);
     await this.audPortal(u, 'POST /portal/v2/solicitacoes/cotacao-pix');
-    return this.solicitacoesV2.cotarPixSaidaPortal(u, body.tipoOperacao, body.unidades);
+    return this.solicitacoesV2.cotarPixSaidaPortal(u, body.tipoOperacao, body.unidades, body.dataRef);
   }
 
   @Post()

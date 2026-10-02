@@ -1,6 +1,7 @@
+import './timezone';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
-import { json, urlencoded } from 'express';
+import { json, urlencoded, type NextFunction, type Request, type Response } from 'express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { IoAdapter } from '@nestjs/platform-socket.io';
@@ -37,6 +38,14 @@ async function bootstrap() {
 
   attachResilienceRouteHints(app);
 
+  // Chrome Private Network Access: site :3000 → API :3001 na LAN.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (String(req.headers['access-control-request-private-network'] ?? '') === 'true') {
+      res.setHeader('Access-Control-Allow-Private-Network', 'true');
+    }
+    next();
+  });
+
   app.enableCors({
     origin: getCorsOrigins(),
     credentials: true,
@@ -59,6 +68,9 @@ async function bootstrap() {
       'x-device-fingerprint',
       'x-session-id',
       'x-requested-with',
+      'sentry-trace',
+      'baggage',
+      'traceparent',
     ],
     exposedHeaders: ['Authorization', 'x-session-id', 'x-device-fingerprint'],
   });

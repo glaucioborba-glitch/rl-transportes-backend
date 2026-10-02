@@ -19,6 +19,7 @@ import { PatioV2Service } from '../patio-v2/patio.service';
 import { YardAllocationService } from '../yard-allocation/yard-allocation.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { HoldReleaseService } from '../hold-release/hold-release.service';
+import { CatalogoMotoristasExternosService } from '../catalogo-motoristas-externos/catalogo-motoristas-externos.service';
 import { GateV2Service } from './gate.service';
 
 describe('GateV2Service', () => {
@@ -136,6 +137,10 @@ describe('GateV2Service', () => {
         { provide: YardAllocationService, useValue: { applyGiroEstimado: jest.fn().mockResolvedValue(null) } },
         { provide: VistoriaService, useValue: vistoria },
         { provide: HoldReleaseService, useValue: holdRelease },
+        {
+          provide: CatalogoMotoristasExternosService,
+          useValue: { assertNaoSuspenso: jest.fn().mockResolvedValue(undefined) },
+        },
       ],
     }).compile();
 

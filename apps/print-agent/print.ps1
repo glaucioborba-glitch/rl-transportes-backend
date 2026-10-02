@@ -72,18 +72,30 @@ if ($Printer -and (Test-ImpressoraVirtual $Printer)) {
   exit 1
 }
 
-$args = @('-silent', '-exit-when-done')
-if ($Printer) {
-  $args += @('-print-to', $Printer)
-} else {
-  $args += '-print-to-default'
+function Quote-WinArg([string]$value) {
+  '"' + ($value -replace '"', '""') + '"'
 }
-$args += $File
-$p = Start-Process -FilePath $sumatra -ArgumentList $args -PassThru -WindowStyle Hidden -Wait
-$code = if ($null -eq $p.ExitCode) { 0 } else { $p.ExitCode }
-if ($code -ne 0) {
-  Write-Json @{ ok = $false; error = "SumatraPDF não conseguiu imprimir (código $code). Confira se a Epson TM-T20X está ligada e selecionada." }
-  exit 1
+
+# Start-Process parte argumento com espaço se não for uma string só, com aspas.
+$argLine = '-silent -exit-when-done '
+if ($Printer) {
+  $argLine += '-print-to ' + (Quote-WinArg $Printer) + ' '
+} else {
+  $argLine += '-print-to-default '
+}
+$argLine += Quote-WinArg $File
+$p = Start-Process -FilePath $sumatra -ArgumentList $argLine -PassThru -WindowStyle Hidden
+# Epson TM muitas vezes não sinaliza fim de job; -Wait deixa a tela do Gate presa.
+$saiu = $false
+if ($null -ne $p) {
+  $saiu = $p.WaitForExit(8000)
+}
+if ($saiu) {
+  $code = if ($null -eq $p.ExitCode) { 0 } else { $p.ExitCode }
+  if ($code -ne 0) {
+    Write-Json @{ ok = $false; error = "SumatraPDF não conseguiu imprimir (código $code). Confira se a Epson TM-T20X está ligada e selecionada." }
+    exit 1
+  }
 }
 Write-Json @{ ok = $true; via = 'sumatra'; printer = $Printer }
 exit 0

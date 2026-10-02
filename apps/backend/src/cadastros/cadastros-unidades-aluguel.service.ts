@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { StatusUnidadeAluguel } from '@prisma/client';
 import { normalizeContainerIso } from '../common/utils/data-sanitize';
+import { isValidIso6346 } from '../common/utils/iso6346';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizeTamanhoAluguel } from '../aluguel/aluguel-pricing.util';
 import { CadastrosUnidadeAluguelFormDto } from './dto/cadastros-unidade-aluguel-form.dto';
@@ -113,7 +114,11 @@ export class CadastrosUnidadesAluguelService {
   }
 
   private normIso(raw: string) {
-    return normalizeContainerIso(raw).replace(/\s/g, '').toUpperCase();
+    const iso = normalizeContainerIso(raw).replace(/\s/g, '').toUpperCase();
+    if (!isValidIso6346(iso)) {
+      throw new BadRequestException('Número ISO inválido (dígito verificador ISO 6346).');
+    }
+    return iso;
   }
 
   private toShape(row: {

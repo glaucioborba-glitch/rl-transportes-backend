@@ -14,6 +14,7 @@ import {
 } from "@/lib/intranet/intranet-nav-config";
 import { NotificationBadge } from "@/components/ui/notification-badge";
 import { useIntranetSidebarBadges } from "@/hooks/use-intranet-sidebar-badges";
+import { isDemoModulesEnabled } from "@/lib/demo-modules";
 import { useStaffAuthStore } from "@/stores/staff-auth-store";
 
 type Props = {
@@ -51,7 +52,8 @@ export function IntranetSidebar({ moduleId }: Props) {
   );
   const { resolveBadge } = useIntranetSidebarBadges(moduleId);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const showAdvanced = role === "ADMIN" || role === "SUPER_ADMIN";
+  const showAdvanced =
+    isDemoModulesEnabled() && (role === "ADMIN" || role === "SUPER_ADMIN");
 
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-r border-white/10 bg-[#06080c]">

@@ -1,5 +1,6 @@
 import { PatioStatus, StatusContainerTarifa } from '@prisma/client';
 import { rotuloOrigemLacre } from '../common/utils/lacre-operacional.util';
+import { isValidIso6346 } from '../common/utils/iso6346';
 
 /** Unidade fisicamente na empresa (pátio). Não existe status “já saiu” — o registro some no gate-out. */
 export const PATIO_STATUS_ARMAZENADA: PatioStatus[] = [
@@ -215,6 +216,9 @@ export function validarCamposEfeito(
   const iso = String(input.isoDestino ?? '').replace(/[^a-zA-Z0-9]/g, '');
   if (iso.length < 10) {
     return { ok: false, erro: 'Informe o ISO da unidade de destino (B) para o transbordo.' };
+  }
+  if (!isValidIso6346(iso)) {
+    return { ok: false, erro: 'Número ISO inválido (dígito verificador ISO 6346).' };
   }
   return { ok: true };
 }

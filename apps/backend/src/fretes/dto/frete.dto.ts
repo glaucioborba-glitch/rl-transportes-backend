@@ -10,6 +10,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { IsIso6346 } from '../../common/validators/is-iso6346.decorator';
 
 export class CreateFreteDto {
   @ApiProperty({ example: '2026-09-03' })
@@ -30,6 +31,7 @@ export class CreateFreteDto {
   @ApiProperty({ example: 'TGBU6084982' })
   @IsString()
   @MaxLength(16)
+  @IsIso6346()
   numeroIso!: string;
 
   @ApiProperty({ enum: StatusCarga })
@@ -121,6 +123,7 @@ export class UpdateFreteDto {
   @IsOptional()
   @IsString()
   @MaxLength(16)
+  @IsIso6346()
   numeroIso?: string;
 
   @ApiPropertyOptional({ enum: StatusCarga })

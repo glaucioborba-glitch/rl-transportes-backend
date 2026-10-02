@@ -13,6 +13,7 @@ import { downloadRicPdf } from "@/lib/gate/operacao-api";
 import { ricPrintHtmlBlob } from "@/lib/ric-print";
 import { toast } from "@/lib/toast";
 import { ContainerNumber } from "@/components/ui/container-number";
+import { isValidISO6346 } from "@/lib/cadastros/formatters";
 import { formatContainerISO, stripContainerISO } from "@/utils/containerFormatter";
 import { ServicosIdCard } from "@/components/gate/servicos-id-card";
 import { TomadaGateCard } from "@/components/gate/tomada-gate-card";
@@ -35,8 +36,8 @@ export default function ConsultaContainerPage() {
 
   const buscar = useCallback(async () => {
     const raw = stripContainerISO(isoInput);
-    if (raw.length < 4) {
-      toast.error("Informe um número ISO válido.");
+    if (raw.length !== 11 || !isValidISO6346(raw)) {
+      toast.error("Número ISO 6346 inválido — dígito verificador não confere.");
       return;
     }
     setLoading(true);

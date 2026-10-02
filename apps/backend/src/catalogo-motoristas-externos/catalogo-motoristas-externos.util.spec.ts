@@ -1,8 +1,10 @@
 import {
+  diasRestantesSuspensao,
   isCpfFrotaPlaceholder,
   motoristaEstaSuspenso,
   normalizeMotoristaCpf,
   suspensoAteEm,
+  ymdSaoPaulo,
 } from './catalogo-motoristas-externos.util';
 
 describe('catalogo-motoristas-externos.util', () => {
@@ -22,9 +24,15 @@ describe('catalogo-motoristas-externos.util', () => {
     expect(motoristaEstaSuspenso(null, now)).toBe(false);
   });
 
-  it('calcula o fim da suspensão em dias', () => {
-    const now = new Date('2026-09-13T08:00:00.000-03:00');
-    const ate = suspensoAteEm(7, now);
-    expect(ate.getDate()).toBe(20);
+  it('calcula o fim da suspensão em dias no calendário de Brasília', () => {
+    const inicio = new Date('2026-09-13T08:00:00.000-03:00');
+    const ate = suspensoAteEm(7, inicio);
+    expect(ymdSaoPaulo(ate)).toBe('2026-09-20');
+  });
+
+  it('conta os dias restantes até o fim do bloqueio', () => {
+    const now = new Date('2026-09-13T12:00:00.000-03:00');
+    const ate = new Date('2026-09-20T23:59:59.999-03:00');
+    expect(diasRestantesSuspensao(ate, now)).toBe(7);
   });
 });

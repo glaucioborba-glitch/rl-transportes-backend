@@ -13,6 +13,11 @@ import { createPrismaRetryExtension } from './prisma-retry.extension';
 
 type PoolHolder = { __pool?: Pool };
 
+/** CreateInput com `tenant: { connect }` não aceita o scalar `tenantId` no mesmo payload. */
+function createUsesTenantRelation(data: unknown): boolean {
+  return Boolean(data && typeof data === 'object' && (data as { tenant?: unknown }).tenant != null);
+}
+
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private pool: Pool;
@@ -59,7 +64,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
               if (operation === 'create' || operation === 'createMany') {
                 if (operation === 'create') {
                   const data = args.data as Record<string, unknown>;
-                  data.tenantId = (data.tenantId as string | undefined) ?? tenantId;
+                  if (!createUsesTenantRelation(data)) {
+                    data.tenantId = (data.tenantId as string | undefined) ?? tenantId;
+                  }
                 } else if (Array.isArray(args.data)) {
                   args.data = args.data.map((row: Record<string, unknown>) => ({
                     ...row,
@@ -70,7 +77,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
               if (operation === 'upsert') {
                 const create = args.create as Record<string, unknown>;
-                create.tenantId = (create.tenantId as string | undefined) ?? tenantId;
+                if (!createUsesTenantRelation(create)) {
+                  create.tenantId = (create.tenantId as string | undefined) ?? tenantId;
+                }
               }
 
               if (operation === 'update' || operation === 'updateMany' || operation === 'delete' || operation === 'deleteMany') {

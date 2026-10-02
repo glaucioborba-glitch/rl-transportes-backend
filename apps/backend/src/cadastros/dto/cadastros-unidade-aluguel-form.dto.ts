@@ -1,12 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsIso6346 } from '../../common/validators/is-iso6346.decorator';
 
 export class CadastrosUnidadeAluguelFormDto {
   @ApiProperty()
   @Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value))
   @IsString()
-  @MinLength(4)
+  @IsIso6346()
+  @MinLength(11)
   @MaxLength(16)
   unidadeIso!: string;
 

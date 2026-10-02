@@ -69,6 +69,22 @@ export function resolveAgendamentoTurno(
   return Number.isFinite(h) && h < 12 ? "MANHA" : "TARDE";
 }
 
+/** Turno operacional do instante atual (walk-in / Agendamento Rápido Particular). */
+export function turnoOperacionalAgora(
+  turnos: TenantTurnoConfig[],
+  agora = new Date(),
+): "MANHA" | "TARDE" {
+  const hhmm = `${String(agora.getHours()).padStart(2, "0")}:${String(agora.getMinutes()).padStart(2, "0")}`;
+  for (const t of turnos) {
+    const ini = (t.inicio ?? "").slice(0, 5);
+    const fim = (t.fim ?? "").slice(0, 5);
+    if (ini && fim && hhmm >= ini && hhmm < fim) {
+      return resolveAgendamentoTurno(turnos, t.id);
+    }
+  }
+  return agora.getHours() < 12 ? "MANHA" : "TARDE";
+}
+
 
 
 export type ReguaCobrancaConfig = {
@@ -362,7 +378,8 @@ const FALLBACK_TURNOS: TenantTurnoConfig[] = [
 
 
 
-export async function fetchTenantTurnos(_tenantId = "default"): Promise<TenantTurnoConfig[]> {
+export async function fetchTenantTurnos(tenantId = "default"): Promise<TenantTurnoConfig[]> {
+  void tenantId;
   try {
     const data = await staffJson<TenantTurnoConfig[]>("/tenant-config/turnos");
     return data?.length ? data : FALLBACK_TURNOS;

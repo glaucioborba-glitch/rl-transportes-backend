@@ -1572,7 +1572,9 @@ export class GateOperacaoFlowService {
       navio: c?.navio?.trim() || '—',
       agendamento,
       caminhao: rotuloTipoCaminhao(t?.tipoCaminhao ? String(t.tipoCaminhao) : ''),
-      checkin: s.portaria?.createdAt ? s.portaria.createdAt.toLocaleString('pt-BR') : '—',
+      checkin: s.portaria?.createdAt
+        ? s.portaria.createdAt.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+        : '—',
       unidadeProcesso: processoRow ? formatUnidadeProcessoId(processoRow.numero) : '—',
       direcao: rotuloDirecaoUnidade(direcao),
       vistoria: {

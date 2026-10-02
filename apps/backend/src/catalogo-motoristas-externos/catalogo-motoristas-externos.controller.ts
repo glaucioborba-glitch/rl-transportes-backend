@@ -2,12 +2,12 @@ import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/c
 import { AuthGuard } from '@nestjs/passport';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
-import { CurrentUser, type AuthUser } from '../common/decorators/current-user.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { CatalogoMotoristasExternosService } from './catalogo-motoristas-externos.service';
+import { LiberarMotoristaExternoDto } from './dto/liberar-motorista-externo.dto';
 import { SuspenderMotoristaExternoDto } from './dto/suspender-motorista-externo.dto';
 
 const GESTAO = [Role.ADMIN, Role.GERENTE, Role.SUPER_ADMIN] as const;
@@ -52,19 +52,15 @@ export class CatalogoMotoristasExternosController {
 
   @Patch(':id/suspender')
   @Roles(...GESTAO)
-  @ApiOperation({ summary: 'Suspender motorista externo por X dias' })
-  suspender(
-    @Param('id') id: string,
-    @Body() dto: SuspenderMotoristaExternoDto,
-    @CurrentUser() user: AuthUser,
-  ) {
-    return this.service.suspender(id, dto.dias, dto.motivo, user.id);
+  @ApiOperation({ summary: 'Incluir motorista na Black List (autorização gerencial)' })
+  suspender(@Param('id') id: string, @Body() dto: SuspenderMotoristaExternoDto) {
+    return this.service.suspender(id, dto);
   }
 
   @Patch(':id/liberar')
   @Roles(...GESTAO)
-  @ApiOperation({ summary: 'Encerrar suspensão do motorista externo' })
-  liberar(@Param('id') id: string) {
-    return this.service.liberar(id);
+  @ApiOperation({ summary: 'Cancelar Black List (autorização gerencial)' })
+  liberar(@Param('id') id: string, @Body() dto: LiberarMotoristaExternoDto) {
+    return this.service.liberar(id, dto);
   }
 }

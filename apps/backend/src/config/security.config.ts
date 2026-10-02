@@ -69,6 +69,14 @@ export type RateLimitTierConfig = {
   max: number;
 };
 
+/**
+ * Limite global por IP. Desligado por padrão neste momento (demo/lab compartilham um IP).
+ * Religar com RATE_LIMIT_ENABLED=1 no deploy HTTPS.
+ */
+export function isRateLimitEnabled(): boolean {
+  return process.env.RATE_LIMIT_ENABLED === '1';
+}
+
 /** Limites globais express-rate-limit — janela de 1 minuto por IP. */
 export function getGlobalRateLimitTiers(): { read: RateLimitTierConfig; write: RateLimitTierConfig } {
   const windowMs = 60_000;

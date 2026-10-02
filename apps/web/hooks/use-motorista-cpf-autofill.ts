@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { fetchStaffMotoristaExterno } from "@/lib/api/cadastros-motoristas-externos-client";
 import { fetchPortalMotoristaExterno } from "@/lib/api/portal-client";
 import {
+  MSG_MOTORISTA_INDISPONIVEL_PORTAL,
   motoristaSuspensoMensagem,
 } from "@/lib/catalogo-motorista-externo";
 
@@ -42,7 +43,9 @@ export function useMotoristaCpfAutofill({
         }
         if (!nomeRef.current.trim()) setNome(hit.nome);
         if (hit.suspenso) {
-          setBloqueio(motoristaSuspensoMensagem(hit));
+          setBloqueio(
+            source === "portal" ? MSG_MOTORISTA_INDISPONIVEL_PORTAL : motoristaSuspensoMensagem(hit),
+          );
           setHint("");
         } else {
           setBloqueio(null);

@@ -66,17 +66,19 @@ export function DocumentoSaidaDialog({ open, onOpenChange, pedido }: Props) {
   async function executar(acao: "download" | "impressao") {
     if (!pedido || busy) return;
     setBusy(acao);
+    const destino = printer;
     try {
       const blob = await pedido.obter();
       if (acao === "download") {
         downloadBlob(blob, nomeArquivoDocumento(pedido.filename, blob));
         toast.success("Download iniciado.");
         onOpenChange(false);
-      } else {
-        await imprimirDocumento(blob, printer || undefined);
-        toast.success(printer ? `Enviado para ${printer}.` : "Enviado para a impressora.");
-        onOpenChange(false);
+        return;
       }
+      onOpenChange(false);
+      setBusy(null);
+      await imprimirDocumento(blob, destino || undefined);
+      toast.success(destino ? `Enviado para ${destino}.` : "Enviado para a impressora.");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Não foi possível gerar o documento.");
     } finally {
@@ -85,7 +87,13 @@ export function DocumentoSaidaDialog({ open, onOpenChange, pedido }: Props) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setBusy(null);
+        onOpenChange(next);
+      }}
+    >
       <DialogContent className="z-[70] max-w-md">
         <DialogHeader>
           <DialogTitle>{pedido?.titulo ?? "Documento"}</DialogTitle>

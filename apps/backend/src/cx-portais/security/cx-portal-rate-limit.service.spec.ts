@@ -6,6 +6,16 @@ import { RedisService } from '../../redis/redis.service';
 describe('CxPortalRateLimitService', () => {
   let service: CxPortalRateLimitService;
   let redis: jest.Mocked<Pick<RedisService, 'incr' | 'expire'>>;
+  const prevEnabled = process.env.RATE_LIMIT_ENABLED;
+
+  beforeAll(() => {
+    process.env.RATE_LIMIT_ENABLED = '1';
+  });
+
+  afterAll(() => {
+    if (prevEnabled === undefined) delete process.env.RATE_LIMIT_ENABLED;
+    else process.env.RATE_LIMIT_ENABLED = prevEnabled;
+  });
 
   beforeEach(() => {
     redis = {

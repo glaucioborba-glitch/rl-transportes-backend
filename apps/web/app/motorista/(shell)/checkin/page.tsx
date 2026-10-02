@@ -12,6 +12,7 @@ import { canCreateSolicitacao, canListClientes, canPortaria } from "@/lib/motori
 import { getOrCreatePin, qrPayloadFromTrip } from "@/lib/motorista/pin-storage";
 import { vibrateShort } from "@/lib/motorista/haptics";
 import { toast } from "@/lib/toast";
+import { isValidISO6346 } from "@/lib/cadastros/formatters";
 
 const ISO_RE = /^[A-Z]{4}[0-9]{6}[0-9]$/;
 
@@ -65,8 +66,8 @@ export default function MotoristaCheckinPage() {
     setBusy(true);
     try {
       const isoNorm = iso.replace(/\s/g, "").toUpperCase();
-      if (!ISO_RE.test(isoNorm)) {
-        toast.error("ISO inválido (formato 6346)");
+      if (!ISO_RE.test(isoNorm) || !isValidISO6346(isoNorm)) {
+        toast.error("ISO 6346 inválido — dígito verificador não confere.");
         return;
       }
       const placa = normalizePlaca(placaCavalo);

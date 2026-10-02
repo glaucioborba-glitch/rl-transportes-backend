@@ -1,5 +1,6 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import type { Request } from 'express';
+import { isRateLimitEnabled } from '../../config/security.config';
 import { RedisService } from '../../redis/redis.service';
 import type { CxPortalRequestUser } from '../types/cx-portal.types';
 
@@ -24,6 +25,7 @@ export class CxPortalRateLimitService {
 
   /** Rate limit distribuído (Redis) com fallback memória local. */
   async poke(req: Request, user?: CxPortalRequestUser): Promise<void> {
+    if (!isRateLimitEnabled()) return;
     const max = isMinhasPermissoesRoute(req) ? MINHAS_PERMISSOES_MAX : MAX_PER_WINDOW;
     const ip = (req.ip || req.socket.remoteAddress || '').slice(0, 64);
     const bucket = isMinhasPermissoesRoute(req) ? 'minhas-perm' : 'api';

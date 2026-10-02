@@ -5,6 +5,8 @@ export const CNPJ_LOOKUP_TIMEOUT_MS = 12_000;
 
 export const CNPJ_LOOKUP_FAIL_TOAST =
   "Não foi possível buscar os dados automaticamente. Por favor, preencha os campos abaixo.";
+export const CNPJ_INVALIDO_TOAST =
+  "CNPJ inválido — confira os dígitos verificadores (os dois últimos números).";
 
 /** Lançada quando o toggle de cadastro desliga o auto-preenchimento (sem HTTP). */
 export class CnpjAutofillDisabledError extends Error {
@@ -120,6 +122,16 @@ export async function buscarDadosCnpj(
     });
 
     if (!res.ok) {
+      let detail = "";
+      try {
+        const errBody = (await res.json()) as { message?: unknown };
+        detail = typeof errBody.message === "string" ? errBody.message : "";
+      } catch {
+        /* corpo não-JSON */
+      }
+      if (res.status === 400 || /inválid/i.test(detail)) {
+        throw new Error(CNPJ_INVALIDO_TOAST);
+      }
       throw new Error(`BrasilAPI HTTP ${res.status}`);
     }
 

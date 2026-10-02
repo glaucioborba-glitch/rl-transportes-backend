@@ -139,4 +139,10 @@ export type OperacaoFluxoJson = {
   observacaoGate?: string;
   /** Linhas lançadas por serviço de pátio (troca de lacre, transbordo). Nunca sobrescrevem observacaoGate. */
   observacoesEfeito?: string[];
+  /** Gate CPO — Agendamento Rápido Particular (walk-in). */
+  walkInParticular?: boolean;
+  pagamentoAvista?: 'PIX' | 'DINHEIRO';
+  registradoEm?: string;
+  telefoneMotorista?: string;
+  pessoasAutorizadasRetirada?: Array<{ nome: string; cpf: string }>;
 };

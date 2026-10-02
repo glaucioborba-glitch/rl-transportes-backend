@@ -195,6 +195,14 @@ export class SolicitacoesV2Service {
       throw new BadRequestException('Unidades/containers duplicados na mesma solicitação');
     }
     for (const c of containers) {
+      const iso = stripContainerIsoCanonical(c.unidade);
+      if (!iso || !isValidIso6346(iso)) {
+        throw new BadRequestException(
+          `Número ISO inválido (dígito verificador) no contêiner ordem ${c.ordem}.`,
+        );
+      }
+    }
+    for (const c of containers) {
       if (c.status === StatusContainer.CHEIO) {
         if (!c.lacre?.trim()) {
           throw new BadRequestException(`Lacre obrigatório para container ordem ${c.ordem} (CHEIO)`);
@@ -454,6 +462,7 @@ export class SolicitacoesV2Service {
     cx: CxPortalRequestUser,
     intent: string,
     unidades: string[],
+    dataRef?: string,
   ) {
     if (!cx.clienteId) {
       throw new BadRequestException('Informe o cliente da solicitação.');
@@ -462,6 +471,7 @@ export class SolicitacoesV2Service {
       clienteId: cx.clienteId,
       intent,
       unidades,
+      dataRef,
       refreshExtras: true,
     });
   }
@@ -526,7 +536,11 @@ export class SolicitacoesV2Service {
     const isoNestaSolicitacao = new Set<string>();
     for (const c of dto.containers) {
       const iso = stripContainerIsoCanonical(c.unidade);
-      if (!iso || !isValidIso6346(iso)) continue;
+      if (!iso || !isValidIso6346(iso)) {
+        throw new BadRequestException(
+          `Número ISO inválido (dígito verificador) no contêiner ordem ${c.ordem}.`,
+        );
+      }
       if (isoNestaSolicitacao.has(iso)) {
         throw new ConflictException(
           'Número ISO duplicado nesta solicitação. Ajuste o campo Unidade.',
@@ -553,14 +567,18 @@ export class SolicitacoesV2Service {
     const previsaoRetirada = parseOptionalDateTime(dto.previsaoRetirada);
     const bookingDeadline = parseOptionalDateTime(dto.bookingDeadline);
 
-    const quotePix = await this.pixQuitacao.cotar({
-      clienteId: clienteIdFaturamento,
-      intent: dto.tipoOperacao,
-      unidades: dto.containers.map((c) => c.unidade),
-      refreshExtras: true,
-    });
-    if (quotePix.exigido && !quotePix.suficiente) {
-      throw conflictSaldoInsuficiente(quotePix);
+    const skipPixQuitacao = dto.pagamentoAvista === 'DINHEIRO';
+    if (!skipPixQuitacao) {
+      const quotePix = await this.pixQuitacao.cotar({
+        clienteId: clienteIdFaturamento,
+        intent: dto.tipoOperacao,
+        unidades: dto.containers.map((c) => c.unidade),
+        dataRef: dto.agendamento.dataRef,
+        refreshExtras: true,
+      });
+      if (quotePix.exigido && !quotePix.suficiente) {
+        throw conflictSaldoInsuficiente(quotePix);
+      }
     }
 
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -569,6 +587,24 @@ export class SolicitacoesV2Service {
         const result = await this.prisma.$transaction(
           async (tx) => {
             const protocolo = await nextProtocoloSolicitacao(tx);
+            const pessoasRetirada = (dto.pessoasAutorizadasRetirada ?? [])
+              .map((p) => ({
+                nome: p.nome.trim(),
+                cpf: p.cpf.replace(/\D/g, ''),
+              }))
+              .filter((p) => p.nome && p.cpf.length === 11);
+            const fluxoInicial: OperacaoFluxoJson = {
+              ...issueQrInactive(),
+              ...(dto.pagamentoAvista || dto.telefoneMotorista || pessoasRetirada.length
+                ? {
+                    walkInParticular: true,
+                    pagamentoAvista: dto.pagamentoAvista,
+                    registradoEm: new Date().toISOString(),
+                    telefoneMotorista: dto.telefoneMotorista?.replace(/\D/g, '') || undefined,
+                    pessoasAutorizadasRetirada: pessoasRetirada.length ? pessoasRetirada : undefined,
+                  }
+                : {}),
+            };
             const sol = await tx.solicitacao.create({
               data: {
                 protocolo,
@@ -578,7 +614,7 @@ export class SolicitacoesV2Service {
                 previsaoRetirada,
                 bookingDeadline,
                 operacaoFluxoEstado: 'SOLICITADA',
-                operacaoFluxoJson: issueQrInactive() as Prisma.InputJsonValue,
+                operacaoFluxoJson: fluxoInicial as Prisma.InputJsonValue,
               },
             });
 
@@ -707,16 +743,19 @@ export class SolicitacoesV2Service {
               clienteIdFaturamento,
             );
 
-            await this.pixQuitacao.debitarNaTransacao(tx, {
-              clienteId: clienteIdFaturamento!,
-              tenantId: cliente.tenantId || cx.tenantId || DEFAULT_TENANT_ID,
-              intent: dto.tipoOperacao,
-              unidades: dto.containers.map((c) => c.unidade),
-              protocolo,
-              solicitacaoId: sol.id,
-              actorId: cx.sub,
-              actorNome: cx.email || 'portal',
-            });
+            if (!skipPixQuitacao) {
+              await this.pixQuitacao.debitarNaTransacao(tx, {
+                clienteId: clienteIdFaturamento!,
+                tenantId: cliente.tenantId || cx.tenantId || DEFAULT_TENANT_ID,
+                intent: dto.tipoOperacao,
+                unidades: dto.containers.map((c) => c.unidade),
+                dataRef: dto.agendamento.dataRef,
+                protocolo,
+                solicitacaoId: sol.id,
+                actorId: cx.sub,
+                actorNome: cx.email || 'portal',
+              });
+            }
 
             const full = await tx.solicitacao.findUniqueOrThrow({
               where: { id: sol.id },

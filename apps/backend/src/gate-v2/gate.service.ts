@@ -31,6 +31,8 @@ import { qrEstaAtivo } from './operacao-fluxo-qr.util';
 import type { OperacaoFluxoJson } from './operacao-states.constants';
 import { VistoriaService, type VistoriaPhotoUpload } from '../vistoria/vistoria.service';
 import { HoldReleaseService } from '../hold-release/hold-release.service';
+import { CatalogoMotoristasExternosService } from '../catalogo-motoristas-externos/catalogo-motoristas-externos.service';
+import { isCpfFrotaPlaceholder } from '../catalogo-motoristas-externos/catalogo-motoristas-externos.util';
 import { AnguloFotoVistoria, TipoVistoria } from '@prisma/client';
 import { extractPessoaResponsavelFromAudit } from '../pessoas-autorizadas/pessoa-context.util';
 import type { GateCheckInDto } from './dto/gate-checkin.dto';
@@ -64,6 +66,7 @@ export class GateV2Service {
     private readonly yardAllocation: YardAllocationService,
     private readonly vistoria: VistoriaService,
     private readonly holdRelease: HoldReleaseService,
+    private readonly catalogoMotoristas: CatalogoMotoristasExternosService,
   ) {}
 
 
@@ -250,6 +253,11 @@ export class GateV2Service {
       where: { solicitacaoId, checkOut: null },
     });
     if (open) throw new ConflictException('Check-in já em aberto');
+
+    const cpfGate = normalizeCpfDigits(dto.motoristaCpf);
+    if (!isCpfFrotaPlaceholder(cpfGate)) {
+      await this.catalogoMotoristas.assertNaoSuspenso(cpfGate);
+    }
 
     if (dto.pdfHash?.trim() && !opts?.skipPdfHash) {
       const v = await this.pdf.verificarAuthenticidade(solicitacaoId, dto.pdfHash.trim());

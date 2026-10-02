@@ -1099,6 +1099,88 @@ export class ArmazenagemBillingService {
     }
   }
 
+  /**
+   * Recalcula diárias (e extras) de um ID aberto até `asOf`.
+   * Usado na quitação PIX: a data da solicitação de retirada é a referência, não “hoje do cron”.
+   */
+  async recalcularDiariasAte(
+    unidadeProcessoId: string,
+    asOf: Date,
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<void> {
+    const pfs = await db.preFatura.findMany({
+      where: { unidadeProcessoId, status: StatusPreFatura.ABERTA },
+      include: {
+        gateIn: { select: { dataHora: true } },
+        unidadeProcesso: { select: { entradaEm: true, id: true, modalidade: true } },
+        cliente: { select: { id: true, tenantId: true } },
+      },
+    });
+    for (const pf of pfs) {
+      if (pf.unidadeProcesso?.modalidade === 'ALUGUEL') {
+        await this.provisionAluguelDaily(pf, asOf);
+        continue;
+      }
+      const tenantId = pf.cliente.tenantId;
+      const pricing = await this.ruleEngine.resolvePricingForCliente(pf.clienteId);
+      const gateInAt = pf.gateInAt ?? pf.unidadeProcesso?.entradaEm ?? pf.gateIn?.dataHora;
+      if (!gateInAt) continue;
+      const container = await this.ruleEngine.loadContainerContext(pf.gateInId, pf.containerIso, {
+        unidadeProcessoId: pf.unidadeProcessoId ?? pf.unidadeProcesso?.id,
+      });
+      if (pricing.source === 'TABELA_PRECO') {
+        const tabela = await this.prisma.tabelaPreco.findFirst({
+          where: { id: pricing.tabelaPrecoId },
+          include: { regras: { where: { ativa: true } } },
+        });
+        try {
+          assertTabelaPrecoConfigurada(tabela, inferTipoContainer(container));
+        } catch (err) {
+          this.logger.error(`Erro recalculando diárias ${pf.id}: ${(err as Error).message}`);
+          continue;
+        }
+      }
+      const diariaEval = await this.ruleEngine.evaluateForContainerCycleWithTenant(tenantId, {
+        gateInAt,
+        asOf,
+        regras: pricing.regras,
+        container,
+        fase: 'PROVISAO_DIARIA',
+        clienteId: pf.clienteId,
+        tabelaPrecoId: pricing.tabelaPrecoId,
+        gateInId: pf.freeTimeZerado ? undefined : (pf.gateInId ?? pf.unidadeProcessoId ?? pf.id),
+        containerIso: pf.containerIso,
+        forcarDiasFreeTime: pf.freeTimeZerado ? 0 : undefined,
+        ...(await flagsExclusaoAutomatica(db, pf.unidadeProcessoId ?? pf.unidadeProcesso?.id)),
+      });
+      await this.ruleEngine.persistItens(
+        pf.id,
+        diariaEval,
+        db === this.prisma ? undefined : (db as Prisma.TransactionClient),
+        [
+          EventoGatilhoTarifa.DIARIA_ARMAZENAGEM,
+          EventoGatilhoTarifa.SHIFTING_EXTRA,
+          EventoGatilhoTarifa.ENERGIA_REEFER,
+        ],
+      );
+      const total = await this.totalComExtras(db, {
+        preFaturaId: pf.id,
+        unidadeProcessoId: pf.unidadeProcessoId ?? pf.unidadeProcesso?.id,
+        clienteId: pf.clienteId,
+        tenantId,
+        containerIso: pf.containerIso,
+      });
+      await db.preFatura.update({
+        where: { id: pf.id },
+        data: {
+          diasCobrados: diariaEval.diasFaturaveis,
+          valorAcumulado: toDecimal(total),
+          cobrancaInicioEm: this.ruleEngine.cobrancaInicioEm(gateInAt, diariaEval.diasFreeTime),
+        },
+      });
+    }
+  }
+
   async refreshExtrasForProcesso(unidadeProcessoId: string): Promise<void> {
     const pfs = await this.prisma.preFatura.findMany({
       where: { unidadeProcessoId, status: StatusPreFatura.ABERTA },

@@ -14,6 +14,7 @@ import {
   IsDateString,
   IsEmail,
   IsEnum,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -143,6 +144,20 @@ export class AgendamentoFormDto {
   horaFim?: string;
 }
 
+export class PessoaAutorizadaRetiradaDto {
+  @ApiProperty()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(255)
+  nome!: string;
+
+  @ApiProperty({ example: '12345678901' })
+  @IsString()
+  @MinLength(11)
+  @MaxLength(11)
+  cpf!: string;
+}
+
 export class SolicitanteDto {
   @ApiProperty()
   @IsString()
@@ -212,4 +227,24 @@ export class CreateSolicitacaoV2Dto {
   @IsOptional()
   @IsDateString()
   bookingDeadline?: string;
+
+  @ApiPropertyOptional({ enum: ['PIX', 'DINHEIRO'], description: 'Walk-in particular — pagamento à vista' })
+  @IsOptional()
+  @IsIn(['PIX', 'DINHEIRO'])
+  pagamentoAvista?: 'PIX' | 'DINHEIRO';
+
+  @ApiPropertyOptional({ description: 'Walk-in particular — telefone do motorista / contato no local' })
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(20)
+  telefoneMotorista?: string;
+
+  @ApiPropertyOptional({ type: [PessoaAutorizadaRetiradaDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PessoaAutorizadaRetiradaDto)
+  @ArrayMaxSize(10)
+  pessoasAutorizadasRetirada?: PessoaAutorizadaRetiradaDto[];
 }

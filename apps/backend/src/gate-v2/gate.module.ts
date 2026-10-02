@@ -24,6 +24,7 @@ import { CessaoTitularidadeModule } from '../cessao-titularidade/cessao-titulari
 import { TenantModule } from '../tenant/tenant.module';
 import { CatalogoContainersModule } from '../catalogo-containers/catalogo-containers.module';
 import { CatalogoNaviosModule } from '../catalogo-navios/catalogo-navios.module';
+import { CatalogoMotoristasExternosModule } from '../catalogo-motoristas-externos/catalogo-motoristas-externos.module';
 import { MotoristaBiometriaModule } from '../motorista-biometria/motorista-biometria.module';
 import { GateUnidadeNotificacaoModule } from './gate-unidade-notificacao.module';
 
@@ -48,6 +49,7 @@ import { GateUnidadeNotificacaoModule } from './gate-unidade-notificacao.module'
     CatalogoNaviosModule,
     MotoristaBiometriaModule,
     GateUnidadeNotificacaoModule,
+    CatalogoMotoristasExternosModule,
   ],
   controllers: [
     GateV2Controller,

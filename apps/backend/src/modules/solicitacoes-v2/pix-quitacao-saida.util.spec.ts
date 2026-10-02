@@ -1,5 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import {
+  asOfDaDataRetirada,
   conflictSaldoInsuficiente,
   mensagemSaldoInsuficiente,
   montarDescricaoQuitacao,
@@ -23,6 +24,10 @@ describe('pix-quitacao-saida.util', () => {
       },
     ],
   };
+
+  it('usa a data da retirada como asOf das diárias', () => {
+    expect(asOfDaDataRetirada('2026-10-05').toISOString()).toBe('2026-10-05T12:00:00.000Z');
+  });
 
   it('explica saldo insuficiente com valores atuais', () => {
     const msg = mensagemSaldoInsuficiente(quote);

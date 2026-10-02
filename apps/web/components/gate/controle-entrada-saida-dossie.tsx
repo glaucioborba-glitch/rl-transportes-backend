@@ -240,7 +240,9 @@ export function ControleEntradaSaidaDossie({
   const situacaoExibida = rascunho.situacao ?? sol?.situacao ?? operacao.containerSituacao;
   const situacaoCheia = String(situacaoExibida ?? "").trim().toUpperCase() === "CHEIO";
   const idLabel = operacao.unidadeProcesso?.label || sol?.unidadeProcessoLabel || "—";
-  const checkinLabel = por?.checkinEm ? new Date(por.checkinEm).toLocaleString("pt-BR") : "—";
+  const checkinLabel = por?.checkinEm
+    ? new Date(por.checkinEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })
+    : "—";
   const tipoTamanho =
     formatTipoTamanhoContainerLabel(
       tipoExibido,

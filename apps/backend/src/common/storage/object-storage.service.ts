@@ -39,10 +39,13 @@ export class ObjectStorageService implements OnModuleInit {
     this.publicBase =
       config.get<string>('STORAGE_PUBLIC_BASE_URL') ??
       process.env.STORAGE_PUBLIC_BASE_URL;
-    this.apiPublicBase =
+    this.apiPublicBase = (
       config.get<string>('API_PUBLIC_BASE_URL') ??
       process.env.API_PUBLIC_BASE_URL ??
-      `http://localhost:${process.env.API_PORT ?? '3001'}`;
+      config.get<string>('PUBLIC_API_URL') ??
+      process.env.PUBLIC_API_URL ??
+      `http://localhost:${process.env.API_PORT ?? '3001'}`
+    ).replace(/\/$/, '');
     const region = config.get<string>('AWS_REGION') ?? process.env.AWS_REGION ?? 'us-east-1';
     const endpoint =
       config.get<string>('STORAGE_ENDPOINT') ??

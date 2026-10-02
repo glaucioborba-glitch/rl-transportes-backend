@@ -453,7 +453,7 @@ export class PortalClienteController {
     @Param('cpf') cpf: string,
   ) {
     this.cx(req);
-    return this.catalogoMotoristas.buscarPorCpf(cpf);
+    return this.catalogoMotoristas.buscarPorCpfPortal(cpf);
   }
 
   @Get('catalogo-containers/:iso')

@@ -1,4 +1,6 @@
-export const PRINT_AGENT_URL = "http://127.0.0.1:39202";
+import { localAgentFetchInit, localAgentUrl } from "@/lib/local-agent-url";
+
+export const PRINT_AGENT_URL = localAgentUrl(39202, process.env.NEXT_PUBLIC_PRINT_AGENT_URL);
 export const PRINT_AGENT_PRINTER_KEY = "rl.print-agent.printer";
 
 export type PrintAgentPrinter = { name: string; default?: boolean; virtual?: boolean };
@@ -10,10 +12,14 @@ export type PrintAgentHealth = {
 };
 
 const MSG_AGENTE_FORA =
-  "O navegador não alcançou o agente de impressão em 127.0.0.1:39202. No PC da impressora, rode npm run print-agent e tente de novo.";
+  "O navegador não alcançou o agente de impressão. Neste PC da impressora, rode npm run print-agent e tente de novo.";
 
 function mensagemFalhaAgente(error: unknown): string {
   const raw = error instanceof Error ? error.message : "";
+  const name = error instanceof Error ? error.name : "";
+  if (name === "TimeoutError" || name === "AbortError" || /aborted|timeout/i.test(raw)) {
+    return "A impressora demorou para responder. Se o cupom saiu, está tudo certo.";
+  }
   if (
     error instanceof TypeError ||
     /failed to fetch|networkerror|load failed|fetch failed/i.test(raw)
@@ -64,7 +70,10 @@ export function preferirImpressora(printers: PrintAgentPrinter[], saved?: string
 
 export async function probePrintAgent(): Promise<PrintAgentHealth> {
   try {
-    const res = await fetch(`${PRINT_AGENT_URL}/health`, { headers: { Accept: "application/json" } });
+    const res = await fetch(
+      `${localAgentUrl(39202, process.env.NEXT_PUBLIC_PRINT_AGENT_URL)}/health`,
+      localAgentFetchInit({ headers: { Accept: "application/json" } }),
+    );
     const body = await parseAgent<PrintAgentHealth>(res);
     const printers = asPrinterList(body.printers);
     return {
@@ -82,14 +91,15 @@ export async function printViaAgent(blob: Blob, printer?: string): Promise<void>
   const qs = printer ? `?printer=${encodeURIComponent(printer)}` : "";
   let res: Response;
   try {
-    res = await fetch(`${PRINT_AGENT_URL}/print${qs}`, {
+    res = await fetch(`${localAgentUrl(39202, process.env.NEXT_PUBLIC_PRINT_AGENT_URL)}/print${qs}`, localAgentFetchInit({
       method: "POST",
       headers: {
         Accept: "application/json",
         "Content-Type": blob.type || "application/pdf",
       },
       body: blob,
-    });
+      signal: AbortSignal.timeout(25_000),
+    }));
   } catch (e) {
     throw new Error(mensagemFalhaAgente(e));
   }

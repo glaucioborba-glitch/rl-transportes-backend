@@ -1603,6 +1603,7 @@ export type CotacaoPixSaida = {
 export function cotarPixSaidaSolicitacao(body: {
   tipoOperacao: TipoOperacaoSolicitacaoIntent;
   unidades: string[];
+  dataRef?: string;
 }) {
   return portalJson<CotacaoPixSaida>("/portal/v2/solicitacoes/cotacao-pix", {
     method: "POST",
@@ -1971,11 +1972,12 @@ export function marcarTodasPortalNotificacoesLidas() {
   });
 }
 
-function portalOnboardingHeaders(extra?: HeadersInit): Headers {
+function portalOnboardingHeaders(extra?: HeadersInit, method = "POST"): Headers {
   const h = new Headers(extra);
   h.set("Content-Type", "application/json");
   const t = usePortalClienteAuthStore.getState().accessToken?.trim();
   if (t) h.set("Authorization", `Bearer ${t}`);
+  applyCsrfHeaders(h, method);
   return h;
 }
 
@@ -2096,9 +2098,9 @@ export type PortalClienteRegisterPayload =
       }>;
     };
 
-/** IAM público — não usa `portalRequest` (sem Bearer obrigatório). Header Bearer só se já existir sessão portal. */
+/** IAM público — BFF same-origin no lab/produção (evita CORS :3000→:3001). */
 export async function portalClienteRegister(data: PortalClienteRegisterPayload): Promise<{ ok: boolean; message: string }> {
-  const res = await fetch(`${getApiBase()}/portal/register`, {
+  const res = await fetch(portalApiUrl("/portal/register"), {
     method: "POST",
     headers: portalOnboardingHeaders(),
     body: JSON.stringify(data),
@@ -2163,7 +2165,7 @@ export async function portalLookupCepSafe(cepDigits: string): Promise<PortalCepL
 export async function portalClienteEsqueciSenha(
   email: string,
 ): Promise<{ ok?: boolean; message: string }> {
-  const res = await fetch(`${getApiBase()}/portal/esqueci-senha`, {
+  const res = await fetch(portalApiUrl("/portal/esqueci-senha"), {
     method: "POST",
     headers: portalOnboardingHeaders(),
     body: JSON.stringify({ email }),
@@ -2174,7 +2176,7 @@ export async function portalClienteEsqueciSenha(
 }
 
 export async function portalClienteRedefinirSenha(token: string, novaSenha: string): Promise<{ ok: boolean; message: string }> {
-  const res = await fetch(`${getApiBase()}/portal/redefinir-senha`, {
+  const res = await fetch(portalApiUrl("/portal/redefinir-senha"), {
     method: "POST",
     headers: portalOnboardingHeaders(),
     body: JSON.stringify({ token, novaSenha }),

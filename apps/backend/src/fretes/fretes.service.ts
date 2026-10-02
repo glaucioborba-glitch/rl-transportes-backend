@@ -12,6 +12,7 @@ import {
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizeContainerIso, normalizeCpfDigits, normalizePlate } from '../common/utils/data-sanitize';
+import { isValidIso6346 } from '../common/utils/iso6346';
 import { CreateFreteDto, UpdateFreteDto } from './dto/frete.dto';
 import { freteUncheckedCreateFromAgendamento } from './frete-from-agendamento';
 
@@ -139,6 +140,9 @@ export class FretesService {
     if (numeroIso.length < 4) {
       throw new BadRequestException('Informe o número do contêiner.');
     }
+    if (!isValidIso6346(numeroIso)) {
+      throw new BadRequestException('Número ISO inválido (dígito verificador ISO 6346).');
+    }
     const clienteNome = dto.clienteNome.trim();
     if (clienteNome.length < 2) {
       throw new BadRequestException('Informe o cliente.');
@@ -189,6 +193,9 @@ export class FretesService {
     if (dto.numeroIso != null) {
       const iso = normalizeContainerIso(dto.numeroIso);
       if (iso.length < 4) throw new BadRequestException('Informe o número do contêiner.');
+      if (!isValidIso6346(iso)) {
+        throw new BadRequestException('Número ISO inválido (dígito verificador ISO 6346).');
+      }
       data.numeroIso = iso;
     }
     if (dto.statusCarga != null) data.statusCarga = dto.statusCarga;

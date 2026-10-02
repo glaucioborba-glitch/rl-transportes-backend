@@ -23,6 +23,7 @@ export function useQuitacaoPixSaidaDialog() {
   async function runWithQuitacao(args: {
     tipoOperacao: TipoOperacaoSolicitacaoIntent;
     unidades: string[];
+    dataRef?: string;
     create: () => Promise<void>;
   }) {
     if (!isSolicitacaoSaidaIntent(args.tipoOperacao)) {
@@ -32,6 +33,7 @@ export function useQuitacaoPixSaidaDialog() {
     const q = await cotarPixSaidaSolicitacao({
       tipoOperacao: args.tipoOperacao,
       unidades: args.unidades,
+      dataRef: args.dataRef,
     });
     if (!q.exigido) {
       await args.create();
@@ -96,7 +98,7 @@ export function QuitacaoPixSaidaDialog(props: {
         </h2>
         <p className="mt-2 text-sm text-slate-400">
           {suficiente
-            ? "Cliente PIX quita o valor do ID no momento da solicitação, usando o saldo da conta comercial."
+            ? "Cliente PIX quita o valor do ID (diárias até a data da retirada + extras) no saldo da conta comercial."
             : "A conta comercial não pode ficar negativa. Recarregue via PIX e tente novamente."}
         </p>
 

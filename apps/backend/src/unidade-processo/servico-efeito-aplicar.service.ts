@@ -16,6 +16,7 @@ import {
   type LancarServicoEfeitoInput,
 } from '../cadastros/servico-efeito';
 import { stripContainerIsoCanonical } from '../common/utils/data-sanitize';
+import { isValidIso6346 } from '../common/utils/iso6346';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -181,6 +182,9 @@ export class ServicoEfeitoAplicarService {
     if (!origem) throw new BadRequestException('ID de origem não encontrado.');
 
     const isoDestino = stripContainerIsoCanonical(input.isoDestino ?? '');
+    if (!isoDestino || !isValidIso6346(isoDestino)) {
+      throw new BadRequestException('Número ISO inválido (dígito verificador ISO 6346).');
+    }
     if (isoDestino === origem.unidadeIso) {
       throw new BadRequestException('O container de destino (B) deve ser diferente da origem (A).');
     }

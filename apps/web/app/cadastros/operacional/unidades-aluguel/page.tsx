@@ -84,7 +84,7 @@ export default function UnidadesAluguelPage() {
                   <td className="px-4 py-3">{u.tipoContainerCodigo}</td>
                   <td className="px-4 py-3">{u.containerTamanho}</td>
                   <td className="px-4 py-3">
-                    <Badge variant={u.status === "DISPONIVEL" ? "default" : "secondary"}>
+                    <Badge variant={u.status === "DISPONIVEL" ? "aprovado" : "neutral"}>
                       {STATUS_LABEL[u.status] ?? u.status}
                     </Badge>
                   </td>

@@ -516,6 +516,8 @@ export class EmpresaOperadoraService {
     return (
       this.config.get<string>('API_PUBLIC_BASE_URL') ??
       process.env.API_PUBLIC_BASE_URL ??
+      this.config.get<string>('PUBLIC_API_URL') ??
+      process.env.PUBLIC_API_URL ??
       `http://localhost:${process.env.API_PORT ?? '3001'}`
     ).replace(/\/$/, '');
   }

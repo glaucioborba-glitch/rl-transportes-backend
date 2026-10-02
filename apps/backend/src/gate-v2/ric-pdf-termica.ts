@@ -20,7 +20,7 @@ function formatDateTime(isoDate: string): string {
   if (!isoDate) return '—';
   const date = new Date(isoDate);
   if (Number.isNaN(date.getTime())) return isoDate;
-  return date.toLocaleString('pt-BR');
+  return date.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 }
 
 function formatCpf(cpf: string): string {

@@ -30,6 +30,7 @@ import {
   ContainerTipoSelect,
   findPortalTipo,
 } from "@/components/portal/container-form-fields";
+import { isValidISO6346 } from "@/lib/cadastros/formatters";
 import { stripContainerISO } from "@/utils/containerFormatter";
 import { fieldErrorForContainer, parseUnidadeEstoqueError } from "@/lib/solicitacao-estoque-error";
 import { usePortalEstoqueCliente } from "@/hooks/use-portal-estoque-cliente";
@@ -266,6 +267,10 @@ export default function NovaSolicitacaoCorporativaPage() {
     const seen = new Set<string>();
     for (const c of ordens) {
       const iso = stripContainerISO(c.unidade);
+      if (!isValidISO6346(iso)) {
+        toast.error(`Número ISO inválido (dígito verificador) no contêiner #${c.ordem}.`);
+        return;
+      }
       if (!iso || !allowed.has(iso)) {
         toast.error(
           `Contêiner #${c.ordem}: selecione uma unidade do estoque deste cliente (lupa).`,
@@ -298,6 +303,7 @@ export default function NovaSolicitacaoCorporativaPage() {
       await pixQuitacao.runWithQuitacao({
         tipoOperacao: "SOLICITAR_COLETA",
         unidades: ordens.map((c) => stripContainerISO(c.unidade)),
+        dataRef,
         create: async () => {
           const created = files.length
             ? await criarSolicitacaoV2ComAnexos(body, files)

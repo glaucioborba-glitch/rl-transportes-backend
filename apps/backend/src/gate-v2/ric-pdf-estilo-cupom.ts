@@ -6,11 +6,13 @@ export function ricDash(v?: string): string {
   return v?.trim() ? v.trim() : '—';
 }
 
+const RIC_TZ = 'America/Sao_Paulo' as const;
+
 export function ricFormatDateTime(isoDate: string): string {
   if (!isoDate) return '—';
   const date = new Date(isoDate);
   if (Number.isNaN(date.getTime())) return isoDate;
-  return date.toLocaleString('pt-BR');
+  return date.toLocaleString('pt-BR', { timeZone: RIC_TZ });
 }
 
 export function ricFormatCpf(cpf: string): string {

@@ -26,6 +26,7 @@ import {
   type TipoFrete,
 } from "@/lib/fretes/frete-status";
 import { formatCpfBr } from "@/lib/format-cpf-cnpj-br";
+import { isValidISO6346 } from "@/lib/cadastros/formatters";
 import { formatContainerISO, stripContainerISO } from "@/utils/containerFormatter";
 import {
   listCadastrosLocaisTransporte,
@@ -172,8 +173,8 @@ export default function FretesPage() {
   }
 
   async function incluir() {
-    if (!novo.clienteNome.trim() || stripContainerISO(novo.numeroIso).length < 4) {
-      toast.error("Informe contêiner e cliente.");
+    if (!novo.clienteNome.trim() || !isValidISO6346(stripContainerISO(novo.numeroIso))) {
+      toast.error("Informe um ISO 6346 válido e o cliente.");
       return;
     }
     setSaving(true);
@@ -445,7 +446,13 @@ export default function FretesPage() {
                         defaultValue={formatContainerISO(row.numeroIso)}
                         onBlur={(e) => {
                           const v = stripContainerISO(e.target.value);
-                          if (v && v !== row.numeroIso) void salvarCampo(row.id, { numeroIso: v });
+                          if (!v || v === row.numeroIso) return;
+                          if (!isValidISO6346(v)) {
+                            toast.error("ISO 6346 inválido — dígito verificador não confere.");
+                            e.target.value = formatContainerISO(row.numeroIso);
+                            return;
+                          }
+                          void salvarCampo(row.id, { numeroIso: v });
                         }}
                       />
                     </td>

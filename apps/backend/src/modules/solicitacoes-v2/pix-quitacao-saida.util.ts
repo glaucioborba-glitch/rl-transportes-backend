@@ -44,6 +44,15 @@ export function conflictSaldoInsuficiente(quote: CotacaoPixSaida): ConflictExcep
   });
 }
 
+/** Data da retirada (YYYY-MM-DD) → asOf do motor de diárias. Sem data, usa agora. */
+export function asOfDaDataRetirada(dataRef?: string | null): Date {
+  const raw = (dataRef ?? '').trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (!m) return new Date();
+  const asOf = new Date(`${m[1]}-${m[2]}-${m[3]}T12:00:00.000Z`);
+  return Number.isNaN(asOf.getTime()) ? new Date() : asOf;
+}
+
 export function montarDescricaoQuitacao(params: {
   protocolo: number | string;
   ids: CotacaoPixIdItem[];

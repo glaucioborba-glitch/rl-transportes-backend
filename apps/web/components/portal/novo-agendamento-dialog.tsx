@@ -19,6 +19,7 @@ import {
   type StatusCargaAgendamento,
   type TipoOperacaoAgendamento,
 } from "@/lib/api/portal-client";
+import { isValidISO6346 } from "@/lib/cadastros/formatters";
 import { toast } from "@/lib/toast";
 
 const selectCls =
@@ -68,6 +69,11 @@ export function NovoAgendamentoDialog({ onCreated }: { onCreated?: () => void })
     }
     if (exigeDestino && !localDestino.trim()) {
       toast.error("Informe o local de entrega (destino) para transporte FL.");
+      return;
+    }
+
+    if (!isValidISO6346(numeroIso)) {
+      toast.error("Número ISO 6346 inválido — dígito verificador não confere.");
       return;
     }
 

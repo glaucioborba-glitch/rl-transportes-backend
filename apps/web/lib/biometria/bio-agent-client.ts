@@ -1,4 +1,6 @@
-export const BIO_AGENT_URL = "http://127.0.0.1:39201";
+import { localAgentFetchInit, localAgentUrl } from "@/lib/local-agent-url";
+
+export const BIO_AGENT_URL = localAgentUrl(39201, process.env.NEXT_PUBLIC_BIO_AGENT_URL);
 
 export type BioAgentHealth = {
   ok: boolean;
@@ -25,7 +27,7 @@ function mensagemFalhaAgente(error: unknown): string {
     error instanceof TypeError ||
     /failed to fetch|networkerror|load failed|fetch failed/i.test(raw)
   ) {
-    return "O navegador não alcançou o leitor em 127.0.0.1:39201. No PC do Gate, rode npm run bio-agent e recarregue a página.";
+    return "O navegador não alcançou o leitor. Neste PC do Gate, rode npm run bio-agent e recarregue a página.";
   }
   return raw || "Falha no leitor de digital.";
 }
@@ -33,10 +35,13 @@ function mensagemFalhaAgente(error: unknown): string {
 async function agentJson<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${BIO_AGENT_URL}${path}`, {
-      ...init,
-      headers: { Accept: "application/json", ...(init?.headers ?? {}) },
-    });
+    res = await fetch(
+      `${localAgentUrl(39201, process.env.NEXT_PUBLIC_BIO_AGENT_URL)}${path}`,
+      localAgentFetchInit({
+        ...init,
+        headers: { Accept: "application/json", ...(init?.headers ?? {}) },
+      }),
+    );
   } catch (e) {
     throw new Error(mensagemFalhaAgente(e));
   }
@@ -49,7 +54,10 @@ async function agentJson<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function probeBioAgent(): Promise<BioAgentHealth> {
   try {
-    const res = await fetch(`${BIO_AGENT_URL}/health`, { headers: { Accept: "application/json" } });
+    const res = await fetch(
+      `${localAgentUrl(39201, process.env.NEXT_PUBLIC_BIO_AGENT_URL)}/health`,
+      localAgentFetchInit({ headers: { Accept: "application/json" } }),
+    );
     const body = await parseAgent<BioAgentHealth>(res);
     return {
       ok: Boolean(body.ok),

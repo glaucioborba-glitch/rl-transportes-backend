@@ -1,7 +1,8 @@
 "use client";
 
 import { Input } from "@/components/ui/input";
-import { formatContainerISO } from "@/utils/containerFormatter";
+import { isValidISO6346 } from "@/lib/cadastros/formatters";
+import { formatContainerISO, stripContainerISO } from "@/utils/containerFormatter";
 import {
   formatTamanhoContainerDisplay,
   normalizeTamanhoContainer,
@@ -31,24 +32,34 @@ export function ContainerIsoInput({
   className?: string;
   onIsoComplete?: (iso: string) => void;
 }) {
+  const iso = stripContainerISO(value);
+  const completo = iso.length === 11;
+  const valido = completo && isValidISO6346(iso);
+
   return (
-    <Input
-      value={value}
-      onChange={(e) => {
-        const formatted = formatContainerISO(e.target.value);
-        onChange(formatted);
-        const iso = formatted.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-        if (iso.length === 11) onIsoComplete?.(iso);
-      }}
-      placeholder="AAAA 000000-0"
-      required={required}
-      disabled={disabled}
-      readOnly={disabled}
-      className={className}
-      inputMode="text"
-      autoCapitalize="characters"
-      spellCheck={false}
-    />
+    <div>
+      <Input
+        value={value}
+        onChange={(e) => {
+          const formatted = formatContainerISO(e.target.value);
+          onChange(formatted);
+          const next = stripContainerISO(formatted);
+          if (next.length === 11 && isValidISO6346(next)) onIsoComplete?.(next);
+        }}
+        placeholder="AAAA 000000-0"
+        required={required}
+        disabled={disabled}
+        readOnly={disabled}
+        aria-invalid={completo && !valido}
+        className={`${className ?? ""} ${completo && !valido ? "border-red-500/70" : ""}`}
+        inputMode="text"
+        autoCapitalize="characters"
+        spellCheck={false}
+      />
+      {completo && !valido ? (
+        <p className="mt-1 text-[11px] text-red-400">ISO 6346 inválido — dígito verificador não confere.</p>
+      ) : null}
+    </div>
   );
 }
 

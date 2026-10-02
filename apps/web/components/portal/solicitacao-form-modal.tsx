@@ -43,6 +43,7 @@ import {
   ContainerTipoSelect,
   findPortalTipo,
 } from "@/components/portal/container-form-fields";
+import { isValidISO6346 } from "@/lib/cadastros/formatters";
 import { stripContainerISO } from "@/utils/containerFormatter";
 import { fieldErrorForContainer, parseUnidadeEstoqueError } from "@/lib/solicitacao-estoque-error";
 import { usePortalTiposContainer } from "@/hooks/use-portal-tipos-container";
@@ -138,7 +139,6 @@ export function SolicitacaoFormModal({
   const [unidadeFieldErrors, setUnidadeFieldErrors] = useState<Record<number, string>>({});
 
   const [previsaoRetirada, setPrevisaoRetirada] = useState("");
-  const [bookingDeadline, setBookingDeadline] = useState("");
   const [horaInicio, setHoraInicio] = useState("08:00");
   const [horaFim, setHoraFim] = useState("12:00");
   const [layerReady, setLayerReady] = useState(false);
@@ -286,7 +286,6 @@ export function SolicitacaoFormModal({
     setHoraFim("12:00");
     setFiles([]);
     setPrevisaoRetirada("");
-    setBookingDeadline("");
     setUnidadeFieldErrors({});
     setCatalogoHints({});
   }
@@ -498,6 +497,13 @@ export function SolicitacaoFormModal({
       }
     }
     for (const c of ordens) {
+      const iso = stripContainerISO(c.unidade);
+      if (!isValidISO6346(iso)) {
+        toast.error(`Número ISO inválido (dígito verificador) no contêiner #${c.ordem}.`);
+        return;
+      }
+    }
+    for (const c of ordens) {
       if (c.refrigerado) {
         const spRaw = c.setPoint.trim().replace(",", ".");
         const n = Number(spRaw);
@@ -518,6 +524,7 @@ export function SolicitacaoFormModal({
       await pixQuitacao.runWithQuitacao({
         tipoOperacao: intent,
         unidades: ordens.map((c) => stripContainerISO(c.unidade)),
+        dataRef: dataRef || todayDateInputValue(),
         create: async () => {
           const created = files.length
             ? await criarSolicitacaoV2ComAnexos(body, files)

@@ -14,6 +14,7 @@ import {
   type UnidadeAluguelStatus,
 } from "@/lib/api/cadastros-unidades-aluguel-client";
 import { listCadastrosTiposContainer } from "@/lib/api/cadastros-tipos-container-client";
+import { isValidISO6346 } from "@/lib/cadastros/formatters";
 import { formatContainerISO, stripContainerISO } from "@/utils/containerFormatter";
 import { toast } from "@/lib/toast";
 
@@ -64,8 +65,8 @@ export function UnidadeAluguelForm({ unidadeId }: { unidadeId?: string }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (iso.trim().length < 4 || !tipo) {
-      toast.error("Informe o ISO e o tipo.");
+    if (!isValidISO6346(stripContainerISO(iso)) || !tipo) {
+      toast.error("Informe um ISO 6346 válido (dígito verificador) e o tipo.");
       return;
     }
     setSaving(true);

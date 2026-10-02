@@ -136,7 +136,8 @@ function blankToUndef(value: string): string | undefined {
 function toTransportadoraWriteBody(
   data: CadastrosTransportadoraFormData,
 ): Record<string, unknown> {
-  const { id: _id, ...body } = data;
+  const body = { ...data };
+  delete body.id;
   return {
     ...body,
     nomeFantasia: blankToUndef(body.nomeFantasia),

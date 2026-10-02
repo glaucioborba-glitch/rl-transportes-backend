@@ -111,7 +111,8 @@ export async function getCadastrosCliente(id: string): Promise<CadastrosClienteF
 }
 
 function toClienteWriteBody(data: CadastrosClienteFormData): Omit<CadastrosClienteFormData, "id"> {
-  const { id: _id, ...body } = data;
+  const body = { ...data };
+  delete body.id;
   return body;
 }
 

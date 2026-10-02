@@ -13,8 +13,9 @@ if (-not (Test-Path -LiteralPath $agent)) {
 }
 
 $task = 'RL-Print-Agent'
-$tr = "`"$node`" `"$agent`""
-schtasks /Create /TN $task /TR $tr /SC ONLOGON /RL LIMITED /F | Out-Null
+$action = New-ScheduledTaskAction -Execute $node -Argument "`"$agent`""
+$trigger = New-ScheduledTaskTrigger -AtLogOn
+Register-ScheduledTask -TaskName $task -Action $action -Trigger $trigger -Force | Out-Null
 Write-Host "Tarefa '$task' registrada. O agente sobe no logon em http://127.0.0.1:39202"
 Write-Host 'Ainda é preciso: driver Epson TM-T20X + SumatraPDF (https://www.sumatrapdfreader.org).'
 Start-Process -FilePath $node -ArgumentList $agent -WindowStyle Hidden

@@ -17,14 +17,16 @@ services:
     profiles: ["cloud"]
 
   frontend:
-    ports:
+    ports: !override
       - "3000:3000"
     build:
       args:
         NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL}
 
   backend:
-    ports:
+    environment:
+      TZ: America/Sao_Paulo
+    ports: !override
       - "3001:3001"
 
   minio:

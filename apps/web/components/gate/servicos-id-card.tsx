@@ -17,6 +17,8 @@ import {
   type UnidadeProcessoServicoLancado,
 } from "@/lib/api/cadastros-tabelas-servicos-client";
 import { toast } from "@/lib/toast";
+import { isValidISO6346 } from "@/lib/cadastros/formatters";
+import { stripContainerISO } from "@/utils/containerFormatter";
 import { formatBRL } from "@/lib/financeiro/format";
 
 function isAutomaticoTabela(row: UnidadeProcessoServicoLancado) {
@@ -91,6 +93,10 @@ export function ServicosIdCard({
     const qtd = Number(quantidade.replace(",", "."));
     if (!servicoItemId || !Number.isFinite(qtd) || qtd <= 0) {
       toast.error("Escolha o serviço e a quantidade.");
+      return;
+    }
+    if (efeito === "TRANSBORDO_CARGA" && !isValidISO6346(stripContainerISO(isoDestino))) {
+      toast.error("ISO 6346 inválido — dígito verificador não confere.");
       return;
     }
     setSaving(true);

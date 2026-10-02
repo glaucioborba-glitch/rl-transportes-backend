@@ -14,7 +14,7 @@ describe('ServicoEfeitoAplicarService', () => {
         findFirst: jest.fn().mockResolvedValue({
           id: 'up-b',
           tenantId: 'default',
-          unidadeIso: 'BBBB2222222',
+          unidadeIso: 'GLDU9443335',
           clienteId: 'c1',
         }),
       },
@@ -26,7 +26,7 @@ describe('ServicoEfeitoAplicarService', () => {
       svc.aplicar({
         processoId: 'up-a',
         item: { id: 'i1', tabelaId: 't1', codigo: 'TRANSBORDO', nome: 'Transbordo', efeito: 'TRANSBORDO_CARGA' },
-        input: { isoDestino: 'BBBB2222222' },
+        input: { isoDestino: 'GLDU9443335' },
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
 

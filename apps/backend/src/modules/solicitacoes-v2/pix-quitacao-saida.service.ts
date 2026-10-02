@@ -15,6 +15,7 @@ import { toMoneyNumber } from '../../conta-corrente/conta-corrente.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { formatUnidadeProcessoId, isDirecaoSaida } from '../../unidade-processo/unidade-direcao.util';
 import {
+  asOfDaDataRetirada,
   conflictSaldoInsuficiente,
   type CotacaoPixIdItem,
   type CotacaoPixSaida,
@@ -33,6 +34,8 @@ export class PixQuitacaoSaidaService {
     clienteId: string;
     intent: TipoOperacaoSolicitacaoIntent | string;
     unidades: string[];
+    /** Data da solicitação de retirada (AAAA-MM-DD). Diárias são calculadas até este dia. */
+    dataRef?: string | null;
     refreshExtras?: boolean;
     db?: Prisma.TransactionClient | PrismaService;
   }): Promise<CotacaoPixSaida> {
@@ -71,7 +74,7 @@ export class PixQuitacaoSaidaService {
       });
       if (!processo) continue;
       if (params.refreshExtras !== false) {
-        await this.billing.refreshExtrasForProcesso(processo.id);
+        await this.billing.recalcularDiariasAte(processo.id, asOfDaDataRetirada(params.dataRef), db);
       }
       const pf = await db.preFatura.findFirst({
         where: {
@@ -112,6 +115,7 @@ export class PixQuitacaoSaidaService {
       tenantId: string;
       intent: TipoOperacaoSolicitacaoIntent | string;
       unidades: string[];
+      dataRef?: string | null;
       protocolo: number | string;
       solicitacaoId: string;
       actorId: string;
@@ -122,7 +126,8 @@ export class PixQuitacaoSaidaService {
       clienteId: params.clienteId,
       intent: params.intent,
       unidades: params.unidades,
-      refreshExtras: false,
+      dataRef: params.dataRef,
+      refreshExtras: true,
       db: tx,
     });
     if (!quote.exigido) return quote;

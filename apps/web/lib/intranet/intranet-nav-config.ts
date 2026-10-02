@@ -1,6 +1,7 @@
 "use client";
 
 import type { LucideIcon } from "lucide-react";
+import { isDemoModulesEnabled } from "@/lib/demo-modules";
 import {
   Activity,
   AlertCircle,
@@ -50,6 +51,7 @@ import {
   Users,
   Wallet,
   MapPin,
+  Zap,
 } from "lucide-react";
 
 export type IntranetModuleId =
@@ -213,6 +215,12 @@ export const SIDEBAR_CONFIG: Record<IntranetModuleId, IntranetSubMenuItem[]> = {
       href: "/operador/gate/criar-agendamento",
       icon: Calendar,
       description: "Baixa, coleta e demais solicitações — preenchimento manual",
+    },
+    {
+      label: "Agendamento Rápido Particular",
+      href: "/operador/gate/agendamento-rapido-particular",
+      icon: Zap,
+      description: "Walk-in particular — registra a operação no instante (PIX ou dinheiro)",
     },
     {
       label: "Autorizações",
@@ -512,5 +520,9 @@ export function canAccessIntranetSidebarItem(role: string, item: IntranetSubMenu
 }
 
 export function visibleIntranetModules(role: string): IntranetNavItem[] {
-  return MODULOS_INTRANET.filter((m) => canAccessIntranetModule(role, m));
+  return MODULOS_INTRANET.filter((m) => {
+    if (m.id === "bi") return false;
+    if ((m.id === "grc" || m.id === "ssma") && !isDemoModulesEnabled()) return false;
+    return canAccessIntranetModule(role, m);
+  });
 }

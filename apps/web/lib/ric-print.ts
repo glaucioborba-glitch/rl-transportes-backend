@@ -35,11 +35,11 @@ export function buildRicPrintHtml(payload: ContainerRicPayload): string {
 </head>
 <body>
   <h1>Recibo de Intercâmbio de Contêiner (RIC) — ${payload.tipo}</h1>
-  <p class="meta">${escapeHtml(payload.terminal.nome)} · Emitido ${new Date(payload.emitidoEm).toLocaleString("pt-BR")}</p>
+  <p class="meta">${escapeHtml(payload.terminal.nome)} · Emitido ${new Date(payload.emitidoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</p>
   <table>
     <tr><th>Contêiner (ISO)</th><td><strong>${escapeHtml(payload.isoFormatado)}</strong></td></tr>
     <tr><th>Protocolo</th><td>${escapeHtml(payload.protocolo)}</td></tr>
-    <tr><th>Data / hora operação</th><td>${new Date(payload.dataHora).toLocaleString("pt-BR")}</td></tr>
+    <tr><th>Data / hora operação</th><td>${new Date(payload.dataHora).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td></tr>
     <tr><th>Motorista</th><td>${escapeHtml(payload.transporte.motoristaNome)} · CPF ${escapeHtml(payload.transporte.motoristaCpf)}</td></tr>
     <tr><th>Placas</th><td>${escapeHtml(payload.transporte.placaCavalo)} / ${escapeHtml(payload.transporte.placaCarreta01)}${payload.transporte.placaCarreta02 ? " / " + escapeHtml(String(payload.transporte.placaCarreta02)) : ""}</td></tr>
     <tr><th>Operador terminal</th><td>${escapeHtml(payload.operador.nome)}${payload.operador.email ? " · " + escapeHtml(payload.operador.email) : ""}</td></tr>
