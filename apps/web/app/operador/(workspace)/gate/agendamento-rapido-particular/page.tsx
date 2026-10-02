@@ -31,8 +31,8 @@ export default function GateAgendamentoRapidoParticularPage() {
       <div>
         <h1 className="text-2xl font-bold">Agendamento Rápido Particular</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Walk-in com transporte do cliente. A operação é agora — sem data nem turno para escolher.
-          Pagamento sempre à vista (PIX ou dinheiro).
+          Cadastro rápido: CPF, nome e telefone. Sem NFS-e. A operação é agora — sem data nem turno
+          para escolher. Pagamento sempre à vista (PIX ou dinheiro).
         </p>
       </div>
 

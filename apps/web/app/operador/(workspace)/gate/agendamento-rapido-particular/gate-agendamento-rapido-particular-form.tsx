@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ApiError, staffCriarSolicitacaoV2 } from "@/lib/api/staff-client";
-import { listAlugueisClientes } from "@/lib/api/alugueis-client";
 import { fetchCatalogosConferencia, fetchStaffCatalogoContainer, type CatalogoTipoContainer } from "@/lib/gate/operacao-api";
 import { catalogoContainerHint, patchFromCatalogo } from "@/lib/catalogo-container-iso";
 import { NavioAutocompleteInput } from "@/components/catalogo/navio-autocomplete-input";
@@ -74,8 +73,6 @@ function horaAgora(d = new Date()): string {
 
 const LABEL = "mb-1 block text-xs text-slate-500";
 
-type ClienteOpt = { id: string; razaoSocial: string; nomeFantasia: string | null };
-
 export function GateAgendamentoRapidoParticularForm({
   intent,
   onCancel,
@@ -86,9 +83,6 @@ export function GateAgendamentoRapidoParticularForm({
   const router = useRouter();
   const { turnos } = useTenantTurnos();
 
-  const [clientes, setClientes] = useState<ClienteOpt[]>([]);
-  const [buscaCliente, setBuscaCliente] = useState("");
-  const [clienteId, setClienteId] = useState("");
   const [tipos, setTipos] = useState<CatalogoTipoContainer[]>([]);
 
   const [tipoCaminhao, setTipoCaminhao] = useState<TipoCaminhao>("");
@@ -104,9 +98,9 @@ export function GateAgendamentoRapidoParticularForm({
   const [placaCavalo, setPlacaCavalo] = useState("");
   const [placaCarreta01, setPlacaCarreta01] = useState("");
   const [placaCarreta02, setPlacaCarreta02] = useState("");
-  const [autorizadas, setAutorizadas] = useState<Array<{ nome: string; cpf: string }>>([
-    { nome: "", cpf: "" },
-  ]);
+  const [autorizadas, setAutorizadas] = useState<
+    Array<{ nome: string; cpf: string; placaCavalo: string; placaCarreta: string }>
+  >([{ nome: "", cpf: "", placaCavalo: "", placaCarreta: "" }]);
 
   const [containers, setContainers] = useState<ContainerDraft[]>([emptyContainer(1)]);
   const [catalogoHints, setCatalogoHints] = useState<Record<number, string>>({});
@@ -128,9 +122,6 @@ export function GateAgendamentoRapidoParticularForm({
   }, [turnos]);
 
   useEffect(() => {
-    void listAlugueisClientes()
-      .then((r) => setClientes(r.items ?? []))
-      .catch(() => setClientes([]));
     void fetchCatalogosConferencia()
       .then((r) => setTipos(r.tiposContainer ?? []))
       .catch(() => setTipos([]));
@@ -142,14 +133,6 @@ export function GateAgendamentoRapidoParticularForm({
       return next.map((c, i) => ({ ...c, ordem: i + 1 }));
     });
   }, [containerCount]);
-
-  const clientesFiltrados = useMemo(() => {
-    const q = buscaCliente.trim().toLowerCase();
-    if (!q) return clientes;
-    return clientes.filter((c) =>
-      [c.razaoSocial, c.nomeFantasia ?? ""].join(" ").toLowerCase().includes(q),
-    );
-  }, [clientes, buscaCliente]);
 
   async function applyCatalogo(i: number, iso: string) {
     try {
@@ -197,10 +180,6 @@ export function GateAgendamentoRapidoParticularForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!clienteId) {
-      toast.error("Selecione o cliente.");
-      return;
-    }
     if (!tipoCaminhao) {
       toast.error("Selecione o tipo de caminhão.");
       return;
@@ -260,7 +239,6 @@ export function GateAgendamentoRapidoParticularForm({
     setSaving(true);
     try {
       const created = await staffCriarSolicitacaoV2({
-        clienteId,
         tipoOperacao: intent,
         pagamentoAvista: pagamento,
         telefoneMotorista: telefoneMotorista.replace(/\D/g, ""),
@@ -326,34 +304,9 @@ export function GateAgendamentoRapidoParticularForm({
 
       <Card className="border-white/10 bg-black/25">
         <CardHeader className={CARD_H}>
-          <CardTitle className="text-sm text-white">Cliente e transporte</CardTitle>
+          <CardTitle className="text-sm text-white">Transporte</CardTitle>
         </CardHeader>
         <CardContent className={`${GRID} ${CARD_C}`}>
-          <div>
-            <label className={LABEL}>Filtrar cliente</label>
-            <Input
-              value={buscaCliente}
-              onChange={(e) => setBuscaCliente(e.target.value)}
-              placeholder="Nome ou fantasia"
-              className="bg-black/40"
-            />
-          </div>
-          <div className={`${SPAN2} lg:col-span-3`}>
-            <label className={LABEL}>Cliente</label>
-            <select
-              className={SELECT}
-              value={clienteId}
-              onChange={(e) => setClienteId(e.target.value)}
-              required
-            >
-              <option value="">Selecione…</option>
-              {clientesFiltrados.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nomeFantasia || c.razaoSocial}
-                </option>
-              ))}
-            </select>
-          </div>
           <div>
             <label className={LABEL}>CPF do motorista</label>
             <Input
@@ -614,7 +567,9 @@ export function GateAgendamentoRapidoParticularForm({
           <CardTitle className="text-sm text-white">Pessoas autorizadas para retirada</CardTitle>
           <button
             type="button"
-            onClick={() => setAutorizadas((rows) => [...rows, { nome: "", cpf: "" }])}
+            onClick={() =>
+              setAutorizadas((rows) => [...rows, { nome: "", cpf: "", placaCavalo: "", placaCarreta: "" }])
+            }
             className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/15 bg-black/40 text-zinc-200 hover:border-sky-400/50 hover:text-white"
             aria-label="Adicionar pessoa autorizada"
           >
@@ -624,8 +579,11 @@ export function GateAgendamentoRapidoParticularForm({
         <CardContent className="space-y-3 pb-4">
           <p className="text-[11px] text-zinc-500">Opcional. Quem pode retirar a unidade neste walk-in.</p>
           {autorizadas.map((p, i) => (
-            <div key={i} className={`${GRID} items-end`}>
-              <div className={SPAN2}>
+            <div
+              key={i}
+              className="grid grid-cols-1 items-end gap-x-3 gap-y-2 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,0.9fr)_auto]"
+            >
+              <div>
                 <label className={LABEL}>Nome</label>
                 <Input
                   value={p.nome}
@@ -647,6 +605,34 @@ export function GateAgendamentoRapidoParticularForm({
                     setAutorizadas((rows) => {
                       const next = [...rows];
                       next[i] = { ...next[i], cpf: e.target.value };
+                      return next;
+                    })
+                  }
+                  className="bg-black/40"
+                />
+              </div>
+              <div>
+                <label className={LABEL}>Placa cavalo</label>
+                <Input
+                  value={p.placaCavalo}
+                  onChange={(e) =>
+                    setAutorizadas((rows) => {
+                      const next = [...rows];
+                      next[i] = { ...next[i], placaCavalo: e.target.value.toUpperCase() };
+                      return next;
+                    })
+                  }
+                  className="bg-black/40"
+                />
+              </div>
+              <div>
+                <label className={LABEL}>Placa carreta</label>
+                <Input
+                  value={p.placaCarreta}
+                  onChange={(e) =>
+                    setAutorizadas((rows) => {
+                      const next = [...rows];
+                      next[i] = { ...next[i], placaCarreta: e.target.value.toUpperCase() };
                       return next;
                     })
                   }
